@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild
+.cxx
+*.apk
+worker/node_modules/
+worker/.wrangler/
+keystore.properties
+*.jks
+*.keystore

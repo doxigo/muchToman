@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muchtoman-rates",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": { "enabled": true }
+  // No KV / R2 / D1 on purpose: the phone already keeps the last good rates,
+  // so the edge has nothing worth persisting.
+}
