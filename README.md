@@ -15,6 +15,34 @@ used anywhere.
 Toman itself is pinned at 1 in the app, not fetched: money already in Toman still counts
 when the network is down, and no manual override can change it into something else.
 
+## Screenshots
+
+Sample data, real rates.
+
+| | | |
+| --- | --- | --- |
+| ![](docs/screenshots/home.png) | ![](docs/screenshots/assets.png) | ![](docs/screenshots/report.png) |
+| ![](docs/screenshots/home-dark.png) | ![](docs/screenshots/assets-dark.png) | ![](docs/screenshots/report-dark.png) |
+
+Bank balances read from her own SMS, no login anywhere:
+
+<img src="docs/screenshots/banks.png" width="280">
+
+## Banks it reads
+
+Only these senders are read; the rest of the inbox is never parsed.
+
+| Bank | Sending numbers |
+| --- | --- |
+| بلو بانک | 0999 998 7641 |
+| بانک سامان | 0999 992 0000 |
+| بانک رفاه | 100031, 100032 |
+| بانک خاورمیانه | 90000258, 20004861 |
+
+A bank that starts sending from a new shortcode is a one-tap confirmation in the app, not a
+new build. Adding a bank outright is one line in `Bank` in
+[Sms.kt](app/src/main/java/com/doxigo/muchtoman/Sms.kt).
+
 ## Layout
 
 ```
