@@ -1,0 +1,47 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Recreate signing config
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > muchtoman-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=muchtoman-release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      # No native code, so this single APK covers every ABI. minSdk 24 = Android 7.0+.
+      - run: |
+          ./gradlew assembleRelease \
+            -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
+            -Pmuchtoman.versionCode=${{ github.run_number }}
+
+      - run: |
+          mv app/build/outputs/apk/release/app-release.apk muchtoman-${GITHUB_REF_NAME}.apk
+          gh release create "$GITHUB_REF_NAME" "muchtoman-${GITHUB_REF_NAME}.apk" \
+            --generate-notes --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

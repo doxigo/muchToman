@@ -16,8 +16,9 @@ android {
         applicationId = "com.doxigo.muchtoman"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes these from the git tag; local builds don't care.
+        versionCode = providers.gradleProperty("muchtoman.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("muchtoman.versionName").orNull ?: "1.0"
     }
 
     // Release signing. Create keystore.properties yourself (see README) — it is gitignored

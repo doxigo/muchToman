@@ -155,6 +155,28 @@ copy already on her phone — she would have to uninstall and lose her data firs
 Without `keystore.properties` the release build still compiles; it just comes out unsigned
 rather than silently falling back to the debug key.
 
+## Publishing a release
+
+Push a tag and [release.yml](.github/workflows/release.yml) builds a signed APK and attaches
+it to a GitHub Release:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+One APK covers every device — the app has no native code, so there is nothing to split per
+ABI, and `minSdk 24` means it installs on Android 7.0 and newer. `versionName` comes from
+the tag, `versionCode` from the CI run number, so each release installs over the last.
+
+The workflow needs four repo secrets (Settings → Secrets → Actions):
+
+| Secret | Value |
+| --- | --- |
+| `KEYSTORE_B64` | `base64 -i muchtoman-release.jks \| pbcopy` |
+| `KEYSTORE_STORE_PASSWORD` | from `keystore.properties` |
+| `KEYSTORE_KEY_ALIAS` | from `keystore.properties` |
+| `KEYSTORE_KEY_PASSWORD` | from `keystore.properties` |
+
 ## Adding an asset
 
 **Crypto: nothing to do.** The coin list is served by the Worker from CoinGecko's top 250,
