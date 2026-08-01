@@ -1,36 +1,67 @@
 package com.doxigo.muchtoman
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,17 +74,21 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,33 +103,57 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /** Groups the integer part as she types and shows Persian digits, caret intact. */
 private val GroupedNumber = VisualTransformation { text ->
@@ -111,12 +170,39 @@ private val GroupedNumber = VisualTransformation { text ->
     )
 }
 
+/**
+ * The one inset from the screen edge. The hero field ignores it on purpose — it is the only
+ * thing in the app that runs to the glass — so every other item in the list applies it itself.
+ */
+private val edge = PaddingValues(horizontal = Space.xl)
+
+/**
+ * Where a row sits in its band. Rows in the middle are square so they read as one object with
+ * its neighbours rather than as a card that happens to be adjacent to another card.
+ */
+internal fun bandShape(index: Int, count: Int): Shape {
+    val r = Radius.group
+    return when {
+        count == 1 -> RoundedCornerShape(r)
+        index == 0 -> RoundedCornerShape(topStart = r, topEnd = r)
+        index == count - 1 -> RoundedCornerShape(bottomStart = r, bottomEnd = r)
+        else -> RoundedCornerShape(0.dp)
+    }
+}
+
+/**
+ * What the edit sheet is open on: an existing row, by its [key], or — when she picked an asset
+ * to add — a key nothing holds yet, which is what lets a second تتر be added beside the first
+ * instead of opening it.
+ */
+private data class Editing(val typeId: String, val key: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot(vm: AppVm, activity: FragmentActivity) {
     val state by vm.state.collectAsState()
     var adding by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<Editing?>(null) }
     var settings by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
@@ -134,6 +220,26 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // What is behind the status bar decides the colour of the clock and the signal icons, and
+    // on this screen that changes as she scrolls: the field is dark in both themes, the paper
+    // under it is not. Forcing light icons for the whole list put a white clock on cream once
+    // the field scrolled away; following the theme put a black one on the field. So follow
+    // whichever is actually up there. The report and settings pages start at the background
+    // and simply follow the theme, as does the navigation bar, which never leaves it.
+    val listState = rememberLazyListState()
+    val heroUnderStatusBar by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 }
+    }
+    val paperUnderStatusBar =
+        !state.locked && (settings || report || !heroUnderStatusBar)
+    val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    LaunchedEffect(paperUnderStatusBar, lightScheme) {
+        WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
+            isAppearanceLightStatusBars = paperUnderStatusBar && lightScheme
+            isAppearanceLightNavigationBars = lightScheme
+        }
     }
 
     if (state.locked) {
@@ -187,10 +293,14 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        // The hero field runs off the top of the screen and under the status bar, so the
+        // Scaffold must not hold the content down below it. Every child that needs the inset
+        // takes it itself — the field with statusBarsPadding, the bar below with its own.
+        contentWindowInsets = WindowInsets(0),
         bottomBar = {
             Button(
                 onClick = { adding = true },
-                shape = RoundedCornerShape(Radius.field),
+                shape = RoundedCornerShape(Radius.pill),
                 modifier = Modifier
                     .fillMaxWidth()
                     // A bare Button in bottomBar does not consume the navigation-bar inset
@@ -198,53 +308,74 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                     // 3-button bar on real phones.
                     .navigationBarsPadding()
                     .padding(horizontal = Space.xl, vertical = Space.m)
-                    .height(62.dp),
+                    // A floor, not a fixed height: at large system font sizes the label
+                    // outgrows a fixed box and clips.
+                    .heightIn(min = 62.dp),
             ) {
-                Text("＋  افزودن دارایی", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(Space.s))
+                Text("افزودن دارایی", fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
         },
     ) { pad ->
+      Box(Modifier.fillMaxSize()) {
         // Pulling the list down refetches, exactly like the به‌روزرسانی button — the button
         // stays, because a labelled control is still the one she can be told about by phone.
+        // The pull indicator belongs to the pull alone: init and refreshIfStale() also set
+        // loading, and ungated they dropped an uninvited spinner over the header on every
+        // cold open. The card's own labelled spinner is the receipt for those fetches.
+        var pulled by remember { mutableStateOf(false) }
+        LaunchedEffect(state.refreshing) { if (!state.refreshing) pulled = false }
+        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
-            isRefreshing = state.loading,
-            onRefresh = vm::refresh,
+            isRefreshing = state.refreshing && pulled,
+            onRefresh = { pulled = true; vm.refreshAll() },
+            state = pullState,
+            // The default indicator is a light chip, and it lands on the dark green field.
+            // Dressed in the field's own colours instead, and pushed clear of the status bar.
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = state.refreshing && pulled,
+                    containerColor = Hero.top,
+                    color = Hero.gold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding(),
+                )
+            },
             modifier = Modifier
                 .padding(pad)
                 .fillMaxSize(),
         ) {
+        // No horizontal contentPadding and no vertical arrangement: the hero field is
+        // full-bleed and the rows in a band have to sit flush against each other, so every
+        // item owns its own inset. `edge` is the one place that number lives.
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = Space.xl, end = Space.xl, top = Space.l, bottom = Space.s,
-            ),
-            verticalArrangement = Arrangement.spacedBy(Space.m),
+            contentPadding = PaddingValues(bottom = Space.l),
         ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        // The name turns the header into a greeting; without one the app
-                        // just says what it is.
-                        if (state.name.isNotBlank()) "سلام، ${state.name}" else "چقدر تومن",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { report = true }) {
-                        BarsIcon(MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    IconButton(onClick = { settings = true }) {
-                        Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = "تنظیمات",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            item(key = "hero") {
+                HeroField(
+                    state = state,
+                    usdRate = effective["usd"],
+                    onRefresh = vm::refreshAll,
+                    onReport = { report = true },
+                    onSettings = { settings = true },
+                    onAdd = { adding = true },
+                )
+            }
+
+            // Under the total, not above it: the money is what she opened the app for, and an
+            // update is never the more urgent of the two.
+            state.update?.let { release ->
+                item(key = "update") {
+                    Box(Modifier.padding(edge).padding(top = Space.l)) {
+                        UpdateNote(release, onDismiss = { vm.dismissUpdate(release.name) })
                     }
                 }
             }
-
-            item { TotalCard(state, effective["usd"], vm::refresh) }
 
             if (state.listHoldings.isEmpty()) {
                 item { EmptyHint() }
@@ -272,17 +403,32 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                                 modifier = Modifier.animateItem(),
                             )
                         }
+                    } else {
+                        item(key = "band_top") { Spacer(Modifier.height(Space.xl)) }
                     }
-                    items(held, key = { it.typeId }) { h ->
+                    itemsIndexed(held, key = { _, h -> h.key }) { i, h ->
+                        val type = resolveType(h.typeId, state.coins)
                         HoldingRow(
-                            type = resolveType(h.typeId, state.coins),
+                            type = type,
+                            name = h.nameOr(type.fa),
                             amount = h.amount,
                             rate = effective[h.typeId],
                             excluded = h.excluded,
                             // The bank row is not hers to edit — its amount comes from the
                             // messages — so it opens the accounts behind it instead.
-                            onClick = { if (h.typeId == BANK_ID) banks = true else editing = h.typeId },
+                            onClick = {
+                                if (h.typeId == BANK_ID) banks = true
+                                else editing = Editing(h.typeId, h.key)
+                            },
                             note = if (h.typeId == BANK_ID) bankNote(state) else null,
+                            wallet = h.wallet,
+                            walletRefreshing = h.key in state.refreshingWallets,
+                            walletError = state.walletErrors[h.key],
+                            // A band is one object with rows inside it, not a stack of cards:
+                            // only its outer corners are round, and the rows are divided by a
+                            // hairline that starts where the text does.
+                            shape = bandShape(i, held.size),
+                            divided = i < held.size - 1,
                             modifier = Modifier.animateItem(),
                         )
                     }
@@ -294,6 +440,24 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
             }
         }
         }
+
+        // Once the field has scrolled off, it is paper up there and the list's own headings
+        // were sliding under the clock. A strip in the background colour, arriving exactly
+        // when the status-bar icons flip, gives them something to sit on. It cannot simply
+        // always be there: while the field is up top, this would be a pale band across it.
+        val strip by animateFloatAsState(
+            if (paperUnderStatusBar) 1f else 0f,
+            animationSpec = tween(Motion.fast),
+            label = "statusStrip",
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .alpha(strip)
+                .background(MaterialTheme.colorScheme.background),
+        )
+      }
     }
 
     if (banks) {
@@ -302,6 +466,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
             disabled = state.disabledBanks,
             strangers = state.strangeSenders,
             onAnchor = vm::setBankBalance,
+            onToggle = vm::setBankEnabled,
             onForget = vm::forgetBankAccount,
             onAddNumber = vm::addBankNumber,
             onDismissSender = vm::dismissSender,
@@ -315,30 +480,51 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
             all = catalog(state.coins),
             already = state.holdings.map { it.typeId }.toSet(),
             onDismiss = { adding = false },
-            onPick = { adding = false; editing = it },
+            // A fresh key every time: picking تتر when she already holds some opens an empty
+            // sheet for a second one, rather than her existing balance.
+            onPick = { adding = false; editing = Editing(it, newHoldingId()) },
         )
     }
 
-    editing?.let { typeId ->
-        val held = state.holdings.firstOrNull { it.typeId == typeId }
+    editing?.let { (typeId, key) ->
+        val held = state.holdings.firstOrNull { it.key == key }
         EditSheet(
+            key = key,
             type = resolveType(typeId, state.coins),
-            current = held?.amount,
+            holding = held,
             rate = effective[typeId],
             isOverridden = state.overrides.containsKey(typeId),
             excluded = held?.excluded ?: false,
-            onExcluded = { on -> vm.setExcluded(typeId, on) },
-            onSave = { amount -> vm.setHolding(typeId, amount); editing = null },
-            onDelete = { vm.removeHolding(typeId); editing = null },
+            walletBusy = key in state.refreshingWallets,
+            walletError = state.walletErrors[key],
+            onWalletEdit = { vm.clearWalletError(key) },
+            onExcluded = { on -> vm.setExcluded(key, on) },
+            onSaveManual = { amount -> vm.setHolding(key, typeId, amount); editing = null },
+            onSaveWallet = { option, address, onSuccess ->
+                vm.connectWallet(key, typeId, option, address, onSuccess)
+            },
+            onDelete = { vm.removeHolding(key); editing = null },
             onRate = { r -> vm.setOverride(typeId, r) },
+            onLabel = { name -> vm.setLabel(key, name) },
             onDismiss = { editing = null },
         )
     }
 }
 
-/** The reason the app exists. Everything else on screen defers to it. */
+/**
+ * The reason the app exists, and now the ground the app stands on rather than a card floating
+ * on it: a deep green field that runs to both edges and off the top of the screen, with the
+ * total set in gold across it. Everything below defers to it.
+ */
 @Composable
-private fun TotalCard(state: UiState, usdRate: Double?, onRefresh: () -> Unit) {
+private fun HeroField(
+    state: UiState,
+    usdRate: Double?,
+    onRefresh: () -> Unit,
+    onReport: () -> Unit,
+    onSettings: () -> Unit,
+    onAdd: () -> Unit,
+) {
     val total = state.totals.toman
 
     // The same money in the one other unit everyone here already thinks in. It comes from the
@@ -360,22 +546,72 @@ private fun TotalCard(state: UiState, usdRate: Double?, onRefresh: () -> Unit) {
     // built to avoid. Words carry the warning, not colour alone.
     val stale = state.rates.updatedAt > 0L && now - state.rates.updatedAt > 24 * 60 * 60_000L
 
-    Card(
-        shape = RoundedCornerShape(Radius.hero),
-        colors = CardDefaults.cardColors(containerColor = HeroBg, contentColor = HeroMuted),
-        modifier = Modifier.fillMaxWidth(),
+    // A month is the shortest window the daily snapshots can answer honestly, and the one she
+    // is most likely to be asking about. Absent — not zeroed — until there is a snapshot that
+    // old to compare against.
+    val change = remember(state.history, total) {
+        changeOver(state.history, System.currentTimeMillis() / DAY_MS, 30, total)
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            // Only the bottom corners: the field runs off the top of the screen, and rounding
+            // a corner that is not on screen just eats the status bar.
+            .clip(RoundedCornerShape(bottomStart = Radius.hero, bottomEnd = Radius.hero))
+            .background(Brush.verticalGradient(listOf(Hero.top, Hero.bottom))),
     ) {
-        Column(Modifier.padding(horizontal = Space.xxl - Space.xs, vertical = Space.xxl - Space.xs)) {
-            // Label and dollar figure share the top line, so the corner reads as one sentence
-            // — "مجموع دارایی شما ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather than a
-            // second headline. Muted, one step down in size: the gold figure below is still
-            // the answer, this only says it again in another unit.
+        // One light source, offset past the corner and wider than the field, so it reads as
+        // the surface catching light rather than as a glow painted onto it.
+        Canvas(Modifier.matchParentSize()) {
+            drawRect(
+                Brush.radialGradient(
+                    colors = listOf(Hero.gold.copy(alpha = 0.13f), Color.Transparent),
+                    center = Offset(size.width * 0.88f, size.height * -0.05f),
+                    radius = size.width * 0.95f,
+                ),
+            )
+        }
+
+        Column(
+            Modifier
+                .statusBarsPadding()
+                .padding(start = Space.xl, end = Space.xl, top = Space.s, bottom = Space.xl),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    // The name turns the header into a greeting; without one the app just
+                    // says what it is.
+                    if (state.name.isNotBlank()) "سلام، ${state.name}" else "چقدر تومن",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Hero.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onSettings) {
+                    // Outlined, not filled: it marks no active state, and fill is the
+                    // selected-state variant in Material's icon language.
+                    Icon(
+                        Icons.Outlined.Settings,
+                        contentDescription = "تنظیمات",
+                        tint = Hero.muted,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(Space.m))
+            // Label and dollar figure share a line, so the top of the field reads as one
+            // sentence — "مجموع دارایی شما ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather
+            // than a second headline.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "مجموع دارایی شما",
                     fontSize = 15.sp,
-                    color = HeroMuted,
+                    color = Hero.muted,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 usd?.let {
@@ -385,8 +621,9 @@ private fun TotalCard(state: UiState, usdRate: Double?, onRefresh: () -> Unit) {
                     Text(
                         "≈ \$${bidi(faRate(it))}",
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = HeroMuted,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = ModamFigures,
+                        color = Hero.muted,
                         maxLines = 1,
                         // "$" is read out as punctuation or skipped entirely; the unit has to
                         // survive for anyone listening rather than looking.
@@ -396,80 +633,290 @@ private fun TotalCard(state: UiState, usdRate: Double?, onRefresh: () -> Unit) {
                     )
                 }
             }
-            Spacer(Modifier.height(Space.m))
+
+            Spacer(Modifier.height(Space.xs))
             // Must never wrap: "۳٫۲ میلیارد تومان" broken across two lines reads as a layout
             // bug, and the figure can grow by orders of magnitude. Shrink to fit instead.
-            // The fade on change is the visible receipt that a refresh actually did something.
             // Three decimals here, one everywhere else: the headline is the one figure she
             // watches move, so "۹٫۶۴۳ میلیارد" beats a ۹٫۶ that hides a day's change.
-            AnimatedContent(targetState = "${faCompact(total, 3, pad = true)} تومان", label = "total") { figure ->
+            //
+            // Every refresh lifts the new figure into place from below. It is the visible
+            // receipt that the fetch did something — and the reason the digits are tabular:
+            // without that, one changed digit slides the whole number sideways as it lands.
+            AnimatedContent(
+                targetState = faCompact(total, 3, pad = true),
+                transitionSpec = {
+                    (
+                        slideInVertically(tween(Motion.medium, easing = Motion.enter)) { it / 3 } +
+                            fadeIn(tween(Motion.medium))
+                        ).togetherWith(
+                        slideOutVertically(tween(Motion.fast, easing = Motion.exit)) { -it / 3 } +
+                            fadeOut(tween(Motion.fast))
+                    )
+                },
+                label = "total",
+            ) { figure ->
                 BasicText(
-                    text = figure,
+                    text = buildAnnotatedString {
+                        append(figure)
+                        // The word space carries a size of its own. Inside the shrunk span it
+                        // shrinks with it, and "میلیارد" and "تومان" end up touching.
+                        withStyle(SpanStyle(fontSize = 0.9.em)) { append(" ") }
+                        // The unit is not part of the number and must not be set like one:
+                        // under half the size, a weight down, and dimmed off the gold.
+                        withStyle(
+                            SpanStyle(
+                                fontSize = 0.42.em,
+                                fontWeight = FontWeight.Bold,
+                                color = Hero.gold.copy(alpha = 0.75f),
+                            ),
+                        ) { append("تومان") }
+                    },
                     maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 24.sp, maxFontSize = 44.sp),
-                    style = TextStyle(
-                        fontFamily = Vazir,
-                        fontWeight = FontWeight.Bold,
-                        color = HeroAccent,
-                    ),
+                    autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 60.sp),
+                    style = figureStyle(Hero.gold, FontWeight.Black),
                 )
             }
+
             // Digits are quick to scan but easy to misread by a factor of ten. The words
             // are the check on that.
             faWordsToman(total)?.let { words ->
                 Text(
                     words,
                     fontSize = 15.sp,
-                    lineHeight = 24.sp,
-                    color = Color.White.copy(alpha = 0.92f),
+                    lineHeight = 25.sp,
+                    color = Hero.strong.copy(alpha = 0.93f),
                     modifier = Modifier.padding(top = Space.s),
                 )
             }
             Text(
                 "${faNumber(total)} تومان",
                 fontSize = 13.sp,
-                color = HeroMuted,
+                fontFamily = ModamFigures,
+                color = Hero.muted,
                 modifier = Modifier.padding(top = Space.xs),
             )
 
-            Spacer(Modifier.height(Space.xl))
-            HorizontalDivider(color = HeroMuted.copy(alpha = 0.22f))
+            change?.let {
+                Spacer(Modifier.height(Space.m))
+                ChangePill(it, onClick = onReport)
+            }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = Space.xs),
-            ) {
-                Text(
-                    when {
-                        state.error != null && state.rates.updatedAt == 0L -> "نرخ‌ها دریافت نشد"
-                        stale -> "⚠️ نرخ‌ها قدیمی است: " + faAgo(state.rates.updatedAt, now)
-                        else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
-                    },
-                    fontSize = 14.sp,
-                    color = if (stale) HeroAccent else HeroMuted,
+            Spacer(Modifier.height(Space.xl))
+            Row(Modifier.fillMaxWidth()) {
+                HeroAction(
+                    label = "افزودن",
+                    icon = Icons.Rounded.Add,
+                    onClick = onAdd,
                     modifier = Modifier.weight(1f),
                 )
-                Crossfade(targetState = state.loading, label = "refresh") { loading ->
-                    if (loading) {
-                        Box(Modifier.height(40.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = HeroAccent,
-                            )
-                        }
-                    } else {
-                        TextButton(
-                            onClick = onRefresh,
-                            colors = ButtonDefaults.textButtonColors(contentColor = HeroAccent),
-                        ) { Text("به‌روزرسانی", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
-                    }
-                }
+                HeroAction(
+                    label = "گزارش",
+                    onClick = onReport,
+                    modifier = Modifier.weight(1f),
+                ) { BarsIcon(Hero.strong) }
+                HeroAction(
+                    label = "به‌روزرسانی",
+                    icon = Icons.Rounded.Refresh,
+                    spinning = state.refreshing,
+                    enabled = !state.refreshing,
+                    onClick = onRefresh,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(Space.xl))
+            HorizontalDivider(color = Hero.hairline)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = Space.m),
+            ) {
+                val failed = state.error != null && state.rates.updatedAt == 0L
+                // Colour confirms; the words carry it. A dot on its own would be the one
+                // thing in this app that says "something is wrong" in hue alone.
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                failed -> Hero.warn
+                                stale -> Hero.warn
+                                else -> Hero.mint
+                            },
+                        ),
+                )
+                Spacer(Modifier.width(Space.s))
+                Text(
+                    when {
+                        failed -> "نرخ‌ها دریافت نشد؛ اتصال اینترنت را بررسی کنید"
+                        stale -> "نرخ‌ها قدیمی است — " + faAgo(state.rates.updatedAt, now)
+                        else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
+                    },
+                    fontSize = 13.sp,
+                    // Not gold: inside this field gold is the answer and the action, and a
+                    // warning wearing it read as a second call to act.
+                    color = if (stale || failed) Hero.warn else Hero.muted,
+                    modifier = Modifier.weight(1f),
+                )
             }
             if (state.error != null && state.rates.updatedAt > 0L) {
-                Text("اتصال برقرار نشد؛ نرخ‌های قبلی نمایش داده می‌شود.", fontSize = 13.sp, color = HeroMuted)
+                Text(
+                    "اتصال برقرار نشد؛ نرخ‌های قبلی نمایش داده می‌شود.",
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                    color = Hero.muted,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
             }
         }
+    }
+}
+
+/**
+ * One circular action on the field. Revolut's device, and the reason it works: the three
+ * things she might do next sit directly under the number that prompts them, all three the
+ * same size, so none of them is the app arguing for itself.
+ */
+@Composable
+private fun HeroAction(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    spinning: Boolean = false,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit = {},
+) {
+    // Only while it actually spins: an infinite transition left running costs a frame
+    // callback for ever, on the one screen that is open all day.
+    val angle = if (spinning) {
+        val spin = rememberInfiniteTransition(label = "spin")
+        spin.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                tween(900, easing = LinearEasing), RepeatMode.Restart,
+            ),
+            label = "angle",
+        ).value
+    } else {
+        0f
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(Radius.card))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(vertical = Space.s)
+            .semantics { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(Hero.well),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = Hero.strong,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer { rotationZ = -angle },
+                )
+            } else {
+                content()
+            }
+        }
+        Spacer(Modifier.height(Space.s))
+        Text(
+            label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Hero.muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * How the total has moved in a month, and the way into the report. Percent leads because it is
+ * the figure that survives being compared to last month's; the Toman amount is one tap away.
+ */
+@Composable
+private fun ChangePill(change: Change, onClick: () -> Unit) {
+    val flat = abs(change.delta) < 1
+    val gained = change.delta > 0
+    val tone = when {
+        flat -> Hero.muted
+        gained -> Hero.mint
+        else -> Hero.warn
+    }
+    val figure = when {
+        flat -> "بدون تغییر"
+        change.percent != null -> "${faDecimal(abs(change.percent), 1)}٪"
+        else -> faCompact(abs(change.delta))
+    }
+    val tail = when {
+        flat -> "در ۳۰ روز گذشته"
+        gained -> "بیشتر از ۳۰ روز پیش"
+        else -> "کمتر از ۳۰ روز پیش"
+    }
+
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(role = Role.Button, onClick = onClick)
+            // The pill is 32dp tall on purpose — it must not compete with the action circles
+            // below it — so the row around it carries the touch target.
+            .heightIn(min = 48.dp)
+            .padding(end = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(tone.copy(alpha = 0.18f))
+                .padding(horizontal = Space.m, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!flat) {
+                TrendCaret(up = gained, tint = tone)
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                figure,
+                fontSize = 14.sp,
+                fontFamily = ModamFigures,
+                fontWeight = FontWeight.Bold,
+                color = tone,
+            )
+        }
+        Spacer(Modifier.width(Space.s))
+        Text(tail, fontSize = 13.sp, color = Hero.muted, maxLines = 1)
+    }
+}
+
+/** Modam has no ▲ or ▼, and a drawn one is crisper at this size than any font would be anyway. */
+@Composable
+internal fun TrendCaret(up: Boolean, tint: Color, box: Dp = 9.dp) {
+    Canvas(Modifier.size(box)) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            if (up) {
+                moveTo(w / 2f, 0f); lineTo(w, h); lineTo(0f, h)
+            } else {
+                moveTo(0f, 0f); lineTo(w, 0f); lineTo(w / 2f, h)
+            }
+            close()
+        }
+        drawPath(path, tint)
     }
 }
 
@@ -477,18 +924,71 @@ private fun TotalCard(state: UiState, usdRate: Double?, onRefresh: () -> Unit) {
  * Three rising bars for the report button — drawn, because the icon set material3 already
  * ships has no chart glyph, and one emoji in a row of monochrome icons reads as a sticker.
  */
+private fun openUrl(context: Context, url: String): Boolean =
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
+
+/**
+ * Nothing updates a sideloaded app on its own, so this line is the entire update path: it opens
+ * the release page and she installs the APK herself. Tapping is the only thing it does — no
+ * download, no installer permission, nothing that could touch the phone without her.
+ */
+@Composable
+private fun UpdateNote(release: Release, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    Card(
+        onClick = { openUrl(context, release.url) },
+        shape = RoundedCornerShape(Radius.card),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = Space.l, top = Space.m, bottom = Space.m),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    // Latin digits, and bidi() so the runs do not reorder inside the sentence:
+                    // this is the tag she will see on the page the card opens, not a quantity.
+                    "نسخهٔ ${bidi(release.name)} منتشر شد",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    "برای دریافت فایل نصب، اینجا را بزنید.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+            }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                ),
+            ) { Text("بعداً") }
+        }
+    }
+}
+
 @Composable
 private fun BarsIcon(tint: Color) {
+    // 24dp box, 2dp inset: Material icons keep ~2dp of built-in padding, so drawing
+    // edge-to-edge at 22dp made the bars read heavier than the gear beside them.
     Canvas(
         Modifier
-            .size(22.dp)
+            .size(24.dp)
             .semantics { contentDescription = "گزارش دارایی" },
     ) {
-        val w = size.width * 0.2f
-        val r = CornerRadius(w / 2f)
-        drawRoundRect(tint, Offset(0f, size.height * 0.45f), Size(w, size.height * 0.55f), r)
-        drawRoundRect(tint, Offset((size.width - w) / 2f, size.height * 0.2f), Size(w, size.height * 0.8f), r)
-        drawRoundRect(tint, Offset(size.width - w, 0f), Size(w, size.height), r)
+        inset(2.dp.toPx()) {
+            val w = size.width * 0.2f
+            val r = CornerRadius(w / 2f)
+            drawRoundRect(tint, Offset(0f, size.height * 0.45f), Size(w, size.height * 0.55f), r)
+            drawRoundRect(tint, Offset((size.width - w) / 2f, size.height * 0.2f), Size(w, size.height * 0.8f), r)
+            drawRoundRect(tint, Offset(size.width - w, 0f), Size(w, size.height), r)
+        }
     }
 }
 
@@ -499,17 +999,29 @@ private fun BarsIcon(tint: Color) {
  */
 @Composable
 private fun AssetIcon(type: AssetType, size: Dp = 44.dp) {
+    // Tinted by kind rather than one grey for all. It only ever shows behind the emoji and
+    // letter fallbacks — a coin's own logo covers it — which is exactly where a list of
+    // eleven identical grey discs was hardest to scan.
+    val scheme = MaterialTheme.colorScheme
+    val tint = when (type.kind) {
+        Kind.CASH -> scheme.primaryContainer
+        Kind.FIAT -> scheme.tertiaryContainer
+        Kind.GOLD, Kind.COIN -> scheme.secondaryContainer
+        Kind.CRYPTO -> scheme.surfaceVariant
+    }
     Box(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(tint),
         contentAlignment = Alignment.Center,
     ) {
         val letters = @Composable {
+            // Three letters at 12sp, never four at 9: this badge is the only identity a coin
+            // has until its logo loads, and 9sp is below the floor an older eye can read.
             Text(
-                type.id.take(4).uppercase(),
-                fontSize = if (type.id.length > 3) 9.sp else 11.sp,
+                type.id.take(3).uppercase(),
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -524,14 +1036,28 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp) {
                 modifier = Modifier.size(size * 0.52f),
             )
             type.iconUrl != null -> {
+                var success by remember(type.iconUrl) { mutableStateOf(false) }
                 var loaded by remember(type.iconUrl) { mutableStateOf(false) }
                 if (!loaded) letters()
+                // crossfade: Coil swaps hard by default, and a list of logos popping in
+                // over their letters reads as flicker.
                 AsyncImage(
-                    model = type.iconUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(type.iconUrl)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = null,
                     modifier = Modifier.size(size * 0.62f),
-                    onState = { loaded = it is AsyncImagePainter.State.Success },
+                    onState = { success = it is AsyncImagePainter.State.Success },
                 )
+                // Success is when the fade STARTS; the letters leave after it lands, or
+                // the circle shows exactly the hole they exist to cover.
+                LaunchedEffect(success) {
+                    if (success) {
+                        delay(250)
+                        loaded = true
+                    }
+                }
             }
             type.emoji != null -> Text(type.emoji, fontSize = (size.value * 0.52f).sp)
             else -> letters()
@@ -551,10 +1077,22 @@ private fun bankNote(state: UiState): String {
     // the warning off the end of a single line, which is the half it cannot afford to lose.
     val counted = "${faNumber(live.size.toDouble())} حساب"
     return when {
-        live.any { !it.trusted } -> "$counted  ·  نیاز به بررسی"
-        off > 0 -> "$counted  ·  ${faNumber(off.toDouble())} خاموش"
+        live.any { !it.trusted } -> "$counted  •  نیاز به بررسی"
+        off > 0 -> "$counted  •  ${faNumber(off.toDouble())} خاموش"
         else -> counted
     }
+}
+
+// Material3's sheet hands whatever fling velocity its content leaves over to settle(), even
+// when the sheet is already fully expanded and the leftover points further up — which kicks
+// the settle spring from a standstill and bounces the sheet past its anchor and back. That is
+// the jump every list gives at the end of its scroll. Upward leftovers have nowhere to go
+// here (onPreFling already pulls a half-dragged sheet back up), so swallow them; downward
+// ones still fling the sheet closed.
+// ponytail: attach to each sheet's scrolling content — worth a shared wrapper at sheet four.
+internal val SheetFlingGuard = object : NestedScrollConnection {
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
+        if (available.y < 0f) available else Velocity.Zero
 }
 
 /**
@@ -569,6 +1107,7 @@ private fun BankSheet(
     disabled: Set<String>,
     strangers: List<StrangeSender>,
     onAnchor: (String, Double) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
     onForget: (String) -> Unit,
     onAddNumber: (String, String) -> Unit,
     onDismissSender: (String) -> Unit,
@@ -576,6 +1115,7 @@ private fun BankSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var fixing by remember { mutableStateOf<String?>(null) }
@@ -588,14 +1128,20 @@ private fun BankSheet(
     ) {
         Column(
             Modifier
+                .nestedScroll(SheetFlingGuard)
                 .fillMaxHeight(0.88f)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = Space.xl),
         ) {
-            Text("حساب‌های بانکی", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                "این مبلغ‌ها از پیامک بانک‌ها خوانده می‌شود. برای روشن و خاموش کردن هر بانک، به تنظیمات بروید.",
+                "حساب‌های بانکی",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                "این مبلغ‌ها از پیامک بانک‌ها خوانده می‌شود. بانکی که خاموش کنید در مجموع حساب نمی‌شود.",
                 fontSize = 13.sp,
                 color = muted,
                 lineHeight = 20.sp,
@@ -617,7 +1163,9 @@ private fun BankSheet(
                         fixing = fixing == acc.key,
                         onFix = { fixing = if (fixing == acc.key) null else acc.key },
                         onAnchor = { v -> onAnchor(acc.key, v); fixing = null },
+                        onToggle = { on -> onToggle(acc.bank, on) },
                         onForget = { onForget(acc.key) },
+                        onOpenSms = { openSmsThread(context, acc.sender) },
                     )
                 }
 
@@ -629,6 +1177,7 @@ private fun BankSheet(
                     val bankFa = runCatching { Bank.valueOf(stranger.bank) }
                         .getOrDefault(Bank.OTHER).fa
                     Card(
+                        onClick = { openSmsThread(context, stranger.sender) },
                         shape = RoundedCornerShape(Radius.card),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -636,12 +1185,16 @@ private fun BankSheet(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(Modifier.padding(Space.l)) {
-                            Text(
-                                "پیامکی مانند پیامک‌های $bankFa از شماره‌ای آمده که در فهرست نیست:",
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
+                            Row(verticalAlignment = Alignment.Top) {
+                                BankLogo(stranger.bank)
+                                Spacer(Modifier.width(Space.s))
+                                Text(
+                                    "پیامکی مانند پیامک‌های $bankFa از شماره‌ای آمده که در فهرست نیست:",
+                                    fontSize = 13.sp,
+                                    lineHeight = 20.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
                             Text(
                                 bidi(stranger.sender),
                                 fontSize = 16.sp,
@@ -658,7 +1211,20 @@ private fun BankSheet(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(top = Space.xs),
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "باز کردن گفتگو در پیامک‌ها",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = TextDecoration.Underline,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(top = Space.s),
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                // Air between the confirm and the irreversible dismiss —
+                                // borderless buttons at zero gap invite the edge mis-tap.
+                                horizontalArrangement = Arrangement.spacedBy(Space.m),
+                            ) {
                                 TextButton(
                                     onClick = { onAddNumber(stranger.bank, stranger.sender) },
                                     modifier = Modifier.weight(1f),
@@ -679,10 +1245,16 @@ private fun BankSheet(
                                     if (sure) onDismissSender(stranger.sender) else sure = true
                                 }) {
                                     Text(
-                                        if (sure) "مطمئن هستید؟" else "نادیده گرفتن",
+                                        // Named consequence, like every other second tap in
+                                        // the app — and announced, so the armed state exists
+                                        // for someone listening too.
+                                        if (sure) "برای نادیده گرفتن دوباره بزنید" else "نادیده گرفتن",
                                         fontSize = 14.sp,
                                         fontWeight = if (sure) FontWeight.Bold else FontWeight.Normal,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
+                                        modifier = Modifier.semantics {
+                                            liveRegion = LiveRegionMode.Polite
+                                        },
                                     )
                                 }
                             }
@@ -707,12 +1279,14 @@ private fun BankSheet(
                             fontSize = 14.sp,
                             fontWeight = if (sure) FontWeight.Bold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
                     }
                 }
             }
         }
     }
+
 }
 
 @Composable
@@ -723,7 +1297,9 @@ private fun BankAccountRow(
     fixing: Boolean,
     onFix: () -> Unit,
     onAnchor: (Double) -> Unit,
+    onToggle: (Boolean) -> Unit,
     onForget: () -> Unit,
+    onOpenSms: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     var draft by remember(account.key) { mutableStateOf("") }
@@ -733,12 +1309,19 @@ private fun BankAccountRow(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(Space.l).alpha(if (off) 0.55f else 1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(Space.l)) {
+            // Off dims by colour, not by a blanket alpha: alpha over the whole row took the
+            // 12sp caption — the line that explains the state — below every contrast floor.
+            // Top, and the unit inline, for the same reason the list row outside this sheet
+            // does both: the balance belongs on the account's own line, not floating beside
+            // the caption under it.
+            Row(verticalAlignment = Alignment.Top) {
+                BankLogo(account.bank)
+                Spacer(Modifier.width(Space.s))
                 Column(Modifier.weight(1f)) {
                     RowTitle(
                         account.bankFa,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (off) muted else MaterialTheme.colorScheme.onSurface,
                         max = 17.sp,
                     )
                     Text(
@@ -746,7 +1329,7 @@ private fun BankAccountRow(
                             account.mask.takeIf { it.isNotBlank() }?.let { bidi(it) },
                             faAgo(account.updatedAt, now),
                             "خاموش".takeIf { off },
-                        ).joinToString("  ·  "),
+                        ).joinToString("  •  "),
                         fontSize = 12.sp,
                         color = muted,
                         maxLines = 1,
@@ -754,9 +1337,38 @@ private fun BankAccountRow(
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                Column(horizontalAlignment = Alignment.Start) {
-                    RowAmount(account.balance, color = MaterialTheme.colorScheme.onSurface)
-                    Text("تومان", fontSize = 11.sp, color = muted)
+                Spacer(Modifier.width(Space.s))
+                RowAmount(
+                    account.balance,
+                    color = if (off) muted else MaterialTheme.colorScheme.onSurface,
+                    struck = off,
+                    unit = "تومان",
+                )
+            }
+
+            // The same switch, with the same words, as setting an asset aside in its edit
+            // sheet — one habit covers both. toggleable on the row merges label and switch
+            // into one named control, and makes the whole line the hit target. Only for an
+            // anchored account: an unanchored one is never in the total, and a switch
+            // saying "counted" right above the red caption saying "not counted" would be
+            // the card contradicting itself.
+            if (account.anchored) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .toggleable(value = !off, role = Role.Switch, onValueChange = onToggle)
+                        // With onCheckedChange = null the Switch no longer carries its own
+                        // 48dp minimum; the row has to.
+                        .heightIn(min = 48.dp)
+                        .padding(top = Space.xs),
+                ) {
+                    Text(
+                        "در مجموع حساب شود",
+                        fontSize = 14.sp,
+                        color = if (off) muted else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = !off, onCheckedChange = null)
                 }
             }
 
@@ -766,7 +1378,7 @@ private fun BankAccountRow(
                 Text(
                     if (!account.anchored)
                         "این عدد فقط جمع تراکنش‌هاست، نه موجودی واقعی، و در مجموع حساب نشده " +
-                            "است. مانده‌ی حساب را وارد کنید تا شمرده شود."
+                            "است. ماندهٔ حساب را وارد کنید تا در مجموع حساب شود."
                     else "این عدد از پیامکی خوانده شده که مطمئن نبودیم. اگر درست نیست، اصلاحش کنید.",
                     fontSize = 12.sp,
                     lineHeight = 19.sp,
@@ -776,21 +1388,37 @@ private fun BankAccountRow(
             }
 
             if (fixing) {
+                // A label that stays, not a placeholder that vanishes at the first digit —
+                // while she types a balance, the unit must still be on screen.
+                Text(
+                    "مانده به تومان",
+                    fontSize = 14.sp,
+                    color = muted,
+                    modifier = Modifier.padding(top = Space.s),
+                )
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
                     singleLine = true,
                     visualTransformation = GroupedNumber,
-                    placeholder = { Text("مانده به تومان", fontSize = 14.sp) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    supportingText = if (draft.isNotBlank() && parseAmount(draft) == null) ({
+                        Text("این عدد خوانده نمی‌شود؛ فقط رقم وارد کنید.")
+                    }) else null,
                     shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = Space.s),
+                        .padding(top = Space.xs)
+                        .semantics { contentDescription = "مانده به تومان" },
                 )
             }
 
             Row(Modifier.padding(top = Space.xs)) {
+                if (account.sender.isNotBlank()) {
+                    TextButton(onClick = onOpenSms) {
+                        Text("دیدن پیامک‌ها", fontSize = 14.sp)
+                    }
+                }
                 if (fixing) {
                     TextButton(
                         onClick = { parseAmount(draft)?.let(onAnchor) },
@@ -827,19 +1455,23 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
     Row(
         modifier
             .fillMaxWidth()
+            .padding(edge)
             // A heading belongs to what follows it — more air above than below, as in the
-            // picker. The 4dp inset is optical: flush against a 22dp corner radius, the label
-            // reads as hanging outside the cards it heads.
-            .padding(top = Space.l, bottom = 0.dp, start = Space.xs, end = Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
+            // picker. The 4dp inset is optical: flush against a 28dp corner radius, the label
+            // reads as hanging outside the band it heads.
+            .padding(top = Space.xxl, bottom = Space.m, start = Space.xs, end = Space.xs),
+        verticalAlignment = Alignment.Bottom,
     ) {
         Text(
             title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = muted,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
-            modifier = Modifier.weight(1f),
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
         )
         subtotal?.let {
             Text(
@@ -847,9 +1479,11 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
                 // that add up to ۱٫۴۰۹ looks like one of the two is wrong.
                 "${faCompact(it, 3, pad = true)} تومان",
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
+                fontFamily = ModamFigures,
+                fontWeight = FontWeight.SemiBold,
                 color = muted,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -869,37 +1503,69 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
  * little smaller. Ellipsis stays as the last resort, below which shrinking would not help.
  */
 @Composable
-private fun RowTitle(text: String, color: Color, max: TextUnit = 18.sp) {
+private fun RowTitle(
+    text: String,
+    color: Color,
+    max: TextUnit = 18.sp,
+    modifier: Modifier = Modifier,
+) {
     BasicText(
         text = text,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = max),
-        style = TextStyle(fontFamily = Vazir, fontWeight = FontWeight.Bold, color = color),
+        modifier = modifier,
+        style = TextStyle(fontFamily = Modam, fontWeight = FontWeight.Bold, color = color),
     )
 }
 
 @Composable
-private fun RowAmount(toman: Double, color: Color, struck: Boolean = false) {
+private fun RowAmount(
+    toman: Double,
+    color: Color,
+    struck: Boolean = false,
+    /**
+     * Set inline, the way the hero card sets it, rather than stacked underneath. A caption on
+     * its own line makes the figure two lines tall, and everything the row says about the
+     * asset then starts a full line-height below the name it belongs to — the name ends up
+     * stranded at the top of the card with a hole under it.
+     */
+    unit: String? = null,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     BasicText(
-        text = faCompact(toman, 3, pad = true),
+        text = buildAnnotatedString {
+            append(faCompact(toman, 3, pad = true))
+            // em, not sp: the whole line is shrink-to-fit, and the unit has to shrink with the
+            // figure or it overtakes it on the row where the figure is smallest.
+            unit?.let {
+                // The space stays near full size, or it shrinks with the unit and the two
+                // words touch. See the hero figure, which has the same seam.
+                append(" ")
+                withStyle(SpanStyle(fontSize = 0.7.em, fontWeight = FontWeight.Medium, color = muted)) {
+                    append(it)
+                }
+            }
+        },
         maxLines = 1,
-        autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 18.sp),
+        autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 19.sp),
         // Bounded so the figure, not the asset's name, is what gives way on a narrow phone:
         // "۵۵۹٫۵۰۰ میلیون" is half again as wide as "۵۵۹٫۵ میلیون" was.
-        modifier = Modifier.widthIn(max = 116.dp),
-        style = TextStyle(
-            fontFamily = Vazir,
-            fontWeight = FontWeight.Bold,
-            color = color,
+        modifier = Modifier.widthIn(max = if (unit == null) 116.dp else 140.dp),
+        style = figureStyle(color, FontWeight.Bold).copy(
             textDecoration = if (struck) TextDecoration.LineThrough else null,
         ),
     )
 }
 
+private fun shortWalletAddress(address: String): String =
+    if (address.length <= 15) address else "${address.take(7)}...${address.takeLast(5)}"
+
 @Composable
 private fun HoldingRow(
     type: AssetType,
+    /** Her own name for this holding where she gave it one, the asset's own where she did not. */
+    name: String,
     amount: Double,
     rate: Double?,
     excluded: Boolean,
@@ -907,87 +1573,202 @@ private fun HoldingRow(
     modifier: Modifier = Modifier,
     /** Replaces the amount-and-rate line, for a row whose amount did not come from her. */
     note: String? = null,
+    wallet: WalletLink? = null,
+    walletRefreshing: Boolean = false,
+    walletError: String? = null,
+    shape: Shape = RoundedCornerShape(Radius.group),
+    divided: Boolean = false,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val strong = MaterialTheme.colorScheme.onSurface
 
-    // No gesture here: setting an asset aside lives behind the row's edit sheet, as a
+    // No card, no elevation, no gap: a band of holdings is one object with rows inside it.
+    // Individual cards gave every row the same weight as the band it belonged to, and eleven
+    // of them read as eleven separate announcements rather than one list.
+    //
+    // No gesture either: setting an asset aside lives behind the row's edit sheet, as a
     // labelled switch. Swipes proved too easy to trigger scrolling the list and too hard
     // to discover on purpose.
-    Card(
-        shape = RoundedCornerShape(Radius.card),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = modifier
+    Box(
+        modifier
+            .padding(edge)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
-            .clickable(onClick = onClick),
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
+        // Set-aside dims by colour, not a blanket alpha: alpha over the whole row took the
+        // 12sp caption that explains the state below every contrast floor.
+        // Top, not centre: the badge belongs to the name, and centring it against a row that
+        // may carry two more lines under that name left it floating beside the wrong one.
+        // 44dp is the height of the name and the line below it, so it spans exactly the pair.
         Row(
-            Modifier
-                .padding(horizontal = Space.l, vertical = Space.l - Space.xs)
-                .alpha(if (excluded) 0.55f else 1f),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.padding(horizontal = Space.l, vertical = Space.l),
+            verticalAlignment = Alignment.Top,
         ) {
-            AssetIcon(type)
+            Box(Modifier.alpha(if (excluded) 0.55f else 1f)) { AssetIcon(type) }
             Spacer(Modifier.width(Space.m))
 
             Column(Modifier.weight(1f)) {
-                RowTitle(type.fa, color = MaterialTheme.colorScheme.onSurface)
-                val held = "${faDecimal(amount, type.dec)} ${bidi(type.unitFa)}"
-                Text(
-                    // "نرخ" rather than "هر <unit>": one less latin run, and short enough
-                    // that a long ticker cannot push the line onto a second row.
-                    when {
-                        note != null -> note
-                        // Says how the figure got here, which is the whole difference between
-                        // this row and the bank one right below it.
-                        type.id == TOMAN_ID -> "دستی وارد می‌شود"
-                        rate == null -> held
-                        else -> "$held  ·  نرخ ${faRate(rate)}"
-                    },
-                    fontSize = 13.sp,
-                    color = muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-
-            Spacer(Modifier.width(Space.s))
-            Column(horizontalAlignment = Alignment.Start) {
-                when {
-                    excluded -> {
-                        if (rate != null) {
-                            RowAmount(amount * rate, color = muted, struck = true)
+                // The hero's own device, one size down: the name and the figure share the top
+                // line, so the row reads as one sentence instead of two blocks that happen to
+                // be next to each other. It also hands every line below it the full width of
+                // the block rather than the strip left over beside the figure — which is what
+                // the rate used to be truncated into.
+                Row(verticalAlignment = Alignment.Top) {
+                    RowTitle(
+                        name,
+                        color = if (excluded) muted else strong,
+                        // One step under the figure. The money is the answer this row exists
+                        // to give; the name only says which money.
+                        max = 17.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(Space.s))
+                    // End, not Start: the figures are already flush with the card's edge, so
+                    // this is the only alignment that keeps a set-aside row's caption in the
+                    // same column instead of hanging it off the ragged inner end of a number.
+                    Column(horizontalAlignment = Alignment.End) {
+                        when {
+                            excluded -> {
+                                if (rate != null) {
+                                    RowAmount(amount * rate, color = muted, struck = true)
+                                }
+                                // Stacked, not inline: this one is the row's state, not the
+                                // figure's unit, and it has to survive being read on its own.
+                                Text("حساب نشده", fontSize = 12.sp, color = muted)
+                            }
+                            rate == null ->
+                                Text("نرخ ندارد", fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
+                            else -> RowAmount(amount * rate, color = strong, unit = "تومان")
                         }
-                        Text("حساب نشده", fontSize = 12.sp, color = muted)
-                    }
-                    rate == null ->
-                        Text("نرخ ندارد", fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
-                    else -> {
-                        RowAmount(amount * rate, color = MaterialTheme.colorScheme.onSurface)
-                        Text("تومان", fontSize = 12.sp, color = muted)
                     }
                 }
+
+                val held = "${faHeld(amount, type.dec)} ${bidi(type.unitFa)}"
+                // null when this line is a sentence rather than an amount-and-rate pair.
+                val shownRate = rate?.takeIf { note == null && type.id != TOMAN_ID }?.let(::faRate)
+                if (shownRate == null) {
+                    Text(
+                        when {
+                            note != null -> note
+                            // Says how the figure got here, which is the whole difference
+                            // between this row and the bank one right below it.
+                            type.id == TOMAN_ID -> "دستی وارد می‌شود"
+                            else -> held
+                        },
+                        fontSize = 13.sp,
+                        color = muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                } else {
+                    // The rate carries no weight, so Row measures it first and gives it the
+                    // width it asks for: when the line cannot hold both, the amount she typed
+                    // herself is what gives way, never the rate she opened the app to read.
+                    // One string, not two Texts — the label and its figure have to stay in one
+                    // bidi run or the separator drifts off the end of the line.
+                    Row(Modifier.padding(top = 2.dp)) {
+                        Text(
+                            held,
+                            fontSize = 13.sp,
+                            color = muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            buildAnnotatedString {
+                                // "نرخ" rather than "هر <unit>": one less latin run, and short
+                                // enough that a long ticker cannot push the line onto a second.
+                                withStyle(SpanStyle(color = muted)) { append("•  نرخ ") }
+                                // Full strength and a weight up — the one figure on this line
+                                // worth finding at a glance, and the reason the line exists.
+                                withStyle(SpanStyle(color = strong, fontWeight = FontWeight.Medium)) {
+                                    append(shownRate)
+                                }
+                            },
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(start = Space.s),
+                        )
+                    }
+                }
+
+                wallet?.let {
+                    // One line, not two: the address is a "this is tracked for you" mark, not
+                    // something she can check by reading — and stacked, it was the third loose
+                    // block that made the card read as pieces rather than a row.
+                    val visibleStatus = when {
+                        walletRefreshing -> "در حال دریافت از ${it.networkFa}"
+                        walletError != null -> "به‌روز نشد  •  موجودی قبلی"
+                        else -> "${it.networkFa}  •  ${bidi(shortWalletAddress(it.address))}"
+                    }
+                    val spokenStatus = when {
+                        walletRefreshing -> "در حال دریافت موجودی از ${it.networkFa}"
+                        walletError != null -> "موجودی به‌روز نشد؛ موجودی قبلی نمایش داده شده"
+                        else -> "ردیابی خودکار از ${it.networkFa}، آدرس ${it.address}"
+                    }
+                    Text(
+                        visibleStatus,
+                        fontSize = 12.sp,
+                        color = if (walletError != null) MaterialTheme.colorScheme.error else muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .semantics { contentDescription = spokenStatus },
+                    )
+                }
             }
+        }
+        // Inset to where the text starts, not to the card edge: a rule that runs under the
+        // badge cuts the row in half instead of separating it from the next one. Only between
+        // rows — a rule under the last one is the band's own bottom edge drawn twice.
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l + 44.dp + Space.m),
+            )
         }
     }
 }
 
+/**
+ * It names the button rather than repeating it. The bar at the bottom is on screen the whole
+ * time this hint is, and two identical green pills one above the other read as a mistake —
+ * the reader's question becomes which of them is the real one.
+ */
 @Composable
 private fun EmptyHint() {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 52.dp),
+            .padding(edge)
+            .padding(top = Space.huge, bottom = Space.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("👛", fontSize = 60.sp)
-        Spacer(Modifier.height(Space.l))
-        Text("هنوز چیزی اضافه نکرده‌اید", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainer),
+            contentAlignment = Alignment.Center,
+        ) { Text("👛", fontSize = 40.sp) }
+        Spacer(Modifier.height(Space.xl))
+        Text(
+            "هنوز چیزی اضافه نکرده‌اید",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
         Spacer(Modifier.height(Space.s))
         Text(
-            "با دکمهٔ پایین، پول نقد یا دلار یا طلا و هر دارایی دیگری را اضافه کنید.",
+            "با دکمهٔ پایین، پول نقد یا دلار یا طلا و سکه و رمزارز را اضافه کنید تا مجموعشان اینجا بیاید.",
             fontSize = 15.sp,
+            lineHeight = 25.sp,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -997,12 +1778,22 @@ private fun EmptyHint() {
 @Composable
 private fun MissingNote(missing: List<String>, coins: List<Coin>) {
     val names = missing.map { resolveType(it, coins).fa }.distinct().joinToString("، ")
-    Text(
-        "نرخ $names در دسترس نیست و در مجموع حساب نشده است. می‌توانید نرخ را دستی وارد کنید.",
-        fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = Space.xs, vertical = Space.s),
-    )
+    Row(
+        Modifier
+            .padding(edge)
+            .padding(top = Space.l)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.card))
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .padding(Space.l),
+    ) {
+        Text(
+            "نرخ $names در دسترس نیست و در مجموع حساب نشده است. می‌توانید نرخ را دستی وارد کنید.",
+            fontSize = 13.sp,
+            lineHeight = 21.sp,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+    }
 }
 
 /**
@@ -1049,22 +1840,31 @@ private fun PickTypeSheet(
             // the sheet grows to the whole screen, loses its corners and scrim, and every
             // drag re-measures the content.
             Modifier
+                .nestedScroll(SheetFlingGuard)
                 .fillMaxHeight(0.88f)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = Space.xl)
         ) {
-            Text("چه چیزی اضافه می‌کنید؟", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "چه چیزی اضافه می‌کنید؟",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.semantics { heading() },
+            )
 
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                placeholder = { Text("جستجو…", fontSize = 15.sp) },
+                // No fontSize on the placeholder: it sits in the same slot as the value and
+                // must not shrink the moment she starts typing.
+                placeholder = { Text("جستجو…") },
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = Space.m, bottom = Space.xs),
+                    .padding(top = Space.m, bottom = Space.xs)
+                    .semantics { contentDescription = "جستجو" },
             )
 
             LazyColumn(
@@ -1075,9 +1875,14 @@ private fun PickTypeSheet(
             ) {
                 if (q.isNotEmpty() && sections.all { it.second.isEmpty() }) {
                     item {
+                        // Names the query and points at the exit: search also matches the
+                        // latin name and the ticker, and this is the one moment to say so.
                         Text(
-                            "چیزی پیدا نشد.",
-                            fontSize = 16.sp,
+                            // bidi(): a mixed query like "gold 18" would otherwise render
+                            // with its runs reordered inside the guillemets.
+                            "برای «${bidi(q)}» چیزی پیدا نشد. نام انگلیسی یا نماد آن را هم امتحان کنید.",
+                            fontSize = 15.sp,
+                            lineHeight = 24.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = Space.xxl),
                         )
@@ -1088,29 +1893,35 @@ private fun PickTypeSheet(
                     if (items.isEmpty()) return@forEach
                     if (title != null) {
                         item(key = "h_$title") {
+                            // The same heading the asset list uses, so a kind looks like the
+                            // same kind of thing whether she is reading her money or adding to it.
                             Text(
                                 title,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 // more air above a heading than below it
-                                modifier = Modifier.padding(top = Space.xl, bottom = Space.xs),
+                                modifier = Modifier
+                                    .padding(top = Space.xxl, bottom = Space.s, start = Space.xs)
+                                    .semantics { heading() },
                             )
                         }
                     }
                     items(items, key = { it.id }) { type ->
                         PickRow(type, type.id in already) { close { onPick(type.id) } }
                     }
-                }
-
-                if (q.isEmpty()) {
-                    item {
-                        Text(
-                            "برای دیدن بقیهٔ رمزارزها، نام آن را جستجو کنید.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = Space.l),
-                        )
+                    // The cue that more coins exist sits under the coins it discloses — at
+                    // the bottom of the whole sheet, after gold and سکه, a capped section
+                    // just looked complete.
+                    if (q.isEmpty() && title == Kind.CRYPTO.fa) {
+                        item(key = "crypto_hint") {
+                            Text(
+                                "برای دیدن بقیهٔ رمزارزها، نام موردنظرتان را جستجو کنید.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Space.s, start = Space.xs),
+                            )
+                        }
                     }
                 }
             }
@@ -1124,14 +1935,20 @@ private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.field))
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = Space.s, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AssetIcon(type, size = 40.dp)
         Spacer(Modifier.width(Space.m))
         Column(Modifier.weight(1f)) {
-            Text(type.fa, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                type.fa,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (type.kind == Kind.CRYPTO) {
                 Text(
                     type.id.uppercase(),
@@ -1141,11 +1958,269 @@ private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
             }
         }
         if (already) {
+            // A chip, not loose grey words: it is a state this row is in, and it has to read
+            // as attached to the row rather than as a second, quieter label.
             Text(
                 "افزوده شده",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .padding(horizontal = Space.m, vertical = 5.dp),
             )
+        }
+    }
+}
+
+private enum class AmountSource { WALLET, MANUAL }
+
+/**
+ * A label over a group inside a sheet. It owns the air above itself, so the sections of a long
+ * sheet are separated by one rule rather than by whatever `Spacer` each of them happened to be
+ * given — three of them had drifted to three different gaps.
+ *
+ * More space above than below, because a heading belongs to what follows it.
+ */
+@Composable
+private fun SheetLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .padding(top = Space.xxl, bottom = Space.s, start = Space.xs)
+            .semantics { heading() },
+    )
+}
+
+/**
+ * One track, one filled pill — the app's only shape for "pick exactly one of a few". The
+ * report's window picker, the theme picker and the two ways of recording a balance were three
+ * different-looking answers to the same question.
+ *
+ * The fill is not the only signal: the chosen pill is also the only bold one, and it carries
+ * `selected` for anyone listening rather than looking.
+ */
+@Composable
+internal fun <T> SegmentedChoice(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: (T) -> Boolean = { true },
+    role: Role = Role.RadioButton,
+    fontSize: TextUnit = 15.sp,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(Space.xs)
+            .selectableGroup(),
+    ) {
+        options.forEach { option ->
+            val active = option == selected
+            val usable = enabled(option)
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    )
+                    .selectable(
+                        selected = active,
+                        enabled = usable,
+                        role = role,
+                        onClick = { onSelect(option) },
+                    )
+                    .heightIn(min = 48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label(option),
+                    fontSize = fontSize,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    // 0.5, not 0.35: at 0.35 a dark-mode label fell below the floor where
+                    // disabled text stops being readable at all.
+                    color = when {
+                        active -> MaterialTheme.colorScheme.onPrimary
+                        usable -> MaterialTheme.colorScheme.onSurface
+                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Nine networks as nine full-width rows was half the sheet spent on one choice, and the logo —
+ * the thing the eye actually looks for — sat after a label of variable length, so no two logos
+ * shared an edge. Two columns, logo leading from a fixed inset, name after it: the column of
+ * marks becomes the index, and the whole choice fits in a glance instead of a scroll.
+ *
+ * Chosen is a fill *and* a ring *and* a weight, because a fill alone is colour doing the work
+ * of structure.
+ */
+@Composable
+private fun WalletNetworkChoice(
+    options: List<WalletOption>,
+    selected: String,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.6f)
+            .selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(Space.m),
+    ) {
+        options.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+                pair.forEach { option ->
+                    val active = option.network == selected
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(Radius.field))
+                            .background(
+                                if (active) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceContainer,
+                            )
+                            .border(
+                                width = if (active) 2.dp else 0.dp,
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                else Color.Transparent,
+                                shape = RoundedCornerShape(Radius.field),
+                            )
+                            .selectable(
+                                selected = active,
+                                enabled = enabled,
+                                role = Role.RadioButton,
+                                onClick = { onSelect(option.network) },
+                            )
+                            .heightIn(min = 56.dp)
+                            .padding(horizontal = Space.m),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        WalletNetworkLogo(option.network)
+                        Spacer(Modifier.width(Space.s))
+                        Text(
+                            option.networkFa,
+                            fontSize = 14.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                // An odd count keeps the grid's columns rather than stretching the last tile
+                // across both — the shared leading edge is the point of the layout.
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * The bank's own mark, on a white plate.
+ *
+ * The plate is not decoration: these are the banks' real logos, drawn for a white page, and a
+ * dozen of them are near-black — on the dark theme they would be a black shape on a dark card.
+ * The `when` is exhaustive on purpose, so a bank added to the enum cannot ship without one;
+ * every logo the list has is already in `res/drawable` as `ic_bank_<name>`.
+ */
+@Composable
+internal fun BankLogo(bank: String, size: Dp = 32.dp) {
+    val logo = when (runCatching { Bank.valueOf(bank) }.getOrDefault(Bank.OTHER)) {
+        Bank.BLU -> R.drawable.ic_bank_blu
+        Bank.SAMAN -> R.drawable.ic_bank_saman
+        Bank.REFAH -> R.drawable.ic_bank_refah
+        Bank.PASARGAD -> R.drawable.ic_bank_pasargad
+        Bank.EGHTESAD_NOVIN -> R.drawable.ic_bank_eghtesad_novin
+        Bank.KHAVARMIANEH -> R.drawable.ic_bank_khavar_mianeh
+        Bank.SADERAT -> R.drawable.ic_bank_saderat
+        Bank.OTHER -> null
+    }
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                if (logo != null) Color.White else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            // The name is right beside it in text; a second reading of it is noise.
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (logo != null) {
+            Image(
+                painter = painterResource(logo),
+                contentDescription = null,
+                // The inset scales with the plate: a fixed 4dp that reads as breathing room at
+                // 32dp is a hairline at 44dp, and the mark then touches the circle's edge.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(size / 8),
+            )
+        } else {
+            Text("💳", fontSize = (size.value / 2).sp)
+        }
+    }
+}
+
+@Composable
+private fun WalletNetworkLogo(network: String) {
+    val logo = when (network.lowercase()) {
+        "bitcoin" -> R.drawable.ic_network_bitcoin
+        "ethereum" -> R.drawable.ic_network_ethereum
+        "solana" -> R.drawable.ic_network_solana
+        "tron" -> R.drawable.ic_network_tron
+        "bsc" -> R.drawable.ic_network_bsc
+        "arbitrum" -> R.drawable.ic_network_arbitrum
+        "polygon" -> R.drawable.ic_network_polygon
+        "optimism" -> R.drawable.ic_network_optimism
+        "avalanche" -> R.drawable.ic_network_avalanche
+        else -> null
+    }
+
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (logo != null) {
+            Image(
+                painter = painterResource(logo),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    network.take(2).uppercase(),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -1153,35 +2228,77 @@ private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditSheet(
+    // Which holding this sheet is about, not which asset: two rows can share an asset, so the
+    // fields below have to be re-seeded per holding.
+    key: String,
     type: AssetType,
-    current: Double?,
+    holding: Holding?,
     rate: Double?,
     isOverridden: Boolean,
     excluded: Boolean,
+    walletBusy: Boolean,
+    walletError: String?,
+    onWalletEdit: () -> Unit,
     onExcluded: (Boolean) -> Unit,
-    onSave: (Double) -> Unit,
+    onSaveManual: (Double) -> Unit,
+    onSaveWallet: (WalletOption, String, () -> Unit) -> Unit,
     onDelete: () -> Unit,
     onRate: (Double?) -> Unit,
+    onLabel: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val current = holding?.amount
+    val linkedWallet = holding?.wallet
+    val linkedOption = linkedWallet?.let {
+        WalletOption(it.network, it.networkFa, it.contract)
+    }
+    val walletOptions = remember(type.wallets, linkedOption) {
+        (type.wallets + listOfNotNull(linkedOption)).distinctBy { it.network }
+    }
+    val startsWithWallet = type.kind == Kind.CRYPTO && walletOptions.isNotEmpty() &&
+        (linkedWallet != null || holding == null)
+
     // Raw digits live in state; grouping is purely visual so parsing stays exact.
-    var text by remember { mutableStateOf(current?.let { trimNumber(it, type.dec) } ?: "") }
+    var source by remember(key, linkedWallet != null, walletOptions.isNotEmpty()) {
+        mutableStateOf(if (startsWithWallet) AmountSource.WALLET else AmountSource.MANUAL)
+    }
+    var text by remember(key) {
+        mutableStateOf(current?.let { trimNumber(it, type.dec) } ?: "")
+    }
     var rateText by remember { mutableStateOf(rate?.let { trimNumber(it, 0) } ?: "") }
     var editingRate by remember { mutableStateOf(false) }
+    var labelText by remember(key) { mutableStateOf(holding?.label.orEmpty()) }
+    var naming by remember(key) { mutableStateOf(false) }
+    var adjusting by remember { mutableStateOf(false) }
+    var deltaText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
+    var manualSubmitted by remember { mutableStateOf(false) }
+    var walletAddress by remember(key, linkedWallet?.address) {
+        mutableStateOf(linkedWallet?.address.orEmpty())
+    }
+    var selectedNetwork by remember(key, linkedWallet?.network, walletOptions) {
+        mutableStateOf(linkedWallet?.network ?: walletOptions.firstOrNull()?.network.orEmpty())
+    }
+    var localWalletError by remember { mutableStateOf<String?>(null) }
 
-    val amount = parseAmount(text)
+    val manualAmount = parseAmount(text)
+    val selectedWallet = walletOptions.firstOrNull { it.network == selectedNetwork }
+    val linkedSelection = linkedWallet != null &&
+        linkedWallet.network == selectedNetwork &&
+        linkedWallet.address == walletAddress.trim() &&
+        linkedWallet.contract == selectedWallet?.contract
+    val amount = if (source == AmountSource.MANUAL) manualAmount
+    else current?.takeIf { linkedSelection }
     val typedRate = parseAmount(rateText)?.takeIf { it > 0 }
     // While she is typing a manual rate, the "می‌شود …" preview follows what she types, so
     // the consequence of the override is visible before it is committed.
     val previewRate = if (editingRate) typedRate ?: rate else rate
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Adding is always followed by typing an amount, so bring the keyboard along. Editing
-    // starts with reading, not typing — there the keyboard would only cover the numbers.
     val amountFocus = remember { FocusRequester() }
-    if (current == null) {
-        LaunchedEffect(Unit) {
+    val walletAddressFocus = remember { FocusRequester() }
+    if (current == null && source == AmountSource.MANUAL) {
+        LaunchedEffect(source) {
             delay(250) // let the sheet finish sliding in before the IME starts moving it
             amountFocus.requestFocus()
         }
@@ -1198,49 +2315,175 @@ private fun EditSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(
+            // Scrolls: with the keyboard up — and it comes up on its own when adding — the
+            // expanded sections pushed ذخیره off the bottom of shorter phones with no way
+            // to reach it.
             Modifier
-                .padding(horizontal = Space.xl)
+                .nestedScroll(SheetFlingGuard)
                 .navigationBarsPadding()
-                .imePadding(),
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AssetIcon(type, size = 42.dp)
                 Spacer(Modifier.width(Space.m))
-                Text(
-                    type.fa,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        holding?.nameOr(type.fa) ?: type.fa,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    // Only once the two differ: under "تتر" this line would just say "تتر".
+                    if (!holding?.label.isNullOrBlank()) {
+                        Text(
+                            type.fa,
+                            fontSize = 13.sp,
+                            color = muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
 
-            Spacer(Modifier.height(Space.xl))
-            Text("چقدر ${bidi(type.unitFa)} دارید؟", fontSize = 15.sp, color = muted)
-            Spacer(Modifier.height(Space.s))
-            OutlinedTextField(
+            // Named, not renamed: the asset keeps its own name everywhere else, and this is
+            // the label on this particular holding of it — "تتر شخصی" beside "تتر مشترک".
+            // Behind a tap, like every other secondary field in this sheet, because most
+            // holdings never need one.
+            if (holding != null) {
+                if (!naming) {
+                    TextButton(
+                        onClick = { naming = true },
+                        modifier = Modifier.padding(top = Space.s),
+                    ) {
+                        Text(
+                            if (holding.label.isBlank()) "نام دلخواه بگذارید"
+                            else "تغییر نام دلخواه",
+                            fontSize = 14.sp,
+                        )
+                    }
+                } else {
+                    val nameFocus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { nameFocus.requestFocus() }
+                    SheetLabel("نام دلخواه")
+                    OutlinedTextField(
+                        value = labelText,
+                        onValueChange = { labelText = it.take(32) },
+                        singleLine = true,
+                        // A label that stays, not a placeholder that vanishes at the first
+                        // letter — the example is the whole explanation of what this is for.
+                        placeholder = { Text("مثلاً ${type.fa} شخصی") },
+                        shape = RoundedCornerShape(Radius.field),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = { onLabel(labelText); naming = false },
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(nameFocus)
+                            .semantics { contentDescription = "نام دلخواه" },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+                        TextButton(onClick = { onLabel(labelText); naming = false }) {
+                            Text("ثبت نام", fontSize = 14.sp)
+                        }
+                        if (holding.label.isNotBlank()) {
+                            TextButton(onClick = {
+                                labelText = ""
+                                onLabel("")
+                                naming = false
+                            }) { Text("نام اصلی", fontSize = 14.sp) }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { labelText = holding.label; naming = false }) {
+                            Text("بستن", fontSize = 14.sp, color = muted)
+                        }
+                    }
+                }
+            }
+
+            if (type.kind == Kind.CRYPTO) {
+                SheetLabel("روش ثبت موجودی")
+                if (walletOptions.isNotEmpty()) {
+                    SegmentedChoice(
+                        options = listOf(AmountSource.WALLET, AmountSource.MANUAL),
+                        selected = source,
+                        label = { if (it == AmountSource.WALLET) "ردیابی خودکار" else "ورود دستی" },
+                        enabled = { !walletBusy },
+                        onSelect = {
+                            source = it
+                            adjusting = false
+                            localWalletError = null
+                            onWalletEdit()
+                        },
+                    )
+                    // One line under the track instead of a caption inside each pill: the
+                    // detail only ever describes the chosen one, and printing both put the
+                    // answer to a question she had not asked next to the one she had.
+                    Text(
+                        if (source == AmountSource.WALLET)
+                            "موجودی از روی آدرس عمومی کیف پول خوانده می‌شود."
+                        else "مقدار را خودتان وارد می‌کنید.",
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = muted,
+                        modifier = Modifier.padding(top = Space.s, start = Space.xs),
+                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(Radius.field),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                    ) {
+                        Text(
+                            "برای این رمزارز شبکه قابل ردیابی پیدا نشد. مقدار را دستی وارد کنید.",
+                            fontSize = 14.sp,
+                            lineHeight = 22.sp,
+                            color = muted,
+                            modifier = Modifier.padding(Space.l),
+                        )
+                    }
+                }
+            }
+
+            if (source == AmountSource.MANUAL) {
+                SheetLabel("چقدر ${bidi(type.unitFa)} دارید؟")
+                val amountInvalid = manualAmount == null && (text.isNotBlank() || manualSubmitted)
+                OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
+                onValueChange = { text = it; manualSubmitted = false },
                 singleLine = true,
-                isError = text.isNotBlank() && amount == null,
+                isError = amountInvalid,
                 visualTransformation = GroupedNumber,
                 textStyle = TextStyle(
-                    fontFamily = Vazir,
+                    fontFamily = ModamFigures,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                // A red outline is colour alone; the words say what to fix, and why ذخیره
+                // is not available yet.
+                supportingText = if (amountInvalid) ({
+                    Text(
+                        if (text.isBlank()) "مقدار دارایی را وارد کنید."
+                        else "این عدد خوانده نمی‌شود؛ فقط رقم وارد کنید.",
+                    )
+                }) else null,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(amountFocus),
-            )
+                    .focusRequester(amountFocus)
+                    // The visible prompt above is not programmatically attached; this is.
+                    .semantics { contentDescription = "چقدر ${type.unitFa} دارید؟" },
+                )
 
             // The figure she just typed, in words — the guard against an extra zero.
-            if (amount != null && amount % 1.0 == 0.0 && amount >= 1000) {
+            if (manualAmount != null && manualAmount % 1.0 == 0.0 && manualAmount >= 1000) {
                 Text(
-                    "${faWords(amount.toLong())} ${bidi(type.unitFa)}",
+                    "${faWords(manualAmount.toLong())} ${bidi(type.unitFa)}",
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1248,12 +2491,222 @@ private fun EditSheet(
                 )
             }
 
-            if (amount != null && previewRate != null && type.id != TOMAN_ID) {
-                Spacer(Modifier.height(Space.m))
+            // Received some, spent some: she types the change and the field above becomes the
+            // new total, instead of her doing the sum on paper. ذخیره commits it like any
+            // other edit, so there is still exactly one moment money is written.
+            if (current != null) {
+                if (!adjusting) {
+                    TextButton(onClick = { adjusting = true }) {
+                        Text("افزودن یا برداشت", fontSize = 14.sp)
+                    }
+                } else {
+                    val deltaFocus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { deltaFocus.requestFocus() }
+                    // A label that stays, not a placeholder that vanishes at the first digit.
+                    Text(
+                        "چقدر ${bidi(type.unitFa)} اضافه یا کم شود؟",
+                        fontSize = 14.sp,
+                        color = muted,
+                        modifier = Modifier.padding(top = Space.s),
+                    )
+                    Spacer(Modifier.height(Space.xs))
+                    // A delta finer than the asset's own precision is rejected, never
+                    // rounded: trimNumber rounds half-up, and half a سکه rounded to a whole
+                    // one is money invented — the one direction this app must never err in.
+                    val typedDelta = parseAmount(deltaText)?.takeIf { it > 0 }
+                    val delta = typedDelta?.takeIf { parseAmount(trimNumber(it, type.dec)) == it }
+                    OutlinedTextField(
+                        value = deltaText,
+                        onValueChange = { deltaText = it },
+                        singleLine = true,
+                        visualTransformation = GroupedNumber,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        supportingText = if (typedDelta != null && delta == null) ({
+                            Text(
+                                if (type.dec == 0) "برای این دارایی فقط عدد کامل وارد کنید."
+                                else "این دارایی بیشتر از ${faNumber(type.dec.toDouble())} رقم اعشار ندارد.",
+                            )
+                        }) else null,
+                        shape = RoundedCornerShape(Radius.field),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(deltaFocus)
+                            .semantics {
+                                contentDescription = "چقدر ${type.unitFa} اضافه یا کم شود؟"
+                            },
+                    )
+                    val base = amount ?: current
+                    fun apply(next: Double) {
+                        text = trimNumber(next, type.dec)
+                        deltaText = ""
+                        adjusting = false
+                    }
+                    // Air between the two opposite intents: an edge mis-tap here flips the
+                    // sign of a money adjustment.
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+                        TextButton(
+                            onClick = { delta?.let { apply(base + it) } },
+                            enabled = delta != null,
+                        ) { Text("＋ افزودن", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                        TextButton(
+                            onClick = { delta?.let { apply(base - it) } },
+                            // A holding cannot go below nothing — taking out more than is
+                            // there is a typo, not a request.
+                            enabled = delta != null && base - delta >= 0,
+                        ) { Text("− برداشت", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { adjusting = false; deltaText = "" }) {
+                            Text("بستن", fontSize = 14.sp, color = muted)
+                        }
+                    }
+                }
+            }
+
+            } else {
+                SheetLabel("شبکه رمزارز")
+                WalletNetworkChoice(
+                    options = walletOptions,
+                    selected = selectedNetwork,
+                    enabled = !walletBusy,
+                    onSelect = {
+                        if (selectedNetwork != it) walletAddress = ""
+                        selectedNetwork = it
+                        localWalletError = null
+                        onWalletEdit()
+                    },
+                )
+
+                SheetLabel("آدرس عمومی کیف پول")
+                OutlinedTextField(
+                    value = walletAddress,
+                    onValueChange = {
+                        walletAddress = it
+                        localWalletError = null
+                        onWalletEdit()
+                    },
+                    singleLine = true,
+                    enabled = !walletBusy,
+                    isError = localWalletError != null,
+                    textStyle = TextStyle(
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Left,
+                        textDirection = TextDirection.Ltr,
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    supportingText = localWalletError?.let { message ->
+                        { Text(message) }
+                    },
+                    shape = RoundedCornerShape(Radius.field),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(walletAddressFocus)
+                        .semantics { contentDescription = "آدرس عمومی کیف پول" },
+                )
+                Text(
+                    "فقط آدرس عمومی را وارد کنید. عبارت بازیابی یا کلید خصوصی را هرگز وارد نکنید.",
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = muted,
+                    modifier = Modifier.padding(horizontal = Space.xs),
+                )
+                Text(
+                    "آدرس برای خواندن موجودی به سرویس عمومی همان شبکه فرستاده می‌شود.",
+                    fontSize = 12.sp,
+                    lineHeight = 19.sp,
+                    color = muted,
+                    modifier = Modifier.padding(horizontal = Space.xs, vertical = Space.xs),
+                )
+
+                if (linkedSelection && current != null) {
+                    Spacer(Modifier.height(Space.l))
+                    // Full width, like everything else in the sheet. Wrapping its content made
+                    // it a narrower card directly above a wider one, which read as two
+                    // unrelated objects rather than one answer in two units.
+                    Surface(
+                        shape = RoundedCornerShape(Radius.card),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(Space.l)) {
+                            Text(
+                                "موجودی خوانده شده",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            BasicText(
+                                // faHeld, not the asset's full precision: the row outside this
+                                // sheet says ۱۰٬۷۰۹٫۱۳ and this said ۱۰٬۷۰۹٫۱۳۵۶۸۱ — one
+                                // number in two lengths reads as two different numbers.
+                                text = "${faHeld(current, type.dec)} ${bidi(type.unitFa)}",
+                                maxLines = 1,
+                                autoSize = TextAutoSize.StepBased(
+                                    minFontSize = 18.sp,
+                                    maxFontSize = 30.sp,
+                                ),
+                                modifier = Modifier.padding(top = 2.dp),
+                                style = figureStyle(
+                                    MaterialTheme.colorScheme.onPrimaryContainer,
+                                    FontWeight.ExtraBold,
+                                ),
+                            )
+                            // The same money in Toman, inside the same card rather than in a
+                            // second one below it. It is the conversion of the figure above,
+                            // not a separate finding.
+                            previewRate?.let { rate ->
+                                BasicText(
+                                    text = "≈ ${faCompact(current * rate, 3, pad = true)} تومان",
+                                    maxLines = 1,
+                                    autoSize = TextAutoSize.StepBased(
+                                        minFontSize = 13.sp,
+                                        maxFontSize = 17.sp,
+                                    ),
+                                    modifier = Modifier.padding(top = Space.xs),
+                                    style = figureStyle(
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                        FontWeight.SemiBold,
+                                    ),
+                                )
+                            }
+                            Text(
+                                when {
+                                    walletBusy -> "در حال دریافت موجودی"
+                                    walletError != null -> walletError
+                                    else -> "آخرین دریافت: ${faAgo(linkedWallet.updatedAt, System.currentTimeMillis())}"
+                                },
+                                fontSize = 12.sp,
+                                lineHeight = 19.sp,
+                                color = if (walletError != null) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.semantics {
+                                    if (walletError != null) liveRegion = LiveRegionMode.Polite
+                                },
+                            )
+                        }
+                    }
+                } else if (walletError != null) {
+                    Text(
+                        walletError,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(horizontal = Space.xs, vertical = Space.s)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+
+            // Not when the read-balance card is up: that card already carries the Toman line,
+            // and the two of them said the same conversion twice, in two differently sized
+            // boxes, one under the other.
+            val balanceCardShown = source == AmountSource.WALLET && linkedSelection && current != null
+            if (amount != null && previewRate != null && type.id != TOMAN_ID && !balanceCardShown) {
+                Spacer(Modifier.height(Space.l))
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(Radius.field))
+                        .clip(RoundedCornerShape(Radius.card))
                         .background(MaterialTheme.colorScheme.primaryContainer)
                         .padding(Space.l),
                 ) {
@@ -1264,7 +2717,7 @@ private fun EditSheet(
                         maxLines = 1,
                         autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
                         style = TextStyle(
-                            fontFamily = Vazir,
+                            fontFamily = ModamFigures,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         ),
@@ -1304,9 +2757,10 @@ private fun EditSheet(
                         shape = RoundedCornerShape(Radius.field),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(rateFocus),
+                            .focusRequester(rateFocus)
+                            .semantics { contentDescription = "نرخ هر ${type.unitFa} به تومان" },
                     )
-                    Row {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
                         TextButton(onClick = { onRate(typedRate); editingRate = false }) {
                             Text("ثبت نرخ", fontSize = 14.sp)
                         }
@@ -1321,7 +2775,20 @@ private fun EditSheet(
 
             if (current != null) {
                 Spacer(Modifier.height(Space.m))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // toggleable on the row: label and switch become one named control, and the
+                // words are the hit target too.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .toggleable(
+                            value = !excluded,
+                            role = Role.Switch,
+                            onValueChange = { on -> onExcluded(!on) },
+                        )
+                        // With onCheckedChange = null the Switch no longer carries its own
+                        // 48dp minimum; the row has to.
+                        .heightIn(min = 48.dp),
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text("در مجموع حساب شود", fontSize = 15.sp)
                         Text(
@@ -1331,19 +2798,52 @@ private fun EditSheet(
                             color = muted,
                         )
                     }
-                    Switch(checked = !excluded, onCheckedChange = { on -> onExcluded(!on) })
+                    Switch(checked = !excluded, onCheckedChange = null)
                 }
             }
 
             Spacer(Modifier.height(Space.xl))
             Button(
-                onClick = { amount?.let { a -> close { onSave(a) } } },
-                enabled = amount != null,
-                shape = RoundedCornerShape(Radius.field),
+                onClick = {
+                    if (source == AmountSource.MANUAL) {
+                        manualSubmitted = true
+                        if (manualAmount != null) close { onSaveManual(manualAmount) }
+                        else amountFocus.requestFocus()
+                    } else {
+                        val option = selectedWallet ?: return@Button
+                        if (walletAddress.isBlank()) {
+                            localWalletError = "آدرس عمومی کیف پول را وارد کنید."
+                            walletAddressFocus.requestFocus()
+                        } else {
+                            onSaveWallet(option, walletAddress.trim()) { close(onDismiss) }
+                        }
+                    }
+                },
+                enabled = source == AmountSource.MANUAL || (!walletBusy && selectedWallet != null),
+                shape = RoundedCornerShape(Radius.pill),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(58.dp),
-            ) { Text("ذخیره", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                    .heightIn(min = 60.dp),
+            ) {
+                if (source == AmountSource.WALLET && walletBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(Space.s))
+                }
+                Text(
+                    when {
+                        source == AmountSource.MANUAL && linkedWallet != null -> "ذخیره ورود دستی"
+                        source == AmountSource.MANUAL -> "ذخیره مقدار"
+                        linkedSelection -> "به‌روزرسانی موجودی"
+                        else -> "بررسی و ذخیره"
+                    },
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
 
             if (current != null) {
                 // One stray tap must not erase a holding: the first tap only changes the
@@ -1362,6 +2862,9 @@ private fun EditSheet(
                         else "حذف این دارایی",
                         fontSize = 15.sp,
                         fontWeight = if (confirmDelete) FontWeight.Bold else FontWeight.Normal,
+                        // Announced, or the two-tap safeguard is invisible to TalkBack — a
+                        // second double-tap deletes with no confirmation ever perceived.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
             }

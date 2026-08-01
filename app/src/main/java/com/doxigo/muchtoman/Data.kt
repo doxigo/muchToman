@@ -8,12 +8,54 @@ import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
 
+@Serializable
+data class WalletOption(
+    val network: String,
+    val networkFa: String,
+    val contract: String = "",
+)
+
+@Serializable
+data class WalletLink(
+    val network: String,
+    val networkFa: String,
+    val address: String,
+    val contract: String = "",
+    val updatedAt: Long = 0L,
+)
+
 /**
- * [excluded] keeps a rainy-day asset on the list but out of the total — the default keeps
- * every holding saved before the flag existed counting, exactly as it did.
+ * [excluded] keeps a rainy-day asset on the list but out of the total. [wallet] is absent on
+ * every holding saved before automatic tracking existed, so old data remains manual.
  */
 @Serializable
-data class Holding(val typeId: String, val amount: Double, val excluded: Boolean = false)
+data class Holding(
+    val typeId: String,
+    val amount: Double,
+    val excluded: Boolean = false,
+    val wallet: WalletLink? = null,
+    /**
+     * Her own name for this one, where the asset's name is not enough to tell it apart —
+     * "تتر شخصی" beside "تتر مشترک". Blank means the asset's own name, which is what every
+     * holding saved before this field existed decodes to.
+     */
+    val label: String = "",
+    /**
+     * What tells two holdings of the same asset apart — two Tether accounts, one tracked from a
+     * wallet and one typed in. Blank on everything saved before that was allowed, where the
+     * asset id was the identity; [key], not this, is what anything else should compare.
+     */
+    val id: String = "",
+) {
+    /** What to print for this holding. Never blank: the asset's own name is the fallback. */
+    fun nameOr(default: String): String = label.ifBlank { default }
+
+    /** This one holding, for as long as it exists. Unique across the list. */
+    val key: String get() = id.ifBlank { typeId }
+}
+
+/** A fresh [Holding.id]. Only ever called when she adds one, so uniqueness is all it owes. */
+fun newHoldingId(): String = java.util.UUID.randomUUID().toString()
 
 /**
  * A coin the Worker knows how to price, with its real name and logo. [name] is what she
@@ -27,7 +69,15 @@ data class Coin(
     val name: String,
     val en: String = "",
     val icon: String = "",
+    val wallets: List<WalletOption> = emptyList(),
 )
+
+/**
+ * The newest tagged release the Worker could see. The app is sideloaded, so nothing updates it
+ * on its own — this is the whole of how a new build gets mentioned to someone running an old one.
+ */
+@Serializable
+data class Release(val name: String = "", val url: String = "")
 
 /** Everything the Worker sends: Toman per one unit of each asset id, plus the coin catalogue. */
 @Serializable
@@ -35,7 +85,23 @@ data class Rates(
     val updatedAt: Long = 0L,
     val toman: Map<String, Double> = emptyMap(),
     val coins: List<Coin> = emptyList(),
+    val latest: Release? = null,
 )
+
+@Serializable
+private data class WalletBalanceRequest(
+    val network: String,
+    val address: String,
+    val contract: String = "",
+)
+
+@Serializable
+data class WalletBalance(val amount: Double, val updatedAt: Long)
+
+@Serializable
+private data class WalletError(val code: String = "unavailable")
+
+class WalletFetchException(val reason: String) : Exception(reason)
 
 data class Totals(val toman: Double, val missing: List<String>)
 
@@ -53,6 +119,25 @@ fun computeTotals(holdings: List<Holding>, rates: Map<String, Double>): Totals {
         if (rate == null || rate <= 0.0) missing += h.typeId else sum += h.amount * rate
     }
     return Totals(sum, missing)
+}
+
+/**
+ * True when [latest] names a higher version than [current]. Numeric runs only, compared
+ * component by component: "1.10" beats "1.9", which a string compare gets backwards, and a
+ * missing component reads as zero so "1.2" and "1.2.0" are the same build. A suffix like
+ * "-beta" is ignored rather than guessed at — a pre-release of what she already runs is not
+ * an update worth a banner.
+ */
+fun isNewerVersion(latest: String, current: String): Boolean {
+    fun parts(v: String) = v.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+    val a = parts(latest)
+    val b = parts(current)
+    for (i in 0 until maxOf(a.size, b.size)) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
 }
 
 const val DAY_MS = 86_400_000L
@@ -105,9 +190,9 @@ private val JSON = Json { ignoreUnknownKeys = true }
  * rebuild every balance with the parser as it now stands. **Bump this whenever parsing changes,
  * or the fix ships to a phone that will never re-read the messages it applies to.**
  */
-// 6: 20004861 turned out to be خاورمیانه, not بلو — every balance either bank holds was built
-// from messages sorted into the wrong one, so the inbox is re-read from the start.
-private const val SMS_SCHEMA = 6
+// 11: the actual 90000258 thread proves it belongs to Blu, not Khavarmianeh. Rebuild every
+// balance because messages from that sender were previously skipped or assigned to the wrong bank.
+private const val SMS_SCHEMA = 11
 
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("muchtoman", Context.MODE_PRIVATE)
@@ -135,6 +220,11 @@ class Store(context: Context) {
     var cachedRates: Rates
         get() = read("rates", Rates())
         set(v) = write("rates", v)
+
+    /** The release she has already waved off, so the note does not come back every time. */
+    var dismissedUpdate: String
+        get() = prefs.getString("dismissedUpdate", "").orEmpty()
+        set(v) { prefs.edit().putString("dismissedUpdate", v).apply() }
 
     /** Who the app greets. Empty means greet nobody. */
     var name: String
@@ -243,8 +333,12 @@ fun effectiveRates(fetched: Rates, overrides: Map<String, Double>): Map<String, 
  * list at face value emptied the picker and turned every held coin into a bare ticker. Names
  * and logos do not go stale the way a price does, so the last ones we saw are still right.
  */
-fun mergeRates(fresh: Rates, cached: Rates): Rates =
-    if (fresh.coins.isEmpty()) fresh.copy(coins = cached.coins) else fresh
+fun mergeRates(fresh: Rates, cached: Rates): Rates = fresh.copy(
+    coins = fresh.coins.ifEmpty { cached.coins },
+    // GitHub is a source like any other and fails on its own. One fetch that could not reach it
+    // must not retract an update note already on screen.
+    latest = fresh.latest ?: cached.latest,
+)
 
 suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO) {
     runCatching {
@@ -271,3 +365,52 @@ suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO)
         }
     }
 }
+
+/**
+ * Wallet addresses go in a POST body so they do not land in URLs, edge-cache keys, or routine
+ * access logs. The endpoint is deliberately derived from the configured rates origin: debug,
+ * self-hosted, and release builds always ask the same Worker they already trust for prices.
+ */
+suspend fun fetchWalletBalance(ratesUrl: String, wallet: WalletLink): Result<WalletBalance> =
+    withContext(Dispatchers.IO) {
+        runCatching {
+            val rates = URL(ratesUrl)
+            val endpoint = URL(rates.protocol, rates.host, rates.port, "/wallet-balance")
+            val conn = (endpoint.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 15_000
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Connection", "close")
+            }
+            try {
+                val request = WalletBalanceRequest(
+                    network = wallet.network,
+                    address = wallet.address.trim(),
+                    contract = wallet.contract,
+                )
+                conn.outputStream.bufferedWriter(Charsets.UTF_8).use {
+                    it.write(JSON.encodeToString(request))
+                }
+
+                val status = conn.responseCode
+                val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (status !in 200..299) {
+                    val reason = runCatching { JSON.decodeFromString<WalletError>(body).code }
+                        .getOrDefault("unavailable")
+                    throw WalletFetchException(reason)
+                }
+
+                val balance = JSON.decodeFromString<WalletBalance>(body)
+                if (!balance.amount.isFinite() || balance.amount < 0.0 || balance.updatedAt <= 0L) {
+                    throw WalletFetchException("invalid_response")
+                }
+                balance
+            } finally {
+                conn.disconnect()
+            }
+        }
+    }

@@ -28,6 +28,7 @@ data class AssetType(
     val en: String = "",
     val emoji: String? = null,
     val iconUrl: String? = null,
+    val wallets: List<WalletOption> = emptyList(),
 )
 
 // The fixed half of the catalogue: things bonbast/tgju price. Crypto is not here — it comes
@@ -78,6 +79,7 @@ fun Coin.toAssetType() = AssetType(
     dec = 6,
     en = en,
     iconUrl = icon.ifBlank { null },
+    wallets = wallets,
 )
 
 /** The full picker list: fixed assets, then every coin the Worker knows about. */

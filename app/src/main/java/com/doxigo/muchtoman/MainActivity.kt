@@ -20,7 +20,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+
+private const val WALLET_REFRESH_MS = 10 * 60_000L
 
 class AppVm(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
@@ -47,12 +51,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             bankAccounts = store.bankAccounts,
             disabledBanks = store.disabledBanks,
             strangeSenders = store.strangeSenders,
+            dismissedUpdate = store.dismissedUpdate,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
         refresh()
+        refreshWallets()
         scanSms()
     }
 
@@ -63,8 +69,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      */
     fun refreshIfStale() {
         if (System.currentTimeMillis() - _state.value.rates.updatedAt > 10 * 60_000L) refresh()
+        refreshWallets()
         // Coming back is also when messages that arrived while she was away get read.
         scanSms()
+    }
+
+    fun refreshAll() {
+        refresh()
+        refreshWallets(force = true)
     }
 
     fun refresh() {
@@ -87,11 +99,38 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setHolding(typeId: String, amount: Double) {
-        // Editing the amount must not quietly un-exclude a set-aside asset.
-        val prev = _state.value.holdings.firstOrNull { it.typeId == typeId }
-        val next = _state.value.holdings.filterNot { it.typeId == typeId } +
-            Holding(typeId, amount, excluded = prev?.excluded ?: false)
+    /** Waves off one release by name, so the next one asks again. */
+    fun dismissUpdate(version: String) {
+        store.dismissedUpdate = version
+        _state.update { it.copy(dismissedUpdate = version) }
+    }
+
+    fun setHolding(key: String, typeId: String, amount: Double) {
+        saveHolding(key, typeId, amount, wallet = null)
+        _state.update { it.copy(walletErrors = it.walletErrors - key) }
+    }
+
+    /** Her own name for a holding, or blank to go back to the asset's own. */
+    fun setLabel(key: String, label: String) = persist(
+        _state.value.holdings.map {
+            if (it.key == key) it.copy(label = label.trim().take(32)) else it
+        },
+    )
+
+    /**
+     * Writes the row [key] names, or adds one under that key if she has no such row yet — which
+     * is how a second Tether beside the first one gets made: the picker hands out a fresh key
+     * rather than the asset's own, so nothing here can find the holding she already had.
+     */
+    private fun saveHolding(key: String, typeId: String, amount: Double, wallet: WalletLink?) {
+        val list = _state.value.holdings
+        // Copied, not rebuilt: editing the amount must not quietly un-exclude a set-aside
+        // asset, nor drop the name she gave it.
+        val next = if (list.any { it.key == key }) {
+            list.map { if (it.key == key) it.copy(amount = amount, wallet = wallet) else it }
+        } else {
+            list + Holding(typeId = typeId, amount = amount, wallet = wallet, id = key)
+        }
         // Fixed assets keep their catalogue order; coins fall in after them in the order she
         // added them (sortedBy is stable), since there is no meaningful order for 250 coins.
         val order = STATIC_CATALOG.withIndex().associate { (i, t) -> t.id to i }
@@ -99,13 +138,137 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /** A rainy-day asset: stays on the list, drops out of the total. */
-    fun setExcluded(typeId: String, excluded: Boolean) =
+    fun setExcluded(key: String, excluded: Boolean) =
         persist(_state.value.holdings.map {
-            if (it.typeId == typeId) it.copy(excluded = excluded) else it
+            if (it.key == key) it.copy(excluded = excluded) else it
         })
 
-    fun removeHolding(typeId: String) =
-        persist(_state.value.holdings.filterNot { it.typeId == typeId })
+    fun removeHolding(key: String) {
+        persist(_state.value.holdings.filterNot { it.key == key })
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets - key,
+                walletErrors = it.walletErrors - key,
+            )
+        }
+    }
+
+    fun clearWalletError(key: String) {
+        if (key !in _state.value.walletErrors) return
+        _state.update { it.copy(walletErrors = it.walletErrors - key) }
+    }
+
+    fun connectWallet(
+        key: String,
+        typeId: String,
+        option: WalletOption,
+        address: String,
+        onSuccess: () -> Unit,
+    ) {
+        if (key in _state.value.refreshingWallets) return
+        val wallet = WalletLink(
+            network = option.network,
+            networkFa = option.networkFa,
+            address = address.trim(),
+            contract = option.contract,
+        )
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets + key,
+                walletErrors = it.walletErrors - key,
+            )
+        }
+        viewModelScope.launch {
+            fetchWalletBalance(BuildConfig.RATES_URL, wallet)
+                .onSuccess { balance ->
+                    saveHolding(
+                        key,
+                        typeId,
+                        balance.amount,
+                        wallet.copy(updatedAt = balance.updatedAt),
+                    )
+                    _state.update {
+                        it.copy(
+                            refreshingWallets = it.refreshingWallets - key,
+                            walletErrors = it.walletErrors - key,
+                        )
+                    }
+                    onSuccess()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            refreshingWallets = it.refreshingWallets - key,
+                            walletErrors = it.walletErrors + (key to walletErrorMessage(error)),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun refreshWallets(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val busy = _state.value.refreshingWallets
+        val tracked = _state.value.holdings.filter { holding ->
+            val wallet = holding.wallet ?: return@filter false
+            holding.key !in busy && (force || now - wallet.updatedAt >= WALLET_REFRESH_MS)
+        }
+        if (tracked.isEmpty()) return
+
+        val ids = tracked.map { it.key }.toSet()
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets + ids,
+                walletErrors = it.walletErrors - ids,
+            )
+        }
+        viewModelScope.launch {
+            val results = tracked.map { holding ->
+                async { holding to fetchWalletBalance(BuildConfig.RATES_URL, holding.wallet!!) }
+            }.awaitAll().associateBy { it.first.key }
+
+            val current = _state.value
+            val errors = current.walletErrors.toMutableMap()
+            var changed = false
+            val next = current.holdings.map { holding ->
+                val (original, result) = results[holding.key] ?: return@map holding
+                val wallet = holding.wallet ?: return@map holding
+                if (wallet != original.wallet) return@map holding
+                result.fold(
+                    onSuccess = { balance ->
+                        changed = true
+                        errors -= holding.key
+                        holding.copy(
+                            amount = balance.amount,
+                            wallet = wallet.copy(updatedAt = balance.updatedAt),
+                        )
+                    },
+                    onFailure = { error ->
+                        errors[holding.key] = walletErrorMessage(error)
+                        holding
+                    },
+                )
+            }
+
+            if (changed) store.holdings = next
+            _state.update {
+                it.copy(
+                    holdings = next,
+                    refreshingWallets = it.refreshingWallets - ids,
+                    walletErrors = errors,
+                )
+            }
+            if (changed) recordSnapshot()
+        }
+    }
+
+    private fun walletErrorMessage(error: Throwable): String =
+        when ((error as? WalletFetchException)?.reason) {
+            "invalid_address", "invalid_contract" ->
+                "آدرس با شبکه انتخاب شده همخوان نیست."
+            "unsupported_network" -> "این شبکه هنوز پشتیبانی نمی‌شود."
+            else -> "موجودی دریافت نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
+        }
 
     fun setName(name: String) {
         store.name = name
@@ -153,7 +316,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             if (messages.isEmpty()) return@launch
 
             val extra = extraLookup(store.extraBankNumbers)
-            val dismissed = store.dismissedSenders
+            // Re-keyed through senderKey on the way in: the key function has changed once
+            // already (whitespace collapse), and a dismissal stored under an old key must
+            // stay dismissed. senderKey is a fixpoint over its own output.
+            val dismissed = store.dismissedSenders.map(::senderKey).toSet()
             var accounts = store.bankAccounts
             val seen = store.seenSms
             val fresh = mutableListOf<String>()
@@ -168,14 +334,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     // lacks — that is how a bank that adds a shortcode "freezes". It becomes a
                     // one-tap suggestion in the sheet, and her tap is what adds the number.
                     val from = m.from.trim()
-                    if (from.isNotEmpty() && senderKey(from) !in dismissed && looksLikeBankSms(m.body)) {
+                    if (
+                        from.isNotEmpty() &&
+                        senderKey(from) !in dismissed &&
+                        !isIgnoredBankSms(from, m.body) &&
+                        looksLikeBankSms(m.body)
+                    ) {
                         guessBank(m.body)?.let { g ->
                             // Replace rather than skip. Messages arrive oldest first, so
                             // keeping the first sighting pinned every active sender to its
                             // earliest date — and the sort below then buried the sender she is
                             // actually asking about underneath a dozen one-off promos.
                             strangers.removeAll { senderKey(it.sender) == senderKey(from) }
-                            strangers += StrangeSender(from, g.name, snippetOf(m.body), m.at)
+                            strangers += StrangeSender(
+                                sender = from,
+                                bank = g.name,
+                                snippet = snippetOf(m.body),
+                                at = m.at,
+                            )
                         }
                     }
                     continue
@@ -326,9 +502,26 @@ data class UiState(
     val bankAccounts: List<BankAccount> = emptyList(),
     val disabledBanks: Set<String> = emptySet(),
     val strangeSenders: List<StrangeSender> = emptyList(),
+    val refreshingWallets: Set<String> = emptySet(),
+    val walletErrors: Map<String, String> = emptyMap(),
+    val dismissedUpdate: String = "",
 ) {
     val coins: List<Coin> get() = rates.coins
+
+    /**
+     * The release worth a line on the list: newer than this build, and not one she has already
+     * waved off. Debug builds are left out because they carry a placeholder version name, so
+     * every locally-built install would claim to be out of date.
+     */
+    val update: Release?
+        get() = rates.latest?.takeIf {
+            !BuildConfig.DEBUG &&
+                it.url.isNotBlank() &&
+                it.name != dismissedUpdate &&
+                isNewerVersion(it.name, BuildConfig.VERSION_NAME)
+        }
     val effective: Map<String, Double> get() = effectiveRates(rates, overrides)
+    val refreshing: Boolean get() = loading || refreshingWallets.isNotEmpty()
 
     /** The tracked balances as one figure, minus the banks she switched off. */
     val bankToman: Double get() = bankTotal(bankAccounts, disabledBanks)

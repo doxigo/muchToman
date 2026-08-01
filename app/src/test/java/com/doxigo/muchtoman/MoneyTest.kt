@@ -192,6 +192,22 @@ class MoneyTest {
     }
 
     @Test
+    fun `a held amount sheds decimals it has the digits to spare`() {
+        // The row that started this: six decimals of Tether left no line for the rate.
+        assertEquals(faDecimal(10_709.13, 2), faHeld(10_709.135681, 6))
+        // Never rounded up — she must not read more than she has.
+        assertEquals(faDecimal(10_709.99, 2), faHeld(10_709.999, 6))
+        // …and never rounded down past what she does have: 10709.13 is not exactly a double.
+        assertEquals(faDecimal(10_709.13, 2), faHeld(10_709.13, 6))
+        // Under a thousand there is room; under one unit every decimal is the amount.
+        assertEquals(faDecimal(12.3456, 4), faHeld(12.345678, 6))
+        assertEquals(faDecimal(0.000425, 6), faHeld(0.000425, 6))
+        // Never more precision than the asset itself claims.
+        assertEquals(faDecimal(1_234.0, 0), faHeld(1_234.0, 0))
+        assertEquals(faDecimal(152.375, 3), faHeld(152.375, 3))
+    }
+
+    @Test
     fun `an unknown held asset still resolves instead of disappearing`() {
         val t = resolveType("sol", emptyList())
         assertEquals("sol", t.id)
@@ -219,12 +235,15 @@ class MoneyTest {
     }
 
     @Test
-    fun `figures on the list hold three decimals even when they are zeros`() {
-        // A whole holding times a round rate lands on a round million, so without padding the
-        // precision would appear and vanish between one row and the next.
+    fun `figures on the list hold three decimals unless they are all zeros`() {
+        // A fractional figure keeps its full width, so precision does not appear and vanish
+        // between one row and the next…
         assertEquals("۵۵۹٫۵۰۰ میلیون", faCompact(559_500_000.0, 3, pad = true))
         assertEquals("۹٫۷۰۰ میلیارد", faCompact(9_700_000_000.0, 3, pad = true))
-        assertEquals("۳٫۰۰۰ میلیارد", faCompact(3_000_000_000.0, 3, pad = true))
+        // …but one that lands exactly on the unit drops the decimals entirely: the three
+        // zeros in "۱۸۰٫۰۰۰ میلیون" carry nothing and only slow the reading down.
+        assertEquals("۳ میلیارد", faCompact(3_000_000_000.0, 3, pad = true))
+        assertEquals("۱۸۰ میلیون", faCompact(180_000_000.0, 3, pad = true))
         // padding adds zeros; it must never add value
         assertEquals("۹٫۶۴۳ میلیارد", faCompact(9_643_999_999.0, 3, pad = true))
     }
@@ -357,7 +376,13 @@ class MoneyTest {
         assertEquals(Bank.SAMAN, bankOf("+989999920000"))
         assertEquals(Bank.REFAH, bankOf("100031"))
         assertEquals(Bank.REFAH, bankOf("100032"))
-        assertEquals(Bank.KHAVARMIANEH, bankOf("90000258"))
+        assertEquals(Bank.BLU, bankOf("90000258"))
+        assertEquals(Bank.KHAVARMIANEH, bankOf("+9820004861"))
+        assertEquals(Bank.BLU, bankOf("+9890000258"))
+        assertEquals(Bank.BLU, bankOf("98300087641"))
+        assertEquals(Bank.SAMAN, bankOf("+989820000"))
+        assertEquals(Bank.SAMAN, bankOf("9820000"))
+        assertEquals(Bank.KHAVARMIANEH, bankOf("+989820004860"))
         // A shortcode is exactly itself. Nothing is folded into it and nothing is trimmed off
         // it — one digit out, or a country code bolted on, is a different sender. If a carrier
         // ever does deliver one in an unexpected shape it becomes a suggestion card, which is
@@ -365,7 +390,17 @@ class MoneyTest {
         assertNull(bankOf("2000486"))
         assertNull(bankOf("200048610"))
         assertNull(bankOf("9000025"))
-        assertNull(bankOf("+9890000258"))
+        assertNull(bankOf("+989126271948"))
+    }
+
+    @Test
+    fun `ayandeh sender suggestions are not trusted as another bank`() {
+        assertNull(bankOf("AyandehBank"))
+        assertNull(bankOf("+98700745"))
+        assertTrue(isIgnoredBankSms("AyandehBank", "مانده 5,000,000 ریال"))
+        assertTrue(isIgnoredBankSms("+98700745", "مانده 5,000,000 ریال"))
+        assertTrue(isIgnoredBankSms("unknown", "بانک آينده\nمانده 5,000,000 ریال"))
+        assertNull(guessBank("بانک آینده\nانتقال به بانک رفاه\nمانده 5,000,000 ریال"))
     }
 
     @Test
@@ -424,6 +459,104 @@ class MoneyTest {
         assertEquals(33_818_503.8, m.balance!!, 0.01)
         // A bank name the enum no longer has is skipped, never crashed on.
         assertTrue(extraLookup(mapOf("NOPE" to listOf("123456"))).isEmpty())
+    }
+
+    @Test
+    fun `refah's lettered header is built in and matches like a number`() {
+        // Refah really does send from "Refah Bank" — a name, not a number. The whole header
+        // is the identity: case and the spacing between the words are the carrier's noise,
+        // but a different name, or the words run together, is a different sender.
+        assertEquals(Bank.REFAH, bankOf("Refah Bank"))
+        assertEquals(Bank.REFAH, bankOf("REFAH BANK"))
+        assertEquals(Bank.REFAH, bankOf(" refah  bank "))
+        assertEquals(Bank.REFAH, bankOf("Refah\u00A0Bank"))   // carriers send NBSP too
+        assertNull(bankOf("Refah"))
+        assertNull(bankOf("RefahBank"))
+        val m = parseBankSms("Refah Bank", "بانک رفاه\nواریز مبلغ 5,000,000 ریال\nمانده 80,000,000 ریال", 1L)!!
+        assertEquals(Bank.REFAH, m.bank)
+        assertEquals(8_000_000.0, m.balance!!, 0.01)
+    }
+
+    @Test
+    fun `pasargad's lettered header and bare-figure message read to the stated remainder`() {
+        assertEquals(Bank.PASARGAD, bankOf("B.Pasargad"))
+        assertEquals(Bank.PASARGAD, bankOf(" b.pasargad "))   // case and spacing forgiven
+        assertNull(bankOf("Pasargad"))                        // a different header entirely
+        // Real message, shape and all: a dotted account number, a bare minus figure with no
+        // direction word, a date with underscores, and a مانده that names no unit.
+        val body = """
+            276.800.504939.1
+            -30,000,000
+            05/08_13:37
+            مانده: 33,916,067
+        """.trimIndent()
+        val m = parseBankSms("B.Pasargad", body, 1L)!!
+        assertEquals(Bank.PASARGAD, m.bank)
+        assertEquals(3_391_606.7, m.balance!!, 0.01)   // no unit anywhere reads as Rial
+        assertNull(m.delta)     // no direction word states no delta; the مانده is the truth
+        assertTrue(!m.inferred)
+        val accounts = applyBankSms(emptyList(), m)
+        assertTrue(accounts.single().trusted)
+        assertEquals(3_391_606.7, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `pasargad's fee message states its remainder as موجودی in rial`() {
+        // A different shape from the one above: موجودی rather than مانده, a dotted account
+        // number, and both figures naming ریال outright.
+        val body = "*بانك ياساركاد* كارمزد پيامك بانكي 6 ماهه دوم سال 1400 برداشت از: " +
+            "1503.8000.11222610.1 مبلغ: 75,000 ريال 00/12/17_16:43 موجودي: 154,874 ريال"
+        val m = parseBankSms("B.Pasargad", body, 1L)!!
+        assertEquals(Bank.PASARGAD, m.bank)
+        assertEquals(-7_500.0, m.delta!!, 0.01)      // برداشت/کارمزد both say which way
+        assertEquals(15_487.4, m.balance!!, 0.01)
+        assertTrue(!m.inferred)
+    }
+
+    @Test
+    fun `saderat's shortcodes and bare-figure messages read to the stated remainder`() {
+        assertEquals(Bank.SADERAT, bankOf("+98 9870 0719"))
+        assertEquals(Bank.SADERAT, bankOf("98700719"))       // same shortcode, no country code
+        assertEquals(Bank.SADERAT, bankOf("09830009419"))    // and +98… 98… 0… are one line
+        assertEquals(Bank.SADERAT, bankOf("BankSaderat"))
+        assertNull(bankOf("Saderat"))
+
+        // Direction is a trailing +/- rather than a word, so neither message states a delta —
+        // the مانده it prints is what the balance comes from.
+        val deposit = parseBankSms("98700719", "پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04", 1L)!!
+        assertEquals(3_220_309.0, deposit.balance!!, 0.01)   // no unit anywhere reads as Rial
+        assertNull(deposit.delta)
+        assertTrue(!deposit.inferred)
+
+        val purchase = parseBankSms("BankSaderat", "پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06", 2L)!!
+        assertEquals(2_810_309.0, purchase.balance!!, 0.01)
+
+        val accounts = applyBankSms(applyBankSms(emptyList(), deposit), purchase)
+        assertTrue(accounts.single().trusted)
+        assertEquals(2_810_309.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `eghtesad novin's lettered header and real withdrawal message are read`() {
+        val body = """
+            برداشت: 126-800-1026659-1
+            -3,100,000ريال
+            مانده:2,271,325,358ريال
+            5/8-10:04
+            مرکزآواي نوين:02162740
+        """.trimIndent()
+
+        assertEquals(Bank.EGHTESAD_NOVIN, bankOf("ENBank"))
+        assertEquals(Bank.EGHTESAD_NOVIN, bankOf(" enbank "))
+        val message = parseBankSms("ENBank", body, 1L)!!
+        assertEquals(Bank.EGHTESAD_NOVIN, message.bank)
+        assertEquals("126-800-1026659-1", message.mask)
+        assertEquals(-310_000.0, message.delta!!, 0.01)
+        assertEquals(227_132_535.8, message.balance!!, 0.01)
+        assertTrue(!message.inferred)
+        val account = applyBankSms(emptyList(), message).single()
+        assertTrue(account.trusted)
+        assertEquals("ENBank", account.sender)
     }
 
     @Test
@@ -616,7 +749,7 @@ class MoneyTest {
             05/03
             15:39
         """.trimIndent()
-        val m = parseBankSms("90000258", body, 1L)!!
+        val m = parseBankSms("+9820004861", body, 1L)!!
         assertEquals(Bank.KHAVARMIANEH, m.bank)
         assertEquals(33_818_503.8, m.balance!!, 0.01)   // 338,185,038 ریال
         assertEquals(-502_500.0, m.delta!!, 0.01)       // 5,025,000 ریال, out
@@ -807,12 +940,16 @@ class MoneyTest {
 
     @Test
     fun `rows from banks we no longer read are dropped, not shown as an unnamed bank`() {
-        // Her phone showed a column of rows all titled «بانک» — MELLAT, SADERAT, TEJARAT and
-        // the rest, written when the bank was guessed from wording. They cannot be named, they
-        // can never be corrected by another message, and one of them read −۹۱۶ میلیارد.
+        // Her phone showed a column of rows all titled «بانک» — MELLAT, TEJARAT and the rest,
+        // written when the bank was guessed from wording. They cannot be named, they can never
+        // be corrected by another message, and one of them read −۹۱۶ میلیارد.
+        //
+        // A name that later joins the enum leaves this filter by design: it can be named and a
+        // real message will correct it, which is the visible-and-correctable case the sheet is
+        // for, not the unnameable one this drops.
         val stored = listOf(
             BankAccount("MELLAT", balance = -916_104_000_000.0, updatedAt = 9, anchored = true),
-            BankAccount("SADERAT", balance = 53_012_000_000_000.0, updatedAt = 8, anchored = true),
+            BankAccount("TEJARAT", balance = 53_012_000_000_000.0, updatedAt = 8, anchored = true),
             BankAccount("OTHER", balance = 47_815_000.0, updatedAt = 7, anchored = true),
             BankAccount("SAMAN", balance = 46_072_530.9, updatedAt = 6, anchored = true),
             BankAccount("KHAVARMIANEH", balance = 300_000_000.0, updatedAt = 5, anchored = true),

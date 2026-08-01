@@ -1,5 +1,7 @@
 package com.doxigo.muchtoman
 
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
@@ -45,10 +47,13 @@ fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String {
     // zero, because "۱۱ میلیون" is how the amount is actually said mid-sentence. The figures
     // on the list and the hero use dec = 3 padded: a holding is usually a whole number times a
     // round rate, so without padding they collapse to "۸۵۰٫۸" and the precision looks like it
-    // comes and goes. Fixed width means every figure on screen has the same shape.
+    // comes and goes — except a figure that lands exactly on the unit, which drops its
+    // decimals entirely: "۱۸۰٫۰۰۰ میلیون" is three zeros carrying nothing, and reads worse
+    // than "۱۸۰ میلیون".
     var f = 1.0
     repeat(dec) { f *= 10 }
-    return "${faDecimal(truncate(toman / div * f) / f, dec, pad)} $unit"
+    val t = truncate(toman / div * f) / f
+    return "${faDecimal(t, dec, pad && t % 1.0 != 0.0)} $unit"
 }
 
 private val ONES = arrayOf("", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه")
@@ -137,6 +142,31 @@ fun parseAmount(input: String): Double? {
 }
 
 /**
+ * How much of a thing she holds, sized for a list row. Every coin carries six decimals so the
+ * edit field can round-trip a dust balance, but six decimals of ten thousand Tether is
+ * precision nobody scans — and on a row it is what pushed the rate, the figure she opened the
+ * app to check, off the end of the line. Below one unit every decimal still counts, so a
+ * fraction of a Bitcoin keeps all of them; the exact figure is one tap away either way.
+ *
+ * Truncated, never rounded, for the same reason [faCompact] is: never show more than she has.
+ */
+fun faHeld(amount: Double, dec: Int): String {
+    val d = when {
+        amount >= 1_000 -> 2
+        amount >= 1 -> 4
+        else -> dec
+    }.coerceAtMost(dec)
+    if (d >= dec) return faDecimal(amount, dec)      // nothing to drop; leave it untouched
+    // Settled at the asset's own precision before anything is cut. 10709.13 is not exactly
+    // representable as a double — truncating the stored value directly takes off a cent that
+    // she really has, which is the one direction this function must never round.
+    return faDecimal(
+        BigDecimal(amount).setScale(dec, RoundingMode.HALF_UP).setScale(d, RoundingMode.DOWN).toDouble(),
+        d,
+    )
+}
+
+/**
  * How one unit is worth, sized to the number: a dollar reads better in full ("۱۸۷٬۰۰۰"),
  * a gold coin does not ("۱۸۰ میلیون" beats nine digits).
  */
@@ -145,7 +175,7 @@ fun faRate(rate: Double): String =
 
 /**
  * Wraps a run in Unicode isolates. A latin ticker dropped into Persian text drags the
- * numbers around it out of order — "۴۰ SOL · نرخ ۱۴ میلیون" renders as "SOL ۴۰ · نرخ..."
+ * numbers around it out of order — "۴۰ SOL • نرخ ۱۴ میلیون" renders as "SOL ۴۰ • نرخ..."
  * without this. FSI/PDI tells the bidi algorithm to treat the run as one opaque unit.
  */
 fun bidi(s: String): String = "⁨$s⁩"
