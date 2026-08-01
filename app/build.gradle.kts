@@ -39,25 +39,26 @@ android {
         }
     }
 
-    // Where the app gets its prices. Override either build with:
-    //   ./gradlew installDebug -Pmuchtoman.ratesUrl=https://your-worker.workers.dev/rates
-    val ratesOverride = providers.gradleProperty("muchtoman.ratesUrl").orNull
+    // Where the app gets its prices — the deployed Worker for both builds, so a debug install
+    // is the shipped app with the debugger attached rather than a second environment to keep
+    // in your head. A local Worker is the thing you opt into:
+    //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates   # emulator
+    //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://<this-mac-on-the-lan>:8787/rates
+    // Defaulting debug to 10.0.2.2 was the older way round, and it failed silently on a real
+    // phone: prices kept showing (they are cached) while every wallet lookup timed out.
+    val ratesUrl = providers.gradleProperty("muchtoman.ratesUrl")
+        .getOrElse("https://muchtoman-rates.milaniz.workers.dev/rates")
 
     buildTypes {
         debug {
-            // 10.0.2.2 is how the emulator reaches `wrangler dev` on this machine.
-            buildConfigField(
-                "String",
-                "RATES_URL",
-                "\"${ratesOverride ?: "http://10.0.2.2:8787/rates"}\"",
-            )
+            // Same key as release so a debug install replaces the released app in place —
+            // data, backups and all — instead of demanding an uninstall. CI has no
+            // keystore.properties, so its debug builds keep the default debug key.
+            if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
         }
         release {
-            buildConfigField(
-                "String",
-                "RATES_URL",
-                "\"${ratesOverride ?: "https://muchtoman-rates.milaniz.workers.dev/rates"}\"",
-            )
+            buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
