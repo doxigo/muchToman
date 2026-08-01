@@ -1,5 +1,5 @@
 /**
- * muchtoman-rates — one endpoint, GET /rates, returning Toman per unit of everything.
+ * muchtoman-rates — prices plus read-only public-wallet balance lookup.
  *
  *   { "updatedAt": 1785000000000, "toman": { "usd": 187000, "gold18": 17886329, ... } }
  *
@@ -22,6 +22,10 @@ const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully faster.
+const RATES_CACHE_VERSION = 'latest-release-v1';
+
+/** Where the app's own APKs come from — the source of the update note in /rates. */
+const REPO = 'doxigo/muchToman';
 
 /**
  * A scrape that half-works is more dangerous than one that fails, because it produces a
@@ -173,27 +177,92 @@ async function fetchFiat() {
  * name CoinGecko knows it by, kept alongside rather than replaced: it is the only way the
  * picker can answer "Polkadot" as well as "پولکادات" and "DOT".
  */
-type Coin = { id: string; name: string; en: string; icon: string };
+type WalletOption = { network: string; networkFa: string; contract?: string };
+type Coin = { id: string; name: string; en: string; icon: string; wallets: WalletOption[] };
+
+const WALLET_PLATFORMS: Record<string, Omit<WalletOption, 'contract'>> = {
+  ethereum: { network: 'ethereum', networkFa: 'اتریوم' },
+  tron: { network: 'tron', networkFa: 'ترون' },
+  'binance-smart-chain': { network: 'bsc', networkFa: 'BSC' },
+  'arbitrum-one': { network: 'arbitrum', networkFa: 'آربیتروم' },
+  'polygon-pos': { network: 'polygon', networkFa: 'پالیگان' },
+  'optimistic-ethereum': { network: 'optimism', networkFa: 'آپتیمیسم' },
+  avalanche: { network: 'avalanche', networkFa: 'آوالانچ' },
+};
+
+// CoinGecko publishes some canonical/bridged USDT contracts as separate market assets.
+// They belong in the app's single USDT holding, but other bridged tickers stay distinct.
+const WALLET_METADATA_ALIASES: Record<string, string[]> = {
+  tether: ['binance-bridged-usdt-bnb-smart-chain', 'usdt0'],
+};
+
+const WALLET_NETWORK_ORDER = [
+  'bitcoin', 'ethereum', 'tron', 'bsc', 'arbitrum', 'polygon', 'optimism', 'avalanche', 'solana',
+];
+
+const NATIVE_WALLETS: Record<string, WalletOption> = {
+  bitcoin: { network: 'bitcoin', networkFa: 'بیت کوین' },
+  ethereum: { network: 'ethereum', networkFa: 'اتریوم' },
+  solana: { network: 'solana', networkFa: 'سولانا' },
+  tron: { network: 'tron', networkFa: 'ترون' },
+};
+
+function walletsFor(
+  geckoId: string,
+  platformsById: Map<string, Record<string, unknown>>,
+): WalletOption[] {
+  const wallets: WalletOption[] = [];
+  if (NATIVE_WALLETS[geckoId]) wallets.push(NATIVE_WALLETS[geckoId]);
+
+  for (const metadataId of [geckoId, ...(WALLET_METADATA_ALIASES[geckoId] ?? [])]) {
+    for (const [platform, value] of Object.entries(platformsById.get(metadataId) ?? {})) {
+      const known = WALLET_PLATFORMS[platform];
+      const contract = String(value ?? '').trim();
+      if (known && contract) wallets.push({ ...known, contract });
+    }
+  }
+
+  return wallets
+    .filter(
+      (wallet, index) => wallets.findIndex((other) => other.network === wallet.network) === index,
+    )
+    .sort((a, b) => WALLET_NETWORK_ORDER.indexOf(a.network) - WALLET_NETWORK_ORDER.indexOf(b.network));
+}
 
 /**
  * The coin catalogue and its USD prices. This is also where the picker's names and logos
  * come from — an emoji standing in for a coin is just a wrong logo, so we ship the real one.
  */
 async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: Coin[] }> {
-  const list = await getJson(
-    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${COIN_LIMIT}&page=1`,
-  );
+  const [list, platformList] = await Promise.all([
+    getJson(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${COIN_LIMIT}&page=1`,
+    ),
+    // Contract metadata is an enhancement. If this one large map is rate-limited, prices and
+    // native BTC/ETH/SOL/TRX tracking still go out; token tracking returns on the next refresh.
+    getJson('https://api.coingecko.com/api/v3/coins/list?include_platform=true').catch(() => []),
+  ]);
   if (!Array.isArray(list) || list.length === 0) throw new Error('empty coin list');
+
+  const platformsById = new Map<string, Record<string, unknown>>();
+  for (const coin of Array.isArray(platformList) ? platformList : []) {
+    platformsById.set(String(coin?.id ?? ''), coin?.platforms ?? {});
+  }
 
   const usd: Record<string, number> = {};
   const coins: Coin[] = [];
 
   for (const c of list) {
     const id = String(c?.symbol ?? '').toLowerCase();
+    const geckoId = String(c?.id ?? '');
     const price = num(c?.current_price);
     // A coin whose ticker collides with a currency/gold/coin id would shadow it in the
     // rates map. There are none today; skipping is still cheaper than debugging it later.
-    if (!id || price == null || id in BONBAST_MAP || id === 'toman') continue;
+    if (!id || !geckoId || price == null || id in BONBAST_MAP || id === 'toman') continue;
+    // The app has historically keyed holdings by ticker. When two current coins share one,
+    // the higher-market-cap entry wins instead of the later one silently changing its price,
+    // logo, and now its token contract.
+    if (id in usd) continue;
 
     const en = String(c?.name ?? id.toUpperCase());
     usd[id] = price;
@@ -202,6 +271,7 @@ async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: C
       name: en, // until a Persian name is found for it below
       en,
       icon: String(c?.image ?? '').split('?')[0], // cache-buster query is dead weight x250
+      wallets: walletsFor(geckoId, platformsById),
     });
   }
   return { usd, coins };
@@ -262,10 +332,222 @@ async function fetchTetherland(): Promise<TomanCrypto> {
 
 const hasPrices = (v: TomanCrypto) => Object.keys(v.prices).length > 0;
 
+// ───────────────────────── wallet balances ─────────────────────────
+
+class WalletInputError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const BASE58_KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const TRON_ADDRESS = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+const BITCOIN_ADDRESS = /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$/i;
+const EVM_RPCS: Record<string, string[]> = {
+  ethereum: ['https://eth.drpc.org', 'https://ethereum-rpc.publicnode.com'],
+  bsc: ['https://bsc-dataseed.bnbchain.org', 'https://bsc-dataseed-public.bnbchain.org'],
+  arbitrum: ['https://arb1.arbitrum.io/rpc', 'https://arbitrum-one-rpc.publicnode.com'],
+  polygon: ['https://polygon.drpc.org', 'https://polygon.publicnode.com'],
+  optimism: ['https://mainnet.optimism.io', 'https://optimism-rpc.publicnode.com'],
+  avalanche: [
+    'https://api.avax.network/ext/bc/C/rpc',
+    'https://avalanche-c-chain-rpc.publicnode.com',
+  ],
+};
+const SOLANA_RPCS = ['https://api.mainnet-beta.solana.com', 'https://solana-rpc.publicnode.com'];
+
+async function rpc(url: string, method: string, params: unknown[]): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  const data = await getJson(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
+  if (data?.error || data?.result == null) {
+    throw new Error(String(data?.error?.message ?? 'RPC returned no result'));
+  }
+  return data.result;
+}
+
+async function firstRpc(urls: string[], method: string, params: unknown[]): Promise<any> {
+  const failures: string[] = [];
+  for (const url of urls) {
+    try {
+      return await rpc(url, method, params);
+    } catch (error: any) {
+      failures.push(`${url}: ${error?.message ?? error}`);
+    }
+  }
+  throw new Error(failures.join('; '));
+}
+
+function scaledAmount(raw: unknown, decimals: number): number {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error('invalid token decimals');
+  }
+  const text = String(raw ?? '');
+  const units = BigInt(text);
+  if (units < 0n) throw new Error('negative on-chain balance');
+  const scale = 10n ** BigInt(decimals);
+  const amount = Number(units / scale) + Number(units % scale) / 10 ** decimals;
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('balance outside numeric range');
+  return amount;
+}
+
+async function evmBalance(network: string, address: string, contract: string): Promise<number> {
+  if (!EVM_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
+  if (contract && !EVM_ADDRESS.test(contract)) throw new WalletInputError('invalid_contract');
+  const urls = EVM_RPCS[network];
+  if (!urls) throw new WalletInputError('unsupported_network');
+
+  if (!contract) {
+    const raw = await firstRpc(urls, 'eth_getBalance', [address, 'latest']);
+    return scaledAmount(raw, 18);
+  }
+
+  const account = address.slice(2).padStart(64, '0');
+  const [raw, decimalsHex] = await Promise.all([
+    firstRpc(urls, 'eth_call', [
+      { to: contract, data: `0x70a08231${account}` },
+      'latest',
+    ]),
+    firstRpc(urls, 'eth_call', [
+      { to: contract, data: '0x313ce567' },
+      'latest',
+    ]),
+  ]);
+  return scaledAmount(raw, Number(BigInt(decimalsHex)));
+}
+
+async function solanaBalance(address: string, mint: string): Promise<number> {
+  if (!BASE58_KEY.test(address)) throw new WalletInputError('invalid_address');
+  if (mint && !BASE58_KEY.test(mint)) throw new WalletInputError('invalid_contract');
+  if (mint) throw new WalletInputError('unsupported_network');
+
+  const result = await firstRpc(SOLANA_RPCS, 'getBalance', [
+    address,
+    { commitment: 'finalized' },
+  ]);
+  return Number(result.value) / 1_000_000_000;
+}
+
+async function tronBalance(address: string, contract: string): Promise<number> {
+  if (!TRON_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
+  if (contract && !TRON_ADDRESS.test(contract)) throw new WalletInputError('invalid_contract');
+
+  if (!contract) {
+    const account = await getJson('https://api.trongrid.io/wallet/getaccount', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ address, visible: true }),
+    });
+    return Number(account?.balance ?? 0) / 1_000_000;
+  }
+
+  const [balances, token] = await Promise.all([
+    getJson(
+      `https://api.trongrid.io/v1/accounts/${encodeURIComponent(address)}` +
+        `/trc20/balance?contract_address=${encodeURIComponent(contract)}&limit=1`,
+    ),
+    getJson('https://api.trongrid.io/wallet/triggerconstantcontract', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        owner_address: address,
+        contract_address: contract,
+        function_selector: 'decimals()',
+        visible: true,
+      }),
+    }),
+  ]);
+  const raw = balances?.data?.[0]?.[contract] ?? '0';
+  const decimalsHex = token?.constant_result?.[0];
+  if (!decimalsHex) throw new Error('TRC-20 decimals unavailable');
+  return scaledAmount(raw, Number(BigInt(`0x${decimalsHex}`)));
+}
+
+async function bitcoinBalance(address: string, contract: string): Promise<number> {
+  if (contract) throw new WalletInputError('invalid_contract');
+  if (!BITCOIN_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
+  const encoded = encodeURIComponent(address);
+  const validation = await getJson(`https://mempool.space/api/v1/validate-address/${encoded}`);
+  if (!validation?.isvalid) throw new WalletInputError('invalid_address');
+
+  const data = await getJson(`https://mempool.space/api/address/${encoded}`);
+  const confirmed = Number(data?.chain_stats?.funded_txo_sum ?? 0) -
+    Number(data?.chain_stats?.spent_txo_sum ?? 0);
+  const pending = Number(data?.mempool_stats?.funded_txo_sum ?? 0) -
+    Number(data?.mempool_stats?.spent_txo_sum ?? 0);
+  const satoshis = confirmed + pending;
+  if (!Number.isFinite(satoshis) || satoshis < 0) throw new Error('invalid Bitcoin balance');
+  return satoshis / 100_000_000;
+}
+
+async function lookupWalletBalance(body: unknown): Promise<number> {
+  if (body == null || typeof body !== 'object') throw new WalletInputError('invalid_request');
+  const input = body as Record<string, unknown>;
+  const network = String(input.network ?? '');
+  const address = String(input.address ?? '').trim();
+  const contract = String(input.contract ?? '').trim();
+  if (!address || address.length > 128 || contract.length > 128) {
+    throw new WalletInputError('invalid_address');
+  }
+
+  switch (network) {
+    case 'bitcoin': return bitcoinBalance(address, contract);
+    case 'ethereum':
+    case 'bsc':
+    case 'arbitrum':
+    case 'polygon':
+    case 'optimism':
+    case 'avalanche': return evmBalance(network, address, contract);
+    case 'solana': return solanaBalance(address, contract);
+    case 'tron': return tronBalance(address, contract);
+    default: throw new WalletInputError('unsupported_network');
+  }
+}
+
+function jsonResponse(payload: unknown, status = 200, cacheControl = 'no-store'): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': cacheControl,
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
 // ───────────────────────── assembly ─────────────────────────
 
+/**
+ * The newest tagged release, so the phone can mention an update without reaching
+ * api.github.com itself — from Iran that is the request most likely to hang, and it would
+ * hand GitHub a list of user IPs besides. The subrequest is cached at the edge for an hour on
+ * top of the /rates cache, which is the longest a new release can take to start showing up.
+ */
+async function fetchLatestRelease(): Promise<{ name: string; url: string } | null> {
+  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
+    cf: { cacheTtl: 3600, cacheEverything: true },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body: any = await res.json();
+  const tag = typeof body?.tag_name === 'string' ? body.tag_name : '';
+  if (!tag) throw new Error('no tag_name');
+  return {
+    name: tag.replace(/^v/, ''),
+    url: typeof body.html_url === 'string'
+      ? body.html_url
+      : `https://github.com/${REPO}/releases/latest`,
+  };
+}
+
 async function buildRates(): Promise<Response> {
-  const [fiat, cryptoToman, gecko] = await Promise.allSettled([
+  const [fiat, cryptoToman, gecko, release] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
       [
@@ -275,6 +557,7 @@ async function buildRates(): Promise<Response> {
       hasPrices,
     ),
     fetchCoinGecko(),
+    fetchLatestRelease(),
   ]);
 
   const toman: Record<string, number> = {};
@@ -346,8 +629,21 @@ async function buildRates(): Promise<Response> {
   sources.crypto_pricing =
     `${tehranPriced} at Tehran price, ${converted} cross-rated from USD via ${usdVia}`;
 
+  sources.latest_release =
+    release.status === 'fulfilled'
+      ? `ok, ${release.value!.name}`
+      : `failed, no update note this fetch — ${String(release.reason?.message ?? release.reason)}`;
+
   const ok = Object.keys(toman).length > 0;
-  const payload = { updatedAt: Date.now(), toman, coins, sources };
+  const payload = {
+    updatedAt: Date.now(),
+    toman,
+    coins,
+    sources,
+    // Null when GitHub is the source that is down. The phone keeps whatever it last heard
+    // rather than retracting a note it has already shown.
+    latest: release.status === 'fulfilled' ? release.value : null,
+  };
 
   return new Response(JSON.stringify(payload), {
     status: ok ? 200 : 502,
@@ -361,18 +657,47 @@ async function buildRates(): Promise<Response> {
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === '/wallet-balance') {
+      if (request.method !== 'POST') {
+        return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } });
+      }
+      try {
+        const text = await request.text();
+        if (text.length > 4096) throw new WalletInputError('invalid_request');
+        const amount = await lookupWalletBalance(JSON.parse(text));
+        return jsonResponse({ amount, updatedAt: Date.now() });
+      } catch (error) {
+        if (error instanceof WalletInputError || error instanceof SyntaxError) {
+          const code = error instanceof WalletInputError ? error.code : 'invalid_request';
+          return jsonResponse({ code }, 400);
+        }
+        console.error(
+          'wallet lookup failed',
+          error instanceof Error ? error.message : String(error),
+        );
+        return jsonResponse({ code: 'unavailable' }, 502);
+      }
+    }
+
     if (url.pathname !== '/rates') {
-      return new Response('muchtoman rates: GET /rates\n', {
+      return new Response('muchtoman: GET /rates or POST /wallet-balance\n', {
         status: 404,
         headers: { 'content-type': 'text/plain; charset=utf-8' },
       });
     }
+    if (request.method !== 'GET') {
+      return new Response('Method not allowed', { status: 405, headers: { allow: 'GET' } });
+    }
 
     const cache = caches.default;
-    const key = new Request(`${url.origin}/rates`, { method: 'GET' });
+    const key = new Request(
+      `${url.origin}/__cache/rates/${encodeURIComponent(RATES_CACHE_VERSION)}`,
+      { method: 'GET' },
+    );
 
-    // ?fresh=1 skips the read (still refills the cache) — for debugging and after a deploy,
-    // since a new version does not invalidate what caches.default is already holding.
+    // `fresh` skips the read and refills this location. The versioned key makes a catalogue
+    // schema change miss stale entries in every Cloudflare location after deployment.
     if (!url.searchParams.has('fresh')) {
       const hit = await cache.match(key);
       if (hit) return hit;
