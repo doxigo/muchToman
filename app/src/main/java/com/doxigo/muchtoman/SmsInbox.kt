@@ -2,7 +2,9 @@ package com.doxigo.muchtoman
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +16,15 @@ data class RawSms(val from: String, val body: String, val at: Long)
 fun canReadSms(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
         PackageManager.PERMISSION_GRANTED
+
+fun openSmsThread(context: Context, sender: String): Boolean {
+    if (sender.isBlank()) return false
+    val intent = Intent(Intent.ACTION_VIEW, Uri.fromParts("smsto", sender, null))
+    val handler = Telephony.Sms.getDefaultSmsPackage(context)
+        ?: intent.resolveActivity(context.packageManager)?.packageName
+    handler?.takeUnless { it == "android" }?.let(intent::setPackage)
+    return runCatching { context.startActivity(intent) }.isSuccess
+}
 
 /**
  * Everything in the inbox newer than [since], oldest first — the order [applyBankSms] needs,

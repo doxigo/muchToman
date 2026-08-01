@@ -16,15 +16,33 @@ const val BANK_ID = "bank_accounts"
  * Adding a bank is one line here. Write the number however it is easiest to read — only its
  * digits are compared, and only the last ten of them, so every form Android hands us for the
  * same sender matches: +989999987641, 989999987641, 09999987641, "0999 998 7641".
+ *
+ * The logo is the other half: every Iranian bank's mark is already in `res/drawable` as
+ * `ic_bank_<name>`, and `BankLogo` matches on this enum exhaustively, so the compiler asks for
+ * the one line that points a new entry at its file.
  */
 enum class Bank(val fa: String, val numbers: List<String>) {
     // A bank sends from more than one number: a mobile line and a shortcode, and Refah uses two
     // shortcodes. A shortcode is shorter than ten digits and so simply matches itself, and no
     // ten-digit mobile ending in the same run can collide with it.
-    BLU("بلو بانک", listOf("0999 998 7641")),
-    SAMAN("بانک سامان", listOf("0999 992 0000")),
-    REFAH("بانک رفاه", listOf("100031", "100032")),
-    KHAVARMIANEH("بانک خاورمیانه", listOf("90000258", "20004861")),
+    BLU("بلو بانک", listOf("0999 998 7641", "90000258", "+9890000258", "98300087641")),
+    SAMAN("بانک سامان", listOf("0999 992 0000", "+989820000", "9820000")),
+    // Refah and Pasargad also send from lettered headers, not numbers at all. senderKey
+    // keeps those as their own name, so listing one works exactly like listing a shortcode.
+    REFAH("بانک رفاه", listOf("100031", "100032", "Refah Bank")),
+    PASARGAD("بانک پاسارگاد", listOf("B.Pasargad")),
+    EGHTESAD_NOVIN("بانک اقتصاد نوین", listOf("ENBank")),
+    KHAVARMIANEH(
+        "بانک خاورمیانه",
+        listOf("20004861", "+9820004861", "+989820004860"),
+    ),
+    // The shortcode is listed both bare and with the country code in front of it, for the same
+    // reason Blu's is: +98 in front of an eight-digit shortcode makes ten digits, which is a
+    // different key from the eight, and the carrier picks either form.
+    SADERAT(
+        "بانک صادرات",
+        listOf("+98 9870 0719", "98700719", "+98 983 000 9419", "BankSaderat"),
+    ),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build
@@ -55,8 +73,9 @@ private fun digitsOf(s: String) = buildString {
 fun senderKey(sender: String): String {
     val trimmed = sender.trim()
     // A lettered header is its own whole name; reducing "Tel100031" to digits would let a
-    // stranger wear Refah's shortcode.
-    if (trimmed.any { it.isLetter() }) return trimmed.lowercase()
+    // stranger wear Refah's shortcode. Runs of whitespace collapse to one space, because
+    // "Refah Bank" and "Refah  Bank" are one sender however the carrier spaces it.
+    if (trimmed.any { it.isLetter() }) return trimmed.replace(WHITESPACE, " ").lowercase()
     val digits = digitsOf(trimmed)
     // +98…, 98… and 0… in front of the same mobile line are one sender written three ways.
     // Nothing else is folded: a shortcode is exactly itself.
@@ -66,6 +85,10 @@ fun senderKey(sender: String): String {
         else -> digits
     }
 }
+
+// Bank headers really do arrive with non-breaking spaces. Android does not support Java's
+// inline (?U) flag, so include Unicode separator categories explicitly.
+private val WHITESPACE = Regex("[\\s\\p{Z}]+")
 
 private val BANK_BY_NUMBER: Map<String, Bank> =
     Bank.entries.flatMap { bank -> bank.numbers.map { senderKey(it) to bank } }.toMap()
@@ -98,6 +121,7 @@ data class BankAccount(
     val updatedAt: Long = 0L,
     val inferred: Boolean = false,
     val anchored: Boolean = false,
+    val sender: String = "",
 ) {
     /** The bank alone: see [applyBankSms] for why the printed identifier cannot key an account. */
     val key: String get() = bank
@@ -115,6 +139,7 @@ data class BankAccount(
  */
 data class BankSms(
     val bank: Bank,
+    val sender: String,
     val mask: String,
     val delta: Double?,
     val balance: Double?,
@@ -307,6 +332,7 @@ fun parseBankSms(
 
     val sms = BankSms(
         bank = bank,
+        sender = sender.trim(),
         mask = accountIn(text),
         delta = delta,
         balance = balance,
@@ -320,6 +346,20 @@ fun parseBankSms(
 
 /** Words that mark a مانده as an operator's bundle — data, minutes, credit — not money at a bank. */
 private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "مکالمه", "شارژ")
+
+private data class IgnoredBank(val name: String, val senders: List<String>)
+
+private val IGNORED_BANKS = listOf(
+    IgnoredBank("بانک آینده", listOf("AyandehBank", "+98700745")),
+)
+
+fun isIgnoredBankSms(sender: String, body: String): Boolean {
+    val senderKey = senderKey(sender)
+    val firstLine = normalise(body).lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    return IGNORED_BANKS.any { bank ->
+        senderKey in bank.senders.map(::senderKey) || firstLine.startsWith(bank.name)
+    }
+}
 
 /**
  * Whether a message we are *not* going to read is talking about a real bank balance: a money
@@ -342,6 +382,7 @@ fun looksLikeBankSms(body: String): Boolean {
  * what was removed when the sender numbers became the gate, and it stays removed.
  */
 fun guessBank(body: String): Bank? {
+    if (isIgnoredBankSms("", body)) return null
     val text = normalise(body)
     return Bank.entries.filter { it.numbers.isNotEmpty() }
         .firstOrNull { b -> containsWord(text, b.fa.split(' ').first { it != "بانک" }) }
@@ -365,7 +406,12 @@ private fun containsWord(text: String, word: String): Boolean {
 
 /** One message that named a bank we read, sent from a number the list does not have. */
 @Serializable
-data class StrangeSender(val sender: String, val bank: String, val snippet: String, val at: Long)
+data class StrangeSender(
+    val sender: String,
+    val bank: String,
+    val snippet: String,
+    val at: Long,
+)
 
 fun snippetOf(body: String): String = body.trim().replace(Regex("\\s+"), " ").take(64)
 
@@ -409,7 +455,15 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
     val next = when {
         sms.balance != null ->
             // The bank stated the balance: that is the truth, and it anchors the account.
-            BankAccount(sms.bank.name, mask, sms.balance, sms.at, sms.inferred, anchored = true)
+            BankAccount(
+                bank = sms.bank.name,
+                mask = mask,
+                balance = sms.balance,
+                updatedAt = sms.at,
+                inferred = sms.inferred,
+                anchored = true,
+                sender = sms.sender,
+            )
         sms.delta != null -> BankAccount(
             bank = sms.bank.name,
             mask = mask,
@@ -419,6 +473,7 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
             // a running total of transactions into an anchored balance.
             inferred = sms.inferred || existing?.inferred == true,
             anchored = existing?.anchored == true,
+            sender = sms.sender.ifBlank { existing?.sender.orEmpty() },
         )
         else -> return accounts
     }
