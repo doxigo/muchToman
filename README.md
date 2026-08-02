@@ -7,9 +7,13 @@ say them ("۴٫۷ میلیارد تومان", not "۴٬۶۶۶٬۲۵۱٬۱۳۶").
 legibility beats density everywhere.
 
 Holds plain Toman, fiat (USD, EUR, GBP, NOK, TRY, AED, CAD), **any of the top 250
-cryptocurrencies**, 18k gold by the gram or the مثقال, and Iranian coins (Emami, Bahar Azadi,
-Nim, Rob, Gerami). Everything is valued at **free-market** rates — the official ~42,000 IRR
-peg is not used anywhere.
+cryptocurrencies**, 18k gold by the gram or the مثقال, silver by the gram at ۹۹۹ and ۹۲۵,
+Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), and سکه پارسیان in all fifteen sizes
+from ۱۰۰ to ۱۵۰۰ سوت. Everything is valued at **free-market** rates — the official ~42,000
+IRR peg is not used anywhere.
+
+سکه پارسیان is quoted per size rather than weighed as gold: the اجرت is close to fixed per
+coin, so a ۱۰۰ سوت piece goes for about a quarter more than the gold in it.
 
 ## Screenshots
 

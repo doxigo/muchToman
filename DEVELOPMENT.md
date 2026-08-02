@@ -83,6 +83,11 @@ which link actually answered.
 
 - **Fiat, gold, coins:** `bonbast.com` → `tgju.org`. Bonbast quotes Toman directly; tgju
   quotes Rial and is divided by 10.
+- **Silver and سکه پارسیان:** tgju's own pages, `/gold-chart` and `/قیمت-سکه-پارسیان`, scraped
+  a table row at a time. These have no second source and do not ride the chain above, because
+  that chain stops at the first source that answers and bonbast — which answers nearly always
+  — quotes neither. tgju's widget API is not used for them: it carries neither, and it returns
+  HTTP 200 with an empty body once it decides you have asked too often.
 - **Crypto:** `bitpin` → `tetherland` → `coingecko` → `binance` → `kraken`. The Iranian
   exchanges quote Toman and carry the real Tehran premium; the global ones price in USD and
   are cross-rated through whatever dollar rate the fiat chain produced.
@@ -100,6 +105,17 @@ publishes no crypto at all rather than inventing a conversion.
 **A new fiat currency** is two lines: one in `STATIC_CATALOG` in
 [Catalog.kt](app/src/main/java/com/doxigo/muchtoman/Catalog.kt) and one in `BONBAST_MAP` /
 `TGJU_MAP` in [worker/src/index.ts](worker/src/index.ts).
+
+Check the two sources agree on the unit before adding one. Most currencies are quoted per
+unit by both, but bonbast quotes JPY and AMD per 10 and IQD per 100 where tgju quotes all
+three per 1 — mapping those straight across makes the holding wrong by that factor, but only
+on whichever source answered, so it would be intermittent as well as wrong.
+
+**Anything only tgju has** — silver, سکه پارسیان — comes from `fetchTgjuPage`, which reads
+named rows off a price page. Give it the page path and a `slug -> app id` map. A row is
+matched by `data-market-nameslug` **or** `data-market-row`, since neither is dependable
+alone: the Parsian rows carry the name in the first and a bare number in the second, silver
+does the reverse, and silver_999 ships an empty `nameslug` on some fetches.
 
 **A new bank** is one line in `Bank` in [Sms.kt](app/src/main/java/com/doxigo/muchtoman/Sms.kt)
 — the bank's name and the senders it writes from — plus one in `BankLogo` for its mark; the
