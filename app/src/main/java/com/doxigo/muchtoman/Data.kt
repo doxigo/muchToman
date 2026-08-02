@@ -157,6 +157,47 @@ fun recordDay(history: Map<Long, Double>, epochDay: Long, total: Double): Map<Lo
         .associate { it.key to it.value }
 }
 
+/**
+ * What the list actually shows: her own holdings, plus — once there is anything to show —
+ * one row standing for every bank account, dropped in right after her cash so the تومان
+ * section reads cash first, then bank. It is not persisted with the holdings: its amount
+ * is not hers to type, and it must vanish the moment she stops reading messages.
+ *
+ * Pure and shared: the screen, the widget and the daily worker must all agree on what
+ * "everything" is, and they can only do that by asking the same function.
+ */
+fun listHoldings(
+    holdings: List<Holding>,
+    smsEnabled: Boolean,
+    bankAccounts: List<BankAccount>,
+    disabledBanks: Set<String>,
+): List<Holding> {
+    if (!smsEnabled || bankAccounts.isEmpty()) return holdings
+    val bank = Holding(BANK_ID, bankTotal(bankAccounts, disabledBanks))
+    val cash = holdings.indexOfFirst { it.typeId == TOMAN_ID }
+    return if (cash < 0) listOf(bank) + holdings
+    else holdings.take(cash + 1) + bank + holdings.drop(cash + 1)
+}
+
+/**
+ * Today's history entry, but only a total worth remembering: something on the list, every
+ * holding priced, rates younger than a day. A partial or stale total drawn into the chart
+ * would look like a crash that never happened. Null means leave the history as it is.
+ */
+fun snapshotHistory(
+    history: Map<Long, Double>,
+    list: List<Holding>,
+    rates: Map<String, Double>,
+    ratesUpdatedAt: Long,
+    now: Long,
+): Map<Long, Double>? {
+    if (list.isEmpty()) return null
+    if (now - ratesUpdatedAt > 24 * 60 * 60_000L) return null
+    val totals = computeTotals(list, rates)
+    if (totals.missing.isNotEmpty()) return null
+    return recordDay(history, now / DAY_MS, totals.toman)
+}
+
 data class Change(val delta: Double, val percent: Double?, val sinceDay: Long)
 
 /**
@@ -221,6 +262,16 @@ class Store(context: Context) {
         get() = read("rates", Rates())
         set(v) = write("rates", v)
 
+    /**
+     * Last successful TSETMC snapshot. Kept apart from [cachedRates] because that is the
+     * Worker's payload and this is the one thing the phone fetches for itself — and because
+     * bourse prices go stale on their own schedule: outside Iran they never refresh at all,
+     * and this is what keeps the shares she already priced showing a number.
+     */
+    var cachedStocks: TseSnapshot
+        get() = read("stocks", TseSnapshot())
+        set(v) = write("stocks", v)
+
     /** The release she has already waved off, so the note does not come back every time. */
     var dismissedUpdate: String
         get() = prefs.getString("dismissedUpdate", "").orEmpty()
@@ -241,6 +292,14 @@ class Store(context: Context) {
     var lockEnabled: Boolean
         get() = prefs.getBoolean("lockEnabled", false)
         set(v) { prefs.edit().putBoolean("lockEnabled", v).apply() }
+
+    /**
+     * Whether the home-screen widget masks the total with «٭٭٭». Its own switch, not the app
+     * lock's: she may want the app guarded but the number glanceable, or the other way round.
+     */
+    var widgetLock: Boolean
+        get() = prefs.getBoolean("widgetLock", false)
+        set(v) { prefs.edit().putBoolean("widgetLock", v).apply() }
 
     /** Rates the user typed in by hand; these win over whatever the Worker says. */
     var overrides: Map<String, Double>
@@ -324,8 +383,12 @@ class Store(context: Context) {
  * to anything other than itself — and the same goes for the bank balances, which are already
  * Toman by the time [parseBankSms] is done with them.
  */
-fun effectiveRates(fetched: Rates, overrides: Map<String, Double>): Map<String, Double> =
-    fetched.toman + overrides + mapOf(TOMAN_ID to 1.0, BANK_ID to 1.0)
+fun effectiveRates(
+    fetched: Rates,
+    overrides: Map<String, Double>,
+    tse: TseSnapshot = TseSnapshot(),
+): Map<String, Double> =
+    fetched.toman + tse.toman + overrides + mapOf(TOMAN_ID to 1.0, BANK_ID to 1.0)
 
 /**
  * Fresh prices, but the old catalogue if the new one is empty. When the Worker's name-and-logo

@@ -258,6 +258,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
             name = state.name,
             themeMode = state.themeMode,
             lockEnabled = state.lockEnabled,
+            widgetLock = state.widgetLock,
             smsEnabled = state.smsEnabled,
             bankAccounts = state.bankAccounts,
             disabledBanks = state.disabledBanks,
@@ -272,6 +273,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                 if (on) promptUnlock(activity) { vm.setLockEnabled(true) }
                 else vm.setLockEnabled(false)
             },
+            onWidgetLockChange = vm::setWidgetLock,
             onBack = { settings = false },
         )
         return
@@ -282,6 +284,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
         ReportScreen(
             history = state.history,
             current = state.totals.toman,
+            composition = compositionByKind(state.listHoldings, state.coins, state.effective, state.stocks),
             onBack = { report = false },
         )
         return
@@ -383,7 +386,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                 // Dollars, gold, coins and crypto used to arrive as one undifferentiated stack
                 // of cards. Banding them by kind separates them without moving anything: the
                 // sections come out in the order the holdings are already stored in.
-                val sections = holdingsByKind(state.listHoldings, state.coins)
+                val sections = holdingsByKind(state.listHoldings, state.coins, state.stocks)
                 sections.forEach { (kind, held) ->
                     // A single section is not a separation, and its subtotal would only be the
                     // hero total said twice.
@@ -407,7 +410,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                         item(key = "band_top") { Spacer(Modifier.height(Space.xl)) }
                     }
                     itemsIndexed(held, key = { _, h -> h.key }) { i, h ->
-                        val type = resolveType(h.typeId, state.coins)
+                        val type = resolveType(h.typeId, state.coins, state.stocks)
                         HoldingRow(
                             type = type,
                             name = h.nameOr(type.fa),
@@ -436,7 +439,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
             }
 
             if (state.totals.missing.isNotEmpty()) {
-                item { MissingNote(state.totals.missing, state.coins) }
+                item { MissingNote(state.totals.missing, state.coins, state.stocks) }
             }
         }
         }
@@ -477,7 +480,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
 
     if (adding) {
         PickTypeSheet(
-            all = catalog(state.coins),
+            all = catalog(state.coins, state.stocks),
             already = state.holdings.map { it.typeId }.toSet(),
             onDismiss = { adding = false },
             // A fresh key every time: picking تتر when she already holds some opens an empty
@@ -490,7 +493,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
         val held = state.holdings.firstOrNull { it.key == key }
         EditSheet(
             key = key,
-            type = resolveType(typeId, state.coins),
+            type = resolveType(typeId, state.coins, state.stocks),
             holding = held,
             rate = effective[typeId],
             isOverridden = state.overrides.containsKey(typeId),
@@ -1006,8 +1009,8 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp) {
     val tint = when (type.kind) {
         Kind.CASH -> scheme.primaryContainer
         Kind.FIAT -> scheme.tertiaryContainer
-        Kind.GOLD, Kind.COIN -> scheme.secondaryContainer
-        Kind.CRYPTO -> scheme.surfaceVariant
+        Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.secondaryContainer
+        Kind.CRYPTO, Kind.STOCK -> scheme.surfaceVariant
     }
     Box(
         modifier = Modifier
@@ -1776,8 +1779,8 @@ private fun EmptyHint() {
 }
 
 @Composable
-private fun MissingNote(missing: List<String>, coins: List<Coin>) {
-    val names = missing.map { resolveType(it, coins).fa }.distinct().joinToString("، ")
+private fun MissingNote(missing: List<String>, coins: List<Coin>, stocks: List<Stock>) {
+    val names = missing.map { resolveType(it, coins, stocks).fa }.distinct().joinToString("، ")
     Row(
         Modifier
             .padding(edge)
@@ -1795,6 +1798,16 @@ private fun MissingNote(missing: List<String>, coins: List<Coin>) {
         )
     }
 }
+
+/**
+ * The kinds too numerous to list, mapped to what to call them when saying so. These come from
+ * the network by the hundred, so the picker shows a first handful and leaves the rest to
+ * search; every other kind is a short fixed list that belongs on screen in full.
+ */
+private val BROWSABLE_BY_SEARCH = mapOf(
+    Kind.CRYPTO to "رمزارزها",
+    Kind.STOCK to "نمادها",
+)
 
 /**
  * A drag-to-dismiss sheet rather than a dialog: the list is long, the phone is held one
@@ -1816,10 +1829,11 @@ private fun PickTypeSheet(
             // Persian name, latin name or ticker — matchesSearch owns which of them count.
             listOf<Pair<String?, List<AssetType>>>(null to all.filter { matchesSearch(it, q) })
         } else {
-            // Capped, or 250 tickers bury the assets she actually owns.
+            // Capped, or 250 tickers bury the assets she actually owns — and بورس is four
+            // times that again.
             Kind.entries.map { kind ->
                 val items = all.filter { it.kind == kind }
-                kind.fa to if (kind == Kind.CRYPTO) items.take(12) else items
+                kind.fa to if (kind in BROWSABLE_BY_SEARCH) items.take(12) else items
             }
         }
     }
@@ -1910,13 +1924,14 @@ private fun PickTypeSheet(
                     items(items, key = { it.id }) { type ->
                         PickRow(type, type.id in already) { close { onPick(type.id) } }
                     }
-                    // The cue that more coins exist sits under the coins it discloses — at
-                    // the bottom of the whole sheet, after gold and سکه, a capped section
-                    // just looked complete.
-                    if (q.isEmpty() && title == Kind.CRYPTO.fa) {
-                        item(key = "crypto_hint") {
+                    // The cue that more exist sits under the rows it discloses — at the
+                    // bottom of the whole sheet, after gold and سکه, a capped section just
+                    // looked complete.
+                    val more = BROWSABLE_BY_SEARCH.entries.firstOrNull { it.key.fa == title }
+                    if (q.isEmpty() && more != null) {
+                        item(key = "more_hint_$title") {
                             Text(
-                                "برای دیدن بقیهٔ رمزارزها، نام موردنظرتان را جستجو کنید.",
+                                "برای دیدن بقیهٔ ${more.value}، نام موردنظرتان را جستجو کنید.",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = Space.s, start = Space.xs),
@@ -1949,11 +1964,21 @@ private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (type.kind == Kind.CRYPTO) {
+            // The ticker tells one coin from another where the Persian names blur together;
+            // for a نماد the same job is done by the company behind it, since its own id is
+            // an instrument code that means nothing to anyone.
+            val subtitle = when (type.kind) {
+                Kind.CRYPTO -> type.id.uppercase()
+                Kind.STOCK -> type.en
+                else -> ""
+            }
+            if (subtitle.isNotBlank()) {
                 Text(
-                    type.id.uppercase(),
+                    subtitle,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

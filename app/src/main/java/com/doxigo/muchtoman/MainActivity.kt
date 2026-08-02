@@ -41,8 +41,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         UiState(
             holdings = store.holdings,
             rates = store.cachedRates,
+            tse = store.cachedStocks,
             overrides = store.overrides,
             lockEnabled = store.lockEnabled,
+            widgetLock = store.widgetLock,
             locked = store.lockEnabled,
             name = store.name,
             themeMode = store.themeMode,
@@ -60,6 +62,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         refresh()
         refreshWallets()
         scanSms()
+        scheduleDailySnapshot(app)
     }
 
     /**
@@ -83,19 +86,37 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (_state.value.loading) return
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
-            val result = fetchRates(BuildConfig.RATES_URL)
-            result.onSuccess { fetched ->
+            // Two sources that stand alone: the Worker prices everything else, TSETMC prices
+            // بورس and refuses connections from outside Iran. Whichever answers is applied.
+            val rates = async { fetchRates(BuildConfig.RATES_URL) }
+            val stocks = async { fetchTse() }
+
+            var failure: String? = null
+            rates.await().onSuccess { fetched ->
                 val fresh = mergeRates(fetched, store.cachedRates)
                 store.cachedRates = fresh
-                _state.update { it.copy(loading = false, rates = fresh, error = null) }
-                recordSnapshot()
+                _state.update { it.copy(rates = fresh) }
             }.onFailure { e ->
                 // Keep showing the cached rates; an old number beats a blank screen. The
                 // log line is the only place the real reason survives — the UI stays Persian
                 // and calm, but `adb logcat -s muchtoman` must be able to answer "why".
                 android.util.Log.w("muchtoman", "rates fetch failed: $e")
-                _state.update { it.copy(loading = false, error = e.message ?: "خطا") }
+                failure = e.message ?: "خطا"
             }
+
+            stocks.await().onSuccess { fresh ->
+                store.cachedStocks = fresh
+                _state.update { it.copy(tse = fresh) }
+            }.onFailure { e ->
+                // Deliberately not surfaced. This fails for everyone outside Iran, every
+                // time, and an error banner about بورس on a screen that priced everything
+                // else correctly would be noise. Shares already priced keep their cached
+                // number; ones never priced are already named in the missing-rate note.
+                android.util.Log.w("muchtoman", "tse fetch failed: $e")
+            }
+
+            _state.update { it.copy(loading = false, error = failure) }
+            recordSnapshot()
         }
     }
 
@@ -286,6 +307,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(lockEnabled = on, locked = false) }
     }
 
+    /** The widget's own mask, independent of the app lock. Takes effect on the spot. */
+    fun setWidgetLock(on: Boolean) {
+        store.widgetLock = on
+        _state.update { it.copy(widgetLock = on) }
+        updateTotalWidget(getApplication())
+    }
+
     /** Called when the app leaves the foreground, so returning to it asks again. */
     fun relock() {
         if (store.lockEnabled) _state.update { it.copy(locked = true) }
@@ -468,22 +496,23 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Remembers today's total for the report chart — but only a total worth remembering:
-     * every holding priced, rates younger than a day. A partial or stale total drawn into
-     * the chart would look like a crash that never happened.
+     * Remembers today's total for the report chart, via the same [snapshotHistory] the daily
+     * worker uses — and since this runs on every path that touches money, it is also the
+     * moment the home-screen widget learns the new total.
      */
     private fun recordSnapshot() {
         val s = _state.value
         // listHoldings, not holdings: someone whose only money is bank balances read from her
         // messages has an empty holdings list and a perfectly good total, and guarding on the
         // raw list left her report saying "هنوز نموداری نیست" for ever.
-        if (s.listHoldings.isEmpty()) return
-        if (System.currentTimeMillis() - s.rates.updatedAt > 24 * 60 * 60_000L) return
-        val totals = s.totals
-        if (totals.missing.isNotEmpty()) return
-        val next = recordDay(s.history, System.currentTimeMillis() / DAY_MS, totals.toman)
-        store.history = next
-        _state.update { it.copy(history = next) }
+        snapshotHistory(
+            s.history, s.listHoldings, s.effective, s.rates.updatedAt,
+            System.currentTimeMillis(),
+        )?.let { next ->
+            store.history = next
+            _state.update { it.copy(history = next) }
+        }
+        updateTotalWidget(getApplication())
     }
 }
 
@@ -494,6 +523,7 @@ data class UiState(
     val loading: Boolean = false,
     val error: String? = null,
     val lockEnabled: Boolean = false,
+    val widgetLock: Boolean = false,
     val locked: Boolean = false,
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -505,8 +535,10 @@ data class UiState(
     val refreshingWallets: Set<String> = emptySet(),
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",
+    val tse: TseSnapshot = TseSnapshot(),
 ) {
     val coins: List<Coin> get() = rates.coins
+    val stocks: List<Stock> get() = tse.stocks
 
     /**
      * The release worth a line on the list: newer than this build, and not one she has already
@@ -520,7 +552,7 @@ data class UiState(
                 it.name != dismissedUpdate &&
                 isNewerVersion(it.name, BuildConfig.VERSION_NAME)
         }
-    val effective: Map<String, Double> get() = effectiveRates(rates, overrides)
+    val effective: Map<String, Double> get() = effectiveRates(rates, overrides, tse)
     val refreshing: Boolean get() = loading || refreshingWallets.isNotEmpty()
 
     /** The tracked balances as one figure, minus the banks she switched off. */
@@ -530,20 +562,9 @@ data class UiState(
     val bankUnsure: Boolean
         get() = bankAccounts.any { it.bank !in disabledBanks && !it.trusted }
 
-    /**
-     * What the list actually shows: her own holdings, plus — once there is anything to show —
-     * one row standing for every bank account, dropped in right after her cash so the تومان
-     * section reads cash first, then bank. It is not persisted with the holdings: its amount
-     * is not hers to type, and it must vanish the moment she stops reading messages.
-     */
+    /** See [com.doxigo.muchtoman.listHoldings] — shared with the widget and the daily worker. */
     val listHoldings: List<Holding>
-        get() {
-            if (!smsEnabled || bankAccounts.isEmpty()) return holdings
-            val bank = Holding(BANK_ID, bankToman)
-            val cash = holdings.indexOfFirst { it.typeId == TOMAN_ID }
-            return if (cash < 0) listOf(bank) + holdings
-            else holdings.take(cash + 1) + bank + holdings.drop(cash + 1)
-        }
+        get() = listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks)
 
     val totals: Totals get() = computeTotals(listHoldings, effective)
 }
