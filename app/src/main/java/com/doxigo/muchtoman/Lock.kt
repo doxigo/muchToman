@@ -183,6 +183,7 @@ fun SettingsScreen(
     name: String,
     themeMode: ThemeMode,
     lockEnabled: Boolean,
+    widgetLock: Boolean,
     smsEnabled: Boolean,
     bankAccounts: List<BankAccount>,
     disabledBanks: Set<String>,
@@ -192,6 +193,7 @@ fun SettingsScreen(
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
+    onWidgetLockChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -319,7 +321,29 @@ fun SettingsScreen(
             }
 
             SectionLabel("امنیت")
-            LockSetting(enabled = lockEnabled, available = available, onChange = onLockChange)
+            // One band of two rows, like the banks: the app's lock and the widget's mask are
+            // siblings, not the same switch — she may want the app guarded but the number
+            // glanceable on the home screen, or the other way round.
+            SettingCard(
+                emoji = "🔒",
+                title = "قفل برنامه",
+                // Always what the setting does. When it is unavailable, the helper text below
+                // the band already carries the fix — and says where, which this line never did.
+                subtitle = "باز کردن با اثر انگشت یا رمز گوشی",
+                checked = lockEnabled,
+                onChange = onLockChange,
+                enabled = available,
+                shape = bandShape(0, 2),
+                divided = true,
+            )
+            SettingCard(
+                emoji = "🙈",
+                title = "قفل ویجت",
+                subtitle = "مبلغ روی صفحهٔ اصلی با ٭٭٭ پنهان می‌شود",
+                checked = widgetLock,
+                onChange = onWidgetLockChange,
+                shape = bandShape(1, 2),
+            )
 
             if (!available) {
                 Text(
@@ -454,15 +478,3 @@ fun SettingCard(
     }
 }
 
-@Composable
-fun LockSetting(enabled: Boolean, available: Boolean, onChange: (Boolean) -> Unit) =
-    SettingCard(
-        emoji = "🔒",
-        title = "قفل برنامه",
-        // Always what the setting does. When it is unavailable, the helper text below the
-        // card already carries the fix — and says where, which this line never did.
-        subtitle = "باز کردن با اثر انگشت یا رمز گوشی",
-        checked = enabled,
-        onChange = onChange,
-        enabled = available,
-    )

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The hero figure's instance (Theme.kt figureStyle): Black, ten percent narrow. TextView
+     has no fontVariationSettings XML attribute, so the instance is pinned here in the font
+     resource where RemoteViews can reach it. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/modam"
+        android:fontWeight="900"
+        android:fontVariationSettings="'wght' 900, 'wdth' 90"
+        android:fontStyle="normal" />
+</font-family>

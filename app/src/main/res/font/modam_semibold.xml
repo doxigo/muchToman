@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ChangePill's figure instance: SemiBold, narrow like every standalone figure. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/modam"
+        android:fontWeight="600"
+        android:fontVariationSettings="'wght' 600, 'wdth' 90"
+        android:fontStyle="normal" />
+</font-family>

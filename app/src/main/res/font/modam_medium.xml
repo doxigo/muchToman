@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The hero label's instance: Medium, full width — same as the app's small hero text. -->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/modam"
+        android:fontWeight="500"
+        android:fontVariationSettings="'wght' 500"
+        android:fontStyle="normal" />
+</font-family>
