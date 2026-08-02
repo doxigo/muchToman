@@ -102,9 +102,12 @@ publishes no crypto at all rather than inventing a conversion.
 `TGJU_MAP` in [worker/src/index.ts](worker/src/index.ts).
 
 **A new bank** is one line in `Bank` in [Sms.kt](app/src/main/java/com/doxigo/muchtoman/Sms.kt)
-— the bank's name and the senders it writes from. A number is compared by its last ten digits,
-so any format works; a lettered sender ID ("Refah Bank") is matched as its whole name, case
-and spacing ignored.
+— the bank's name and the senders it writes from — plus one in `BankLogo` for its mark; the
+`when` is exhaustive, so the compiler asks. A number is compared by its last ten digits, so
+every form Android hands over for the same line matches (`+989999987641`, `989999987641`,
+`09999987641`, `0999 998 7641` are one sender), and a shortcode is shorter than ten digits so
+it matches itself. A lettered sender ID ("Refah Bank") is matched as its whole name, case and
+spacing ignored.
 
 ## Releasing
 
