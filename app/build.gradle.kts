@@ -57,6 +57,14 @@ android {
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
         }
+        // A second app on the same phone — its own icon, its own data — so new features are
+        // tried out beside the app she actually uses, never on top of it.
+        create("dev") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            // src/dev/res overrides the app name so the two icons can be told apart.
+            buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
+        }
         release {
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
@@ -90,6 +98,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.biometric)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
