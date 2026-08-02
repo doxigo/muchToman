@@ -139,19 +139,125 @@ async function fetchBonbast(): Promise<Record<string, number>> {
   return out;
 }
 
-async function fetchTgju(): Promise<Record<string, number>> {
-  const keys = Object.values(TGJU_MAP).join(',');
+async function fetchTgjuKeys(map: Record<string, string>): Promise<Record<string, number>> {
+  const keys = Object.values(map).join(',');
   const data = await getJson(`https://api.tgju.org/v1/widget/tmp?keys=${keys}`);
 
   const byName = new Map<string, unknown>();
   for (const ind of data?.response?.indicators ?? []) byName.set(ind?.name, ind?.p);
 
   const out: Record<string, number> = {};
-  for (const [id, key] of Object.entries(TGJU_MAP)) {
+  for (const [id, key] of Object.entries(map)) {
     const rial = num(byName.get(key));
     if (rial != null) out[id] = rial / 10; // Rial -> Toman
   }
   return out;
+}
+
+const fetchTgju = () => fetchTgjuKeys(TGJU_MAP);
+
+// ───────────────── silver and سکه پارسیان: tgju's pages ─────────────────
+
+/**
+ * Named rows off a tgju price page, as Toman.
+ *
+ * The widget API above would be the nicer way to ask, and it is not used here for two
+ * reasons: it carries neither silver nor سکه پارسیان, and it answers 200 with an empty body
+ * once it decides you have asked too often. An empty body is a failure this code can see —
+ * it matches no rows and throws — but it is a failure that arrives without warning.
+ *
+ * A row is read whole: the price is only ever taken from the same `<tr>` that carries the
+ * slug. Matching slugs and prices independently down the page is how a markup change pairs
+ * one coin with its neighbour's price, and neighbouring Parsian sizes are about 5% apart —
+ * close enough that the wrong one would look perfectly reasonable on screen.
+ */
+async function fetchTgjuPage(
+  path: string,
+  rows: Record<string, string>,
+): Promise<Record<string, number>> {
+  const res = await fetch(`https://www.tgju.org/${path}`, { headers: { 'user-agent': UA } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+
+  const out: Record<string, number> = {};
+  for (const row of html.split('<tr ')) {
+    for (const [slug, id] of Object.entries(rows)) {
+      // Either attribute, because neither is dependable on its own: the Parsian rows carry
+      // their name in `nameslug` and a bare number in `data-market-row`, and the silver rows
+      // do the reverse — and silver_999 in particular ships `nameslug=""` on some fetches and
+      // its real name on others. The closing quote is part of the match, so
+      // "سکه-پارسیان-۰-۱۰۰" cannot also match "سکه-پارسیان-۱-۱۰۰".
+      if (!row.includes(`nameslug="${slug}"`) && !row.includes(`data-market-row="${slug}"`)) {
+        continue;
+      }
+      // The first `nf` cell is the price; the second is the day's change, which is wrapped
+      // in a span and so cannot match this.
+      const rial = num(row.match(/<td class="nf">([\d,]+)<\/td>/)?.[1]);
+      if (rial != null) out[id] = rial / 10; // Rial -> Toman
+    }
+  }
+  if (Object.keys(out).length === 0) throw new Error(`no rows matched on /${path}`);
+  return out;
+}
+
+/**
+ * Silver, per gram, at both purities the Tehran market quotes.
+ *
+ * There is no second source. bonbast has no silver at any purity, and tgju's own global
+ * silver ounce is the same host, so cross-rating it would be redundancy in name only — and
+ * would drop the Tehran premium, which ran about 4% over the ounce when this was written.
+ * A rate that goes missing is already handled the way every missing rate is here: left out
+ * of the total and named in a note. That is the right answer, and better than a quiet guess.
+ */
+const fetchSilver = () =>
+  fetchTgjuPage('gold-chart', { silver_999: 'silver_999', silver_925: 'silver_925' });
+
+/**
+ * سکه پارسیان is 18k gold sold by weight in سوت — 1000 سوت to the gram — in the fifteen
+ * sizes tgju quotes, 100 through 1500.
+ *
+ * Every size is priced on its own rather than as its weight in gold, because the اجرت is
+ * close to fixed per coin and so weighs heaviest on the smallest: when this was written a
+ * 100 سوت piece went for about 24% over its gold content, a 500 سوت one 8%, and a 1500 سوت
+ * one 6%. Pricing them as gold18 × weight would understate the smallest by nearly a quarter.
+ */
+const PARSIAN_SOOT = [100, 200, 300, 400, 500, 600, 700, 800, 900,
+  1000, 1100, 1200, 1300, 1400, 1500];
+
+const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+const faDigits = (s: string) => s.replace(/\d/g, (d) => FA_DIGITS[Number(d)]);
+
+/** tgju names each row by its weight in grams: 100 سوت is "سکه-پارسیان-۰-۱۰۰". */
+const parsianSlug = (soot: number) =>
+  `سکه-پارسیان-${faDigits(String(Math.floor(soot / 1000)))}-` +
+  faDigits(String(soot % 1000).padStart(3, '0'));
+
+/**
+ * Which quote stands in for "one سوت". The 1 گرم coin first, because that is the size the
+ * market itself quotes as the reference; then the largest still on the page, since the اجرت
+ * shrinks with size and the big coins sit closest to the gold in them.
+ */
+const PARSIAN_REFERENCE = [1000, ...[...PARSIAN_SOOT].reverse()];
+
+/**
+ * The app offers one سکه پارسیان counted in سوت rather than fifteen coins, so alongside the
+ * fifteen sizes — still published, because holdings saved against them are priced from them
+ * — this derives the per-سوت rate that single row multiplies by.
+ *
+ * It is an approximation and knowingly so: the اجرت is close to fixed per coin, so a ۱۰۰ سوت
+ * piece really costs about a quarter over its gold and a ۱۵۰۰ سوت one a few per cent. One
+ * scalar cannot hold both. The reference size is the honest middle, and the phone can
+ * override any rate by hand.
+ */
+async function fetchParsian(): Promise<Record<string, number>> {
+  const prices = await fetchTgjuPage(
+    encodeURIComponent('قیمت-سکه-پارسیان'),
+    Object.fromEntries(PARSIAN_SOOT.map((s) => [parsianSlug(s), `parsian_${s}`])),
+  );
+
+  const reference = PARSIAN_REFERENCE.find((s) => prices[`parsian_${s}`] != null);
+  if (reference != null) prices.parsian = prices[`parsian_${reference}`] / reference;
+  return prices;
 }
 
 async function fetchFiat() {
@@ -547,7 +653,7 @@ async function fetchLatestRelease(): Promise<{ name: string; url: string } | nul
 }
 
 async function buildRates(): Promise<Response> {
-  const [fiat, cryptoToman, gecko, release] = await Promise.allSettled([
+  const [fiat, cryptoToman, gecko, release, silver, parsian] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
       [
@@ -558,6 +664,8 @@ async function buildRates(): Promise<Response> {
     ),
     fetchCoinGecko(),
     fetchLatestRelease(),
+    fetchSilver(),
+    fetchParsian(),
   ]);
 
   const toman: Record<string, number> = {};
@@ -575,6 +683,28 @@ async function buildRates(): Promise<Response> {
 
   if (fiat.status === 'fulfilled') Object.assign(toman, fiat.value.value);
   note('fiat_gold_coins', fiat, 'ok');
+
+  // Both are tgju-only and stand alone: either one going down takes nothing else with it, and
+  // the phone shows those assets as "نرخ ندارد" rather than folding a guess into the total.
+  // The count is reported against what was asked for, because these degrade a row at a time —
+  // a page that answers with two of fifteen coins is not the same event as one that 404s, and
+  // "ok" on its own would read identically for both.
+  const alone = (
+    key: string,
+    r: PromiseSettledResult<Record<string, number>>,
+    want: number,
+    what: string,
+  ) => {
+    if (r.status === 'fulfilled') {
+      Object.assign(toman, r.value);
+      sources[key] = `ok via tgju, ${Object.keys(r.value).length}/${want} ${what}`;
+    } else {
+      sources[key] = `failed — ${String(r.reason?.message ?? r.reason)}`;
+    }
+  };
+  alone('silver', silver, 2, 'grades');
+  // +1 for the derived per-سوت row the app's single سکه پارسیان multiplies by.
+  alone('parsian_coins', parsian, PARSIAN_SOOT.length + 1, 'rows');
 
   const tomanNative = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.prices : {};
   const namesFa = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.namesFa : {};
