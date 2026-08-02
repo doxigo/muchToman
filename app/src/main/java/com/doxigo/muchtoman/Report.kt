@@ -3,7 +3,11 @@ package com.doxigo.muchtoman
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlin.math.round
 
 /**
  * The report answers one follow-up question: "بیشتر شده یا کمتر؟" — over a window she picks.
@@ -64,7 +69,12 @@ private val WINDOWS: List<Pair<String, Int?>> = listOf(
 private fun today(): Long = System.currentTimeMillis() / DAY_MS
 
 @Composable
-fun ReportScreen(history: Map<Long, Double>, current: Double, onBack: () -> Unit) {
+fun ReportScreen(
+    history: Map<Long, Double>,
+    current: Double,
+    composition: List<Pair<Kind, Double>>,
+    onBack: () -> Unit,
+) {
     val now = today()
     val sorted = remember(history) { history.toSortedMap() }
 
@@ -100,7 +110,9 @@ fun ReportScreen(history: Map<Long, Double>, current: Double, onBack: () -> Unit
             Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
-                .padding(horizontal = Space.xl),
+                .padding(horizontal = Space.xl)
+                // The composition legend can push past one screen on short phones.
+                .verticalScroll(rememberScrollState()),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -149,11 +161,89 @@ fun ReportScreen(history: Map<Long, Double>, current: Double, onBack: () -> Unit
                     }
                 }
                 Text(
-                    "نمودار از روزهایی ساخته می‌شود که برنامه باز شده و نرخ گرفته است.",
+                    "هر روز یک نقطه ثبت می‌شود، حتی روزهایی که برنامه باز نشود.",
                     fontSize = 12.sp,
                     lineHeight = 19.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+                )
+            }
+            // One kind is the hero total said twice — same rule the list's section heads use.
+            if (composition.size > 1) {
+                Spacer(Modifier.height(Space.xxl))
+                CompositionBar(composition)
+            }
+            Spacer(Modifier.height(Space.xl))
+        }
+    }
+}
+
+/**
+ * The bar's own palette, not the icon discs' container tints: those are meant to sit quietly
+ * behind an emoji, and in the dark theme they all but vanish against the background — an 89%
+ * crypto segment read as an empty track. These are the app's green-to-gold family, fixed so
+ * they hold on both themes; gold stays reserved for the gold kinds.
+ */
+private fun barTint(kind: Kind): Color = when (kind) {
+    Kind.CASH -> Color(0xFF2E7D6B)
+    Kind.FIAT -> Color(0xFF6FAF9F)
+    Kind.CRYPTO -> Color(0xFF93B7B0)
+    Kind.GOLD -> Color(0xFFF7C948)
+    Kind.SILVER -> Color(0xFFAEB6BD)
+    Kind.COIN -> Color(0xFFC99B2C)
+    Kind.STOCK -> Color(0xFF4E8A7B)
+}
+
+/**
+ * What the total is made of, right now. Groups are the home list's own sections, so this is
+ * the same money in the same words — just side by side instead of stacked.
+ */
+@Composable
+private fun CompositionBar(composition: List<Pair<Kind, Double>>) {
+    val total = composition.sumOf { it.second }
+    Column {
+        Text(
+            "ترکیب دارایی",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.m))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(14.dp)
+                .clip(RoundedCornerShape(Radius.pill)),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            composition.forEach { (kind, value) ->
+                Box(
+                    Modifier
+                        .weight(value.toFloat())
+                        .fillMaxHeight()
+                        .background(barTint(kind)),
+                )
+            }
+        }
+        Spacer(Modifier.height(Space.m))
+        composition.forEach { (kind, value) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = Space.xs),
+            ) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(RoundedCornerShape(Radius.pill))
+                        .background(barTint(kind)),
+                )
+                Spacer(Modifier.width(Space.s))
+                Text(kind.fa, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(
+                    // Parentheses, not a middot: beside Persian digits «·» reads as a zero.
+                    "${faCompact(value, 3, pad = true)} تومان (${faNumber(round(value / total * 100))}٪)",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -286,7 +376,7 @@ private fun EmptyReport() {
         Text("هنوز نموداری نیست", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(Space.s))
         Text(
-            "از امروز، هر روزی که برنامه را باز کنید یک نقطه ثبت می‌شود و نمودار روزبه‌روز کامل‌تر می‌شود.",
+            "از امروز، هر روز یک نقطه ثبت می‌شود و نمودار روزبه‌روز کامل‌تر می‌شود.",
             fontSize = 15.sp,
             lineHeight = 25.sp,
             textAlign = TextAlign.Center,
