@@ -5,7 +5,9 @@ enum class Kind(val fa: String) {
     FIAT("ارز"),
     CRYPTO("رمزارز"),
     GOLD("طلا"),
+    SILVER("نقره"),
     COIN("سکه"),
+    STOCK("بورس"),
 }
 
 /** Toman held as Toman. Its rate is 1 by definition and never comes from the network. */
@@ -31,6 +33,31 @@ data class AssetType(
     val wallets: List<WalletOption> = emptyList(),
 )
 
+private fun Int.faDigits() = toString().map { "۰۱۲۳۴۵۶۷۸۹"[it - '0'] }.joinToString("")
+
+/**
+ * The fifteen sizes tgju quotes, each still priced by the Worker — but no longer offered.
+ *
+ * Fifteen rows of one coin buried every other سکه in the picker, so the list now carries a
+ * single سکه پارسیان counted in سوت. These stay resolvable because holdings already saved
+ * against them must keep their name and their own price: each size is quoted individually,
+ * which is *more* accurate than the per-سوت row, since the اجرت is close to fixed per coin
+ * and so falls hardest on the smallest — a ۱۰۰ سوت piece goes for roughly a quarter more
+ * than the gold in it, a ۱۵۰۰ سوت one for a few per cent.
+ */
+private val LEGACY_PARSIAN: List<AssetType> = (1..15).map { step ->
+    val soot = step * 100
+    AssetType(
+        id = "parsian_$soot",
+        fa = "سکه پارسیان ${soot.faDigits()} سوت",
+        kind = Kind.COIN,
+        unitFa = "عدد",
+        // Also written by its weight everywhere they are sold, so "0.400" has to find it.
+        en = "Parsian Gold Coin ${soot / 1000}.${(soot % 1000).toString().padStart(3, '0')}g",
+        emoji = "🪙",
+    )
+}
+
 // The fixed half of the catalogue: things bonbast/tgju price. Crypto is not here — it comes
 // from the Worker, so the picker offers every coin rather than the three someone guessed at.
 val STATIC_CATALOG: List<AssetType> = listOf(
@@ -53,11 +80,27 @@ val STATIC_CATALOG: List<AssetType> = listOf(
     // Her generation prices gold in مثقال, not grams; bonbast quotes it directly.
     AssetType("gold_mesghal", "مثقال طلا", Kind.GOLD, "مثقال", dec = 2, en = "Mesghal Gold", emoji = "🟡"),
 
+    // Both purities the Tehran market quotes, by the gram. Only tgju prices silver at all,
+    // so these are the two rows with a single source behind them — which costs nothing that
+    // is not already handled: no rate means left out of the total and named, never zero.
+    AssetType("silver_999", "نقره ۹۹۹", Kind.SILVER, "گرم", dec = 3, en = "999 Silver", emoji = "⚪"),
+    AssetType("silver_925", "نقره ۹۲۵", Kind.SILVER, "گرم", dec = 3, en = "925 Sterling Silver", emoji = "⚪"),
+
     AssetType("coin_emami", "سکه امامی", Kind.COIN, "عدد", en = "Emami Gold Coin", emoji = "🪙"),
     AssetType("coin_bahar", "سکه بهار آزادی", Kind.COIN, "عدد", en = "Bahar Azadi Gold Coin", emoji = "🪙"),
     AssetType("coin_nim", "نیم‌سکه", Kind.COIN, "عدد", en = "Nim Half Gold Coin", emoji = "🪙"),
     AssetType("coin_rob", "ربع‌سکه", Kind.COIN, "عدد", en = "Rob Quarter Gold Coin", emoji = "🪙"),
     AssetType("coin_gerami", "سکه گرمی", Kind.COIN, "عدد", en = "Gerami Gram Gold Coin", emoji = "🪙"),
+
+    // Counted in سوت — a thousand to the gram — rather than as fifteen separate coins, which
+    // is what it used to be and what made the سکه section unreadable. She adds up the سوت she
+    // holds and types one number, whatever mix of sizes it came in.
+    //
+    // The cost is the اجرت: it is close to fixed per coin, so the smallest sizes really go
+    // for more per سوت than this row prices them at. The rate is the ۱ گرم coin's, the size
+    // the market quotes as a reference; a shelf of ۱۰۰ سوت pieces is worth somewhat more than
+    // this says, and the manual rate override is the way to say so.
+    AssetType("parsian", "سکه پارسیان", Kind.COIN, "سوت", en = "Parsian Gold Coin", emoji = "🪙"),
 )
 
 /**
@@ -69,7 +112,7 @@ val BANK_TYPE = AssetType(
     BANK_ID, "حساب‌های بانکی", Kind.CASH, "تومان", en = "Bank Accounts", emoji = "💳",
 )
 
-private val STATIC_BY_ID = (STATIC_CATALOG + BANK_TYPE).associateBy { it.id }
+private val STATIC_BY_ID = (STATIC_CATALOG + BANK_TYPE + LEGACY_PARSIAN).associateBy { it.id }
 
 fun Coin.toAssetType() = AssetType(
     id = id,
@@ -82,24 +125,52 @@ fun Coin.toAssetType() = AssetType(
     wallets = wallets,
 )
 
-/** The full picker list: fixed assets, then every coin the Worker knows about. */
-fun catalog(coins: List<Coin>): List<AssetType> = STATIC_CATALOG + coins.map { it.toAssetType() }
+/**
+ * A نماد is the name she says, so it is the one shown; the company behind it goes in [en].
+ * That field is documented as the latin name, and for a share it is Persian — but its whole
+ * job is "a second name this asset answers to in search", and giving one kind its own parallel
+ * search path to hold one more Persian string would be the worse trade.
+ *
+ * dec = 0: shares come in whole numbers.
+ */
+fun Stock.toAssetType() = AssetType(
+    id = id,
+    fa = symbol,
+    kind = Kind.STOCK,
+    unitFa = "سهم",
+    dec = 0,
+    en = name,
+    emoji = "📈",
+)
+
+/** The full picker list: fixed assets, then everything the network knows how to price. */
+fun catalog(coins: List<Coin>, stocks: List<Stock> = emptyList()): List<AssetType> =
+    STATIC_CATALOG + coins.map { it.toAssetType() } + stocks.map { it.toAssetType() }
 
 /**
  * Static entries win, so a coin that ever ships with a ticker like "nok" can never shadow the
  * currency. A held asset we no longer recognise still renders, rather than vanishing from her
  * list along with its value.
  */
-fun resolveType(id: String, coins: List<Coin>): AssetType =
+fun resolveType(id: String, coins: List<Coin>, stocks: List<Stock> = emptyList()): AssetType =
     STATIC_BY_ID[id]
         ?: coins.firstOrNull { it.id == id }?.toAssetType()
+        ?: stocks.firstOrNull { it.id == id }?.toAssetType()
         ?: AssetType(id, id.uppercase(), Kind.CRYPTO, id.uppercase(), dec = 6)
 
 /**
  * Normalised for comparing: ZWNJ and spaces vary by keyboard and by source ("بیت‌کوین" vs
  * "بیت کوین" vs "بیتکوین" are the same word three ways), and a latin name is typed in any case.
  */
-private fun searchKey(s: String) = s.replace("\u200c", "").replace(" ", "").lowercase()
+/**
+ * Arabic letters standing in for Persian ones. TSETMC spells "\u067e\u0627\u0644\u0627\u064a\u0634" and "\u0634\u0643\u0631" with \u064a and \u0643,
+ * which are different codepoints from the \u06cc and \u06a9 her keyboard produces \u2014 unfolded, a \u0646\u0645\u0627\u062f is
+ * unfindable by anyone who types its name correctly.
+ */
+fun faLetters(s: String) = s.replace('\u064a', '\u06cc').replace('\u0643', '\u06a9')
+
+private fun searchKey(s: String) =
+    faLetters(s).replace("\u200c", "").replace(" ", "").lowercase()
 
 /**
  * Does this asset answer to what she typed? One coin has three names — the Persian one she
@@ -121,5 +192,24 @@ fun matchesSearch(type: AssetType, query: String): Boolean {
  * stored in (see AppVm.setHolding), so banding the list never moves a row; only kinds she
  * actually holds appear.
  */
-fun holdingsByKind(holdings: List<Holding>, coins: List<Coin>): Map<Kind, List<Holding>> =
-    holdings.groupBy { resolveType(it.typeId, coins).kind }
+fun holdingsByKind(
+    holdings: List<Holding>,
+    coins: List<Coin>,
+    stocks: List<Stock> = emptyList(),
+): Map<Kind, List<Holding>> =
+    holdings.groupBy { resolveType(it.typeId, coins, stocks).kind }
+
+/**
+ * What the total is made of, per kind, in the order the list already shows. The groups are
+ * exactly the home screen's sections — inventing different ones for the report would mean
+ * two vocabularies for the same money. Kinds worth nothing right now are left out.
+ */
+fun compositionByKind(
+    holdings: List<Holding>,
+    coins: List<Coin>,
+    rates: Map<String, Double>,
+    stocks: List<Stock> = emptyList(),
+): List<Pair<Kind, Double>> =
+    holdingsByKind(holdings, coins, stocks)
+        .map { (kind, held) -> kind to computeTotals(held, rates).toman }
+        .filter { it.second > 0.0 }

@@ -1029,6 +1029,55 @@ class MoneyTest {
         assertTrue(!matchesSearch(usd, "   "))
     }
 
+    @Test
+    fun `the picker offers one parsian coin, counted in سوت`() {
+        // Fifteen sizes of one coin buried every other سکه in the list. The id is a contract
+        // with the Worker, which derives a per-سوت rate under exactly this key.
+        val offered = STATIC_CATALOG.filter { it.id.startsWith("parsian") }
+        assertEquals(listOf("parsian"), offered.map { it.id })
+
+        val parsian = offered.single()
+        assertEquals("سکه پارسیان", parsian.fa)
+        assertEquals("سوت", parsian.unitFa)
+        // سوت come in whole numbers, and a holding is their sum across whatever sizes she has.
+        assertEquals(0, parsian.dec)
+        assertEquals(Kind.COIN, parsian.kind)
+        assertTrue(matchesSearch(parsian, "پارسیان"))
+        assertTrue(matchesSearch(parsian, "parsian"))
+    }
+
+    @Test
+    fun `a holding saved against an old per-size parsian id still resolves`() {
+        // Dropping the fifteen from the picker must not turn a saved holding into a bare
+        // ticker priced at nothing — they are still quoted, and per size they are the more
+        // accurate of the two.
+        for (soot in (1..15).map { it * 100 }) {
+            val type = resolveType("parsian_$soot", emptyList())
+            assertEquals("parsian_$soot", type.id)
+            assertEquals(Kind.COIN, type.kind)
+            assertEquals("عدد", type.unitFa)
+        }
+        assertEquals("سکه پارسیان ۱۰۰ سوت", resolveType("parsian_100", emptyList()).fa)
+        assertEquals("سکه پارسیان ۱۵۰۰ سوت", resolveType("parsian_1500", emptyList()).fa)
+    }
+
+    @Test
+    fun `silver is priced by the gram at both purities`() {
+        val silver = STATIC_CATALOG.filter { it.kind == Kind.SILVER }
+        assertEquals(listOf("silver_999", "silver_925"), silver.map { it.id })
+        assertTrue(silver.all { it.unitFa == "گرم" && it.dec == 3 })
+        assertTrue(matchesSearch(silver.first(), "silver"))
+        assertTrue(matchesSearch(silver.first(), "نقره"))
+    }
+
+    @Test
+    fun `no two assets in the catalogue share an id`() {
+        // Two rows with one id is a holding that renders twice and totals twice. The picker
+        // grew fifteen coins and two metals at once; this is the cheap guard on that.
+        val ids = STATIC_CATALOG.map { it.id }
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
     /** The list she reads, banded by kind. Same holdings, same order, same total. */
     private val banded = listOf(
         Holding(TOMAN_ID, 50_000_000.0),
