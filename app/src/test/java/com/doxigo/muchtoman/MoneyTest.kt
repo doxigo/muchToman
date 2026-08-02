@@ -462,6 +462,16 @@ class MoneyTest {
     }
 
     @Test
+    fun `parsian's lettered header matches whatever case it arrives in`() {
+        // No sample message for پارسیان yet, so only the gate is claimed here: messages from
+        // this header reach the parser at all. Whether its body shape reads is untested until
+        // a real one turns up.
+        assertEquals(Bank.PARSIAN, bankOf("PARSIANBANK"))
+        assertEquals(Bank.PARSIAN, bankOf("ParsianBank"))
+        assertNull(bankOf("Parsian Bank"))   // a different header, not a spacing variant
+    }
+
+    @Test
     fun `refah's lettered header is built in and matches like a number`() {
         // Refah really does send from "Refah Bank" — a name, not a number. The whole header
         // is the identity: case and the spacing between the words are the carrier's noise,
@@ -757,6 +767,27 @@ class MoneyTest {
         // The balance is what is stored, and it is the figure her bank app shows.
         val accounts = applyBankSms(emptyList(), m)
         assertEquals(33_818_503.8, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `resalat states a balance and no direction at all`() {
+        // رسالت writes no واریز and no برداشت — just a signed amount on its own line. So there
+        // is no delta to be had, and the مانده is the whole message. That is the safe half:
+        // a stated balance replaces what we hold outright and never needs a sign.
+        val body = """
+            10.7488478.1
+            -1,000,000,000
+            05/03_15:14
+            مانده: 2,807,813
+        """.trimIndent()
+        val m = parseBankSms("ResalatBank", body, 1L)!!
+        assertEquals(Bank.RESALAT, m.bank)
+        assertEquals(280_781.3, m.balance!!, 0.01)   // 2,807,813 ریال — no unit printed
+        assertNull(m.delta)
+        // The message named no amount either, so nothing was read at low confidence.
+        assertTrue(!m.inferred)
+        val accounts = applyBankSms(emptyList(), m)
+        assertEquals(280_781.3, bankTotal(accounts, emptySet()), 0.01)
     }
 
     @Test
