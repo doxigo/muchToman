@@ -485,13 +485,26 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /**
      * She confirmed a stranger: this number is one of her banks. It joins that bank's list on
-     * this phone only, and everything is re-read so the messages it already sent finally count.
+     * this phone only, and the inbox is read again from the start so the messages it already
+     * sent finally count.
+     *
+     * Winding the watermark back, not [rescanSms]. Confirming a sender is one tap on a
+     * suggestion card, and it used to forget every balance in the app — including the ones she
+     * typed in herself. Those cannot be rebuilt: a bank whose messages never state a مانده
+     * comes back as the sum of its transactions, unanchored, which is exactly the figure that
+     * does not count towards the total. Her net worth would drop by whatever she had anchored,
+     * silently, with nothing storing the number she had entered.
+     *
+     * Nothing needs forgetting here anyway. A message from an unknown sender is skipped before
+     * it is ever recorded as seen, so the only thing hiding these particular messages is how
+     * far the inbox has been read; everything already counted is still in seenSms and stays
+     * skipped.
      */
     fun addBankNumber(bank: String, sender: String) {
         if (runCatching { Bank.valueOf(bank) }.getOrNull() == null || sender.isBlank()) return
         val cur = store.extraBankNumbers
         store.extraBankNumbers = cur + (bank to ((cur[bank] ?: emptyList()) + sender).distinct())
-        rescanSms()
+        restartScan { store.smsScannedTo = 0L }
     }
 
     /** Turning it off leaves the balances where they are; it stops them moving on their own. */
