@@ -43,6 +43,15 @@ Tests are plain JVM, no device needed:
 cd worker && npx wrangler deploy
 ```
 
+It is served from `rates.muchtoman.com`, **not** the `muchtoman-rates.milaniz.workers.dev`
+address it also answers on. `workers.dev` is a common host for circumvention proxies, so Iran
+filters the entire domain — DNS for it resolves to the `10.10.34.36` sinkhole — and Iran is
+where the users are. Pointing the app at workers.dev fails in a peculiarly unhelpful way:
+gold, ارز and سکه still list themselves, because that catalogue is compiled into the APK, so
+only their prices go missing; رمزارز loses its whole section, because the coin list is the one
+part of the catalogue that arrives over the network. It reads as "this app has no crypto"
+rather than "the price server is unreachable". Keep the app pointed at a real domain.
+
 `GET /rates` returns Toman-per-unit for every asset id, plus the picker's coin catalogue and
 verified wallet-network options:
 
@@ -207,3 +216,12 @@ punctuation is invisible in practice.
   with the number and ticker swapped.
 - `FLAG_SECURE` is set while the app lock is on, so `adb screencap` returns black — that is
   the flag working, not a bug.
+- The home-screen widget has three layouts, picked per placed widget from the host's own
+  size in dp (`Face` in `Widget.kt`): stacked, then a second column for the freshness, then
+  a month of chart. Thresholds are dp, not cells, because a cell is not a fixed size — the
+  same "two by one" is 110×40dp on the grid the platform documents and nearer 160×100dp on a
+  Pixel. Every step up adds a line and never removes one; `WidgetFaceTest` pins that down.
+- Nothing in the widget's layouts is a `TextView` and nothing uses `fitCenter`. The launcher
+  inflates them in its own process and cannot load this APK's fonts, so every line is a
+  bitmap set in the real Modam instance; and `fitCenter` scales those bitmaps *up* to fill
+  the view, which is how a four-cell tile ended up showing less than a two-cell one.
