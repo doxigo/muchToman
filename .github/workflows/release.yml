@@ -42,6 +42,48 @@ jobs:
             -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
             -Pmuchtoman.versionCode=${{ github.run_number }}
 
+      # 1.0.2 shipped an APK that could not start. R8 shrank away the no-argument constructor
+      # Room reflects on, so WorkManager's startup provider threw before the first frame — on
+      # every device, every launch. Nothing caught it, because nothing here had ever RUN the
+      # thing being published: unit tests are JVM-only and never load the app, and lint reads
+      # source rather than R8's output. A release-only crash is invisible to both by
+      # construction, and that is a class of bug, not one mistake.
+      #
+      # So: install the exact APK that is about to be published, open it, and refuse to publish
+      # if it is not on screen afterwards. Slow (a few minutes) and worth every second of it —
+      # it is the only step that tests the artifact rather than the source.
+      #
+      # ponytail: one API level, because "the release build cannot start" reproduces on all of
+      # them. Make it a matrix down to 24 the day a bug gets through that is specific to old
+      # Android rather than to R8.
+      - name: The release APK must actually open
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            # -b all: plain `logcat -c` leaves the crash buffer alone, which is the one buffer
+            # this step reads. `|| true` because clearing the security buffer is refused on
+            # some images, and a non-zero exit there would fail the release over nothing.
+            adb logcat -b all -c || true
+            adb shell am start -W -n com.doxigo.muchtoman/.MainActivity
+            sleep 20
+            # Every line below is one whole command on one line, on purpose: this action does
+            # not hand the block to a single shell. It splits on newlines and runs each line
+            # through its own `sh -c`, so an `if` opened on one line and closed on the next is
+            # two syntax errors rather than one conditional — which fails the step, and with it
+            # the release, on a perfectly healthy build. (Lines starting with # are stripped by
+            # the same parser, so comments are safe.)
+            #
+            # The crash buffer is the assertion: a process that died during startup leaves its
+            # trace here even though `am start` already returned success.
+            if adb logcat -d -b crash | grep -q "com.doxigo.muchtoman"; then echo "::error::the release APK crashed on launch"; adb logcat -d -b crash | tail -60; exit 1; fi
+            # And it has to still be on screen, not a process that quietly went away.
+            adb shell dumpsys activity activities | grep -q "com.doxigo.muchtoman/.MainActivity" || { echo "::error::the release APK never reached the foreground"; exit 1; }
+
       # The changelog is the commit subjects since the previous tag. GitHub's own
       # --generate-notes lists merged pull requests, and this repo commits straight to main,
       # so it would publish an empty release every time.
@@ -56,7 +98,15 @@ jobs:
           cat notes.md
 
           mv app/build/outputs/apk/release/app-release.apk muchtoman-${GITHUB_REF_NAME}.apk
-          gh release create "$GITHUB_REF_NAME" "muchtoman-${GITHUB_REF_NAME}.apk" \
+          # R8 renames everything, so a stack trace off a real phone is unreadable without the
+          # map for that exact build — and the build is gone the moment the runner is. Ship it
+          # beside the APK: `retrace mapping.txt trace.txt` is then the whole of debugging a
+          # crash someone photographs for you. Nothing secret in it; the source is right here.
+          cp app/build/outputs/mapping/release/mapping.txt \
+             muchtoman-${GITHUB_REF_NAME}-mapping.txt
+          gh release create "$GITHUB_REF_NAME" \
+            "muchtoman-${GITHUB_REF_NAME}.apk" \
+            "muchtoman-${GITHUB_REF_NAME}-mapping.txt" \
             --notes-file notes.md --title "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ github.token }}

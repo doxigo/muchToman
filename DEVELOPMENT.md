@@ -144,7 +144,21 @@ git tag v1.0.1 && git push origin v1.0.1
 ```
 
 `versionName` comes from the tag, `versionCode` from the CI run number, so each release
-installs over the last.
+installs over the last. `mapping.txt` is attached beside the APK: R8 renames everything, so a
+stack trace off someone's phone is unreadable without the map for that exact build, and the
+build is gone the moment the runner is. `retrace mapping.txt trace.txt` turns one back into
+names.
+
+Before it publishes anything, the workflow boots an emulator, installs the APK it is about to
+release and opens it, and fails if the app is not on screen afterwards. That step exists
+because 1.0.2 shipped an APK that could not start at all: R8 shrank away a constructor
+WorkManager reflects on, and every install died before the first frame. Nothing caught it,
+because nothing had ever *run* the artifact — unit tests are JVM-only and never load the app,
+and lint reads source rather than R8's output. **A release-only crash is invisible to both by
+construction**, which is why the smoke test tests the APK rather than the code.
+
+That is also the rule for anything added here later: a check that runs against `src/` cannot
+tell you the shipped build works.
 
 ### Signing setup (once)
 
