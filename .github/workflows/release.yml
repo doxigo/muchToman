@@ -56,13 +56,27 @@ jobs:
       # ponytail: one API level, because "the release build cannot start" reproduces on all of
       # them. Make it a matrix down to 24 the day a bug gets through that is specific to old
       # Android rather than to R8.
+      # Without this the emulator falls back to software emulation: the first attempt took
+      # six minutes to boot and then stopped answering adb altogether ("Failure calling
+      # service settings: Broken pipe"), failing the release on a perfectly good APK. The
+      # runner has /dev/kvm but its user is not in the kvm group, so hand it out.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: The release APK must actually open
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          target: google_apis
+          # AOSP, not google_apis: this asks "does the app start", and the lighter image
+          # boots quicker. Nothing here touches a Google API — prices come over plain HTTPS.
+          target: default
           arch: x86_64
           disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
           script: |
             adb install -r app/build/outputs/apk/release/app-release.apk
             # -b all: plain `logcat -c` leaves the crash buffer alone, which is the one buffer
