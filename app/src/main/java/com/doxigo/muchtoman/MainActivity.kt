@@ -20,9 +20,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val WALLET_REFRESH_MS = 10 * 60_000L
 
@@ -30,12 +35,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
 
     /**
-     * Bumped by every scan. Reading the inbox suspends, and in that gap a rescan can wipe
-     * everything and start again — confirming a sender does exactly that. A scan that wakes to
-     * find itself superseded must throw its work away rather than write balances computed
-     * against a store that no longer exists.
+     * The scan in flight, if any. Only one runs at a time, and anything that wants the inbox
+     * read differently — from the start, or from further back — waits for this one to finish
+     * before changing what it would read. Without that, a scan can wake up holding balances
+     * computed against a store that has since been wiped and write them straight back over it.
      */
-    private var scanGeneration = 0
+    private var scanJob: Job? = null
 
     private val _state = MutableStateFlow(
         UiState(
@@ -340,77 +345,87 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             setSmsEnabled(false)
             return
         }
-        val generation = ++scanGeneration
-        viewModelScope.launch {
-            val messages = readSmsInbox(app, store.smsScannedTo)
-            if (generation != scanGeneration) return@launch // superseded mid-read; discard
-            if (messages.isEmpty()) return@launch
+        // One at a time. Two used to start on every cold open — init{} launches one and the
+        // lifecycle observer replays ON_START into refreshIfStale() a moment later — and both
+        // walked the whole inbox for one of them to be thrown away at the end.
+        if (scanJob?.isActive == true) return
+        // Dispatchers.Default: only the cursor read was ever off the UI thread. Everything
+        // after it — the JSON decode of every balance and of every message already counted,
+        // the parse of each message, and the encode on the way back — ran on the main thread,
+        // and 1.0.2's schema bump makes the first scan after an upgrade the WHOLE inbox. On a
+        // phone with years of messages that is the app frozen on first open.
+        scanJob = viewModelScope.launch(Dispatchers.Default) { runScan(app) }
+    }
 
-            val extra = extraLookup(store.extraBankNumbers)
-            // Re-keyed through senderKey on the way in: the key function has changed once
-            // already (whitespace collapse), and a dismissal stored under an old key must
-            // stay dismissed. senderKey is a fixpoint over its own output.
-            val dismissed = store.dismissedSenders.map(::senderKey).toSet()
-            var accounts = store.bankAccounts
-            val seen = store.seenSms
-            val fresh = mutableListOf<String>()
-            val strangers = store.strangeSenders.toMutableList()
-            for (m in messages) {
-                val key = smsKey(m.body, m.at)
-                if (key in seen || key in fresh) continue
-                val parsed = parseBankSms(m.from, m.body, m.at, extra)
-                if (parsed == null) {
-                    // Skipped, and normally that is the end of it. The one silence worth
-                    // breaking: a message that names one of HER banks from a number the list
-                    // lacks — that is how a bank that adds a shortcode "freezes". It becomes a
-                    // one-tap suggestion in the sheet, and her tap is what adds the number.
-                    val from = m.from.trim()
-                    if (
-                        from.isNotEmpty() &&
-                        senderKey(from) !in dismissed &&
-                        !isIgnoredBankSms(from, m.body) &&
-                        looksLikeBankSms(m.body)
-                    ) {
-                        guessBank(m.body)?.let { g ->
-                            // Replace rather than skip. Messages arrive oldest first, so
-                            // keeping the first sighting pinned every active sender to its
-                            // earliest date — and the sort below then buried the sender she is
-                            // actually asking about underneath a dozen one-off promos.
-                            strangers.removeAll { senderKey(it.sender) == senderKey(from) }
-                            strangers += StrangeSender(
-                                sender = from,
-                                bank = g.name,
-                                snippet = snippetOf(m.body),
-                                at = m.at,
-                            )
-                        }
+    /** The scan itself. Separate so [restartScan] can run it in the coroutine it already owns. */
+    private suspend fun runScan(app: Application) {
+        val messages = readSmsInbox(app, store.smsScannedTo)
+        if (messages.isEmpty()) return
+
+        val extra = extraLookup(store.extraBankNumbers)
+        // Re-keyed through senderKey on the way in: the key function has changed once
+        // already (whitespace collapse), and a dismissal stored under an old key must
+        // stay dismissed. senderKey is a fixpoint over its own output.
+        val dismissed = store.dismissedSenders.map(::senderKey).toSet()
+        var accounts = store.bankAccounts
+        val seen = store.seenSms
+        val fresh = mutableListOf<String>()
+        val strangers = store.strangeSenders.toMutableList()
+        for (m in messages) {
+            val key = smsKey(m.body, m.at)
+            if (key in seen || key in fresh) continue
+            val parsed = parseBankSms(m.from, m.body, m.at, extra)
+            if (parsed == null) {
+                // Skipped, and normally that is the end of it. The one silence worth
+                // breaking: a message that names one of HER banks from a number the list
+                // lacks — that is how a bank that adds a shortcode "freezes". It becomes a
+                // one-tap suggestion in the sheet, and her tap is what adds the number.
+                val from = m.from.trim()
+                if (
+                    from.isNotEmpty() &&
+                    senderKey(from) !in dismissed &&
+                    !isIgnoredBankSms(from, m.body) &&
+                    looksLikeBankSms(m.body)
+                ) {
+                    guessBank(m.body)?.let { g ->
+                        // Replace rather than skip. Messages arrive oldest first, so
+                        // keeping the first sighting pinned every active sender to its
+                        // earliest date — and the sort below then buried the sender she is
+                        // actually asking about underneath a dozen one-off promos.
+                        strangers.removeAll { senderKey(it.sender) == senderKey(from) }
+                        strangers += StrangeSender(
+                            sender = from,
+                            bank = g.name,
+                            snippet = snippetOf(m.body),
+                            at = m.at,
+                        )
                     }
-                    continue
                 }
-                accounts = applyBankSms(accounts, parsed)
-                fresh += key
+                continue
             }
-
-            store.bankAccounts = accounts
-            store.seenSms = rememberSeen(seen, fresh)
-            // A stranger whose number has since been added resolves and drops off the list, as
-            // does one she dismissed. Newest first, so the message she is asking about — which
-            // is almost always the latest — sits at the top instead of behind old promos.
-            store.strangeSenders = strangers
-                .filter { bankOf(it.sender, extra) == null && senderKey(it.sender) !in dismissed }
-                .sortedByDescending { it.at }
-                .take(12)
-            _state.update {
-                it.copy(bankAccounts = accounts, strangeSenders = store.strangeSenders)
-            }
-            // Advanced past everything we looked at, parsed or not — an advert from a bank is
-            // not worth re-reading on every launch. Never past now, though: one inbox row
-            // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
-            // put the watermark there and silently freeze every balance for ever after.
-            store.smsScannedTo = minOf(messages.maxOf { it.at }, System.currentTimeMillis())
-            _state.update { it.copy(bankAccounts = accounts) }
-            recordSnapshot()
+            accounts = applyBankSms(accounts, parsed)
+            fresh += key
         }
+
+        store.bankAccounts = accounts
+        store.seenSms = rememberSeen(seen, fresh)
+        // A stranger whose number has since been added resolves and drops off the list, as
+        // does one she dismissed. Newest first, so the message she is asking about — which
+        // is almost always the latest — sits at the top instead of behind old promos.
+        store.strangeSenders = strangers
+            .filter { bankOf(it.sender, extra) == null && senderKey(it.sender) !in dismissed }
+            .sortedByDescending { it.at }
+            .take(12)
+        _state.update {
+            it.copy(bankAccounts = accounts, strangeSenders = store.strangeSenders)
+        }
+        // Advanced past everything we looked at, parsed or not — an advert from a bank is
+        // not worth re-reading on every launch. Never past now, though: one inbox row
+        // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
+        // put the watermark there and silently freeze every balance for ever after.
+        store.smsScannedTo = minOf(messages.maxOf { it.at }, System.currentTimeMillis())
+        _state.update { it.copy(bankAccounts = accounts) }
+        recordSnapshot()
     }
 
     /**
@@ -421,13 +436,43 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * older parser made of it with no way back. An upgrade clears it automatically; this is the
      * same thing on demand, so a figure that has gone wrong is never a dead end.
      */
-    fun rescanSms() {
+    fun rescanSms() = restartScan {
         store.bankAccounts = emptyList()
         store.seenSms = emptySet()
         store.smsScannedTo = 0L
         store.strangeSenders = emptyList()
         _state.update { it.copy(bankAccounts = emptyList(), strangeSenders = emptyList()) }
-        scanSms()
+    }
+
+    /**
+     * Change what the next scan would read, then read it — with the scan already in flight
+     * stopped and waited for first.
+     *
+     * cancelAndJoin, not cancel: cancellation is cooperative and the parse loop never suspends,
+     * so only joining actually guarantees that [prepare] is not overwritten by a scan that was
+     * already most of the way through.
+     *
+     * The restart takes over [scanJob] straight away, before it suspends into that join. A job
+     * reads as not-active the whole time it is cancelling, so leaving the old one there meant
+     * any scanSms() arriving during the join — one foreground is enough — walked past the
+     * one-at-a-time guard, started a scan with the old watermark and claimed the slot. Then
+     * [prepare] ran, and our own scanSms() was the one turned away: the wipe landed with no
+     * rescan behind it, and every balance she had anchored by hand was gone for good.
+     *
+     * NonCancellable around the join for the same reason one step up: the next restart cancels
+     * this coroutine, and a join that gives up early lets the old scan wake and write over the
+     * wipe — exactly what the join is here to prevent.
+     */
+    private fun restartScan(prepare: () -> Unit) {
+        val previous = scanJob
+        val app = getApplication<Application>()
+        scanJob = viewModelScope.launch(Dispatchers.Default) {
+            withContext(NonCancellable) { previous?.cancelAndJoin() }
+            prepare()
+            // Straight into the scan rather than back through scanSms(), which would only
+            // find this very coroutine holding the slot and decline.
+            if (store.smsEnabled && canReadSms(app)) runScan(app)
+        }
     }
 
     /** She waved a suggestion away. It stays away — across rescans and upgrades too. */
