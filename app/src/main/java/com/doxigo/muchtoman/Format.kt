@@ -178,6 +178,12 @@ fun faRate(rate: Double): String =
  * numbers around it out of order — "۴۰ SOL • نرخ ۱۴ میلیون" renders as "SOL ۴۰ • نرخ..."
  * without this. FSI/PDI tells the bidi algorithm to treat the run as one opaque unit.
  */
+// Lint flags the isolate characters as spoofing, which is what the check is for: bidi controls
+// smuggled into a string change what a reader sees without changing what the code does. Here
+// they are the payload rather than a hidden passenger — one FSI, one PDI, balanced, wrapping
+// exactly the run named in the argument. Suppressed at the single line that is allowed to
+// contain them, so the check keeps working everywhere else.
+@Suppress("BidiSpoofing")
 fun bidi(s: String): String = "⁨$s⁩"
 
 /**
