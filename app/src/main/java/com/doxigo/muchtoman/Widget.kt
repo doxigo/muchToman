@@ -19,6 +19,12 @@ import android.widget.RemoteViews
 import androidx.annotation.FontRes
 import androidx.annotation.LayoutRes
 import androidx.core.content.res.ResourcesCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -261,17 +267,24 @@ private class WidgetModel(
 
 private fun readModel(context: Context, now: Long): WidgetModel {
     val store = Store(context)
+    // Read once each, into locals. Every one of these properties parses JSON off disk on each
+    // access, and the rates blob alone is ~80 KB — this used to decode it twice and the
+    // history three times to draw one tile. Snapshotting the history also closes a real hole:
+    // the day was looked up in one read and then fetched with getValue from another, so a
+    // daily-snapshot write landing between the two threw NoSuchElementException.
+    val rates = store.cachedRates
+    val history = store.history
     val total = computeTotals(
         listHoldings(store.holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
-        effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
+        effectiveRates(rates, store.overrides, store.cachedStocks),
     ).toman
 
     // Against the newest snapshot before today — changeOver's grace window is built for
     // month-wide reads and would fall back to today's own entry here, comparing the total
     // with itself.
     val today = now / DAY_MS
-    val baseDay = store.history.keys.filter { it < today }.maxOrNull()
-    val base = baseDay?.let { store.history.getValue(it) }
+    val baseDay = history.keys.filter { it < today }.maxOrNull()
+    val base = baseDay?.let { history.getValue(it) }
 
     return WidgetModel(
         total = total,
@@ -283,9 +296,9 @@ private fun readModel(context: Context, now: Long): WidgetModel {
             today - baseDay == 1L -> "از دیروز"
             else -> "از ${faNumber((today - baseDay).toDouble())} روز پیش"
         },
-        points = (store.history.filterKeys { it in (today - WIDGET_CHART_DAYS) until today }
+        points = (history.filterKeys { it in (today - WIDGET_CHART_DAYS) until today }
             .toSortedMap().map { it.key to it.value } + (today to total)),
-        ago = faAgo(store.cachedRates.updatedAt, now),
+        ago = faAgo(rates.updatedAt, now),
     )
 }
 
@@ -299,6 +312,28 @@ private fun readModel(context: Context, now: Long): WidgetModel {
  * beside three stars, or a line with a visible slope, gives away most of what the stars hide.
  */
 fun updateTotalWidget(context: Context) {
+    val app = context.applicationContext
+    WIDGET_SCOPE.launch { drawTotalWidget(app) }
+}
+
+/**
+ * For the callers that must not return until the tiles are drawn — the daily worker finishes
+ * and its process becomes killable the moment [DailySnapshotWorker.doWork] returns.
+ */
+suspend fun updateTotalWidgetAndWait(context: Context) = withContext(WIDGET_DISPATCHER) {
+    drawTotalWidget(context.applicationContext)
+}
+
+/**
+ * Where the widget is actually drawn. Blocking, and never to be called on the main thread:
+ * it is a SharedPreferences read, a JSON parse of everything on disk, and a handful of text
+ * bitmaps rasterised through a font — a few hundred milliseconds on an old phone. It used to
+ * run inline on every single change of money, so every edit, every fetch and every bank
+ * message paid for it in dropped frames whether or not a widget was even placed.
+ *
+ * RemoteViews and AppWidgetManager are both safe off the main thread.
+ */
+private fun drawTotalWidget(context: Context) {
     val mgr = AppWidgetManager.getInstance(context)
     val ids = mgr.getAppWidgetIds(ComponentName(context, TotalWidget::class.java))
     if (ids.isEmpty()) return
@@ -308,6 +343,31 @@ fun updateTotalWidget(context: Context) {
     val model = readModel(context, System.currentTimeMillis())
     for (id in ids) mgr.updateAppWidget(id, render(context, model, mgr.getAppWidgetOptions(id)))
 }
+
+/**
+ * One draw at a time, in the order they were asked for.
+ *
+ * The main thread used to provide that for free: every redraw ran inline, so the tile always
+ * showed the store as of the last write. Taking the work off the main thread takes the ordering
+ * with it — and a cold open asks for three redraws at once, since the rates fetch, the wallet
+ * refresh and the inbox scan all end in recordSnapshot(). Each reads its own snapshot of the
+ * store before painting, so unserialised they can land in any order and leave the home screen
+ * showing a total from before the fetch, with no periodic update to correct it
+ * (updatePeriodMillis is 0). Worse on the switch that masks the total: an unmasked draw already
+ * in flight would repaint the real number over the «٭٭٭» she had just asked for.
+ *
+ * limitedParallelism(1) is FIFO, and every caller dispatches after its own store write, so
+ * dispatch order is write order. Shared with [updateTotalWidgetAndWait] so the daily worker
+ * queues behind the app's draws rather than beside them.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+private val WIDGET_DISPATCHER = Dispatchers.Default.limitedParallelism(1)
+
+/**
+ * Outlives any one screen or broadcast on purpose — a redraw asked for as the app closes still
+ * has to land. SupervisorJob so one tile that throws does not stop the next redraw.
+ */
+private val WIDGET_SCOPE = CoroutineScope(WIDGET_DISPATCHER + SupervisorJob())
 
 private fun render(context: Context, model: WidgetModel, options: Bundle?): RemoteViews {
     val face = Face.of(options.widthDp(), options.heightDp())
@@ -425,7 +485,7 @@ private fun chartBitmap(context: Context, model: WidgetModel, options: Bundle?):
 
 class TotalWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) =
-        updateTotalWidget(context)
+        redrawAsync { drawTotalWidget(context.applicationContext) }
 
     /** Resizing is the only signal that the tile's shape changed; redraw at the new one. */
     override fun onAppWidgetOptionsChanged(
@@ -433,8 +493,26 @@ class TotalWidget : AppWidgetProvider() {
         manager: AppWidgetManager,
         id: Int,
         options: Bundle,
-    ) = manager.updateAppWidget(
-        id,
-        render(context, readModel(context, System.currentTimeMillis()), options),
-    )
+    ) = redrawAsync {
+        val app = context.applicationContext
+        manager.updateAppWidget(id, render(app, readModel(app, System.currentTimeMillis()), options))
+    }
+
+    /**
+     * goAsync(): a broadcast receiver gets its own short slice of the main thread, and the
+     * redraw is now off it — but a receiver that has already returned is a process the system
+     * is free to kill mid-draw. This holds it open until the tile is actually on screen.
+     * Dragging a widget about resizes it many times a second, so this is the path where doing
+     * the work inline was most visible.
+     */
+    private fun redrawAsync(work: () -> Unit) {
+        val pending = goAsync()
+        WIDGET_SCOPE.launch {
+            try {
+                work()
+            } finally {
+                pending.finish()
+            }
+        }
+    }
 }

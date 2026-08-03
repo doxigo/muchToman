@@ -37,7 +37,9 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
             store.cachedRates.updatedAt,
             System.currentTimeMillis(),
         )?.let { store.history = it }
-        updateTotalWidget(applicationContext)
+        // AndWait: doWork returning is what makes this process killable again, and a
+        // fire-and-forget redraw would race that.
+        updateTotalWidgetAndWait(applicationContext)
         return Result.success()
     }
 }
