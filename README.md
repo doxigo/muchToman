@@ -59,6 +59,7 @@ or header, never words in the body.
 | بانک صادرات | `+98 9870 0719`, `98700719`, `+98 983 000 9419`, `BankSaderat` |
 | بانک رسالت | `ResalatBank` |
 | بانک پارسیان | `PARSIANBANK` |
+| بانک ملت | `Bank Mellat` |
 
 **Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
 
