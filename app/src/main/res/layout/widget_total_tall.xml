@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two rows or more. The extra height is spent on the one thing the smaller tiles cannot
+     answer — which way the money has been going — so the chart, not a larger number, is what
+     a taller widget buys.
+
+     The chart runs past the tile's own padding on both sides: a line that stops short of the
+     edge reads as a picture sitting on the card, and this is meant to read as the card's own
+     floor. It stays clear of the rounded corners on its own — the area fill fades to nothing
+     at the bottom and the line is held off the floor by the same 12% inset the report's chart
+     uses — because a child view is not clipped to its parent's background shape.
+
+     See widget_total.xml for why every line is an ImageView and why nothing uses fitCenter.
+     The header is a RelativeLayout for the same reason: pinning the two ends is the only way
+     to spread them without a spacer view, and RemoteViews has no Space. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:layoutDirection="rtl"
+    android:orientation="vertical"
+    android:paddingStart="18dp"
+    android:paddingEnd="18dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="10dp">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:id="@+id/widget_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:adjustViewBounds="true"
+            android:contentDescription="دارایی من"
+            android:scaleType="centerInside" />
+
+        <ImageView
+            android:id="@+id/widget_ago"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignBottom="@id/widget_label"
+            android:layout_alignParentEnd="true"
+            android:adjustViewBounds="true"
+            android:scaleType="centerInside" />
+    </RelativeLayout>
+
+    <ImageView
+        android:id="@+id/widget_total"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerInside" />
+
+    <ImageView
+        android:id="@+id/widget_change"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerInside"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/widget_chart"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginStart="-18dp"
+        android:layout_marginEnd="-18dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:contentDescription="نمودار یک ماه گذشته"
+        android:scaleType="fitXY"
+        android:visibility="gone" />
+</LinearLayout>

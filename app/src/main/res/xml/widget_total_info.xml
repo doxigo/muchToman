@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- updatePeriodMillis is 0 on purpose: the app pushes updates whenever money changes, and
-     the daily worker covers the days the app never opens. No OS alarm needed. -->
+     the daily worker covers the days the app never opens. No OS alarm needed.
+
+     It lands at four by two — the size that shows the chart — and resizes both ways down to
+     two by one. minWidth/minHeight are the landing size on launchers older than API 31;
+     targetCell* is what newer ones read. minResize* is the floor, and every size between
+     them has a layout of its own (Widget.kt). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/widget_total"
-    android:minWidth="110dp"
-    android:minHeight="40dp"
-    android:targetCellWidth="2"
-    android:targetCellHeight="1"
-    android:previewLayout="@layout/widget_total"
-    android:resizeMode="horizontal"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_total_tall"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:maxResizeWidth="320dp"
+    android:maxResizeHeight="250dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:previewLayout="@layout/widget_total_tall"
+    android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen" />

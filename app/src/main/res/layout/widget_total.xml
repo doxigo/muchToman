@@ -1,37 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ImageViews, not TextViews: the launcher inflates this layout in its own process and
+<!-- The smallest tile: label, total, change — stacked and centred, because at two cells wide
+     there is no second column to put anything in.
+
+     ImageViews, not TextViews: the launcher inflates this layout in its own process and
      cannot load another APK's font resources — every fontFamily here silently fell back to
      the system Naskh. The app renders each line into a bitmap with the real Modam instance
-     (Widget.kt) and ships pixels, which no launcher can get wrong. fitCenter also scales a
-     total that outgrows the cell instead of clipping «تومان» off the end. -->
+     (Widget.kt) and ships pixels, which no launcher can get wrong.
+
+     centerInside, never fitCenter. fitCenter scales a bitmap *up* to fill the view, so on a
+     wide cell the total grew until it pushed the change line out of the tile — which is how
+     the two-cell widget ended up showing more than the four-cell one. centerInside shrinks
+     an oversized total and otherwise leaves every line at the size it was set in. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
     android:gravity="center"
+    android:layoutDirection="rtl"
     android:orientation="vertical"
-    android:paddingHorizontal="14dp"
-    android:paddingVertical="10dp">
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
 
     <ImageView
         android:id="@+id/widget_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:contentDescription="دارایی من" />
+        android:adjustViewBounds="true"
+        android:contentDescription="دارایی من"
+        android:scaleType="centerInside" />
 
     <ImageView
         android:id="@+id/widget_total"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="3dp"
         android:adjustViewBounds="true"
-        android:scaleType="fitCenter" />
+        android:scaleType="centerInside" />
 
     <ImageView
         android:id="@+id/widget_change"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="6dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerInside"
         android:visibility="gone" />
 </LinearLayout>
