@@ -46,8 +46,14 @@ android {
     //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://<this-mac-on-the-lan>:8787/rates
     // Defaulting debug to 10.0.2.2 was the older way round, and it failed silently on a real
     // phone: prices kept showing (they are cached) while every wallet lookup timed out.
+    // Not the workers.dev address the Worker also answers on: that whole domain is
+    // DNS-filtered inside Iran — resolved to the 10.10.34.36 sinkhole — which is where most
+    // of the people this app is for are. It failed in the least legible way possible: the
+    // fixed assets still listed themselves because their catalogue is compiled in, while
+    // رمزارز lost its prices *and* its entire section, since the coin list is the one part
+    // of the catalogue that arrives over the network. It read as "this app has no crypto".
     val ratesUrl = providers.gradleProperty("muchtoman.ratesUrl")
-        .getOrElse("https://muchtoman-rates.milaniz.workers.dev/rates")
+        .getOrElse("https://rates.muchtoman.com/rates")
 
     buildTypes {
         debug {

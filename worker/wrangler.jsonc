@@ -3,7 +3,18 @@
   "name": "muchtoman-rates",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Served from muchtoman.com rather than the workers.dev subdomain it also answers on.
+  // workers.dev is filtered wholesale inside Iran — it is a common circumvention host, so
+  // the whole domain is DNS-poisoned to 10.10.34.36 — and Iran is where the users are. An
+  // ordinary domain carries no such reputation. The workers.dev address keeps working for
+  // builds already installed; nothing has to be retired for this to take effect.
+  "routes": [{ "pattern": "rates.muchtoman.com", "custom_domain": true }],
+  // Declaring `routes` switches the workers.dev subdomain OFF unless this says otherwise,
+  // which took the only working endpoint down with it the first time. It stays on: builds
+  // already installed point at it, and it is the fallback if the custom domain ever fails
+  // to come up. It is useless inside Iran either way, so keeping it costs nothing.
+  "workers_dev": true
   // No KV / R2 / D1 on purpose: the phone already keeps the last good rates,
   // so the edge has nothing worth persisting.
 }
