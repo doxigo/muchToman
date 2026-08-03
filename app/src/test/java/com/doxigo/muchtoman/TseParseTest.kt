@@ -21,6 +21,7 @@ private fun row(
     pc: String,
     pl: String = "0",
     py: String = "0",
+    yval: String = "300", // سهام عادی unless a test says otherwise
     extraColumns: Int = 0,
 ): String {
     val c = MutableList(23) { "0" }
@@ -31,6 +32,7 @@ private fun row(
     c[6] = pc
     c[7] = pl
     c[13] = py
+    c[22] = yval
     // The 26-column variant only ever appends, so the read indices are unmoved.
     repeat(extraColumns) { c.add("0") }
     return c.joinToString(",")
@@ -149,6 +151,67 @@ class TseParseTest {
             parseMarketWatch(body(row("1", "الف", "شرکت الف", pc = "0", pl = "0", py = "0")), 0L)
         }.exceptionOrNull()
         assertTrue(allUnpriced is IllegalStateException)
+    }
+
+    @Test
+    fun `derivatives are left out, spot instruments are kept`() {
+        val snap = parseMarketWatch(
+            body(
+                row("1", "فولاد", "فولاد مباركه", "1000", yval = "300"), // سهام عادی
+                row("2", "اهرم", "صندوق اهرم", "1000", yval = "305"), // صندوق اهرمی — spot units
+                row("3", "پارند", "صندوق پارند", "1000", yval = "305"), // درآمد ثابت
+                row("4", "وبملتح", "حق تقدم بانک ملت", "1000", yval = "400"), // حق تقدم
+                row("5", "اخزا", "اسناد خزانه", "1000", yval = "306"), // اوراق
+                row("6", "ضخود7001", "اختیار خرید خودرو", "1000", yval = "311"), // call
+                row("7", "طخود7001", "اختیار فروش خودرو", "1000", yval = "312"), // put
+                row("8", "جوسط0106", "آتی زعفران", "1000", yval = "304"), // آتی
+                row("9", "ضهرم1001", "اختیار فولاد هرمزگان", "1000", yval = "321"),
+            ),
+            0L,
+        )
+
+        // A leveraged FUND is still a spot holding: the leverage is inside it, the units are
+        // owned outright. A leveraged CONTRACT is not, and its premium is not a value.
+        assertEquals(
+            listOf("فولاد", "اهرم", "پارند", "وبملتح", "اخزا"),
+            snap.stocks.map { it.symbol },
+        )
+        for (derivative in listOf("tse_6", "tse_7", "tse_8", "tse_9")) {
+            assertNull(snap.toman[derivative])
+        }
+    }
+
+    @Test
+    fun `the gold funds are kept — they are type 380, not 305`() {
+        // Every صندوق طلا on the exchange is a commodity-backed fund, which TSETMC types 380
+        // rather than grouping with the other ETFs under 305. An allow-list built from the
+        // ordinary fund code alone silently dropped all 49 of them — طلا، عیار، کهربا، مثقال
+        // — which is to say the single category this app most needs to price.
+        val snap = parseMarketWatch(
+            body(
+                row("1", "طلا", "صندوق س. طلای لوتوس", "1300210", yval = "380"),
+                row("2", "عیار", "صندوق س. طلای عیار مفید", "509260", yval = "380"),
+                row("3", "کهربا", "صندوق س. طلای کهربا", "176270", yval = "380"),
+            ),
+            0L,
+        )
+
+        assertEquals(listOf("طلا", "عیار", "کهربا"), snap.stocks.map { it.symbol })
+        assertEquals(130_021.0, snap.toman.getValue("tse_1"), 0.001)
+    }
+
+    @Test
+    fun `an unknown instrument type is left out rather than guessed at`() {
+        // Option codes multiply — one per underlying — so anything unrecognised stays out.
+        val snap = parseMarketWatch(
+            body(
+                row("1", "فولاد", "فولاد مباركه", "1000", yval = "300"),
+                row("2", "ضجدید", "اختیار تازه‌فهرست‌شده", "1000", yval = "399"),
+            ),
+            0L,
+        )
+
+        assertEquals(setOf("tse_1"), snap.toman.keys)
     }
 
     @Test

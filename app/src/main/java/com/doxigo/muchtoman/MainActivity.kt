@@ -107,6 +107,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             stocks.await().onSuccess { fresh ->
                 store.cachedStocks = fresh
                 _state.update { it.copy(tse = fresh) }
+                // The count is the only outward sign that the whole market arrived rather
+                // than as much of it as the socket managed before timing out.
+                android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
             }.onFailure { e ->
                 // Deliberately not surfaced. This fails for everyone outside Iran, every
                 // time, and an error banner about بورس on a screen that priced everything
