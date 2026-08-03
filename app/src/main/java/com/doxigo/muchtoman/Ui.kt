@@ -999,9 +999,13 @@ private fun BarsIcon(tint: Color) {
  * A real logo where one exists, an emoji for the fixed assets, and the ticker as a last
  * resort. The letters sit underneath and are covered once the logo loads, so a slow network
  * shows an identifiable badge rather than a hole.
+ *
+ * [network] marks which chain the coin actually sits on. Tether on Tron and Tether on Ethereum
+ * are the same logo and the same row, and until this the only thing telling them apart was a
+ * 12sp line that a long address truncates.
  */
 @Composable
-private fun AssetIcon(type: AssetType, size: Dp = 44.dp) {
+private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null) {
     // Tinted by kind rather than one grey for all. It only ever shows behind the emoji and
     // letter fallbacks — a coin's own logo covers it — which is exactly where a list of
     // eleven identical grey discs was hardest to scan.
@@ -1012,58 +1016,73 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp) {
         Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.secondaryContainer
         Kind.CRYPTO, Kind.STOCK -> scheme.surfaceVariant
     }
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(tint),
-        contentAlignment = Alignment.Center,
-    ) {
-        val letters = @Composable {
-            // Three letters at 12sp, never four at 9: this badge is the only identity a coin
-            // has until its logo loads, and 9sp is below the floor an older eye can read.
-            Text(
-                type.id.take(3).uppercase(),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        when {
-            // The real currency mark for the one asset that IS the currency — an emoji bank
-            // was always a stand-in.
-            type.id == TOMAN_ID -> Icon(
-                painterResource(R.drawable.ic_toman),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(size * 0.52f),
-            )
-            type.iconUrl != null -> {
-                var success by remember(type.iconUrl) { mutableStateOf(false) }
-                var loaded by remember(type.iconUrl) { mutableStateOf(false) }
-                if (!loaded) letters()
-                // crossfade: Coil swaps hard by default, and a list of logos popping in
-                // over their letters reads as flicker.
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(type.iconUrl)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier.size(size * 0.62f),
-                    onState = { success = it is AsyncImagePainter.State.Success },
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(tint),
+            contentAlignment = Alignment.Center,
+        ) {
+            val letters = @Composable {
+                // Three letters at 12sp, never four at 9: this badge is the only identity a coin
+                // has until its logo loads, and 9sp is below the floor an older eye can read.
+                Text(
+                    type.id.take(3).uppercase(),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                // Success is when the fade STARTS; the letters leave after it lands, or
-                // the circle shows exactly the hole they exist to cover.
-                LaunchedEffect(success) {
-                    if (success) {
-                        delay(250)
-                        loaded = true
+            }
+            when {
+                // The real currency mark for the one asset that IS the currency — an emoji bank
+                // was always a stand-in.
+                type.id == TOMAN_ID -> Icon(
+                    painterResource(R.drawable.ic_toman),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(size * 0.52f),
+                )
+                type.iconUrl != null -> {
+                    var success by remember(type.iconUrl) { mutableStateOf(false) }
+                    var loaded by remember(type.iconUrl) { mutableStateOf(false) }
+                    if (!loaded) letters()
+                    // crossfade: Coil swaps hard by default, and a list of logos popping in
+                    // over their letters reads as flicker.
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(type.iconUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.size(size * 0.62f),
+                        onState = { success = it is AsyncImagePainter.State.Success },
+                    )
+                    // Success is when the fade STARTS; the letters leave after it lands, or
+                    // the circle shows exactly the hole they exist to cover.
+                    LaunchedEffect(success) {
+                        if (success) {
+                            delay(250)
+                            loaded = true
+                        }
                     }
                 }
+                type.emoji != null -> Text(type.emoji, fontSize = (size.value * 0.52f).sp)
+                else -> letters()
             }
-            type.emoji != null -> Text(type.emoji, fontSize = (size.value * 0.52f).sp)
-            else -> letters()
+        }
+        // Bottom-end corner, sitting on the logo rather than beside it — the chain is a
+        // property of that coin, and given its own slot in the row it reads as a second asset.
+        // The ring is the row's own background, so the two discs stay two discs even where a
+        // dark chain logo meets a dark coin logo.
+        network?.let {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(1.5.dp),
+            ) { WalletNetworkLogo(it, size = size * 0.36f) }
         }
     }
 }
@@ -1609,7 +1628,9 @@ private fun HoldingRow(
             Modifier.padding(horizontal = Space.l, vertical = Space.l),
             verticalAlignment = Alignment.Top,
         ) {
-            Box(Modifier.alpha(if (excluded) 0.55f else 1f)) { AssetIcon(type) }
+            Box(Modifier.alpha(if (excluded) 0.55f else 1f)) {
+                AssetIcon(type, network = wallet?.network)
+            }
             Spacer(Modifier.width(Space.m))
 
             Column(Modifier.weight(1f)) {
@@ -2208,7 +2229,7 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
 }
 
 @Composable
-private fun WalletNetworkLogo(network: String) {
+private fun WalletNetworkLogo(network: String, size: Dp = 28.dp) {
     val logo = when (network.lowercase()) {
         "bitcoin" -> R.drawable.ic_network_bitcoin
         "ethereum" -> R.drawable.ic_network_ethereum
@@ -2224,7 +2245,7 @@ private fun WalletNetworkLogo(network: String) {
 
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(size)
             .clip(CircleShape)
             .clearAndSetSemantics { },
         contentAlignment = Alignment.Center,
@@ -2244,7 +2265,9 @@ private fun WalletNetworkLogo(network: String) {
             ) {
                 Text(
                     network.take(2).uppercase(),
-                    fontSize = 10.sp,
+                    // Scaled, not fixed: at badge size two letters at 10sp are wider than the
+                    // disc they sit in, and the fallback clipped instead of naming the chain.
+                    fontSize = (size.value * 0.36f).sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
