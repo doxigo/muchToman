@@ -61,7 +61,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -282,6 +285,28 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
             )
+            // The one way this can be set up wrong and still look like it is working. A bank
+            // whose alerts arrive as its own app's notifications sends no message at all, so
+            // there is nothing to read and nothing to report — the balance simply stops where
+            // the last real پیامک left it, which reads as the app being wrong rather than as a
+            // setting being off. First clause at full strength: it is the sentence that has to
+            // survive being skimmed.
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                        append("فقط پیامک خوانده می‌شود، نه نوتیفیکیشن اپ بانک. ")
+                    }
+                    append(
+                        "بعضی بانک‌ها مثل بلو بانک به جای پیامک نوتیفیکیشن می‌فرستند و آن وقت " +
+                            "چیزی برای خواندن نیست، برای همین موجودی روی همان عدد قبلی می‌ماند. " +
+                            "از تنظیمات اپ خود بانک، پیامک تراکنش را روشن کنید.",
+                    )
+                },
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+            )
 
             if (smsEnabled && granted) {
                 // One switch per bank actually seen, not per bank we know how to read: a list
@@ -358,9 +383,20 @@ fun SettingsScreen(
             // The answer to "which version do you have?" over the phone, without her having
             // to find the system app-info page. A fixed gap, not weight(1f): inside a scrolling
             // column a weighted spacer has nothing to push against.
+            //
+            // The build number and the build type are both here because the name alone does not
+            // identify an install: every locally built app carries the placeholder 1.0, so a
+            // sandbox build and a real 1.0 release read identically — which is exactly the
+            // question this line exists to answer.
             Spacer(Modifier.height(Space.xxl))
             Text(
-                "چقدر تومن • نسخهٔ ${faVersion(BuildConfig.VERSION_NAME)}",
+                buildString {
+                    append("چقدر تومن • نسخهٔ ${faVersion(BuildConfig.VERSION_NAME)}")
+                    append(" • ساخت ${faVersion(BuildConfig.VERSION_CODE.toString())}")
+                    if (BuildConfig.BUILD_TYPE != "release") {
+                        append(" • ${bidi(BuildConfig.BUILD_TYPE)}")
+                    }
+                },
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

@@ -63,6 +63,11 @@ or header, never words in the body.
 
 **Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
 
+**SMS only, not push notifications.** Some banks (Blu among them) let you take transaction
+alerts as notifications from their own app instead of as SMS. There is no message to read in
+that case, so the balance quietly stops at the last real SMS rather than reporting anything
+wrong. Turn SMS alerts back on in that bank's own settings.
+
 <img src="docs/screenshots/banks.png" width="280">
 
 A bank that starts sending from a new shortcode becomes a suggestion card in the app; your tap
