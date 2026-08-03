@@ -555,7 +555,15 @@ data class UiState(
                 it.name != dismissedUpdate &&
                 isNewerVersion(it.name, BuildConfig.VERSION_NAME)
         }
-    val effective: Map<String, Double> get() = effectiveRates(rates, overrides, tse)
+    /**
+     * by lazy, not get(): building this copies the whole rate map three times over, and with
+     * بورس loaded that map is the Worker's several hundred plus a couple of thousand نماد.
+     * The screen reads it — directly, and through [totals] — the better part of ten times in
+     * one composition pass, so as a get() a scrolling list rebuilt it on every frame and the
+     * رمزارز rows stuttered. A UiState is immutable and copy() makes a new one, so lazy is
+     * still exactly one build per state, and the value can never be stale.
+     */
+    val effective: Map<String, Double> by lazy { effectiveRates(rates, overrides, tse) }
     val refreshing: Boolean get() = loading || refreshingWallets.isNotEmpty()
 
     /** The tracked balances as one figure, minus the banks she switched off. */
@@ -566,10 +574,12 @@ data class UiState(
         get() = bankAccounts.any { it.bank !in disabledBanks && !it.trusted }
 
     /** See [com.doxigo.muchtoman.listHoldings] — shared with the widget and the daily worker. */
-    val listHoldings: List<Holding>
-        get() = listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks)
+    val listHoldings: List<Holding> by lazy {
+        listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks)
+    }
 
-    val totals: Totals get() = computeTotals(listHoldings, effective)
+    /** Reads both of the above, so as a get() it paid for both of them again every time. */
+    val totals: Totals by lazy { computeTotals(listHoldings, effective) }
 }
 
 // FragmentActivity, not ComponentActivity: androidx.biometric's BiometricPrompt requires it.
