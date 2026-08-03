@@ -10,6 +10,15 @@
     -->
     <uses-permission android:name="android.permission.READ_SMS" />
 
+    <!--
+        READ_SMS is taken to mean "this app needs a radio", which would hide it from every
+        tablet and Chromebook that has none. It does not: it reads the message store, and on a
+        device with nothing in it the feature simply has nothing to show.
+    -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -24,9 +33,25 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.MuchToman">
+        <!--
+            Handle configuration changes rather than being destroyed by them. Everything she
+            commits is already in the Store, but what is half-typed is not: rotating the phone
+            with a wallet address pasted into the sheet threw the sheet and the address away.
+            And it was not only rotation — the theme is SYSTEM by default, so the phone going
+            dark at sunset, or a change of display font size, recreated the activity in exactly
+            the same way. Recreation also runs onStop, which re-arms the lock, so anyone with
+            the app lock on was asked for a fingerprint every time they turned the phone.
+
+            Compose republishes LocalConfiguration on onConfigurationChanged, so the theme and
+            the font scale still follow the system without the activity dying for it.
+
+            ponytail: this does not survive process death or "Don't keep activities";
+            rememberSaveable would. Not worth eight of them and a Saver for one sheet's text.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density|fontScale|layoutDirection"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
