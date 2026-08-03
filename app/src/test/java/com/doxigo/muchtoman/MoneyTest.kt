@@ -791,6 +791,27 @@ class MoneyTest {
     }
 
     @Test
+    fun `mellat labels every line and prints no unit at all`() {
+        // ملت glues its figures straight onto the label — "برداشت500,000,000" — and names
+        // neither ریال nor تومان anywhere, so both figures fall back to ریال.
+        val body = """
+            حساب7591126460
+            برداشت500,000,000
+            مانده140,285,187
+            05/05/11-11:52
+        """.trimIndent()
+        val m = parseBankSms("Bank Mellat", body, 1L)!!
+        assertEquals(Bank.MELLAT, m.bank)
+        assertEquals(14_028_518.7, m.balance!!, 0.01)   // 140,285,187 ریال
+        assertEquals(-50_000_000.0, m.delta!!, 0.01)    // 500,000,000 ریال, out
+        assertTrue(!m.inferred)
+        // The date on the last line is digits and a dash; it is not an account number.
+        assertEquals("", m.mask)
+        val accounts = applyBankSms(emptyList(), m)
+        assertEquals(14_028_518.7, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
     fun `a long figure is never cut in half by the search window`() {
         val m = sms("موجودی قابل برداشت حساب سپرده کوتاه مدت 1,978,750,309 ریال")!!
         assertEquals(197_875_030.9, m.balance!!, 0.01)
@@ -986,9 +1007,12 @@ class MoneyTest {
             BankAccount("KHAVARMIANEH", balance = 300_000_000.0, updatedAt = 5, anchored = true),
         )
         val kept = collapseAccounts(stored)
-        assertEquals(listOf("SAMAN", "KHAVARMIANEH"), kept.map { it.bank })
+        // ملت is that later joiner: it has a number now, so its row stays rather than
+        // vanishing — and one real message from that number replaces the −۹۱۶ میلیارد outright.
+        assertEquals(listOf("MELLAT", "SAMAN", "KHAVARMIANEH"), kept.map { it.bank })
         assertTrue(kept.none { it.bankFa == Bank.OTHER.fa })
-        assertEquals(346_072_530.9, bankTotal(kept, emptySet()), 0.01)
+        val fixed = applyBankSms(kept, parseBankSms("Bank Mellat", "مانده140,285,187", 10L)!!)
+        assertEquals(360_101_049.6, bankTotal(fixed, emptySet()), 0.01)
     }
 
     @Test

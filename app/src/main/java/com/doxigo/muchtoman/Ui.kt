@@ -2176,6 +2176,7 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
         Bank.SADERAT -> R.drawable.ic_bank_saderat
         Bank.RESALAT -> R.drawable.ic_bank_resalat
         Bank.PARSIAN -> R.drawable.ic_bank_parsian
+        Bank.MELLAT -> R.drawable.ic_bank_mellat
         Bank.OTHER -> null
     }
 

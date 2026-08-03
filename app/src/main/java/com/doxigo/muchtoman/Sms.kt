@@ -45,6 +45,7 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     ),
     RESALAT("بانک رسالت", listOf("ResalatBank")),
     PARSIAN("بانک پارسیان", listOf("PARSIANBANK")),
+    MELLAT("بانک ملت", listOf("Bank Mellat")),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build
