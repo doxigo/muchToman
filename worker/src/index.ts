@@ -22,19 +22,24 @@ const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully faster.
-const RATES_CACHE_VERSION = 'proxied-icons-v2';
+const RATES_CACHE_VERSION = 'proxied-apk-v3';
 const PUBLIC_ORIGIN = 'https://rates.muchtoman.com';
 const UPSTREAM_TIMEOUT_MS = 8_000;
 const WALLET_UPSTREAM_TIMEOUT_MS = 5_000;
+// A phone on Iranian mobile data is slow, and this one is tens of megabytes rather than a
+// price quote — the eight seconds the rate sources get would abort every download.
+const APK_TIMEOUT_MS = 60_000;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 const MAX_WALLET_REQUEST_BYTES = 4 * 1024;
 const MAX_ICON_BYTES = 1024 * 1024;
+const MAX_APK_BYTES = 128 * 1024 * 1024;
 const MAX_ERROR_MESSAGE_CHARS = 500;
 const COINGECKO_ICON_ORIGIN = 'https://coin-images.coingecko.com';
 
 /** Where the app's own APKs come from — the source of the update note in /rates. */
 const REPO = 'doxigo/muchToman';
+const APK_PATH = '/download';
 
 /**
  * A scrape that half-works is more dangerous than one that fails, because it produces a
@@ -879,7 +884,7 @@ async function fetchCoinIcon(url: URL): Promise<Response> {
  * hand GitHub a list of user IPs besides. The subrequest is cached at the edge for an hour on
  * top of the /rates cache, which is the longest a new release can take to start showing up.
  */
-async function fetchLatestRelease(): Promise<{ name: string; url: string }> {
+async function fetchLatestRelease(): Promise<{ name: string; url: string; asset: string | null }> {
   const res = await fetchWithTimeout(`https://api.github.com/repos/${REPO}/releases/latest`, {
     headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
     cf: { cacheTtl: 3600, cacheEverything: true },
@@ -891,14 +896,80 @@ async function fetchLatestRelease(): Promise<{ name: string; url: string }> {
   const body = asRecord(JSON.parse(
     await readTextLimited(res.body, res.headers, 64 * 1024),
   ) as unknown);
+  // The tag ends up in a cache key and in a Content-Disposition filename, so it is checked
+  // here rather than at either of those two places.
   const tag = typeof body.tag_name === 'string' ? body.tag_name : '';
-  if (!tag) throw new Error('no tag_name');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$/.test(tag)) throw new Error('no usable tag_name');
+
+  // Only this repository's own release downloads. Anything else in browser_download_url would
+  // make /download an open proxy for whatever that field happened to say.
+  const asset = asArray(body.assets)
+    .map(asRecord)
+    .find((a) =>
+      typeof a.name === 'string' &&
+      a.name.toLowerCase().endsWith('.apk') &&
+      typeof a.browser_download_url === 'string' &&
+      a.browser_download_url.startsWith(`https://github.com/${REPO}/releases/download/`)
+    );
+
   return {
     name: tag.replace(/^v/, ''),
     url: typeof body.html_url === 'string'
       ? body.html_url
       : `https://github.com/${REPO}/releases/latest`,
+    asset: asset == null ? null : asset.browser_download_url as string,
   };
+}
+
+/**
+ * The APK itself, streamed through this origin. github.com and objects.githubusercontent.com
+ * are as unreachable from Iran as workers.dev is (see wrangler.jsonc), so the update note used
+ * to announce a new build and then hand her a link that hangs. This host she can reach — she is
+ * talking to it already, or she would not know an update existed.
+ *
+ * Streamed rather than redirected on purpose: the release URL 302s to
+ * objects.githubusercontent.com, and a redirect only moves the unreachable half of the problem
+ * onto the phone.
+ */
+async function fetchApk(ctx: ExecutionContext): Promise<Response> {
+  const release = await fetchLatestRelease();
+  if (release.asset == null) return textResponse('No APK in the latest release', 502);
+
+  // The bytes behind a tag never change, so nothing has to expire: a new build is a new tag and
+  // therefore a new key. The /rates cache in front of this holds the version name for far less.
+  const cache = caches.default;
+  const key = new Request(
+    `${PUBLIC_ORIGIN}/__cache/apk/${encodeURIComponent(release.name)}`,
+    { method: 'GET' },
+  );
+  const hit = await cache.match(key);
+  if (hit) return hit;
+
+  const upstream = await fetchWithTimeout(release.asset, {
+    headers: { 'user-agent': UA, accept: 'application/octet-stream' },
+  }, APK_TIMEOUT_MS);
+  // ponytail: the declared length is the cap, and it is forwarded — a body that runs past what
+  // it promised errors the stream. Nothing is buffered here, so counting bytes ourselves the way
+  // readBytesLimited does would buy nothing but a 128 MB copy in memory.
+  const declared = Number(upstream.headers.get('content-length'));
+  if (!upstream.ok || !Number.isFinite(declared) || declared <= 0 || declared > MAX_APK_BYTES) {
+    await cancelBody(upstream.body);
+    return textResponse('Download unavailable', 502);
+  }
+
+  const res = new Response(upstream.body, {
+    headers: {
+      'content-type': 'application/vnd.android.package-archive',
+      'content-length': String(declared),
+      'content-disposition': `attachment; filename="muchtoman-${release.name}.apk"`,
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+  ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
+    console.error(JSON.stringify({ message: 'apk cache write failed', error: errorMessage(error) }));
+  }));
+  return res;
 }
 
 async function buildRates(): Promise<Response> {
@@ -1021,7 +1092,17 @@ async function buildRates(): Promise<Response> {
     sources,
     // Null when GitHub is the source that is down. The phone keeps whatever it last heard
     // rather than retracting a note it has already shown.
-    latest: release.status === 'fulfilled' ? release.value : null,
+    //
+    // [apk] is the proxied download and is what the app opens; [url] stays the GitHub release
+    // page because builds already installed only trust that host, and taking their update note
+    // away would leave them with no way to hear about the build that fixes this.
+    latest: release.status === 'fulfilled'
+      ? {
+        name: release.value.name,
+        url: release.value.url,
+        apk: release.value.asset == null ? '' : `${PUBLIC_ORIGIN}${APK_PATH}`,
+      }
+      : null,
   };
 
   return new Response(JSON.stringify(payload), {
@@ -1043,6 +1124,18 @@ export default {
         return textResponse('Method not allowed', 405, 'GET');
       }
       return fetchCoinIcon(url);
+    }
+
+    if (url.pathname === APK_PATH) {
+      if (request.method !== 'GET') {
+        return textResponse('Method not allowed', 405, 'GET');
+      }
+      try {
+        return await fetchApk(ctx);
+      } catch (error) {
+        console.error(JSON.stringify({ message: 'apk proxy failed', error: errorMessage(error) }));
+        return textResponse('Download unavailable', 502);
+      }
     }
 
     if (url.pathname === '/wallet-balance') {
@@ -1075,7 +1168,10 @@ export default {
     }
 
     if (url.pathname !== '/rates') {
-      return textResponse('muchtoman: GET /rates, GET /coin-icon, or POST /wallet-balance\n', 404);
+      return textResponse(
+        'muchtoman: GET /rates, GET /coin-icon, GET /download, or POST /wallet-balance\n',
+        404,
+      );
     }
     if (request.method !== 'GET') {
       return textResponse('Method not allowed', 405, 'GET');

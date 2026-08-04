@@ -931,15 +931,20 @@ private fun openUrl(context: Context, url: String): Boolean =
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 
 /**
- * Nothing updates a sideloaded app on its own, so this line is the entire update path: it opens
- * the release page and she installs the APK herself. Tapping is the only thing it does — no
- * download, no installer permission, nothing that could touch the phone without her.
+ * Nothing updates a sideloaded app on its own, so this line is the entire update path: it hands
+ * the file to whatever she downloads with and she installs it herself. Tapping is the only thing
+ * it does — the app never fetches the APK, never asks for the installer permission, and nothing
+ * touches the phone without her.
+ *
+ * The link is the Worker's proxied copy, which answers with a Content-Disposition attachment, so
+ * the download starts on the tap instead of landing her on a github.com page that, from Iran,
+ * most often does not load at all.
  */
 @Composable
 private fun UpdateNote(release: Release, onDismiss: () -> Unit) {
     val context = LocalContext.current
     Card(
-        onClick = { openUrl(context, release.url) },
+        onClick = { openUrl(context, release.downloadUrl) },
         shape = RoundedCornerShape(Radius.card),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,

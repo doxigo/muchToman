@@ -95,6 +95,48 @@ class RatesFallbackTest {
     }
 
     @Test
+    fun `the update note downloads the proxied APK, and only from the rates origin`() {
+        val now = 1_000_000L
+        val page = "https://github.com/doxigo/muchToman/releases/tag/v2.0"
+        val origin = "https://rates.muchtoman.com"
+        val ours = "$origin/rates"
+
+        // The normal answer: the tap downloads the file rather than opening a github.com page.
+        val proxied = sanitizeRates(
+            Rates(now, mapOf("usd" to 1.0), latest = Release("2.0", page, "$origin/download")),
+            ours,
+            now,
+        )
+        assertEquals("$origin/download", proxied.latest?.downloadUrl)
+
+        // Someone else's APK is dropped on its own — the release page survives it, because a
+        // note that falls back to GitHub still beats no note at all.
+        val hijacked = sanitizeRates(
+            Rates(now, mapOf("usd" to 1.0), latest = Release("2.0", page, "https://evil.example/x/download")),
+            ours,
+            now,
+        )
+        assertEquals("", hijacked.latest?.apk)
+        assertEquals(page, hijacked.latest?.downloadUrl)
+
+        // Right origin, wrong path: /download is the only thing this link may ever be.
+        val elsewhere = sanitizeRates(
+            Rates(now, mapOf("usd" to 1.0), latest = Release("2.0", page, "$origin/rates")),
+            ours,
+            now,
+        )
+        assertEquals(page, elsewhere.latest?.downloadUrl)
+
+        // No APK in the release the Worker saw: the page is all there is, and it is still shown.
+        val pageOnly = sanitizeRates(
+            Rates(now, mapOf("usd" to 1.0), latest = Release("2.0", page)),
+            ours,
+            now,
+        )
+        assertEquals(page, pageOnly.latest?.downloadUrl)
+    }
+
+    @Test
     fun `a future rates timestamp cannot suppress refresh indefinitely`() {
         val now = 1_000_000L
         val raw = Rates(now + 5 * 60_000L + 1, mapOf("usd" to 1.0))

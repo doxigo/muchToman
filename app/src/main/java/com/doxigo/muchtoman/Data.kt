@@ -77,9 +77,16 @@ data class Coin(
 /**
  * The newest tagged release the Worker could see. The app is sideloaded, so nothing updates it
  * on its own — this is the whole of how a new build gets mentioned to someone running an old one.
+ *
+ * [apk] is the Worker's own proxied copy of the file and is what the note opens; [url] is the
+ * GitHub release page, and is the fallback for the run where the Worker found no APK to serve.
+ * GitHub is routinely unreachable from Iran, so the page is the worse of the two links.
  */
 @Serializable
-data class Release(val name: String = "", val url: String = "")
+data class Release(val name: String = "", val url: String = "", val apk: String = "") {
+    /** Whichever of the two she has the better chance of actually opening. */
+    val downloadUrl: String get() = apk.ifBlank { url }
+}
 
 /** Everything the Worker sends: Toman per one unit of each asset id, plus the coin catalogue. */
 @Serializable
@@ -308,19 +315,47 @@ private fun trustedCoinIcon(value: String, ratesUrl: String): String {
     }.getOrDefault("")
 }
 
-private fun trustedRelease(value: Release?): Release? {
+/**
+ * The download link is the one thing in the payload that sends her somewhere, so both halves of
+ * it are checked against a fixed origin: GitHub for the release page, and the Worker she is
+ * already talking to for the proxied APK. An [apk] that fails is dropped on its own rather than
+ * taking the whole note with it — [Release.downloadUrl] then falls back to the page.
+ */
+private fun trustedRelease(value: Release?, ratesUrl: String): Release? {
     value ?: return null
     val name = value.name.trim().take(32)
     if (name.isEmpty()) return null
     val url = runCatching { URL(value.url) }.getOrNull() ?: return null
     val releasePath = url.path.lowercase()
-    return value.copy(name = name, url = url.toExternalForm()).takeIf {
+    return value.copy(
+        name = name,
+        url = url.toExternalForm(),
+        apk = trustedApk(value.apk, ratesUrl),
+    ).takeIf {
         url.protocol.equals("https", ignoreCase = true) &&
             url.host.equals("github.com", ignoreCase = true) &&
             (url.port == -1 || url.port == 443) &&
             url.userInfo == null &&
             releasePath.startsWith("/doxigo/muchtoman/releases/")
     }
+}
+
+/** Same rule as [trustedCoinIcon]: this origin or the official one, and only that one path. */
+private fun trustedApk(value: String, ratesUrl: String): String {
+    if (value.isBlank()) return ""
+    return runCatching {
+        val apk = URL(value)
+        val trustedOrigin = apk.origin() == URL(ratesUrl).origin() ||
+            apk.origin() == URL(OFFICIAL_RATES_ORIGIN).origin()
+        if (
+            !trustedOrigin ||
+            !apk.protocol.equals("https", ignoreCase = true) ||
+            apk.path != "/download" ||
+            apk.userInfo != null ||
+            apk.ref != null ||
+            !apk.query.isNullOrBlank()
+        ) "" else apk.toExternalForm()
+    }.getOrDefault("")
 }
 
 private fun safeText(value: String, maxLength: Int, fallback: String): String =
@@ -383,7 +418,7 @@ internal fun sanitizeRates(
         updatedAt = raw.updatedAt.takeIf { it in 1..(now + MAX_FUTURE_CLOCK_SKEW_MS) } ?: 0L,
         toman = toman,
         coins = coins,
-        latest = trustedRelease(raw.latest),
+        latest = trustedRelease(raw.latest, ratesUrl),
     )
 }
 
