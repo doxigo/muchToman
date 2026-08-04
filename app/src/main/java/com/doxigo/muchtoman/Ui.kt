@@ -149,6 +149,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import coil3.decode.DataSource
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import kotlinx.coroutines.delay
@@ -1056,7 +1057,20 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.size(size * 0.62f),
-                        onState = { success = it is AsyncImagePainter.State.Success },
+                        // A row scrolled off is thrown away, so scrolling back composes this
+                        // afresh with loaded=false and the letters underneath — which is
+                        // invisible under an opaque logo, and exactly visible under a
+                        // transparent one. Ethereum's diamond covers a third of its canvas, so
+                        // every pass over the list restamped "ETH" through the glyph for a
+                        // quarter second. From the memory cache there is no fade for the
+                        // letters to cover — Coil skips the transition — so they can leave the
+                        // moment the logo lands.
+                        onState = { st ->
+                            if (st is AsyncImagePainter.State.Success) {
+                                if (st.result.dataSource == DataSource.MEMORY_CACHE) loaded = true
+                                else success = true
+                            }
+                        },
                     )
                     // Success is when the fade STARTS; the letters leave after it lands, or
                     // the circle shows exactly the hole they exist to cover.
