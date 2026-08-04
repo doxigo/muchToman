@@ -30,7 +30,9 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     SAMAN("بانک سامان", listOf("0999 992 0000", "+989820000", "9820000")),
     // Refah and Pasargad also send from lettered headers, not numbers at all. senderKey
     // keeps those as their own name, so listing one works exactly like listing a shortcode.
-    REFAH("بانک رفاه", listOf("100031", "100032", "Refah Bank")),
+    // "RefahBank" run together is a real header too, seen on a user's phone — not a spacing
+    // variant senderKey can fold, so it is listed on its own.
+    REFAH("بانک رفاه", listOf("100031", "100032", "Refah Bank", "RefahBank")),
     PASARGAD("بانک پاسارگاد", listOf("B.Pasargad")),
     EGHTESAD_NOVIN("بانک اقتصاد نوین", listOf("ENBank")),
     KHAVARMIANEH(

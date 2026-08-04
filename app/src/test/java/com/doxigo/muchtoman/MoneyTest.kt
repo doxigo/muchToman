@@ -480,8 +480,9 @@ class MoneyTest {
         assertEquals(Bank.REFAH, bankOf("REFAH BANK"))
         assertEquals(Bank.REFAH, bankOf(" refah  bank "))
         assertEquals(Bank.REFAH, bankOf("Refah\u00A0Bank"))   // carriers send NBSP too
+        assertEquals(Bank.REFAH, bankOf("RefahBank"))   // listed separately; not a fold
+        assertEquals(Bank.REFAH, bankOf("refahbank"))
         assertNull(bankOf("Refah"))
-        assertNull(bankOf("RefahBank"))
         val m = parseBankSms("Refah Bank", "بانک رفاه\nواریز مبلغ 5,000,000 ریال\nمانده 80,000,000 ریال", 1L)!!
         assertEquals(Bank.REFAH, m.bank)
         assertEquals(8_000_000.0, m.balance!!, 0.01)
