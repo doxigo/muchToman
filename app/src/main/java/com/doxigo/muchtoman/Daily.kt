@@ -8,6 +8,8 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.TimeUnit
 
 /**
@@ -21,18 +23,24 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         val store = Store(applicationContext)
-        fetchRates(BuildConfig.RATES_URL).onSuccess {
+        val holdings = store.holdings
+        val (rates, stocks) = coroutineScope {
+            val rates = async { fetchRates(BuildConfig.RATES_URL) }
+            val stocks = if (holdings.any { isStockId(it.typeId) }) async { fetchTse() } else null
+            rates.await() to stocks?.await()
+        }
+        rates.onSuccess {
             store.cachedRates = mergeRates(it, store.cachedRates)
         }
         // بورس has to be fetched here too. Without it the unattended snapshot values a
         // portfolio holding shares against rates that have none, snapshotHistory refuses the
         // whole day, and the chart quietly stops for anyone who owns a single نماد.
-        fetchTse().onSuccess { store.cachedStocks = it }
+        stocks?.onSuccess { store.cachedStocks = it }
         // A failed fetch still falls through: cached rates younger than a day are good enough,
         // and snapshotHistory is the one that decides.
         snapshotHistory(
             store.history,
-            listHoldings(store.holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
+            listHoldings(holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
             effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
             store.cachedRates.updatedAt,
             System.currentTimeMillis(),

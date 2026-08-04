@@ -4,9 +4,16 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && wrangler deploy --dry-run"
   },
   "devDependencies": {
-    "wrangler": "^4"
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.118.0"
+  },
+  "overrides": {
+    "undici": "7.29.0"
   }
 }

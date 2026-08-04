@@ -43,7 +43,8 @@ android {
     // is the shipped app with the debugger attached rather than a second environment to keep
     // in your head. A local Worker is the thing you opt into:
     //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates   # emulator
-    //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://<this-mac-on-the-lan>:8787/rates
+    //   adb reverse tcp:8787 tcp:8787 && ./gradlew installDev \
+    //       -Pmuchtoman.ratesUrl=http://localhost:8787/rates                    # phone
     // Defaulting debug to 10.0.2.2 was the older way round, and it failed silently on a real
     // phone: prices kept showing (they are cached) while every wallet lookup timed out.
     // Not the workers.dev address the Worker also answers on: that whole domain is
@@ -57,9 +58,11 @@ android {
 
     buildTypes {
         debug {
-            // Same key as release so a debug install replaces the released app in place —
-            // data, backups and all — instead of demanding an uninstall. CI has no
-            // keystore.properties, so its debug builds keep the default debug key.
+            // Same key as release so a debug install replaces the released app in place:
+            // data and all, instead of demanding an uninstall. Its version code still has to
+            // be at least the installed release's, so pass muchtoman.versionCode when using this
+            // upgrade-test path. CI has no keystore.properties, so its debug builds keep the
+            // default debug key.
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
         }
@@ -68,6 +71,7 @@ android {
         create("dev") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
             // src/dev/res overrides the app name so the two icons can be told apart.
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
         }
@@ -91,6 +95,14 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("dev")) { variant ->
+        // The dev package never becomes a Play/release package. A stable high code lets every
+        // local build update the existing dev install without tying it to release CI run numbers.
+        variant.outputs.forEach { it.versionCode.set(2_000_000_000) }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
@@ -101,6 +113,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.biometric)

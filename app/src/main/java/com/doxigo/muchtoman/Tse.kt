@@ -33,6 +33,8 @@ data class TseSnapshot(
  */
 private const val TSE_PREFIX = "tse_"
 
+fun isStockId(id: String): Boolean = id.startsWith(TSE_PREFIX)
+
 /**
  * The row layout has grown a 26-column variant, but only ever by appending — everything read
  * here sits in the first 23, so both parse from the same indices.
@@ -96,15 +98,18 @@ fun parseMarketWatch(body: String, now: Long): TseSnapshot {
     // after the cut — which is how a run once returned 1522 instruments with فولاد and every
     // gold fund quietly absent. Half a market is the failure this cannot afford to tolerate,
     // because it is indistinguishable downstream from those shares having no price.
-    val sections = body.split('@')
-    if (sections.size < 5) {
-        error("truncated body: ${sections.size} sections, ${body.length} chars")
+    val first = body.indexOf('@')
+    val second = if (first >= 0) body.indexOf('@', first + 1) else -1
+    val third = if (second >= 0) body.indexOf('@', second + 1) else -1
+    val fourth = if (third >= 0) body.indexOf('@', third + 1) else -1
+    if (fourth < 0) {
+        error("truncated body: ${body.count { it == '@' } + 1} sections, ${body.length} chars")
     }
 
     val toman = LinkedHashMap<String, Double>()
     val stocks = ArrayList<Stock>()
 
-    for (row in sections[2].split(';')) {
+    for (row in body.substring(second + 1, third).splitToSequence(';')) {
         if (row.isBlank()) continue
         val cols = row.split(',')
         if (cols.size < TSE_MIN_COLUMNS) continue
@@ -132,9 +137,11 @@ fun parseMarketWatch(body: String, now: Long): TseSnapshot {
     return TseSnapshot(now, toman, stocks)
 }
 
-private fun price(raw: String): Double? = raw.trim().toDoubleOrNull()?.takeIf { it > 0.0 }
+private fun price(raw: String): Double? =
+    raw.trim().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
 
 private const val TSE_URL = "https://old.tsetmc.com/tsev2/data/MarketWatchInit.aspx?h=0&r=0"
+private const val MAX_TSE_RESPONSE_BYTES = 16 * 1024 * 1024
 
 /** TSETMC answers a default Java user-agent with nothing usable. */
 private const val TSE_UA =
@@ -164,7 +171,10 @@ suspend fun fetchTse(now: Long = System.currentTimeMillis()): Result<TseSnapshot
             try {
                 val code = conn.responseCode
                 if (code !in 200..299) error("HTTP $code")
-                parseMarketWatch(conn.inputStream.bufferedReader().use { it.readText() }, now)
+                parseMarketWatch(
+                    conn.inputStream.use { it.readUtf8Limited(MAX_TSE_RESPONSE_BYTES) },
+                    now,
+                )
             } finally {
                 conn.disconnect()
             }

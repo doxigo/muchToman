@@ -22,7 +22,16 @@ const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully faster.
-const RATES_CACHE_VERSION = 'latest-release-v1';
+const RATES_CACHE_VERSION = 'proxied-icons-v2';
+const PUBLIC_ORIGIN = 'https://rates.muchtoman.com';
+const UPSTREAM_TIMEOUT_MS = 8_000;
+const WALLET_UPSTREAM_TIMEOUT_MS = 5_000;
+const MAX_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_HTML_BYTES = 4 * 1024 * 1024;
+const MAX_WALLET_REQUEST_BYTES = 4 * 1024;
+const MAX_ICON_BYTES = 1024 * 1024;
+const MAX_ERROR_MESSAGE_CHARS = 500;
+const COINGECKO_ICON_ORIGIN = 'https://coin-images.coingecko.com';
 
 /** Where the app's own APKs come from — the source of the update note in /rates. */
 const REPO = 'doxigo/muchToman';
@@ -43,13 +52,131 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function getJson(url: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(url, {
+type JsonRecord = Record<string, unknown>;
+
+class BodyTooLargeError extends Error {}
+
+function asRecord(value: unknown): JsonRecord {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, MAX_ERROR_MESSAGE_CHARS);
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = UPSTREAM_TIMEOUT_MS,
+): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+async function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (body != null) await body.cancel().catch(() => undefined);
+}
+
+async function readTextLimited(
+  body: ReadableStream<Uint8Array> | null,
+  headers: Headers,
+  maxBytes: number,
+): Promise<string> {
+  const declared = headers.get('content-length');
+  if (declared != null) {
+    const length = Number(declared);
+    if (Number.isFinite(length) && length > maxBytes) {
+      await cancelBody(body);
+      throw new BodyTooLargeError();
+    }
+  }
+  if (body == null) return '';
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new BodyTooLargeError();
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join('');
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function readBytesLimited(
+  body: ReadableStream<Uint8Array> | null,
+  headers: Headers,
+  maxBytes: number,
+): Promise<ArrayBuffer> {
+  const declared = headers.get('content-length');
+  if (declared != null) {
+    const length = Number(declared);
+    if (Number.isFinite(length) && length > maxBytes) {
+      await cancelBody(body);
+      throw new BodyTooLargeError();
+    }
+  }
+  if (body == null) return new ArrayBuffer(0);
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new BodyTooLargeError();
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const result = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result.buffer;
+}
+
+async function getJson(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = UPSTREAM_TIMEOUT_MS,
+): Promise<unknown> {
+  const res = await fetchWithTimeout(url, {
     ...init,
     headers: { 'user-agent': UA, accept: 'application/json', ...(init?.headers ?? {}) },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  }, timeoutMs);
+  if (!res.ok) {
+    await cancelBody(res.body);
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const text = await readTextLimited(res.body, res.headers, MAX_JSON_BYTES);
+  return JSON.parse(text) as unknown;
 }
 
 /** Runs sources in order, returns the first that yields anything. Collects the failures. */
@@ -63,8 +190,8 @@ async function firstOf<T>(
       const value = await s.run();
       if (!usable(value)) throw new Error('response had no usable values');
       return { value, via: s.name, failures };
-    } catch (e: any) {
-      failures.push(`${s.name}: ${e?.message ?? e}`);
+    } catch (error) {
+      failures.push(`${s.name}: ${errorMessage(error)}`);
     }
   }
   throw new Error(failures.join('; ') || 'no sources configured');
@@ -110,17 +237,20 @@ const TGJU_MAP: Record<string, string> = {
 
 async function fetchBonbast(): Promise<Record<string, number>> {
   // The JSON endpoint only answers with a token minted into the homepage HTML.
-  const home = await fetch('https://bonbast.com/', {
+  const home = await fetchWithTimeout('https://bonbast.com/', {
     headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
   });
-  if (!home.ok) throw new Error(`homepage HTTP ${home.status}`);
+  if (!home.ok) {
+    await cancelBody(home.body);
+    throw new Error(`homepage HTTP ${home.status}`);
+  }
 
-  const html = await home.text();
+  const html = await readTextLimited(home.body, home.headers, MAX_HTML_BYTES);
   const token = html.match(/param:\s*"([^"]+)"/)?.[1];
   if (!token) throw new Error('token not found in page');
 
   const setCookie = home.headers.get('set-cookie');
-  const data = await getJson('https://bonbast.com/json', {
+  const data = asRecord(await getJson('https://bonbast.com/json', {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -129,7 +259,7 @@ async function fetchBonbast(): Promise<Record<string, number>> {
       ...(setCookie ? { cookie: setCookie.split(';')[0] } : {}),
     },
     body: new URLSearchParams({ param: token }).toString(),
-  });
+  }));
 
   const out: Record<string, number> = {};
   for (const [id, field] of Object.entries(BONBAST_MAP)) {
@@ -141,10 +271,13 @@ async function fetchBonbast(): Promise<Record<string, number>> {
 
 async function fetchTgjuKeys(map: Record<string, string>): Promise<Record<string, number>> {
   const keys = Object.values(map).join(',');
-  const data = await getJson(`https://api.tgju.org/v1/widget/tmp?keys=${keys}`);
+  const data = asRecord(await getJson(`https://api.tgju.org/v1/widget/tmp?keys=${keys}`));
 
   const byName = new Map<string, unknown>();
-  for (const ind of data?.response?.indicators ?? []) byName.set(ind?.name, ind?.p);
+  for (const value of asArray(asRecord(data.response).indicators)) {
+    const indicator = asRecord(value);
+    byName.set(String(indicator.name ?? ''), indicator.p);
+  }
 
   const out: Record<string, number> = {};
   for (const [id, key] of Object.entries(map)) {
@@ -175,9 +308,14 @@ async function fetchTgjuPage(
   path: string,
   rows: Record<string, string>,
 ): Promise<Record<string, number>> {
-  const res = await fetch(`https://www.tgju.org/${path}`, { headers: { 'user-agent': UA } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const html = await res.text();
+  const res = await fetchWithTimeout(`https://www.tgju.org/${path}`, {
+    headers: { 'user-agent': UA },
+  });
+  if (!res.ok) {
+    await cancelBody(res.body);
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const html = await readTextLimited(res.body, res.headers, MAX_HTML_BYTES);
 
   const out: Record<string, number> = {};
   for (const row of html.split('<tr ')) {
@@ -335,12 +473,26 @@ function walletsFor(
     .sort((a, b) => WALLET_NETWORK_ORDER.indexOf(a.network) - WALLET_NETWORK_ORDER.indexOf(b.network));
 }
 
+function proxiedCoinIcon(value: unknown): string {
+  try {
+    const source = new URL(String(value ?? ''));
+    if (
+      source.origin !== COINGECKO_ICON_ORIGIN ||
+      !source.pathname.startsWith('/coins/images/') ||
+      source.pathname.split('/').includes('..')
+    ) return '';
+    return `${PUBLIC_ORIGIN}/coin-icon?path=${encodeURIComponent(source.pathname)}`;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * The coin catalogue and its USD prices. This is also where the picker's names and logos
  * come from — an emoji standing in for a coin is just a wrong logo, so we ship the real one.
  */
 async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: Coin[] }> {
-  const [list, platformList] = await Promise.all([
+  const [listValue, platformListValue] = await Promise.all([
     getJson(
       `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${COIN_LIMIT}&page=1`,
     ),
@@ -348,20 +500,24 @@ async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: C
     // native BTC/ETH/SOL/TRX tracking still go out; token tracking returns on the next refresh.
     getJson('https://api.coingecko.com/api/v3/coins/list?include_platform=true').catch(() => []),
   ]);
+  const list = asArray(listValue);
+  const platformList = asArray(platformListValue);
   if (!Array.isArray(list) || list.length === 0) throw new Error('empty coin list');
 
   const platformsById = new Map<string, Record<string, unknown>>();
-  for (const coin of Array.isArray(platformList) ? platformList : []) {
-    platformsById.set(String(coin?.id ?? ''), coin?.platforms ?? {});
+  for (const value of platformList) {
+    const coin = asRecord(value);
+    platformsById.set(String(coin.id ?? ''), asRecord(coin.platforms));
   }
 
   const usd: Record<string, number> = {};
   const coins: Coin[] = [];
 
-  for (const c of list) {
-    const id = String(c?.symbol ?? '').toLowerCase();
-    const geckoId = String(c?.id ?? '');
-    const price = num(c?.current_price);
+  for (const value of list) {
+    const coin = asRecord(value);
+    const id = String(coin.symbol ?? '').toLowerCase();
+    const geckoId = String(coin.id ?? '');
+    const price = num(coin.current_price);
     // A coin whose ticker collides with a currency/gold/coin id would shadow it in the
     // rates map. There are none today; skipping is still cheaper than debugging it later.
     if (!id || !geckoId || price == null || id in BONBAST_MAP || id === 'toman') continue;
@@ -370,13 +526,13 @@ async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: C
     // logo, and now its token contract.
     if (id in usd) continue;
 
-    const en = String(c?.name ?? id.toUpperCase());
+    const en = String(coin.name ?? id.toUpperCase());
     usd[id] = price;
     coins.push({
       id,
       name: en, // until a Persian name is found for it below
       en,
-      icon: String(c?.image ?? '').split('?')[0], // cache-buster query is dead weight x250
+      icon: proxiedCoinIcon(coin.image),
       wallets: walletsFor(geckoId, platformsById),
     });
   }
@@ -390,19 +546,20 @@ type TomanCrypto = { prices: Record<string, number>; namesFa: Record<string, str
  * also the Persian coin names — "بیت‌کوین" is what she'd recognise, not "Bitcoin".
  */
 async function fetchBitpin(): Promise<TomanCrypto> {
-  const data = await getJson('https://api.bitpin.ir/v1/mkt/markets/');
+  const data = asRecord(await getJson('https://api.bitpin.ir/v1/mkt/markets/'));
   const prices: Record<string, number> = {};
   const namesFa: Record<string, string> = {};
 
-  for (const m of data?.results ?? []) {
-    const code = String(m?.code ?? '');
+  for (const value of asArray(data.results)) {
+    const market = asRecord(value);
+    const code = String(market.code ?? '');
     if (!code.endsWith('_IRT')) continue;
 
     const id = code.slice(0, -4).toLowerCase();
-    const v = num(m?.price);
+    const v = num(market.price);
     if (v != null) prices[id] = v;
 
-    const fa = String(m?.currency1?.title_fa ?? '').trim();
+    const fa = String(asRecord(market.currency1).title_fa ?? '').trim();
     // Some entries just repeat the latin name; only keep it if it is actually Persian.
     if (fa && /[؀-ۿ]/.test(fa)) namesFa[id] = fa;
   }
@@ -416,12 +573,13 @@ async function fetchBitpin(): Promise<TomanCrypto> {
  * else here; a fraction of a percent of peg drift is far below the spread on the dollar rate.
  */
 async function fetchBinanceUsd(): Promise<Record<string, number>> {
-  const list = await getJson('https://api.binance.com/api/v3/ticker/price');
+  const list = asArray(await getJson('https://api.binance.com/api/v3/ticker/price'));
   const usd: Record<string, number> = {};
-  for (const t of Array.isArray(list) ? list : []) {
-    const sym = String(t?.symbol ?? '');
+  for (const value of list) {
+    const ticker = asRecord(value);
+    const sym = String(ticker.symbol ?? '');
     if (!sym.endsWith('USDT')) continue;
-    const v = num(t?.price);
+    const v = num(ticker.price);
     if (v != null) usd[sym.slice(0, -4).toLowerCase()] = v;
   }
   if (Object.keys(usd).length === 0) throw new Error('no USDT pairs');
@@ -430,8 +588,9 @@ async function fetchBinanceUsd(): Promise<Record<string, number>> {
 
 /** USDT-only, but it is the one crypto price that matters most here. */
 async function fetchTetherland(): Promise<TomanCrypto> {
-  const data = await getJson('https://api.tetherland.com/currencies');
-  const v = num(data?.data?.currencies?.USDT?.price);
+  const data = asRecord(await getJson('https://api.tetherland.com/currencies'));
+  const currencies = asRecord(asRecord(data.data).currencies);
+  const v = num(asRecord(currencies.USDT).price);
   if (v == null) throw new Error('no USDT price');
   return { prices: { usdt: v }, namesFa: { usdt: 'تتر' } };
 }
@@ -463,28 +622,25 @@ const EVM_RPCS: Record<string, string[]> = {
 };
 const SOLANA_RPCS = ['https://api.mainnet-beta.solana.com', 'https://solana-rpc.publicnode.com'];
 
-async function rpc(url: string, method: string, params: unknown[]): Promise<any> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  const data = await getJson(url, {
+async function rpc(url: string, method: string, params: unknown[]): Promise<unknown> {
+  const data = asRecord(await getJson(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
-  if (data?.error || data?.result == null) {
-    throw new Error(String(data?.error?.message ?? 'RPC returned no result'));
+  }, WALLET_UPSTREAM_TIMEOUT_MS));
+  if (data.error || data.result == null) {
+    throw new Error(String(asRecord(data.error).message ?? 'RPC returned no result'));
   }
   return data.result;
 }
 
-async function firstRpc(urls: string[], method: string, params: unknown[]): Promise<any> {
+async function firstRpc(urls: string[], method: string, params: unknown[]): Promise<unknown> {
   const failures: string[] = [];
   for (const url of urls) {
     try {
       return await rpc(url, method, params);
-    } catch (error: any) {
-      failures.push(`${url}: ${error?.message ?? error}`);
+    } catch (error) {
+      failures.push(`${url}: ${errorMessage(error)}`);
     }
   }
   throw new Error(failures.join('; '));
@@ -495,12 +651,27 @@ function scaledAmount(raw: unknown, decimals: number): number {
     throw new Error('invalid token decimals');
   }
   const text = String(raw ?? '');
+  if (!/^(?:0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$/.test(text)) {
+    throw new Error('invalid on-chain balance');
+  }
   const units = BigInt(text);
   if (units < 0n) throw new Error('negative on-chain balance');
   const scale = 10n ** BigInt(decimals);
   const amount = Number(units / scale) + Number(units % scale) / 10 ** decimals;
   if (!Number.isFinite(amount) || amount < 0) throw new Error('balance outside numeric range');
   return amount;
+}
+
+function tokenDecimals(raw: unknown): number {
+  const text = String(raw ?? '');
+  if (!/^(?:0x[0-9a-fA-F]{1,64}|[0-9]{1,3})$/.test(text)) {
+    throw new Error('invalid token decimals');
+  }
+  const decimals = Number(BigInt(text));
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error('invalid token decimals');
+  }
+  return decimals;
 }
 
 async function evmBalance(network: string, address: string, contract: string): Promise<number> {
@@ -525,7 +696,7 @@ async function evmBalance(network: string, address: string, contract: string): P
       'latest',
     ]),
   ]);
-  return scaledAmount(raw, Number(BigInt(decimalsHex)));
+  return scaledAmount(raw, tokenDecimals(decimalsHex));
 }
 
 async function solanaBalance(address: string, mint: string): Promise<number> {
@@ -533,10 +704,10 @@ async function solanaBalance(address: string, mint: string): Promise<number> {
   if (mint && !BASE58_KEY.test(mint)) throw new WalletInputError('invalid_contract');
   if (mint) throw new WalletInputError('unsupported_network');
 
-  const result = await firstRpc(SOLANA_RPCS, 'getBalance', [
+  const result = asRecord(await firstRpc(SOLANA_RPCS, 'getBalance', [
     address,
     { commitment: 'finalized' },
-  ]);
+  ]));
   return Number(result.value) / 1_000_000_000;
 }
 
@@ -545,18 +716,20 @@ async function tronBalance(address: string, contract: string): Promise<number> {
   if (contract && !TRON_ADDRESS.test(contract)) throw new WalletInputError('invalid_contract');
 
   if (!contract) {
-    const account = await getJson('https://api.trongrid.io/wallet/getaccount', {
+    const account = asRecord(await getJson('https://api.trongrid.io/wallet/getaccount', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ address, visible: true }),
-    });
-    return Number(account?.balance ?? 0) / 1_000_000;
+    }, WALLET_UPSTREAM_TIMEOUT_MS));
+    return Number(account.balance ?? 0) / 1_000_000;
   }
 
-  const [balances, token] = await Promise.all([
+  const [balancesValue, tokenValue] = await Promise.all([
     getJson(
       `https://api.trongrid.io/v1/accounts/${encodeURIComponent(address)}` +
         `/trc20/balance?contract_address=${encodeURIComponent(contract)}&limit=1`,
+      undefined,
+      WALLET_UPSTREAM_TIMEOUT_MS,
     ),
     getJson('https://api.trongrid.io/wallet/triggerconstantcontract', {
       method: 'POST',
@@ -567,26 +740,38 @@ async function tronBalance(address: string, contract: string): Promise<number> {
         function_selector: 'decimals()',
         visible: true,
       }),
-    }),
+    }, WALLET_UPSTREAM_TIMEOUT_MS),
   ]);
-  const raw = balances?.data?.[0]?.[contract] ?? '0';
-  const decimalsHex = token?.constant_result?.[0];
+  const balances = asRecord(balancesValue);
+  const token = asRecord(tokenValue);
+  const raw = asRecord(asArray(balances.data)[0])[contract] ?? '0';
+  const decimalsHex = asArray(token.constant_result)[0];
   if (!decimalsHex) throw new Error('TRC-20 decimals unavailable');
-  return scaledAmount(raw, Number(BigInt(`0x${decimalsHex}`)));
+  return scaledAmount(raw, tokenDecimals(`0x${decimalsHex}`));
 }
 
 async function bitcoinBalance(address: string, contract: string): Promise<number> {
   if (contract) throw new WalletInputError('invalid_contract');
   if (!BITCOIN_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
   const encoded = encodeURIComponent(address);
-  const validation = await getJson(`https://mempool.space/api/v1/validate-address/${encoded}`);
-  if (!validation?.isvalid) throw new WalletInputError('invalid_address');
+  const validation = asRecord(
+    await getJson(
+      `https://mempool.space/api/v1/validate-address/${encoded}`,
+      undefined,
+      WALLET_UPSTREAM_TIMEOUT_MS,
+    ),
+  );
+  if (!validation.isvalid) throw new WalletInputError('invalid_address');
 
-  const data = await getJson(`https://mempool.space/api/address/${encoded}`);
-  const confirmed = Number(data?.chain_stats?.funded_txo_sum ?? 0) -
-    Number(data?.chain_stats?.spent_txo_sum ?? 0);
-  const pending = Number(data?.mempool_stats?.funded_txo_sum ?? 0) -
-    Number(data?.mempool_stats?.spent_txo_sum ?? 0);
+  const data = asRecord(await getJson(
+    `https://mempool.space/api/address/${encoded}`,
+    undefined,
+    WALLET_UPSTREAM_TIMEOUT_MS,
+  ));
+  const chain = asRecord(data.chain_stats);
+  const mempool = asRecord(data.mempool_stats);
+  const confirmed = Number(chain.funded_txo_sum ?? 0) - Number(chain.spent_txo_sum ?? 0);
+  const pending = Number(mempool.funded_txo_sum ?? 0) - Number(mempool.spent_txo_sum ?? 0);
   const satoshis = confirmed + pending;
   if (!Number.isFinite(satoshis) || satoshis < 0) throw new Error('invalid Bitcoin balance');
   return satoshis / 100_000_000;
@@ -602,18 +787,21 @@ async function lookupWalletBalance(body: unknown): Promise<number> {
     throw new WalletInputError('invalid_address');
   }
 
+  let amount: number;
   switch (network) {
-    case 'bitcoin': return bitcoinBalance(address, contract);
+    case 'bitcoin': amount = await bitcoinBalance(address, contract); break;
     case 'ethereum':
     case 'bsc':
     case 'arbitrum':
     case 'polygon':
     case 'optimism':
-    case 'avalanche': return evmBalance(network, address, contract);
-    case 'solana': return solanaBalance(address, contract);
-    case 'tron': return tronBalance(address, contract);
+    case 'avalanche': amount = await evmBalance(network, address, contract); break;
+    case 'solana': amount = await solanaBalance(address, contract); break;
+    case 'tron': amount = await tronBalance(address, contract); break;
     default: throw new WalletInputError('unsupported_network');
   }
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('invalid wallet balance');
+  return amount;
 }
 
 function jsonResponse(payload: unknown, status = 200, cacheControl = 'no-store'): Response {
@@ -627,6 +815,62 @@ function jsonResponse(payload: unknown, status = 200, cacheControl = 'no-store')
   });
 }
 
+function textResponse(payload: string, status: number, allow?: string): Response {
+  return new Response(payload, {
+    status,
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      ...(allow == null ? {} : { allow }),
+    },
+  });
+}
+
+function coinIconSource(path: string | null): string | null {
+  if (
+    path == null ||
+    path.length > 256 ||
+    !path.startsWith('/coins/images/') ||
+    path.split('/').includes('..') ||
+    !/^\/[A-Za-z0-9._/-]+$/.test(path)
+  ) return null;
+  return `${COINGECKO_ICON_ORIGIN}${path}`;
+}
+
+async function fetchCoinIcon(url: URL): Promise<Response> {
+  const source = coinIconSource(url.searchParams.get('path'));
+  if (source == null) return textResponse('Not found', 404);
+
+  try {
+    const upstream = await fetchWithTimeout(source, {
+      redirect: 'manual',
+      cf: { cacheTtl: 86_400, cacheEverything: true },
+      headers: { 'user-agent': UA, accept: 'image/png,image/jpeg,image/webp' },
+    });
+    const contentType = upstream.headers.get('content-type')?.split(';', 1)[0].trim() ?? '';
+    if (!upstream.ok || !['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) {
+      await cancelBody(upstream.body);
+      return textResponse('Image unavailable', 502);
+    }
+
+    const image = await readBytesLimited(upstream.body, upstream.headers, MAX_ICON_BYTES);
+    if (image.byteLength === 0) return textResponse('Image unavailable', 502);
+
+    return new Response(image, {
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'public, max-age=86400',
+        'x-content-type-options': 'nosniff',
+        'cross-origin-resource-policy': 'same-origin',
+      },
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ message: 'coin icon fetch failed', error: errorMessage(error) }));
+    return textResponse('Image unavailable', 502);
+  }
+}
+
 // ───────────────────────── assembly ─────────────────────────
 
 /**
@@ -635,14 +879,19 @@ function jsonResponse(payload: unknown, status = 200, cacheControl = 'no-store')
  * hand GitHub a list of user IPs besides. The subrequest is cached at the edge for an hour on
  * top of the /rates cache, which is the longest a new release can take to start showing up.
  */
-async function fetchLatestRelease(): Promise<{ name: string; url: string } | null> {
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+async function fetchLatestRelease(): Promise<{ name: string; url: string }> {
+  const res = await fetchWithTimeout(`https://api.github.com/repos/${REPO}/releases/latest`, {
     headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
     cf: { cacheTtl: 3600, cacheEverything: true },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body: any = await res.json();
-  const tag = typeof body?.tag_name === 'string' ? body.tag_name : '';
+  if (!res.ok) {
+    await cancelBody(res.body);
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const body = asRecord(JSON.parse(
+    await readTextLimited(res.body, res.headers, 64 * 1024),
+  ) as unknown);
+  const tag = typeof body.tag_name === 'string' ? body.tag_name : '';
   if (!tag) throw new Error('no tag_name');
   return {
     name: tag.replace(/^v/, ''),
@@ -677,7 +926,7 @@ async function buildRates(): Promise<Response> {
         ? `${ok} via ${r.value.via} (tried first: ${r.value.failures.join('; ')})`
         : `${ok} via ${r.value.via}`;
     } else {
-      sources[key] = `failed — ${String(r.reason?.message ?? r.reason)}`;
+      sources[key] = `failed: ${errorMessage(r.reason)}`;
     }
   };
 
@@ -699,7 +948,7 @@ async function buildRates(): Promise<Response> {
       Object.assign(toman, r.value);
       sources[key] = `ok via tgju, ${Object.keys(r.value).length}/${want} ${what}`;
     } else {
-      sources[key] = `failed — ${String(r.reason?.message ?? r.reason)}`;
+      sources[key] = `failed: ${errorMessage(r.reason)}`;
     }
   };
   alone('silver', silver, 2, 'grades');
@@ -755,14 +1004,14 @@ async function buildRates(): Promise<Response> {
   sources.coin_catalog =
     gecko.status === 'fulfilled'
       ? `ok, ${coins.length} coins`
-      : `failed, sending none so the phone keeps its own — ${String(gecko.reason?.message ?? gecko.reason)}`;
+      : `failed, sending none so the phone keeps its own: ${errorMessage(gecko.reason)}`;
   sources.crypto_pricing =
     `${tehranPriced} at Tehran price, ${converted} cross-rated from USD via ${usdVia}`;
 
   sources.latest_release =
     release.status === 'fulfilled'
-      ? `ok, ${release.value!.name}`
-      : `failed, no update note this fetch — ${String(release.reason?.message ?? release.reason)}`;
+      ? `ok, ${release.value.name}`
+      : `failed, no update note this fetch: ${errorMessage(release.reason)}`;
 
   const ok = Object.keys(toman).length > 0;
   const payload = {
@@ -780,6 +1029,7 @@ async function buildRates(): Promise<Response> {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': ok ? `public, max-age=${TTL_SECONDS}` : 'no-store',
+      'x-content-type-options': 'nosniff',
     },
   });
 }
@@ -788,53 +1038,67 @@ export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === '/coin-icon') {
+      if (request.method !== 'GET') {
+        return textResponse('Method not allowed', 405, 'GET');
+      }
+      return fetchCoinIcon(url);
+    }
+
     if (url.pathname === '/wallet-balance') {
       if (request.method !== 'POST') {
-        return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } });
+        return textResponse('Method not allowed', 405, 'POST');
+      }
+      const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+      if (contentType !== 'application/json') {
+        return jsonResponse({ code: 'invalid_request' }, 415);
       }
       try {
-        const text = await request.text();
-        if (text.length > 4096) throw new WalletInputError('invalid_request');
+        const text = await readTextLimited(
+          request.body,
+          request.headers,
+          MAX_WALLET_REQUEST_BYTES,
+        );
         const amount = await lookupWalletBalance(JSON.parse(text));
         return jsonResponse({ amount, updatedAt: Date.now() });
       } catch (error) {
+        if (error instanceof BodyTooLargeError) {
+          return jsonResponse({ code: 'invalid_request' }, 413);
+        }
         if (error instanceof WalletInputError || error instanceof SyntaxError) {
           const code = error instanceof WalletInputError ? error.code : 'invalid_request';
           return jsonResponse({ code }, 400);
         }
-        console.error(
-          'wallet lookup failed',
-          error instanceof Error ? error.message : String(error),
-        );
+        console.error(JSON.stringify({ message: 'wallet lookup failed', error: errorMessage(error) }));
         return jsonResponse({ code: 'unavailable' }, 502);
       }
     }
 
     if (url.pathname !== '/rates') {
-      return new Response('muchtoman: GET /rates or POST /wallet-balance\n', {
-        status: 404,
-        headers: { 'content-type': 'text/plain; charset=utf-8' },
-      });
+      return textResponse('muchtoman: GET /rates, GET /coin-icon, or POST /wallet-balance\n', 404);
     }
     if (request.method !== 'GET') {
-      return new Response('Method not allowed', { status: 405, headers: { allow: 'GET' } });
+      return textResponse('Method not allowed', 405, 'GET');
     }
 
     const cache = caches.default;
     const key = new Request(
-      `${url.origin}/__cache/rates/${encodeURIComponent(RATES_CACHE_VERSION)}`,
+      `${PUBLIC_ORIGIN}/__cache/rates/${encodeURIComponent(RATES_CACHE_VERSION)}`,
       { method: 'GET' },
     );
 
-    // `fresh` skips the read and refills this location. The versioned key makes a catalogue
-    // schema change miss stale entries in every Cloudflare location after deployment.
-    if (!url.searchParams.has('fresh')) {
-      const hit = await cache.match(key);
-      if (hit) return hit;
-    }
+    // The versioned key makes a catalogue schema change miss stale entries in every Cloudflare
+    // location after deployment. There is deliberately no public cache-bypass query: it let an
+    // unauthenticated caller force the full upstream fan-out on every request.
+    const hit = await cache.match(key);
+    if (hit) return hit;
 
     const res = await buildRates();
-    if (res.status === 200) ctx.waitUntil(cache.put(key, res.clone()));
+    if (res.status === 200) {
+      ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
+        console.error(JSON.stringify({ message: 'rates cache write failed', error: errorMessage(error) }));
+      }));
+    }
     return res;
   },
 } satisfies ExportedHandler;

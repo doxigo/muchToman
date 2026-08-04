@@ -87,10 +87,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -200,8 +200,7 @@ private data class Editing(val typeId: String, val key: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(vm: AppVm, activity: FragmentActivity) {
-    val state by vm.state.collectAsState()
+fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
     var settings by remember { mutableStateOf(false) }
@@ -303,7 +302,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
         contentWindowInsets = WindowInsets(0),
         bottomBar = {
             Button(
-                onClick = { adding = true },
+                onClick = { adding = true; vm.refreshStocksForPicker() },
                 shape = RoundedCornerShape(Radius.pill),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -367,7 +366,7 @@ fun AppRoot(vm: AppVm, activity: FragmentActivity) {
                     onRefresh = vm::refreshAll,
                     onReport = { report = true },
                     onSettings = { settings = true },
-                    onAdd = { adding = true },
+                    onAdd = { adding = true; vm.refreshStocksForPicker() },
                 )
             }
 
@@ -539,7 +538,7 @@ private fun HeroField(
 
     // "همین الان" must not still say that half an hour later. A slow tick keeps the label
     // honest; the minute granularity of faAgo means nothing finer would ever show anyway.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.rates.updatedAt) {
         while (true) {
             now = System.currentTimeMillis()
@@ -1153,7 +1152,7 @@ private fun BankSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var fixing by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
@@ -1542,8 +1541,8 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
 private fun RowTitle(
     text: String,
     color: Color,
-    max: TextUnit = 18.sp,
     modifier: Modifier = Modifier,
+    max: TextUnit = 18.sp,
 ) {
     BasicText(
         text = text,
@@ -2645,7 +2644,7 @@ private fun EditSheet(
                 OutlinedTextField(
                     value = walletAddress,
                     onValueChange = {
-                        walletAddress = it
+                        walletAddress = it.take(128)
                         localWalletError = null
                         onWalletEdit()
                     },
@@ -2878,6 +2877,9 @@ private fun EditSheet(
                         val option = selectedWallet ?: return@Button
                         if (walletAddress.isBlank()) {
                             localWalletError = "آدرس عمومی کیف پول را وارد کنید."
+                            walletAddressFocus.requestFocus()
+                        } else if (!isWalletAddressFormatValid(option.network, walletAddress)) {
+                            localWalletError = "آدرس با شبکه انتخاب شده همخوان نیست."
                             walletAddressFocus.requestFocus()
                         } else {
                             onSaveWallet(option, walletAddress.trim()) { close(onDismiss) }

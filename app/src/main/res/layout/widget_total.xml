@@ -29,7 +29,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:adjustViewBounds="true"
-        android:contentDescription="دارایی من"
+        android:contentDescription="@string/widget_label_description"
         android:scaleType="centerInside" />
 
     <ImageView
@@ -38,6 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="3dp"
         android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="centerInside" />
 
     <ImageView
@@ -46,6 +47,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="centerInside"
         android:visibility="gone" />
 </LinearLayout>

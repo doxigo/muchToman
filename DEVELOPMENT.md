@@ -5,16 +5,21 @@ app/      Android app (Kotlin + Compose)
 worker/   Cloudflare Worker that serves prices and public-wallet balances
 ```
 
-The phone never talks to a price source directly. The Worker normalises everything so the app
-only ever multiplies `amount × rate`.
+The Worker normalises fiat, metal, coin, and crypto prices so the app only ever multiplies
+`amount × rate`. TSETMC is the one exception: it rejects Cloudflare traffic, so the phone
+fetches it directly only while the stock picker is used or a stock is held.
 
 ## Building
 
 Needs Android Studio (for the SDK) or a standalone Android SDK + JDK 17.
 
 ```bash
-./gradlew installDebug
+./gradlew installDev
 ```
+
+`dev` installs beside the released app with its own data. `debug` can replace the released app
+when a local release keystore is configured, so use it only when testing an in-place upgrade
+and pass a `muchtoman.versionCode` at least as high as the installed release.
 
 Both builds talk to the deployed Worker, so a debug install behaves like the shipped app —
 same prices, same wallet lookups. Point it somewhere else with `-Pmuchtoman.ratesUrl`:
@@ -25,8 +30,8 @@ cd worker && npx wrangler dev --port 8787
 ```
 
 `10.0.2.2` is how the **emulator** reaches this machine; a physical device cannot route it at
-all. On a real phone either use this machine's LAN address, or tunnel through adb with `adb
-reverse tcp:8787 tcp:8787` and pass `http://localhost:8787/rates`.
+all. On a real phone, tunnel through adb with `adb reverse tcp:8787 tcp:8787` and pass
+`http://localhost:8787/rates`. Cleartext is limited to these two debug/dev hosts.
 
 Getting this wrong fails quietly: prices keep rendering from the last cached fetch while every
 wallet balance times out into "به‌روز نشد".
@@ -40,7 +45,10 @@ Tests are plain JVM, no device needed:
 ## The Worker
 
 ```bash
-cd worker && npx wrangler deploy
+cd worker
+npm ci
+npm run check
+npm run deploy
 ```
 
 It is served from `rates.muchtoman.com`, **not** the `muchtoman-rates.milaniz.workers.dev`
@@ -63,15 +71,13 @@ verified wallet-network options:
     {
       "id": "btc",
       "name": "بیت کوین",
-      "icon": "https://…/bitcoin.png",
+      "icon": "https://rates.muchtoman.com/coin-icon?path=…",
       "wallets": [ { "network": "bitcoin", "networkFa": "بیت کوین" } ]
     }
   ],
   "sources": { "fiat_gold_coins": "ok via bonbast", "crypto_toman": "ok via bitpin", ... }
 }
 ```
-
-Add `?fresh=1` to bypass the 10-minute edge cache.
 
 `POST /wallet-balance` reads one public wallet without changing anything on-chain:
 
@@ -97,9 +103,9 @@ which link actually answered.
   that chain stops at the first source that answers and bonbast — which answers nearly always
   — quotes neither. tgju's widget API is not used for them: it carries neither, and it returns
   HTTP 200 with an empty body once it decides you have asked too often.
-- **Crypto:** `bitpin` → `tetherland` → `coingecko` → `binance` → `kraken`. The Iranian
-  exchanges quote Toman and carry the real Tehran premium; the global ones price in USD and
-  are cross-rated through whatever dollar rate the fiat chain produced.
+- **Crypto:** bitpin, with tetherland as its Toman fallback; CoinGecko, with Binance as its USD
+  fallback. The Iranian sources carry the Tehran premium. USD prices are cross-rated through
+  whatever dollar rate the fiat chain produced.
 - **Wallet balances:** mempool.space for Bitcoin, JSON-RPC for supported EVM networks and
   Solana, and TronGrid for TRON. These calls use public addresses only and are read-only.
 
@@ -222,8 +228,9 @@ punctuation is invisible in practice.
 ## Implementation notes
 
 - No database — holdings and optional public-wallet links are a short JSON string in
-  SharedPreferences. No accounts and no analytics. Wallet tracking adds an opt-in call to
-  `POST /wallet-balance`; manual holdings only use the rates endpoint.
+  SharedPreferences and are explicitly excluded from Android backup and device transfer. No
+  accounts and no analytics. Wallet tracking adds an opt-in call to `POST /wallet-balance`;
+  manual holdings use the rates endpoint, plus direct TSETMC access when stocks are involved.
 - Displayed figures **truncate**, never round, so the number shown is never larger than the
   real one. The spelled-out Persian words are never abbreviated at all.
 - Latin tickers are wrapped in Unicode bidi isolates, or "۴۰ SOL · نرخ ۱۴ میلیون" renders

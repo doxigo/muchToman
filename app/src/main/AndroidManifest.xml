@@ -27,12 +27,14 @@
     </queries>
 
     <application
-        android:allowBackup="true"
-        android:restoreAnyVersion="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MuchToman">
+        android:theme="@style/Theme.MuchToman"
+        android:usesCleartextTraffic="false">
         <!--
             Handle configuration changes rather than being destroyed by them. Everything she
             commits is already in the Store, but what is half-typed is not: rotating the phone

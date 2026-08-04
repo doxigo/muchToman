@@ -5,40 +5,37 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apk:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      # Full history + tags: the changelog is the commits since the previous tag.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          fetch-depth: 0
-      - uses: actions/setup-java@v4
+          persist-credentials: false
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
 
-      - name: Recreate signing config
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+      - name: Create disposable CI signing config
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > muchtoman-release.jks
+          umask 077
+          keytool -genkeypair -noprompt \
+            -keystore ci-test.jks -storepass ci-test-password -keypass ci-test-password \
+            -alias ci-test -dname "CN=CI" -keyalg RSA -keysize 2048 -validity 1
           cat > keystore.properties <<EOF
-          storeFile=muchtoman-release.jks
-          storePassword=$STORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
+          storeFile=ci-test.jks
+          storePassword=ci-test-password
+          keyAlias=ci-test
+          keyPassword=ci-test-password
           EOF
 
       # No native code, so this single APK covers every ABI. minSdk 24 = Android 7.0+.
       - run: |
-          ./gradlew assembleRelease \
+          ./gradlew test lint assembleRelease \
             -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
             -Pmuchtoman.versionCode=${{ github.run_number }}
 
@@ -49,9 +46,9 @@ jobs:
       # source rather than R8's output. A release-only crash is invisible to both by
       # construction, and that is a class of bug, not one mistake.
       #
-      # So: install the exact APK that is about to be published, open it, and refuse to publish
-      # if it is not on screen afterwards. Slow (a few minutes) and worth every second of it —
-      # it is the only step that tests the artifact rather than the source.
+      # So: build the same minified release variant with a disposable key, open it, and refuse
+      # to publish if it is not on screen afterwards. The real signing key never enters a job
+      # that executes the emulator action.
       #
       # ponytail: one API level, because "the release build cannot start" reproduces on all of
       # them. Make it a matrix down to 24 the day a bug gets through that is specific to old
@@ -68,7 +65,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: The release APK must actually open
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
         with:
           api-level: 30
           # AOSP, not google_apis: this asks "does the app start", and the lighter image
@@ -98,10 +95,52 @@ jobs:
             # And it has to still be on screen, not a process that quietly went away.
             adb shell dumpsys activity activities | grep -q "com.doxigo.muchtoman/.MainActivity" || { echo "::error::the release APK never reached the foreground"; exit 1; }
 
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      # Full history + tags: the changelog is the commits since the previous tag.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+
+      - name: Recreate signing config
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > muchtoman-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=muchtoman-release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build signed release
+        run: |
+          ./gradlew assembleRelease \
+            -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
+            -Pmuchtoman.versionCode=${{ github.run_number }}
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f muchtoman-release.jks keystore.properties
+
       # The changelog is the commit subjects since the previous tag. GitHub's own
       # --generate-notes lists merged pull requests, and this repo commits straight to main,
       # so it would publish an empty release every time.
-      - run: |
+      - name: Prepare release artifacts
+        run: |
           prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           echo "## Changes" > notes.md
           git log --no-merges --reverse --pretty='- %s' "${prev:+$prev..}${GITHUB_REF_NAME}" >> notes.md
@@ -118,9 +157,31 @@ jobs:
           # crash someone photographs for you. Nothing secret in it; the source is right here.
           cp app/build/outputs/mapping/release/mapping.txt \
              muchtoman-${GITHUB_REF_NAME}-mapping.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-artifacts
+          path: |
+            muchtoman-${{ github.ref_name }}.apk
+            muchtoman-${{ github.ref_name }}-mapping.txt
+            notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-artifacts
+      - run: |
           gh release create "$GITHUB_REF_NAME" \
             "muchtoman-${GITHUB_REF_NAME}.apk" \
             "muchtoman-${GITHUB_REF_NAME}-mapping.txt" \
-            --notes-file notes.md --title "$GITHUB_REF_NAME"
+            --notes-file notes.md --title "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}

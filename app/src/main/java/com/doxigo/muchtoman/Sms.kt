@@ -1,6 +1,7 @@
 package com.doxigo.muchtoman
 
 import kotlinx.serialization.Serializable
+import java.security.MessageDigest
 
 /** The synthetic holding every tracked bank balance adds up into. Its rate is 1, like Toman. */
 const val BANK_ID = "bank_accounts"
@@ -538,9 +539,24 @@ fun bankTotal(accounts: List<BankAccount>, disabled: Set<String>): Double =
 /**
  * The dedup key for a message. The inbox row id is not it: a message re-inserted by a restore
  * or a different SMS app gets a new id and would be counted a second time, which on an
- * accumulated balance is money invented out of nothing.
+ * accumulated balance is money invented out of nothing. Sender, timestamp, and full content
+ * are hashed together so two banks sending the same template at once are still distinct.
  */
-fun smsKey(body: String, at: Long): String = "$at:${body.trim().hashCode()}"
+fun smsKey(sender: String, body: String, at: Long): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest("${senderKey(sender)}\u0000$at\u0000${body.trim()}".toByteArray(Charsets.UTF_8))
+    val hex = "0123456789abcdef"
+    return buildString(digest.size * 2) {
+        for (byte in digest) {
+            val value = byte.toInt() and 0xff
+            append(hex[value ushr 4])
+            append(hex[value and 0x0f])
+        }
+    }
+}
+
+/** Recognises keys written by builds before sender-aware SHA-256 deduplication. */
+fun legacySmsKey(body: String, at: Long): String = "$at:${body.trim().hashCode()}"
 
 /** Keeps the seen-message set from growing without bound; a year of messages is ample. */
 const val SMS_KEEP = 2_000

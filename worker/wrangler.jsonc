@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "muchtoman-rates",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-01",
+  "compatibility_date": "2026-08-04",
   "observability": { "enabled": true },
   // Served from muchtoman.com rather than the workers.dev subdomain it also answers on.
   // workers.dev is filtered wholesale inside Iran — it is a common circumvention host, so

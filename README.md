@@ -90,10 +90,12 @@ Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian ex
 ## Privacy
 
 No account, no login, no analytics. Holdings and saved wallet links live in the app's own
-storage on the phone, and bank SMS is parsed on-device. Wallet tracking is opt-in: when it is
-enabled, the public address is sent through the configured Worker to a public blockchain RPC
-or indexer. The app never asks for a recovery phrase or private key. Without wallet tracking,
-the only network call is fetching rates.
+storage on the phone, are excluded from Android backup and device transfer, and bank SMS is
+parsed on-device. Wallet tracking is opt-in: when it is enabled, the public address is sent
+through the configured Worker to a public blockchain RPC or indexer. The app never asks for a
+recovery phrase or private key. Rates and coin logos come through the configured Worker. The
+only direct price-source request is TSETMC, and only when the stock picker is opened or a stock
+is already held.
 
 ## Building it yourself
 

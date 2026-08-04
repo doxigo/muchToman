@@ -8,12 +8,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,9 +27,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 private const val WALLET_REFRESH_MS = 10 * 60_000L
+private const val STOCK_REFRESH_MS = 10 * 60_000L
+private const val MAX_PARALLEL_WALLET_FETCHES = 4
 
 class AppVm(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
@@ -41,6 +45,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * computed against a store that has since been wiped and write them straight back over it.
      */
     private var scanJob: Job? = null
+    private var stockJob: Job? = null
+    private val walletSemaphore = Semaphore(MAX_PARALLEL_WALLET_FETCHES)
 
     private val _state = MutableStateFlow(
         UiState(
@@ -65,6 +71,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     init {
         refresh()
+        refreshStocksIfHeld()
         refreshWallets()
         scanSms()
         scheduleDailySnapshot(app)
@@ -77,6 +84,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      */
     fun refreshIfStale() {
         if (System.currentTimeMillis() - _state.value.rates.updatedAt > 10 * 60_000L) refresh()
+        refreshStocksIfHeld()
         refreshWallets()
         // Coming back is also when messages that arrived while she was away get read.
         scanSms()
@@ -84,6 +92,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     fun refreshAll() {
         refresh()
+        refreshStocksIfHeld(force = true)
         refreshWallets(force = true)
     }
 
@@ -91,13 +100,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (_state.value.loading) return
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
-            // Two sources that stand alone: the Worker prices everything else, TSETMC prices
-            // بورس and refuses connections from outside Iran. Whichever answers is applied.
-            val rates = async { fetchRates(BuildConfig.RATES_URL) }
-            val stocks = async { fetchTse() }
-
             var failure: String? = null
-            rates.await().onSuccess { fetched ->
+            fetchRates(BuildConfig.RATES_URL).onSuccess { fetched ->
                 val fresh = mergeRates(fetched, store.cachedRates)
                 store.cachedRates = fresh
                 _state.update { it.copy(rates = fresh) }
@@ -109,22 +113,35 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 failure = e.message ?: "خطا"
             }
 
-            stocks.await().onSuccess { fresh ->
-                store.cachedStocks = fresh
-                _state.update { it.copy(tse = fresh) }
-                // The count is the only outward sign that the whole market arrived rather
-                // than as much of it as the socket managed before timing out.
-                android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
-            }.onFailure { e ->
-                // Deliberately not surfaced. This fails for everyone outside Iran, every
-                // time, and an error banner about بورس on a screen that priced everything
-                // else correctly would be noise. Shares already priced keep their cached
-                // number; ones never priced are already named in the missing-rate note.
-                android.util.Log.w("muchtoman", "tse fetch failed: $e")
-            }
-
             _state.update { it.copy(loading = false, error = failure) }
             recordSnapshot()
+        }
+    }
+
+    fun refreshStocksForPicker() = refreshStocks(requireHolding = false)
+
+    private fun refreshStocksIfHeld(force: Boolean = false) =
+        refreshStocks(force = force, requireHolding = true)
+
+    private fun refreshStocks(force: Boolean = false, requireHolding: Boolean) {
+        val current = _state.value
+        if (requireHolding && current.holdings.none { isStockId(it.typeId) }) return
+        if (!force && System.currentTimeMillis() - current.tse.updatedAt <= STOCK_REFRESH_MS) return
+        if (stockJob?.isActive == true) return
+
+        _state.update { it.copy(stocksLoading = true) }
+        stockJob = viewModelScope.launch {
+            var changed = false
+            fetchTse().onSuccess { fresh ->
+                changed = true
+                store.cachedStocks = fresh
+                _state.update { it.copy(tse = fresh) }
+                android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
+            }.onFailure { error ->
+                android.util.Log.w("muchtoman", "tse fetch failed: $error")
+            }
+            _state.update { it.copy(stocksLoading = false) }
+            if (changed && _state.value.holdings.any { isStockId(it.typeId) }) recordSnapshot()
         }
     }
 
@@ -208,7 +225,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             )
         }
         viewModelScope.launch {
-            fetchWalletBalance(BuildConfig.RATES_URL, wallet)
+            walletSemaphore.withPermit { fetchWalletBalance(BuildConfig.RATES_URL, wallet) }
                 .onSuccess { balance ->
                     saveHolding(
                         key,
@@ -253,7 +270,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             val results = tracked.map { holding ->
-                async { holding to fetchWalletBalance(BuildConfig.RATES_URL, holding.wallet!!) }
+                async {
+                    holding to walletSemaphore.withPermit {
+                        fetchWalletBalance(BuildConfig.RATES_URL, holding.wallet!!)
+                    }
+                }
             }.awaitAll().associateBy { it.first.key }
 
             val current = _state.value
@@ -372,8 +393,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val fresh = mutableListOf<String>()
         val strangers = store.strangeSenders.toMutableList()
         for (m in messages) {
-            val key = smsKey(m.body, m.at)
-            if (key in seen || key in fresh) continue
+            val key = smsKey(m.from, m.body, m.at)
+            if (key in seen || legacySmsKey(m.body, m.at) in seen || key in fresh) continue
             val parsed = parseBankSms(m.from, m.body, m.at, extra)
             if (parsed == null) {
                 // Skipped, and normally that is the end of it. The one silence worth
@@ -407,13 +428,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             fresh += key
         }
 
+        if (!store.smsEnabled || !canReadSms(app)) return
+
         store.bankAccounts = accounts
         store.seenSms = rememberSeen(seen, fresh)
         // A stranger whose number has since been added resolves and drops off the list, as
         // does one she dismissed. Newest first, so the message she is asking about — which
         // is almost always the latest — sits at the top instead of behind old promos.
+        val currentDismissed = store.dismissedSenders.map(::senderKey).toSet()
         store.strangeSenders = strangers
-            .filter { bankOf(it.sender, extra) == null && senderKey(it.sender) !in dismissed }
+            .filter { bankOf(it.sender, extra) == null && senderKey(it.sender) !in currentDismissed }
             .sortedByDescending { it.at }
             .take(12)
         _state.update {
@@ -524,10 +548,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /** She tells us what an account really holds; everything read after it builds on that. */
     fun setBankBalance(key: String, balance: Double) {
-        val next = anchorAccount(store.bankAccounts, key, balance, System.currentTimeMillis())
-        store.bankAccounts = next
-        _state.update { it.copy(bankAccounts = next) }
-        recordSnapshot()
+        restartScan {
+            val next = anchorAccount(store.bankAccounts, key, balance, System.currentTimeMillis())
+            store.bankAccounts = next
+            _state.update { it.copy(bankAccounts = next) }
+            recordSnapshot()
+        }
     }
 
     /**
@@ -536,10 +562,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * zero and unanchored, at the next message that bank sends.
      */
     fun forgetBankAccount(key: String) {
-        val next = store.bankAccounts.filterNot { it.key == key }
-        store.bankAccounts = next
-        _state.update { it.copy(bankAccounts = next) }
-        recordSnapshot()
+        restartScan {
+            val next = store.bankAccounts.filterNot { it.key == key }
+            store.bankAccounts = next
+            _state.update { it.copy(bankAccounts = next) }
+            recordSnapshot()
+        }
     }
 
     fun setOverride(typeId: String, rate: Double?) {
@@ -582,6 +610,7 @@ data class UiState(
     val rates: Rates = Rates(),
     val overrides: Map<String, Double> = emptyMap(),
     val loading: Boolean = false,
+    val stocksLoading: Boolean = false,
     val error: String? = null,
     val lockEnabled: Boolean = false,
     val widgetLock: Boolean = false,
@@ -622,7 +651,7 @@ data class UiState(
      * still exactly one build per state, and the value can never be stale.
      */
     val effective: Map<String, Double> by lazy { effectiveRates(rates, overrides, tse) }
-    val refreshing: Boolean get() = loading || refreshingWallets.isNotEmpty()
+    val refreshing: Boolean get() = loading || stocksLoading || refreshingWallets.isNotEmpty()
 
     /** The tracked balances as one figure, minus the banks she switched off. */
     val bankToman: Double get() = bankTotal(bankAccounts, disabledBanks)
@@ -649,7 +678,7 @@ class MainActivity : FragmentActivity() {
             // The view model is resolved before the theme, because the theme depends on a
             // preference it owns.
             val vm: AppVm = viewModel()
-            val state by vm.state.collectAsState()
+            val state by vm.state.collectAsStateWithLifecycle()
 
             MuchTomanTheme(mode = state.themeMode) {
                 // The whole app is Persian, so force RTL regardless of the phone's locale.
@@ -672,7 +701,7 @@ class MainActivity : FragmentActivity() {
                         }
                     }
 
-                    AppRoot(vm, this@MainActivity)
+                    AppRoot(vm, state, this@MainActivity)
                 }
             }
         }

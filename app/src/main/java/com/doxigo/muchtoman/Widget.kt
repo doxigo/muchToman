@@ -14,6 +14,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.FontRes
@@ -35,6 +36,9 @@ private const val GOLD = 0xFFF7C948.toInt()
 private const val MINT = 0xFF3BE0A8.toInt()
 private const val WARN = 0xFFFFB4A6.toInt()
 private const val MUTED = 0xFF93B7B0.toInt()
+
+private fun spToPx(context: Context, sp: Float): Float =
+    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)
 
 /** The same colour at [a]/255 opacity. */
 private fun fade(color: Int, a: Int): Int = (color and 0x00FFFFFF) or (a shl 24)
@@ -106,7 +110,7 @@ private fun Bundle?.heightDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWI
 private fun textBitmap(context: Context, text: String, sp: Float, @FontRes font: Int, color: Int): Bitmap {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = ResourcesCompat.getFont(context, font)
-        textSize = sp * context.resources.displayMetrics.scaledDensity
+        textSize = spToPx(context, sp)
         fontFeatureSettings = TABULAR
         this.color = color
     }
@@ -139,7 +143,7 @@ private fun pillBitmap(
     val d = context.resources.displayMetrics
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = ResourcesCompat.getFont(context, R.font.modam_semibold)
-        textSize = sp * d.scaledDensity
+        textSize = spToPx(context, sp)
         fontFeatureSettings = TABULAR
         color = tone
     }

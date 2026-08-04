@@ -219,6 +219,7 @@ class TseParseTest {
         val snap = parseMarketWatch(
             body(
                 "short,row,nowhere,near,wide,enough",
+                row("1", "الف", "شرکت الف", "Infinity"),
                 row("2", "ب", "شرکت ب", "1000"),
                 "",
             ),

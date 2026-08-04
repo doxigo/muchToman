@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">چقدر تومن</string>
+    <string name="widget_label_description">دارایی من</string>
+    <string name="widget_chart_description">نمودار یک ماه گذشته</string>
     <!-- Shown under the widget's name in the picker (API 31+). -->
     <string name="widget_description">جمع دارایی‌تان روی صفحه اصلی، با تغییر امروز و نمودار یک ماه گذشته.</string>
 </resources>

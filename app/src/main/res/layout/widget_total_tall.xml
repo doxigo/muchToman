@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
             android:adjustViewBounds="true"
-            android:contentDescription="دارایی من"
+            android:contentDescription="@string/widget_label_description"
             android:scaleType="centerInside" />
 
         <ImageView
@@ -44,6 +44,7 @@
             android:layout_alignBottom="@id/widget_label"
             android:layout_alignParentEnd="true"
             android:adjustViewBounds="true"
+            android:contentDescription="@null"
             android:scaleType="centerInside" />
     </RelativeLayout>
 
@@ -53,6 +54,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="centerInside" />
 
     <ImageView
@@ -61,6 +63,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:adjustViewBounds="true"
+        android:contentDescription="@null"
         android:scaleType="centerInside"
         android:visibility="gone" />
 
@@ -72,7 +75,7 @@
         android:layout_marginEnd="-18dp"
         android:layout_marginTop="10dp"
         android:layout_weight="1"
-        android:contentDescription="نمودار یک ماه گذشته"
+        android:contentDescription="@string/widget_chart_description"
         android:scaleType="fitXY"
         android:visibility="gone" />
 </LinearLayout>

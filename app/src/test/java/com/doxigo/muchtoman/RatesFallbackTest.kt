@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -69,5 +70,34 @@ class RatesFallbackTest {
         val totals = computeTotals(listOf(Holding("dot", 2.0)), rates)
         assertEquals(600_000.0, totals.toman, 0.01)
         assertEquals(emptyList<String>(), totals.missing)
+    }
+
+    @Test
+    fun `network catalogue URLs are restricted to the trusted services`() {
+        val now = 1_000_000L
+        val safeIcon = "https://rates.muchtoman.com/coin-icon?path=%2Fcoins%2Fimages%2F1%2Fsmall.png"
+        val raw = Rates(
+            updatedAt = now,
+            toman = mapOf("btc" to 1.0, "bad" to Double.POSITIVE_INFINITY),
+            coins = listOf(
+                Coin("btc", "Bitcoin", icon = safeIcon),
+                Coin("eth", "Ethereum", icon = "https://example.com/tracker.png"),
+            ),
+            latest = Release("2.0", "https://evil.example/fake.apk"),
+        )
+
+        val clean = sanitizeRates(raw, "https://rates.muchtoman.com/rates", now)
+
+        assertEquals(setOf("btc"), clean.toman.keys)
+        assertEquals(safeIcon, clean.coins.first().icon)
+        assertEquals("", clean.coins.last().icon)
+        assertNull(clean.latest)
+    }
+
+    @Test
+    fun `a future rates timestamp cannot suppress refresh indefinitely`() {
+        val now = 1_000_000L
+        val raw = Rates(now + 5 * 60_000L + 1, mapOf("usd" to 1.0))
+        assertEquals(0L, sanitizeRates(raw, "https://rates.muchtoman.com/rates", now).updatedAt)
     }
 }

@@ -1018,8 +1018,9 @@ class MoneyTest {
     @Test
     fun `the same message counted twice would invent money, so it is keyed by content`() {
         val body = "بانک سامان\nواریز 1,000,000 ریال"
-        assertEquals(smsKey(body, 42L), smsKey(body, 42L))
-        assertTrue(smsKey(body, 42L) != smsKey(body, 43L))
+        assertEquals(smsKey("Bank", body, 42L), smsKey("Bank", body, 42L))
+        assertTrue(smsKey("Bank", body, 42L) != smsKey("Bank", body, 43L))
+        assertTrue(smsKey("Bank A", body, 42L) != smsKey("Bank B", body, 42L))
         // Pruning keeps the newest keys, so a long-lived inbox cannot grow the set forever.
         val many = (1..SMS_KEEP + 50).map { "k$it" }
         val kept = rememberSeen(emptySet(), many)

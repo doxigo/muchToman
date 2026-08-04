@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -116,7 +118,22 @@ fun computeTotals(holdings: List<Holding>, rates: Map<String, Double>): Totals {
     for (h in holdings) {
         if (h.excluded) continue // set aside on purpose — not summed, and not "missing" either
         val rate = rates[h.typeId]
-        if (rate == null || rate <= 0.0) missing += h.typeId else sum += h.amount * rate
+        val value = rate?.let { h.amount * it }
+        val next = value?.let { sum + it }
+        if (
+            !h.amount.isFinite() ||
+            rate == null ||
+            !rate.isFinite() ||
+            rate <= 0.0 ||
+            value == null ||
+            !value.isFinite() ||
+            next == null ||
+            !next.isFinite()
+        ) {
+            missing += h.typeId
+        } else {
+            sum = next
+        }
     }
     return Totals(sum, missing)
 }
@@ -215,6 +232,174 @@ fun changeOver(history: Map<Long, Double>, today: Long, windowDays: Int, current
 }
 
 private val JSON = Json { ignoreUnknownKeys = true }
+private const val MAX_RATES_RESPONSE_BYTES = 2 * 1024 * 1024
+private const val MAX_WALLET_RESPONSE_BYTES = 64 * 1024
+private const val MAX_RATE_ENTRIES = 10_000
+private const val MAX_COIN_ENTRIES = 500
+private const val MAX_WALLET_OPTIONS = 16
+private const val MAX_ASSET_ID_LENGTH = 64
+private const val MAX_COIN_NAME_LENGTH = 100
+private const val MAX_NETWORK_NAME_LENGTH = 40
+private const val MAX_CONTRACT_LENGTH = 128
+private const val MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60_000L
+private const val OFFICIAL_RATES_ORIGIN = "https://rates.muchtoman.com"
+
+private val EVM_ADDRESS = Regex("^0x[0-9a-fA-F]{40}$")
+private val BASE58_KEY = Regex("^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+private val TRON_ADDRESS = Regex("^T[1-9A-HJ-NP-Za-km-z]{33}$")
+private val BITCOIN_ADDRESS =
+    Regex("^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$", RegexOption.IGNORE_CASE)
+private val EVM_NETWORKS = setOf("ethereum", "bsc", "arbitrum", "polygon", "optimism", "avalanche")
+private val WALLET_NETWORKS = EVM_NETWORKS + setOf("bitcoin", "solana", "tron")
+
+fun isWalletAddressFormatValid(network: String, value: String): Boolean {
+    val address = value.trim()
+    if (address.isEmpty() || address.length > 128) return false
+    return when (network) {
+        "bitcoin" -> BITCOIN_ADDRESS.matches(address)
+        "solana" -> BASE58_KEY.matches(address)
+        "tron" -> TRON_ADDRESS.matches(address)
+        in EVM_NETWORKS -> EVM_ADDRESS.matches(address)
+        else -> false
+    }
+}
+
+fun isWalletContractFormatValid(network: String, value: String): Boolean {
+    val contract = value.trim()
+    if (contract.isEmpty()) return true
+    if (contract.length > MAX_CONTRACT_LENGTH) return false
+    return when (network) {
+        "tron" -> TRON_ADDRESS.matches(contract)
+        in EVM_NETWORKS -> EVM_ADDRESS.matches(contract)
+        else -> false
+    }
+}
+
+internal fun isWalletBalanceValid(
+    balance: WalletBalance,
+    now: Long = System.currentTimeMillis(),
+): Boolean =
+    balance.amount.isFinite() &&
+        balance.amount >= 0.0 &&
+        balance.updatedAt in 1..(now + MAX_FUTURE_CLOCK_SKEW_MS)
+
+private data class UrlOrigin(val scheme: String, val host: String, val port: Int)
+
+private fun URL.origin(): UrlOrigin = UrlOrigin(
+    protocol.lowercase(),
+    host.lowercase(),
+    if (port >= 0) port else defaultPort,
+)
+
+private fun trustedCoinIcon(value: String, ratesUrl: String): String {
+    if (value.isBlank()) return ""
+    return runCatching {
+        val icon = URL(value)
+        val configured = URL(ratesUrl)
+        val official = URL(OFFICIAL_RATES_ORIGIN)
+        val trustedOrigin = icon.origin() == configured.origin() || icon.origin() == official.origin()
+        if (
+            !trustedOrigin ||
+            icon.path != "/coin-icon" ||
+            icon.userInfo != null ||
+            icon.ref != null ||
+            icon.query.isNullOrBlank()
+        ) "" else icon.toExternalForm()
+    }.getOrDefault("")
+}
+
+private fun trustedRelease(value: Release?): Release? {
+    value ?: return null
+    val name = value.name.trim().take(32)
+    if (name.isEmpty()) return null
+    val url = runCatching { URL(value.url) }.getOrNull() ?: return null
+    val releasePath = url.path.lowercase()
+    return value.copy(name = name, url = url.toExternalForm()).takeIf {
+        url.protocol.equals("https", ignoreCase = true) &&
+            url.host.equals("github.com", ignoreCase = true) &&
+            (url.port == -1 || url.port == 443) &&
+            url.userInfo == null &&
+            releasePath.startsWith("/doxigo/muchtoman/releases/")
+    }
+}
+
+private fun safeText(value: String, maxLength: Int, fallback: String): String =
+    value.filterNot { it.isISOControl() }.trim().take(maxLength).ifBlank { fallback }
+
+internal fun sanitizeRates(
+    raw: Rates,
+    ratesUrl: String,
+    now: Long = System.currentTimeMillis(),
+): Rates {
+    val toman = LinkedHashMap<String, Double>()
+    for ((id, value) in raw.toman) {
+        if (toman.size >= MAX_RATE_ENTRIES) break
+        if (
+            id.isNotBlank() &&
+            id.length <= MAX_ASSET_ID_LENGTH &&
+            id.none { it.isISOControl() || it.isWhitespace() } &&
+            value.isFinite() &&
+            value > 0.0
+        ) toman[id] = value
+    }
+
+    val seen = HashSet<String>()
+    val coins = ArrayList<Coin>()
+    for (coin in raw.coins) {
+        if (coins.size >= MAX_COIN_ENTRIES) break
+        val id = coin.id.trim()
+        if (
+            id.isEmpty() ||
+            id.length > MAX_ASSET_ID_LENGTH ||
+            id.any { it.isISOControl() || it.isWhitespace() } ||
+            !seen.add(id)
+        ) continue
+        val wallets = coin.wallets.asSequence()
+            .filter {
+                it.network in WALLET_NETWORKS &&
+                    it.contract.length <= MAX_CONTRACT_LENGTH &&
+                    it.contract.none(Char::isISOControl) &&
+                    isWalletContractFormatValid(it.network, it.contract)
+            }
+            .distinctBy { it.network }
+            .take(MAX_WALLET_OPTIONS)
+            .map {
+                it.copy(
+                    networkFa = safeText(it.networkFa, MAX_NETWORK_NAME_LENGTH, it.network),
+                    contract = it.contract.trim(),
+                )
+            }
+            .toList()
+        coins += coin.copy(
+            id = id,
+            name = safeText(coin.name, MAX_COIN_NAME_LENGTH, id.uppercase()),
+            en = safeText(coin.en, MAX_COIN_NAME_LENGTH, ""),
+            icon = trustedCoinIcon(coin.icon, ratesUrl),
+            wallets = wallets,
+        )
+    }
+
+    return raw.copy(
+        updatedAt = raw.updatedAt.takeIf { it in 1..(now + MAX_FUTURE_CLOCK_SKEW_MS) } ?: 0L,
+        toman = toman,
+        coins = coins,
+        latest = trustedRelease(raw.latest),
+    )
+}
+
+internal fun InputStream.readUtf8Limited(maxBytes: Int): String {
+    val output = ByteArrayOutputStream(minOf(maxBytes, DEFAULT_BUFFER_SIZE))
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) error("response too large")
+        output.write(buffer, 0, read)
+    }
+    return output.toString(Charsets.UTF_8.name())
+}
 
 /**
  * Bumped whenever the way a bank message is read changes enough that the balances already on
@@ -259,7 +444,7 @@ class Store(context: Context) {
 
     /** Last successful fetch, so the app still shows something offline. */
     var cachedRates: Rates
-        get() = read("rates", Rates())
+        get() = sanitizeRates(read("rates", Rates()), BuildConfig.RATES_URL)
         set(v) = write("rates", v)
 
     /**
@@ -417,9 +602,10 @@ suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO)
         try {
             val code = conn.responseCode
             if (code !in 200..299) error("HTTP $code")
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val parsed = JSON.decodeFromString<Rates>(body)
+            val body = conn.inputStream.use { it.readUtf8Limited(MAX_RATES_RESPONSE_BYTES) }
+            val parsed = sanitizeRates(JSON.decodeFromString<Rates>(body), url)
             if (parsed.toman.isEmpty()) error("empty rates")
+            if (parsed.updatedAt <= 0L) error("invalid rates timestamp")
             // updatedAt is when the Worker last pulled real prices, not when we asked — that
             // is the number worth showing, since a cached response is still old prices.
             parsed
@@ -437,12 +623,19 @@ suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO)
 suspend fun fetchWalletBalance(ratesUrl: String, wallet: WalletLink): Result<WalletBalance> =
     withContext(Dispatchers.IO) {
         runCatching {
+            if (!isWalletAddressFormatValid(wallet.network, wallet.address)) {
+                throw WalletFetchException("invalid_address")
+            }
+            if (!isWalletContractFormatValid(wallet.network, wallet.contract)) {
+                throw WalletFetchException("invalid_contract")
+            }
             val rates = URL(ratesUrl)
             val endpoint = URL(rates.protocol, rates.host, rates.port, "/wallet-balance")
             val conn = (endpoint.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 15_000
                 requestMethod = "POST"
+                instanceFollowRedirects = false
                 doOutput = true
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -460,7 +653,7 @@ suspend fun fetchWalletBalance(ratesUrl: String, wallet: WalletLink): Result<Wal
 
                 val status = conn.responseCode
                 val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val body = stream?.use { it.readUtf8Limited(MAX_WALLET_RESPONSE_BYTES) }.orEmpty()
                 if (status !in 200..299) {
                     val reason = runCatching { JSON.decodeFromString<WalletError>(body).code }
                         .getOrDefault("unavailable")
@@ -468,7 +661,7 @@ suspend fun fetchWalletBalance(ratesUrl: String, wallet: WalletLink): Result<Wal
                 }
 
                 val balance = JSON.decodeFromString<WalletBalance>(body)
-                if (!balance.amount.isFinite() || balance.amount < 0.0 || balance.updatedAt <= 0L) {
+                if (!isWalletBalanceValid(balance)) {
                     throw WalletFetchException("invalid_response")
                 }
                 balance
