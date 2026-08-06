@@ -1,0 +1,83 @@
+name: check
+
+# The repo has only ever run CI on a tag, which means a broken main is discovered at release
+# time. With a ledger, a sync Worker and a PWA in here, that is too late — so this runs on every
+# push and every pull request. The tag workflow, emulator smoke test and all, is unchanged.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d7793b545071e98d581d3bf084a51c3213318a07 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+      # Both editions, but only their debug variants: plain `test` would now run the same suite six
+      # times over. Twice is not waste — EditionTest is the check that the lite flavour's
+      # buildConfigField actually reached it, and it can only make that claim from inside the lite
+      # variant. assembleDebug builds both so a lite-only compile error cannot wait until tag day.
+      - name: Unit tests and lint
+        run: ./gradlew testFullDebugUnitTest testLiteDebugUnitTest lint assembleDebug
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: "22"
+      - name: Rates Worker
+        working-directory: worker
+        run: npm ci && npm run check
+
+  pwa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: "22"
+      - name: PWA
+        working-directory: pwa
+        # Its tests read the golden corpus out of the Android module, so this is also the check
+        # that the two parsers still agree on every case they share.
+        run: npm ci && npm run check
+
+  sync:
+    # The Worker's own build needs pwa/dist to exist, so the assets are built first.
+    needs: pwa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: "22"
+      - name: Build the PWA it serves
+        working-directory: pwa
+        run: npm ci && npm run build
+      - name: Sync Worker
+        working-directory: sync
+        # Real Durable Objects under workerd, not a mock: this is the first stateful thing in
+        # the repo and it holds people's ledgers.
+        run: npm ci && npm run check

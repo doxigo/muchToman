@@ -33,9 +33,12 @@ jobs:
           keyPassword=ci-test-password
           EOF
 
-      # No native code, so this single APK covers every ABI. minSdk 24 = Android 7.0+.
+      # No native code, so each APK covers every ABI. minSdk 24 = Android 7.0+.
+      # assembleRelease builds both editions. Both test variants run, and only those two: plain
+      # `test` would now run the same suite six times, while one variant alone could not check that
+      # the lite flavour is configured as anything other than a second copy of the full app.
       - run: |
-          ./gradlew test lint assembleRelease \
+          ./gradlew testFullDebugUnitTest testLiteDebugUnitTest lint assembleRelease \
             -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
             -Pmuchtoman.versionCode=${{ github.run_number }}
 
@@ -75,7 +78,8 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect
           script: |
-            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb install -r app/build/outputs/apk/full/release/app-full-release.apk
+            adb install -r app/build/outputs/apk/lite/release/app-lite-release.apk
             # -b all: plain `logcat -c` leaves the crash buffer alone, which is the one buffer
             # this step reads. `|| true` because clearing the security buffer is refused on
             # some images, and a non-zero exit there would fail the release over nothing.
@@ -94,6 +98,17 @@ jobs:
             if adb logcat -d -b crash | grep -q "com.doxigo.muchtoman"; then echo "::error::the release APK crashed on launch"; adb logcat -d -b crash | tail -60; exit 1; fi
             # And it has to still be on screen, not a process that quietly went away.
             adb shell dumpsys activity activities | grep -q "com.doxigo.muchtoman/.MainActivity" || { echo "::error::the release APK never reached the foreground"; exit 1; }
+            # Then the same two assertions for the lite edition, because it is its own R8 run:
+            # the shrinker sees a different reachable set once the ledger screens are unreachable,
+            # and "R8 removed something Room reflects on" is exactly the bug that got through in
+            # 1.0.2. A build nothing has ever opened is a build nobody has checked.
+            # Its class stays com.doxigo.muchtoman.MainActivity — only the applicationId moves —
+            # so the component has to be spelled out in full here.
+            adb logcat -b all -c || true
+            adb shell am start -W -n com.doxigo.muchtoman.lite/com.doxigo.muchtoman.MainActivity
+            sleep 20
+            if adb logcat -d -b crash | grep -q "com.doxigo.muchtoman"; then echo "::error::the lite release APK crashed on launch"; adb logcat -d -b crash | tail -60; exit 1; fi
+            adb shell dumpsys activity activities | grep -q "com.doxigo.muchtoman.lite/com.doxigo.muchtoman.MainActivity" || { echo "::error::the lite release APK never reached the foreground"; exit 1; }
 
   build:
     needs: verify
@@ -150,13 +165,22 @@ jobs:
           fi
           cat notes.md
 
-          mv app/build/outputs/apk/release/app-release.apk muchtoman-${GITHUB_REF_NAME}.apk
+          mv app/build/outputs/apk/full/release/app-full-release.apk \
+             muchtoman-${GITHUB_REF_NAME}.apk
+          # The lite edition keeps the suffix in its filename and the full one keeps the plain
+          # name, because the plain name is the link people already have.
+          mv app/build/outputs/apk/lite/release/app-lite-release.apk \
+             muchtoman-lite-${GITHUB_REF_NAME}.apk
           # R8 renames everything, so a stack trace off a real phone is unreadable without the
           # map for that exact build — and the build is gone the moment the runner is. Ship it
           # beside the APK: `retrace mapping.txt trace.txt` is then the whole of debugging a
           # crash someone photographs for you. Nothing secret in it; the source is right here.
-          cp app/build/outputs/mapping/release/mapping.txt \
+          # One map per edition: two R8 runs, two different sets of renames, and the wrong map
+          # decodes a trace into confident nonsense rather than failing.
+          cp app/build/outputs/mapping/fullRelease/mapping.txt \
              muchtoman-${GITHUB_REF_NAME}-mapping.txt
+          cp app/build/outputs/mapping/liteRelease/mapping.txt \
+             muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -164,6 +188,8 @@ jobs:
           path: |
             muchtoman-${{ github.ref_name }}.apk
             muchtoman-${{ github.ref_name }}-mapping.txt
+            muchtoman-lite-${{ github.ref_name }}.apk
+            muchtoman-lite-${{ github.ref_name }}-mapping.txt
             notes.md
           if-no-files-found: error
           retention-days: 1
@@ -181,6 +207,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "muchtoman-${GITHUB_REF_NAME}.apk" \
             "muchtoman-${GITHUB_REF_NAME}-mapping.txt" \
+            "muchtoman-lite-${GITHUB_REF_NAME}.apk" \
+            "muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt" \
             --notes-file notes.md --title "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY"
         env:
