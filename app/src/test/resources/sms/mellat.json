@@ -27,6 +27,68 @@
         "unitPrinted": "none",
         "inferred": false
       }
+    },
+    {
+      "id": "mellat-6104-interest-deposit",
+      "sender": "6104",
+      "at": 1,
+      "body": [
+        "ملت",
+        "",
+        "واریز سود کوتاه مدت",
+        "",
+        "حساب9750457",
+        "",
+        "مبلغ8,444,425",
+        "",
+        "05/04/27"
+      ],
+      "why": "ملت also sends from 6104, the four digits its cards start with, and heads that shape with the bare word «ملت» rather than «Bank Mellat». Blank lines between every field, and the date on its own line is the only slashed run — it is a printed date, not the reference number SLASHED_REF looks for.",
+      "expect": {
+        "bank": "MELLAT",
+        "direction": "in",
+        "amountRial": 8444425,
+        "balanceRial": null,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "05/04/27",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "mellat-6104-withdrawal-with-balance",
+      "sender": "6104",
+      "at": 2,
+      "body": [
+        "ملت",
+        "",
+        "حساب9750457",
+        "",
+        "برداشت4,960,000",
+        "",
+        "مانده1,990,880,025"
+      ],
+      "why": "The withdrawal that follows the interest deposit on the same account, from the same 6104. It names no مبلغ at all, so the amount has to be read off «برداشت» itself, and the balance is nearly two milliard ریال — a figure long enough that a window landing inside it would parse as one and a half thousand.",
+      "expect": {
+        "bank": "MELLAT",
+        "direction": "out",
+        "amountRial": 4960000,
+        "balanceRial": 1990880025,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
     }
   ]
 }

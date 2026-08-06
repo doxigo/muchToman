@@ -27,7 +27,7 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // shortcodes. A shortcode is shorter than ten digits and so simply matches itself, and no
     // ten-digit mobile ending in the same run can collide with it.
     BLU("بلو بانک", listOf("0999 998 7641", "90000258", "+9890000258", "98300087641")),
-    SAMAN("بانک سامان", listOf("0999 992 0000", "+989820000", "9820000")),
+    SAMAN("بانک سامان", listOf("0999 992 0000", "+989820000", "9820000", "6219")),
     // Refah and Pasargad also send from lettered headers, not numbers at all. senderKey
     // keeps those as their own name, so listing one works exactly like listing a shortcode.
     // "RefahBank" run together is a real header too, seen on a user's phone — not a spacing
@@ -48,7 +48,10 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     ),
     RESALAT("بانک رسالت", listOf("ResalatBank")),
     PARSIAN("بانک پارسیان", listOf("PARSIANBANK")),
-    MELLAT("بانک ملت", listOf("Bank Mellat")),
+    // Saman, Mellat and Melli each also send from the four digits their own cards start with —
+    // 6219, 6104, 6037. Four digits is shorter than any mobile line, so each matches itself.
+    MELLAT("بانک ملت", listOf("Bank Mellat", "6104")),
+    MELLI("بانک ملی ایران", listOf("6037")),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build

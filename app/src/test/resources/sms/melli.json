@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "melli-interest-balance-only",
+      "sender": "6037",
+      "at": 1,
+      "body": [
+        "بانك ملي ايران",
+        "سود:2,472,328+",
+        "حساب:15102",
+        "مانده:71,655,428",
+        "0425-01:15"
+      ],
+      "why": "ملی sends from the four digits its cards start with, and writes بانك/ملي with Arabic letters. It states interest as «سود:…+» — a word no direction list has — so the message carries no delta and only the مانده is read; that is a stated balance, not a guess, so it must not come back inferred. The trailing «0425-01:15» is a date with no slash in it and must be read as neither an account number nor a printed date.",
+      "expect": {
+        "bank": "MELLI",
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 71655428,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    }
+  ]
+}

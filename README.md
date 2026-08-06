@@ -54,7 +54,7 @@ or header, never words in the body.
 | Bank | Sends from |
 | --- | --- |
 | بلو بانک | `0999 998 7641`, `90000258`, `+9890000258`, `98300087641` |
-| بانک سامان | `0999 992 0000`, `+989820000`, `9820000` |
+| بانک سامان | `0999 992 0000`, `+989820000`, `9820000`, `6219` |
 | بانک رفاه | `100031`, `100032`, `Refah Bank`, `RefahBank` |
 | بانک پاسارگاد | `B.Pasargad` |
 | بانک اقتصاد نوین | `ENBank` |
@@ -62,7 +62,8 @@ or header, never words in the body.
 | بانک صادرات | `+98 9870 0719`, `98700719`, `+98 983 000 9419`, `BankSaderat` |
 | بانک رسالت | `ResalatBank` |
 | بانک پارسیان | `PARSIANBANK` |
-| بانک ملت | `Bank Mellat` |
+| بانک ملت | `Bank Mellat`, `6104` |
+| بانک ملی ایران | `6037` |
 
 **Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
 

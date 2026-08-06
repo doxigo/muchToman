@@ -2476,6 +2476,7 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
         Bank.RESALAT -> R.drawable.ic_bank_resalat
         Bank.PARSIAN -> R.drawable.ic_bank_parsian
         Bank.MELLAT -> R.drawable.ic_bank_mellat
+        Bank.MELLI -> R.drawable.ic_bank_melli
         Bank.OTHER -> null
     }
 
