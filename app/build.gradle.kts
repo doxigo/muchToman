@@ -6,6 +6,16 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    // Room's annotation processor. The first processor in this build, so it is also the first
+    // time KSP is applied at all.
+    alias(libs.plugins.ksp)
+}
+
+// The generated schema JSON is committed. It is what makes a Room migration testable rather
+// than something you find out about on someone's phone, and durable.db is the database that
+// must never be dropped and rebuilt.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 android {
@@ -44,7 +54,7 @@ android {
     // in your head. A local Worker is the thing you opt into:
     //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates   # emulator
     //   adb reverse tcp:8787 tcp:8787 && ./gradlew installDev \
-    //       -Pmuchtoman.ratesUrl=http://localhost:8787/rates                    # phone
+    //       -Pmuchtoman.ratesUrl=http://localhost:8787/rates                        # phone
     // Defaulting debug to 10.0.2.2 was the older way round, and it failed silently on a real
     // phone: prices kept showing (they are cached) while every wallet lookup timed out.
     // Not the workers.dev address the Worker also answers on: that whole domain is
@@ -56,6 +66,14 @@ android {
     val ratesUrl = providers.gradleProperty("muchtoman.ratesUrl")
         .getOrElse("https://rates.muchtoman.com/rates")
 
+    // Where the household ledger syncs. Same override shape as ratesUrl above, for the same
+    // reason: pointing a dev install at a local Worker must be a flag rather than an edit.
+    //   cd sync && npx wrangler dev --port 8788
+    //   adb reverse tcp:8788 tcp:8788
+    //   ./gradlew installDev -Pmuchtoman.syncUrl=http://localhost:8788
+    val syncUrl = providers.gradleProperty("muchtoman.syncUrl")
+        .getOrElse("https://sync.muchtoman.com")
+
     buildTypes {
         debug {
             // Same key as release so a debug install replaces the released app in place:
@@ -65,6 +83,7 @@ android {
             // default debug key.
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
+            buildConfigField("String", "SYNC_URL", "\"$syncUrl\"")
         }
         // A second app on the same phone — its own icon, its own data — so new features are
         // tried out beside the app she actually uses, never on top of it.
@@ -74,9 +93,11 @@ android {
             versionNameSuffix = "-dev"
             // src/dev/res overrides the app name so the two icons can be told apart.
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
+            buildConfigField("String", "SYNC_URL", "\"$syncUrl\"")
         }
         release {
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
+            buildConfigField("String", "SYNC_URL", "\"$syncUrl\"")
             if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -120,6 +141,10 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.zxing.core)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

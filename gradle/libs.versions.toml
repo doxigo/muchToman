@@ -10,6 +10,13 @@ junit = "4.13.2"
 coil = "3.5.0"
 biometric = "1.1.0"
 workManager = "2.11.2"
+room = "2.8.4"
+# KSP decoupled from the Kotlin version at 2.3.0, so this no longer has to be bumped in
+# lockstep with `kotlin` above the way the old "2.2.21-2.0.5" scheme demanded.
+ksp = "2.3.11"
+# Pure-Java QR *encoder*. The one new runtime dependency in the ledger work, and it exists
+# because pairing shows a code rather than typing one: the scope key is 32 bytes.
+zxing = "3.5.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,9 +38,14 @@ biometric = { group = "androidx.biometric", name = "biometric", version.ref = "b
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

@@ -11,6 +11,11 @@ captures/
 *.apk
 worker/node_modules/
 worker/.wrangler/
+sync/node_modules/
+sync/.wrangler/
+pwa/node_modules/
+# Build output: sync/ serves this, and CI builds it before deploying.
+pwa/dist/
 keystore.properties
 *.jks
 *.keystore
