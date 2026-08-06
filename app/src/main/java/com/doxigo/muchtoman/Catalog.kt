@@ -64,7 +64,7 @@ val STATIC_CATALOG: List<AssetType> = listOf(
     // Not "پول نقد و بانک" any more, and not a 🏦 either: once bank balances arrive from her
     // messages as their own row, a row also claiming "بانک" is two names for two different
     // things. This one is the Toman she counts herself.
-    AssetType(TOMAN_ID, "پول نقد تومن", Kind.CASH, "تومان", en = "Toman Cash", emoji = "💰"),
+    AssetType(TOMAN_ID, "پول نقد", Kind.CASH, "تومان", en = "Toman Cash", emoji = "💰"),
 
     // dec = 2: bank balances have cents, and a held 100.50 must round-trip through the
     // edit field without silently becoming 100.
@@ -158,6 +158,11 @@ fun resolveType(id: String, coins: List<Coin>, stocks: List<Stock> = emptyList()
         ?: stocks.firstOrNull { it.id == id }?.toAssetType()
         ?: AssetType(id, id.uppercase(), Kind.CRYPTO, id.uppercase(), dec = 6)
 
+fun resolveType(id: String, dynamic: Map<String, AssetType>): AssetType =
+    STATIC_BY_ID[id]
+        ?: dynamic[id]
+        ?: AssetType(id, id.uppercase(), Kind.CRYPTO, id.uppercase(), dec = 6)
+
 /**
  * Normalised for comparing: ZWNJ and spaces vary by keyboard and by source ("بیت‌کوین" vs
  * "بیت کوین" vs "بیتکوین" are the same word three ways), and a latin name is typed in any case.
@@ -198,6 +203,12 @@ fun holdingsByKind(
     stocks: List<Stock> = emptyList(),
 ): Map<Kind, List<Holding>> =
     holdings.groupBy { resolveType(it.typeId, coins, stocks).kind }
+
+fun holdingsByKind(
+    holdings: List<Holding>,
+    dynamic: Map<String, AssetType>,
+): Map<Kind, List<Holding>> =
+    holdings.groupBy { resolveType(it.typeId, dynamic).kind }
 
 /**
  * What the total is made of, per kind, in the order the list already shows. The groups are
