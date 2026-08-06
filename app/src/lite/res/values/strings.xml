@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Latin, and deliberately not «چقدر تومن»: the lite package installs beside the full one, and the
+  two have to be tellable apart at a glance on a launcher full of Persian names. Same reasoning as
+  src/dev/res, and the same reason it says which edition it is rather than something cleverer.
+-->
+<resources>
+    <string name="app_name">muchToman lite</string>
+</resources>

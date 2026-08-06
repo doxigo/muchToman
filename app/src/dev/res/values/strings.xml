@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Latin, and deliberately not «چقدر تومن»: this package installs beside the real app, and the
+  two have to be tellable apart at a glance on a launcher full of Persian names.
+-->
 <resources>
-    <string name="app_name">muchToman</string>
+    <string name="app_name">muchToman family</string>
 </resources>

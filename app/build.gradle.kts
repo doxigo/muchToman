@@ -29,6 +29,37 @@ android {
         // CI passes these from the git tag; local builds don't care.
         versionCode = providers.gradleProperty("muchtoman.versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("muchtoman.versionName").orNull ?: "1.0"
+        buildConfigField("boolean", "LITE", "false")
+    }
+
+    // Two editions out of one source tree. `lite` is the app as it shipped through v1.0.4 —
+    // دارایی and nothing else — kept alive for someone who only wants to know what their gold is
+    // worth and has no household to run.
+    //
+    // A second repository was the obvious way to do this and is the wrong one: the SMS parsing,
+    // the bank catalogue and the widget are the same code in both, so every detection fix would
+    // land twice for the rest of the app's life and the two copies would drift on the third one
+    // somebody forgot. Here the difference is a single boolean, read in exactly one place
+    // ([tabs]).
+    //
+    // ponytail: the lite APK carries the ledger code it never shows, so "lite" is fewer screens
+    // and not a smaller download. Splitting the sources per flavour would fix that and would
+    // mean two copies of Ui.kt, which is the drift this whole arrangement exists to avoid.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("full") {
+            isDefault = true
+            // Deliberately no applicationIdSuffix: this keeps the released package, so the
+            // phones already on v1.0.4 upgrade in place and DurableDb migrates 1→6 under them.
+            // Their hand-typed balances and every category they ever confirmed survive.
+        }
+        create("lite") {
+            applicationIdSuffix = ".lite"
+            versionNameSuffix = "-lite"
+            buildConfigField("boolean", "LITE", "true")
+            // src/lite/res overrides the app name, for the same reason src/dev/res does: the two
+            // can be installed side by side and have to be tellable apart on the launcher.
+        }
     }
 
     // Release signing. Create keystore.properties yourself (see README) — it is gitignored
@@ -52,8 +83,8 @@ android {
     // Where the app gets its prices — the deployed Worker for both builds, so a debug install
     // is the shipped app with the debugger attached rather than a second environment to keep
     // in your head. A local Worker is the thing you opt into:
-    //   ./gradlew installDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates   # emulator
-    //   adb reverse tcp:8787 tcp:8787 && ./gradlew installDev \
+    //   ./gradlew installFullDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates   # emulator
+    //   adb reverse tcp:8787 tcp:8787 && ./gradlew installFullDev \
     //       -Pmuchtoman.ratesUrl=http://localhost:8787/rates                        # phone
     // Defaulting debug to 10.0.2.2 was the older way round, and it failed silently on a real
     // phone: prices kept showing (they are cached) while every wallet lookup timed out.
@@ -70,7 +101,7 @@ android {
     // reason: pointing a dev install at a local Worker must be a flag rather than an edit.
     //   cd sync && npx wrangler dev --port 8788
     //   adb reverse tcp:8788 tcp:8788
-    //   ./gradlew installDev -Pmuchtoman.syncUrl=http://localhost:8788
+    //   ./gradlew installFullDev -Pmuchtoman.syncUrl=http://localhost:8788
     val syncUrl = providers.gradleProperty("muchtoman.syncUrl")
         .getOrElse("https://sync.muchtoman.com")
 
