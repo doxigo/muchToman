@@ -1,11 +1,13 @@
 package com.doxigo.muchtoman
 
 import android.app.Application
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.room.withTransaction
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,9 +15,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,12 +71,40 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    private var ledgerJob: Job? = null
+    private var familySyncJob: Job? = null
+
     init {
         refresh()
         refreshStocksIfHeld()
         refreshWallets()
         scanSms()
+        runLedger()
+        viewModelScope.launch {
+            ledgerJob?.join()
+            requestFamilySync(silent = true)
+        }
         scheduleDailySnapshot(app)
+    }
+
+    /**
+     * The ledger, deliberately **not** behind the SMS permission.
+     *
+     * Ingest needs `READ_SMS`; deriving does not, and wiring the two together broke the one
+     * promise the split was built for — a parser fix rebuilding her ledger offline, from the
+     * messages already stored, after she has revoked the permission. It ran inside the scan at
+     * first, and revoking the permission silently stopped every rebuild.
+     *
+     * It also runs beside the balance fold rather than instead of it, and writes nothing the
+     * fold reads, so a failure here costs a rebuild later and never a balance now.
+     */
+    fun runLedger() {
+        if (ledgerJob?.isActive == true) return
+        val app = getApplication<Application>()
+        ledgerJob = viewModelScope.launch(Dispatchers.Default) {
+            runCatching { runLedgerPipeline(app, extraLookup(store.extraBankNumbers)) }
+                .onFailure { android.util.Log.w("muchtoman", "ledger pipeline failed: $it") }
+        }
     }
 
     /**
@@ -88,6 +118,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         refreshWallets()
         // Coming back is also when messages that arrived while she was away get read.
         scanSms()
+        runLedger()
+        requestFamilySync(silent = true)
     }
 
     fun refreshAll() {
@@ -110,7 +142,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 // log line is the only place the real reason survives — the UI stays Persian
                 // and calm, but `adb logcat -s muchtoman` must be able to answer "why".
                 android.util.Log.w("muchtoman", "rates fetch failed: $e")
-                failure = e.message ?: "خطا"
+                failure = "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن."
             }
 
             _state.update { it.copy(loading = false, error = failure) }
@@ -315,9 +347,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private fun walletErrorMessage(error: Throwable): String =
         when ((error as? WalletFetchException)?.reason) {
             "invalid_address", "invalid_contract" ->
-                "آدرس با شبکه انتخاب شده همخوان نیست."
-            "unsupported_network" -> "این شبکه هنوز پشتیبانی نمی‌شود."
-            else -> "موجودی دریافت نشد. اتصال را بررسی کنید و دوباره تلاش کنید."
+                "این آدرس با شبکه انتخاب‌شده جور نیست."
+            "unsupported_network" -> "هنوز نمی‌شه از این شبکه استفاده کرد."
+            else -> "موجودی نیومد. اینترنتت رو چک کن و دوباره امتحان کن."
         }
 
     fun setName(name: String) {
@@ -378,12 +410,356 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         scanJob = viewModelScope.launch(Dispatchers.Default) { runScan(app) }
     }
 
+    /**
+     * ingest → derive, and then a check that the two ways of reaching a balance agree.
+     *
+     * Reaching back thirteen Jalali months on the first run is the point of ingest: her ledger
+     * can only ever go as far back as the messages still in her inbox on the day this arrives,
+     * and every release without it is a month of history nobody can get back.
+     *
+     * The fold and the derivation both run for now, and disagreeing is a log line rather than a
+     * visible change. The fold is what she sees until they have agreed on a real phone for a
+     * release; then the fold goes and this becomes the only answer.
+     */
+    private suspend fun runLedgerPipeline(app: Application, extra: Map<String, Bank>) {
+        val durable = DurableDb.get(app)
+        val derived = DerivedDb.get(app)
+
+        migrateAnchorsFromPrefs(store.bankAccounts, durable, System.currentTimeMillis())
+        seedBuiltins(durable)
+        loadSession(durable)?.let { refreshFamily(it) }
+        val added = ingestBankSms(app, durable, extra)
+        // Derive when anything new arrived, or when this build reads messages differently from
+        // whatever produced the rows already there. The second case needs no inbox, no
+        // permission and no network — it is why a parser fix is now a Tuesday job.
+        if (added > 0 || needsDerive(derived)) {
+            val rows = derive(durable, derived, extra)
+            android.util.Log.i("muchtoman", "ledger: +$added messages, $rows transactions")
+        }
+
+        _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+
+        // Only a disagreement about the *same* evidence is worth a line. The backfill reaches
+        // thirteen months back while the fold only ever saw what arrived after its watermark,
+        // so the ledger routinely knows about messages the fold never read — and then the two
+        // differ because the ledger is right, which is the whole point of the backfill.
+        for (balance in allBalances(derived, durable)) {
+            val folded = store.bankAccounts.firstOrNull { it.bank == balance.accountId } ?: continue
+            if (folded.anchored != balance.anchored) continue
+            if (balance.at > folded.updatedAt) continue
+            val foldedRial = Math.round(folded.balance * 10.0)
+            if (foldedRial != balance.rial) {
+                android.util.Log.w(
+                    "muchtoman",
+                    "ledger disagrees on ${balance.accountId} over the same messages: " +
+                        "fold=$foldedRial derived=${balance.rial} Rial (fold at ${folded.updatedAt}, " +
+                        "ledger at ${balance.at})",
+                )
+            }
+        }
+    }
+
+    /**
+     * File one transaction, and — if she says «همیشه» — teach the app to file everything like
+     * it by itself, past and future both.
+     *
+     * There is no backfill job behind that promise. Classification is total, so one new rule
+     * plus one re-derive is the whole mechanism, and it applies to every transaction she has
+     * ever had rather than only the ones that arrive next.
+     */
+    fun categorise(entry: LedgerEntry, categoryId: String, always: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val session = loadSession(durable)
+                val previous = durable.decisions().forRef(entry.txn.ref)
+                    .firstOrNull { it.kind == DecisionKind.CATEGORY }
+                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                if (entry.transfer) {
+                    derived.links().touching(entry.txn.ref)
+                        .filter { it.kind == LinkKind.TRANSFER && it.auto }
+                        .forEach { link ->
+                            durable.linkDecisions().put(
+                                linkDecision(
+                                    link.aRef,
+                                    link.bRef,
+                                    LinkKind.TRANSFER,
+                                    Verdict.REJECTED,
+                                    now,
+                                )
+                            )
+                        }
+                }
+                durable.decisions().put(
+                    TxnDecision(
+                        id = uuid7(now),
+                        ref = entry.txn.ref,
+                        kind = DecisionKind.CATEGORY,
+                        value = categoryId,
+                        createdAt = now,
+                        updatedAt = now,
+                        memberId = session?.member.orEmpty(),
+                        familyRef = entry.txn.familyRef.ifBlank {
+                            session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                        },
+                    )
+                )
+                if (always) {
+                    val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
+                    durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
+                }
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
+        }
+    }
+
+    /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
+    private val syncBase = BuildConfig.SYNC_URL
+
+    private suspend fun refreshFamily(session: SyncSession?, note: String? = null, error: String? = null) {
+        val durable = DurableDb.get(getApplication())
+        val own = session?.let { active ->
+            durable.familyMembers().get(active.member) ?: FamilyMember(
+                id = active.member,
+                name = store.name.trim().take(32).ifBlank { "من" },
+                sharesSms = durable.meta().get(META_SYNC_SHARE_SMS).toBoolean(),
+                updatedAt = System.currentTimeMillis(),
+            ).also { durable.familyMembers().put(it) }
+        }
+        val members = if (session == null) emptyList() else durable.familyMembers().all()
+        _state.update {
+            it.copy(
+                family = it.family.copy(
+                    paired = session != null,
+                    pendingPairing = if (session != null) null else it.family.pendingPairing,
+                    memberId = session?.member.orEmpty(),
+                    memberName = own?.name.orEmpty(),
+                    members = members,
+                    sharesSms = own?.sharesSms ?: false,
+                    lastSync = note ?: it.family.lastSync,
+                    error = error,
+                    working = false,
+                ),
+            )
+        }
+    }
+
+    /** Create a family with this phone's owner as its first member. */
+    fun startFamily(name: String) {
+        if (name.isBlank()) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching { loadSession(durable) ?: claimHousehold(syncBase, durable, name) }
+                .onSuccess {
+                    refreshFamily(it, note = "خانواده ساخته شد.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "claim failed: $it")
+                    refreshFamily(null, error = "اتصال نشد. بعداً دوباره امتحان کن.")
+                }
+        }
+    }
+
+    /** Called from the Android deep link opened by a scanned family invitation. */
+    fun acceptPairing(link: String?) {
+        if (link.isNullOrBlank()) return
+        if (_state.value.family.paired) {
+            _state.update {
+                it.copy(family = it.family.copy(error = "این گوشی از قبل عضو یک خانواده است."))
+            }
+            return
+        }
+        if (parsePairingLink(link) == null) {
+            _state.update { it.copy(family = it.family.copy(error = "کد خانواده معتبر نیست.")) }
+            return
+        }
+        _state.update {
+            it.copy(
+                family = it.family.copy(
+                    pendingPairing = link,
+                    error = null,
+                    pairingUrl = null,
+                )
+            )
+        }
+    }
+
+    fun joinFamily(name: String) {
+        val link = _state.value.family.pendingPairing ?: return
+        if (name.isBlank()) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            loadSession(durable)?.let { existing ->
+                refreshFamily(existing, error = "این گوشی از قبل عضو یک خانواده است.")
+                return@launch
+            }
+            runCatching { joinHousehold(link, durable, name) }
+                .onSuccess { session ->
+                    _state.update { it.copy(family = it.family.copy(pendingPairing = null)) }
+                    refreshFamily(session, note = "به خانواده پیوستی.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "pair failed: $it")
+                    _state.update {
+                        it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
+                    }
+                }
+        }
+    }
+
+    fun setFamilyName(name: String) {
+        val clean = name.filterNot(Char::isISOControl).trim().take(32)
+        if (clean.isBlank()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+            val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+            durable.familyMembers().put(
+                (previous ?: FamilyMember(session.member, clean, updatedAt = now))
+                    .copy(name = clean, updatedAt = now)
+            )
+            refreshFamily(session)
+            requestFamilySync(silent = true)
+        }
+    }
+
+    fun setFamilySmsSharing(enabled: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+                ?: FamilyMember(session.member, "من", updatedAt = 0L)
+            val now = maxOf(System.currentTimeMillis(), previous.updatedAt + 1L)
+            durable.withTransaction {
+                durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, enabled.toString()))
+                durable.familyMembers().put(previous.copy(sharesSms = enabled, updatedAt = now))
+            }
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /** A one-time code, shown as a QR. Ten minutes, one use. */
+    fun inviteDevice() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch refreshFamily(null)
+            runCatching { pairingUrl(session, invite(session, durable)) }
+                .onSuccess { url -> _state.update { it.copy(family = it.family.copy(paired = true, pairingUrl = url, error = null)) } }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "invite failed: $it")
+                    refreshFamily(session, error = "کد ساخته نشد. اینترنتت رو چک کن.")
+                }
+        }
+    }
+
+    fun syncFamily() = requestFamilySync(silent = false)
+
+    private fun requestFamilySync(silent: Boolean) {
+        if (familySyncJob?.isActive == true) return
+        val app = getApplication<Application>()
+        if (!silent) _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        familySyncJob = viewModelScope.launch(Dispatchers.Default) {
+            ledgerJob?.join()
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            val session = loadSession(durable) ?: return@launch if (!silent) refreshFamily(null) else Unit
+            runCatching { syncNow(durable, derived, session) }
+                .onSuccess { result ->
+                    if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
+                    _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+                    refreshFamily(
+                        session,
+                        // faNumber, not the Int: interpolated straight in, these were the only
+                        // Latin digits anywhere in the app.
+                        note = "${faNumber(result.sent.toDouble())} مورد فرستادیم، " +
+                            "${faNumber(result.received.toDouble())} مورد گرفتیم.",
+                    )
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "sync failed: $it")
+                    if (silent) refreshFamily(session)
+                    else refreshFamily(session, error = "اتصال نشد. تغییرات روی گوشی محفوظ موند.")
+                }
+        }
+    }
+
+    fun addGoal(name: String, targetRial: Long) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                durable.goals().put(
+                    Goal(
+                        id = uuid7(now),
+                        nameFa = name.take(40),
+                        targetRial = targetRial,
+                        kind = GoalKind.SAVE,
+                        period = GoalPeriod.ONCE,
+                        startsOn = jalaliMonthStart(tehranDay(now)),
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                )
+                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+            }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
+        }
+    }
+
+    fun deleteGoal(id: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.goals().delete(id, System.currentTimeMillis())
+                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+            }.onFailure { android.util.Log.w("muchtoman", "deleteGoal failed: $it") }
+        }
+    }
+
+    /** Her verdict on one purchase. No rule follows from it — it is an opinion, not a pattern. */
+    fun answerWorthIt(entry: LedgerEntry, answer: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                durable.decisions().put(
+                    TxnDecision(uuid7(now), entry.txn.ref, DecisionKind.WORTH_IT, answer, now, now)
+                )
+                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+            }.onFailure { android.util.Log.w("muchtoman", "worthIt failed: $it") }
+        }
+    }
+
+    /** The message a transaction was read from, so every figure can be traced back to its source. */
+    suspend fun sourceOf(entry: LedgerEntry): String =
+        runCatching {
+            DurableDb.get(getApplication()).smsSource().bodyOf(entry.txn.srcHash).orEmpty()
+        }.getOrDefault("")
+
     /** The scan itself. Separate so [restartScan] can run it in the coroutine it already owns. */
     private suspend fun runScan(app: Application) {
+        val extra = extraLookup(store.extraBankNumbers)
+
         val messages = readSmsInbox(app, store.smsScannedTo)
         if (messages.isEmpty()) return
 
-        val extra = extraLookup(store.extraBankNumbers)
         // Re-keyed through senderKey on the way in: the key function has changed once
         // already (whitespace collapse), and a dismissal stored under an old key must
         // stay dismissed. senderKey is a fixpoint over its own output.
@@ -626,8 +1002,20 @@ data class UiState(
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",
     val tse: TseSnapshot = TseSnapshot(),
+    val ledger: LedgerView = LedgerView(),
+    val family: FamilyState = FamilyState(),
 ) {
     val coins: List<Coin> get() = rates.coins
+
+    /**
+     * What the home screen says, worked out once per state rather than once per card.
+     *
+     * `by lazy` for the same reason `effective` is: the month walk and the ninety-day median
+     * behind the runway are not free, and the summary reads them several times over.
+     */
+    val story: HomeStory by lazy {
+        buildStory(ledger.entries, Math.round(bankToman * 10.0), tehranDay(System.currentTimeMillis()))
+    }
     val stocks: List<Stock> get() = tse.stocks
 
     /**
@@ -671,14 +1059,15 @@ data class UiState(
 
 // FragmentActivity, not ComponentActivity: androidx.biometric's BiometricPrompt requires it.
 class MainActivity : FragmentActivity() {
+    private lateinit var appVm: AppVm
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appVm = ViewModelProvider(this)[AppVm::class.java]
+        appVm.acceptPairing(intent?.dataString)
         enableEdgeToEdge()
         setContent {
-            // The view model is resolved before the theme, because the theme depends on a
-            // preference it owns.
-            val vm: AppVm = viewModel()
-            val state by vm.state.collectAsStateWithLifecycle()
+            val state by appVm.state.collectAsStateWithLifecycle()
 
             MuchTomanTheme(mode = state.themeMode) {
                 // The whole app is Persian, so force RTL regardless of the phone's locale.
@@ -701,9 +1090,15 @@ class MainActivity : FragmentActivity() {
                         }
                     }
 
-                    AppRoot(vm, state, this@MainActivity)
+                    AppRoot(appVm, state, this@MainActivity)
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        appVm.acceptPairing(intent.dataString)
     }
 }
