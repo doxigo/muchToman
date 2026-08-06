@@ -1,0 +1,525 @@
+package com.doxigo.muchtoman
+
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+
+fun qrBitmap(content: String, size: Int = 720): Bitmap {
+    val hints = mapOf(
+        EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
+        EncodeHintType.MARGIN to 2,
+        EncodeHintType.CHARACTER_SET to "UTF-8",
+    )
+    val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size, hints)
+    val bitmap = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)
+    val pixels = IntArray(matrix.width * matrix.height)
+    for (y in 0 until matrix.height) {
+        val row = y * matrix.width
+        for (x in 0 until matrix.width) {
+            pixels[row + x] = if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE
+        }
+    }
+    bitmap.setPixels(pixels, 0, matrix.width, 0, 0, matrix.width, matrix.height)
+    return bitmap
+}
+
+@Composable
+fun CompanionScreen(
+    state: FamilyState,
+    suggestedName: String,
+    onStart: (String) -> Unit,
+    onJoin: (String) -> Unit,
+    onNameChange: (String) -> Unit,
+    onShareSmsChange: (Boolean) -> Unit,
+    onInvite: () -> Unit,
+    onSync: () -> Unit,
+    /** How many ledger entries each member id has put in, for the rows to report. */
+    contributions: Map<String, Int>,
+    bottomInset: androidx.compose.ui.unit.Dp,
+) {
+    var name by remember(state.memberId, state.memberName, state.pendingPairing, suggestedName) {
+        mutableStateOf(state.memberName.ifBlank { suggestedName })
+    }
+    val cleanName = name.trim()
+
+    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = Space.xl)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = bottomInset + Space.l),
+        ) {
+            Text(
+                "خانواده",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(vertical = Space.m).semantics { heading() },
+            )
+            Text(
+                "تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 25.sp,
+            )
+            Spacer(Modifier.height(Space.l))
+
+            when {
+                state.pendingPairing != null -> JoinCard(
+                    name = name,
+                    working = state.working,
+                    onNameChange = { name = it.take(32) },
+                    onJoin = { onJoin(cleanName) },
+                )
+                !state.paired -> StartCard(
+                    name = name,
+                    working = state.working,
+                    onNameChange = { name = it.take(32) },
+                    onStart = { onStart(cleanName) },
+                )
+                else -> {
+                    // The family and my place in it are one subject, not a list plus a settings
+                    // section further down the page: the controls on my own row are exactly the
+                    // ones that change what the other rows see. Mine leads because it is the
+                    // only one anybody can act on.
+                    val others = state.members.filterNot { it.id == state.memberId }
+                    val count = others.size + 1
+                    SectionHeading("اعضای خانواده", count)
+                    Spacer(Modifier.height(Space.s))
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        OwnMemberBlock(
+                            member = state.members.firstOrNull { it.id == state.memberId },
+                            name = name,
+                            savedName = state.memberName,
+                            contributions = contributions[state.memberId] ?: 0,
+                            sharing = state.sharesSms,
+                            working = state.working,
+                            onNameChange = { name = it.take(32) },
+                            onSave = { onNameChange(cleanName) },
+                            onSharingChange = onShareSmsChange,
+                            shape = bandShape(0, count),
+                        )
+                        others.forEachIndexed { index, member ->
+                            FamilyMemberRow(
+                                member = member,
+                                contributions = contributions[member.id] ?: 0,
+                                shape = bandShape(index + 1, count),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(Space.l))
+
+                    state.pairingUrl?.let { url ->
+                        val bitmap = remember(url) { qrBitmap(url) }
+                        Text(
+                            "عضو جدید این کد رو اسکن کنه",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Spacer(Modifier.height(Space.m))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.card))
+                                .background(androidx.compose.ui.graphics.Color.White)
+                                .padding(Space.l),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(240.dp)
+                                    .semantics { contentDescription = "کد دعوت خانواده" },
+                            )
+                        }
+                        Spacer(Modifier.height(Space.s))
+                        Text(
+                            "در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.",
+                            fontSize = 13.sp,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(Space.l))
+                    }
+
+                    Button(
+                        onClick = onInvite,
+                        enabled = !state.working,
+                        shape = RoundedCornerShape(Radius.pill),
+                        // Material's own default is 40dp, under the floor for a touch target.
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                    ) {
+                        Text(
+                            if (state.pairingUrl == null) "دعوت عضو جدید" else "ساختن کد تازه",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
+                    Spacer(Modifier.height(Space.s))
+                    TextButton(
+                        onClick = onSync,
+                        enabled = !state.working,
+                        shape = RoundedCornerShape(Radius.pill),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                    ) {
+                        Text(
+                            if (state.working) "در حال همگام‌سازی..." else "همگام‌سازی الان",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+
+            state.lastSync?.takeIf { state.paired }?.let {
+                Spacer(Modifier.height(Space.s))
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            state.error?.let {
+                Spacer(Modifier.height(Space.m))
+                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            }
+
+            Spacer(Modifier.height(Space.xxl))
+            SectionHeading("حریم خصوصی")
+            Spacer(Modifier.height(Space.s))
+            Text(
+                "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * A section heading, at the size every other screen sets one.
+ *
+ * They were 16sp here — one Bold, one SemiBold, neither announced as a heading — so the page
+ * read as a stack of cards with labels rather than as sections anyone could navigate by.
+ */
+@Composable
+private fun SectionHeading(title: String, count: Int? = null) {
+    Text(
+        if (count == null) title else "$title (${faNumber(count.toDouble())})",
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+@Composable
+private fun StartCard(
+    name: String,
+    working: Boolean,
+    onNameChange: (String) -> Unit,
+    onStart: () -> Unit,
+) {
+    Panel {
+        Text("ساختن خانواده", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(Space.s))
+        Text(
+            "اسم خودت رو بنویس. اعضای بعدی با کد دعوت وارد می‌شن.",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Space.m))
+        NameField(name, onNameChange)
+        Spacer(Modifier.height(Space.m))
+        Button(onClick = onStart, enabled = name.isNotBlank() && !working, modifier = Modifier.fillMaxWidth()) {
+            Text(if (working) "در حال ساختن..." else "ساختن خانواده")
+        }
+    }
+}
+
+@Composable
+private fun JoinCard(
+    name: String,
+    working: Boolean,
+    onNameChange: (String) -> Unit,
+    onJoin: () -> Unit,
+) {
+    Panel {
+        Text("پیوستن به خانواده", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(Space.s))
+        Text("این اسم کنار تراکنش‌های تو دیده می‌شه.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(Space.m))
+        NameField(name, onNameChange)
+        Spacer(Modifier.height(Space.m))
+        Button(onClick = onJoin, enabled = name.isNotBlank() && !working, modifier = Modifier.fillMaxWidth()) {
+            Text(if (working) "در حال پیوستن..." else "پیوستن")
+        }
+    }
+}
+
+/**
+ * Whose it is, at a glance. The initial, not a photo: there is no avatar anywhere in this app
+ * and a family of four does not need four downloads to tell itself apart.
+ *
+ * Every disc is the same colour, including mine. Gold in this app means the action or the
+ * answer, and a gold disc the size of a thumb sat next to the gold «من» chip, the gold switch
+ * and the gold invite button — four golds down one column, none of which was the one thing she
+ * had come to press. Identity is not an action; the chip says which row is mine in a word.
+ */
+@Composable
+private fun MemberAvatar(name: String) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            name.trim().firstOrNull()?.toString().orEmpty(),
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/**
+ * Whether this person's transactions reach the family ledger.
+ *
+ * It was a 9dp dot and a sentence, which put the one fact anyone scans this list for into the
+ * smallest element on the row. A labelled pill says it in words and in colour at once — the
+ * same tinted construction the hero's change pill uses — so it survives both a glance and a
+ * reader who cannot tell the two hues apart.
+ */
+@Composable
+private fun ShareStatus(sharing: Boolean) {
+    val tone =
+        if (sharing) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(tone.copy(alpha = 0.18f))
+            .padding(horizontal = Space.m, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(tone))
+        Spacer(Modifier.size(6.dp))
+        Text(
+            if (sharing) "به اشتراک می‌ذاره" else "خصوصی",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tone,
+        )
+    }
+}
+
+/** How much of the family ledger came from this person. */
+@Composable
+private fun MemberContribution(count: Int) {
+    Text(
+        if (count > 0) "${faNumber(count.toDouble())} تراکنش" else "هنوز تراکنشی نفرستاده",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Somebody else in the family: what they are called, what they contribute, what they share. */
+@Composable
+private fun FamilyMemberRow(member: FamilyMember, contributions: Int, shape: Shape) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MemberAvatar(member.name)
+        Spacer(Modifier.size(Space.m))
+        Column(Modifier.weight(1f)) {
+            Text(
+                member.name,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(2.dp))
+            MemberContribution(contributions)
+        }
+        Spacer(Modifier.size(Space.m))
+        ShareStatus(member.sharesSms)
+    }
+}
+
+/**
+ * My own place in the family, and everything I can actually change about it.
+ *
+ * The name field and the sharing switch used to be two more cards in a settings section further
+ * down the page, which meant «who is in this family» and «what I share with them» were two
+ * different subjects on one screen. They are one subject: this row is me, and the controls on it
+ * are the ones that change what the other rows see.
+ */
+@Composable
+private fun OwnMemberBlock(
+    member: FamilyMember?,
+    name: String,
+    savedName: String,
+    contributions: Int,
+    sharing: Boolean,
+    working: Boolean,
+    onNameChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onSharingChange: (Boolean) -> Unit,
+    shape: Shape,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(Space.l),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MemberAvatar(name.ifBlank { member?.name.orEmpty() })
+            Spacer(Modifier.size(Space.m))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        savedName.ifBlank { name },
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.size(Space.s))
+                    Text(
+                        "من",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(Radius.pill))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = Space.s, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                MemberContribution(contributions)
+            }
+        }
+
+        Spacer(Modifier.height(Space.l))
+        NameField(name, onNameChange)
+        // Only once it is actually a change: a save button that is always there reads as work
+        // she has left undone.
+        if (name.trim().isNotBlank() && name.trim() != savedName) {
+            Spacer(Modifier.height(Space.s))
+            TextButton(
+                onClick = onSave,
+                enabled = !working,
+                modifier = Modifier.align(Alignment.End),
+            ) { Text("ذخیره اسم") }
+        }
+
+        Spacer(Modifier.height(Space.l))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                // Concentric with the band it sits in: 28dp group radius less the 16dp
+                // of padding around it. Equal radii would make the inner surface look pinched.
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .toggleable(value = sharing, role = Role.Switch, onValueChange = onSharingChange)
+                .padding(Space.m),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "اشتراک تراکنش‌های پیامکی",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (sharing) "موارد استخراج‌شده برای خانواده فرستاده می‌شن."
+                    else "پیامک‌های تو فقط روی همین گوشی می‌مونن.",
+                    fontSize = 12.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.size(Space.m))
+            Switch(checked = sharing, onCheckedChange = null)
+        }
+    }
+}
+
+@Composable
+private fun NameField(value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text("اسم") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+data class FamilyState(
+    val paired: Boolean = false,
+    val pendingPairing: String? = null,
+    val memberId: String = "",
+    val memberName: String = "",
+    val members: List<FamilyMember> = emptyList(),
+    val sharesSms: Boolean = false,
+    val pairingUrl: String? = null,
+    val lastSync: String? = null,
+    val working: Boolean = false,
+    val error: String? = null,
+)

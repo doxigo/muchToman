@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muchtoman-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-05",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "RATES_ORIGIN": "https://rates.muchtoman.com"
+  },
+
+  // Deliberately a second Worker rather than another route on muchtoman-rates. The rates
+  // Worker is public, cacheable and stateless; this one holds a household's ledger. Keeping
+  // them separate means a bad deploy of one cannot take the other down, and the public one
+  // never grows a code path that could reach private data.
+  "routes": [{ "pattern": "sync.muchtoman.com", "custom_domain": true }],
+
+  // Same reasoning as the rates Worker: workers.dev is DNS-sinkholed inside Iran, so the
+  // custom domain is the only address that works where the users are. The subdomain stays on
+  // as a fallback that costs nothing.
+  "workers_dev": true,
+
+  // The PWA and the API from one origin, so there is no CORS to configure and no second
+  // hostname for Iranian DNS to lose. Cloudflare's own guidance for new projects is Workers
+  // with assets rather than Pages, and Durable Objects are Workers-only regardless.
+  "assets": {
+    "directory": "../pwa/dist",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
+  },
+
+  // One object per household. Not D1: with a shared database every query needs
+  // `WHERE household_id = ?` and one forgotten predicate is a cross-household leak, for ever,
+  // on every new query. Here there is no query that reaches another household at all.
+  "durable_objects": {
+    "bindings": [{ "name": "HOUSEHOLD", "class_name": "Household" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Household"] }],
+
+  // Safe to leave on: every financial field that passes through here is AES-GCM ciphertext the
+  // Worker has no key for, so there is nothing in a log line to leak.
+  "observability": { "enabled": true }
+}
