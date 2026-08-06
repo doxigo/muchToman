@@ -108,7 +108,7 @@ fun promptUnlock(activity: FragmentActivity, onSuccess: () -> Unit) {
     prompt.authenticate(
         BiometricPrompt.PromptInfo.Builder()
             .setTitle("قفل چقدر تومن")
-            .setSubtitle("برای دیدن دارایی‌هایتان، هویت خود را تأیید کنید")
+            .setSubtitle("برای دیدن دارایی‌هات، هویتت رو تأیید کن")
             .setAllowedAuthenticators(authenticators)
             .build()
     )
@@ -148,14 +148,14 @@ fun LockScreen(onUnlock: () -> Unit) {
             }
             Spacer(Modifier.height(Space.xxl))
             Text(
-                "چقدر تومن قفل است",
+                "چقدر تومن قفل شده",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Hero.strong,
             )
             Spacer(Modifier.height(Space.m))
             Text(
-                "برای دیدن دارایی‌هایتان، اثر انگشت یا رمز گوشی را وارد کنید.",
+                "برای دیدن دارایی‌هات، اثر انگشت یا رمز گوشی‌ات رو وارد کن.",
                 fontSize = 15.sp,
                 lineHeight = 25.sp,
                 textAlign = TextAlign.Center,
@@ -232,11 +232,11 @@ fun SettingsScreen(
                         .semantics { heading() },
                 )
                 TextButton(onClick = { onNameChange(draft); onBack() }) {
-                    Text("بازگشت", fontSize = 17.sp)
+                    Text("ذخیره", fontSize = 17.sp)
                 }
             }
 
-            SectionLabel("نام شما")
+            SectionLabel("اسمت")
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it.take(24) },
@@ -247,23 +247,23 @@ fun SettingsScreen(
                 keyboardActions = KeyboardActions(onDone = { onNameChange(draft) }),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "نام شما" },
+                    .semantics { contentDescription = "اسمت" },
             )
             Text(
-                "برای سلام گفتن در بالای برنامه استفاده می‌شود.",
+                "بالای برنامه باهاش بهت سلام می‌کنیم.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.s, start = Space.xs),
             )
 
-            SectionLabel("نمایش")
+            SectionLabel("ظاهر")
             ThemePicker(themeMode, onThemeChange)
 
-            SectionLabel("پیامک بانک")
+            SectionLabel("پیامک‌های بانک")
             SettingCard(
                 emoji = "✉️",
-                title = "خواندن پیامک بانک",
-                subtitle = "موجودی حساب‌ها از روی پیامک‌های بانک به‌روز می‌شود.",
+                title = "خواندن پیامک‌های بانک",
+                subtitle = "با این گزینه، موجودی حساب‌ها از روی پیامک بانک به‌روز می‌شه.",
                 checked = smsEnabled && granted,
                 onChange = { on ->
                     if (on && !granted) askSms.launch(Manifest.permission.READ_SMS)
@@ -276,9 +276,9 @@ fun SettingsScreen(
             val watched = Bank.entries.filter { it.numbers.isNotEmpty() }.joinToString("، ") { it.fa }
             Text(
                 if (smsEnabled && granted) {
-                    "پیامک $watched خوانده می‌شود. پیامک‌ها فقط روی همین گوشی خوانده می‌شوند و هیچ‌جا فرستاده نمی‌شوند."
+                    "پیامک‌های $watched فقط روی همین گوشی خونده می‌شن و جایی فرستاده نمی‌شن."
                 } else {
-                    "فقط پیامک $watched خوانده می‌شود، آن هم روی همین گوشی."
+                    "فقط پیامک‌های $watched، اون هم روی همین گوشی، خونده می‌شن."
                 },
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
@@ -294,12 +294,12 @@ fun SettingsScreen(
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
-                        append("فقط پیامک خوانده می‌شود، نه نوتیفیکیشن اپ بانک. ")
+                        append("فقط پیامک‌های بانکی خونده می‌شن، نه اعلان‌های اپ بانک. ")
                     }
                     append(
-                        "بعضی بانک‌ها مثل بلو بانک به جای پیامک نوتیفیکیشن می‌فرستند و آن وقت " +
-                            "چیزی برای خواندن نیست، برای همین موجودی روی همان عدد قبلی می‌ماند. " +
-                            "از تنظیمات اپ خود بانک، پیامک تراکنش را روشن کنید.",
+                        "بعضی بانک‌ها مثل بلو بانک به جای پیامک اعلان می‌فرستن. این‌جوری " +
+                            "چیزی برای خوندن نیست و موجودی به‌روز نمی‌شه. از تنظیمات اپ بانک، " +
+                            "پیامک تراکنش رو روشن کن.",
                     )
                 },
                 fontSize = 13.sp,
@@ -314,7 +314,7 @@ fun SettingsScreen(
                 val banks = bankAccounts.map { it.bank }.distinct()
                 if (banks.isEmpty()) {
                     Text(
-                        "هنوز پیامک بانکی پیدا نشده است. با رسیدن اولین پیامک، بانک آن اینجا می‌آید.",
+                        "هنوز پیامک بانکی نرسیده. اولین پیامک که بیاد، بانک اینجا نشون داده می‌شه.",
                         fontSize = 13.sp,
                         lineHeight = 20.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -354,7 +354,7 @@ fun SettingsScreen(
                 title = "قفل برنامه",
                 // Always what the setting does. When it is unavailable, the helper text below
                 // the band already carries the fix — and says where, which this line never did.
-                subtitle = "باز کردن با اثر انگشت یا رمز گوشی",
+                subtitle = "با اثر انگشت یا رمز گوشی باز می‌شه",
                 checked = lockEnabled,
                 onChange = onLockChange,
                 enabled = available,
@@ -364,7 +364,7 @@ fun SettingsScreen(
             SettingCard(
                 emoji = "🙈",
                 title = "قفل ویجت",
-                subtitle = "مبلغ روی صفحهٔ اصلی با ٭٭٭ پنهان می‌شود",
+                subtitle = "مبلغ صفحهٔ اصلی رو با ٭٭٭ پنهان می‌کنه",
                 checked = widgetLock,
                 onChange = onWidgetLockChange,
                 shape = bandShape(1, 2),
@@ -372,7 +372,7 @@ fun SettingsScreen(
 
             if (!available) {
                 Text(
-                    "برای استفاده از قفل، ابتدا در تنظیمات گوشی رمز یا اثر انگشت تعریف کنید.",
+                    "برای فعال کردن قفل، اول توی تنظیمات گوشی رمز یا اثر انگشت بذار.",
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -513,4 +513,3 @@ fun SettingCard(
         }
     }
 }
-

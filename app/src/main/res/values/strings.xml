@@ -4,5 +4,5 @@
     <string name="widget_label_description">دارایی من</string>
     <string name="widget_chart_description">نمودار یک ماه گذشته</string>
     <!-- Shown under the widget's name in the picker (API 31+). -->
-    <string name="widget_description">جمع دارایی‌تان روی صفحه اصلی، با تغییر امروز و نمودار یک ماه گذشته.</string>
+    <string name="widget_description">جمع دارایی‌ها روی صفحهٔ اصلی، با تغییر امروز و نمودار ماه گذشته.</string>
 </resources>

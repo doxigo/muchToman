@@ -298,7 +298,7 @@ private fun readModel(context: Context, now: Long): WidgetModel {
         since = when {
             baseDay == null -> ""
             today - baseDay == 1L -> "از دیروز"
-            else -> "از ${faNumber((today - baseDay).toDouble())} روز پیش"
+            else -> "${faNumber((today - baseDay).toDouble())} روز پیش"
         },
         points = (history.filterKeys { it in (today - WIDGET_CHART_DAYS) until today }
             .toSortedMap().map { it.key to it.value } + (today to total)),
@@ -401,7 +401,7 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
             R.id.widget_total,
             textBitmap(context, "٭٭٭", face.total, R.font.modam_heavy, GOLD),
         )
-        views.setContentDescription(R.id.widget_total, "مبلغ پنهان است")
+        views.setContentDescription(R.id.widget_total, "مبلغ پنهانه")
         views.setViewVisibility(R.id.widget_change, View.GONE)
         if (face == Face.TALL) views.setViewVisibility(R.id.widget_chart, View.GONE)
         return views
@@ -441,8 +441,8 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
             R.id.widget_change,
             when {
                 flat -> "بدون تغییر ${model.since}"
-                delta > 0 -> "$figure بیشتر ${model.since}"
-                else -> "$figure کمتر ${model.since}"
+                delta > 0 -> "$figure بیشتر از ${model.since}"
+                else -> "$figure کمتر از ${model.since}"
             },
         )
     }
