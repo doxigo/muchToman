@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -73,7 +73,9 @@ fun ReportScreen(
     history: Map<Long, Double>,
     current: Double,
     composition: List<Pair<Kind, Double>>,
-    onBack: () -> Unit,
+    story: HomeStory,
+    bottomInset: androidx.compose.ui.unit.Dp,
+    onBack: (() -> Unit)? = null,
 ) {
     val now = today()
     val sorted = remember(history) { history.toSortedMap() }
@@ -109,7 +111,7 @@ fun ReportScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
+                .statusBarsPadding()
                 .padding(horizontal = Space.xl)
                 // The composition legend can push past one screen on short phones.
                 .verticalScroll(rememberScrollState()),
@@ -123,7 +125,9 @@ fun ReportScreen(
                         .weight(1f)
                         .semantics { heading() },
                 )
-                TextButton(onClick = onBack) { Text("بازگشت", fontSize = 17.sp) }
+                onBack?.let { back ->
+                    TextButton(onClick = back) { Text("برگشت") }
+                }
             }
 
             Spacer(Modifier.height(Space.l))
@@ -161,7 +165,7 @@ fun ReportScreen(
                     }
                 }
                 Text(
-                    "هر روز یک نقطه ثبت می‌شود، حتی روزهایی که برنامه باز نشود.",
+                    "هر روز یک نقطه ثبت می‌شه، حتی اگه برنامه رو باز نکنی.",
                     fontSize = 12.sp,
                     lineHeight = 19.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -173,7 +177,14 @@ fun ReportScreen(
                 Spacer(Modifier.height(Space.xxl))
                 CompositionBar(composition)
             }
-            Spacer(Modifier.height(Space.xl))
+
+            // The month, which is a different question from the chart above it: that one is
+            // "is there more than there was", this one is "where did it go".
+            if (story.month.transactions > 0) {
+                Spacer(Modifier.height(Space.xxl))
+                MonthStory(story)
+            }
+            Spacer(Modifier.height(bottomInset + Space.xl))
         }
     }
 }
@@ -376,7 +387,7 @@ private fun EmptyReport() {
         Text("هنوز نموداری نیست", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(Space.s))
         Text(
-            "از امروز، هر روز یک نقطه ثبت می‌شود و نمودار روزبه‌روز کامل‌تر می‌شود.",
+            "از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.",
             fontSize = 15.sp,
             lineHeight = 25.sp,
             textAlign = TextAlign.Center,
@@ -437,5 +448,100 @@ private fun HistoryChart(
         drawCircle(tone.copy(alpha = 0.22f), radius = 11.dp.toPx(), center = end)
         drawCircle(surface, radius = 6.dp.toPx(), center = end)
         drawCircle(tone, radius = 4.dp.toPx(), center = end)
+    }
+}
+
+/**
+ * The month's story — what came in, what went out, where, and how long the cash would last.
+ *
+ * Every figure comes from [buildStory]; nothing here computes anything, so what she reads and
+ * what the tests assert are the same function. Categories are shown as a share of spending
+ * rather than in Toman: with this inflation a smaller number of Toman is not a smaller amount
+ * of money, and reporting it as progress would be a lie.
+ */
+@Composable
+private fun MonthStory(story: HomeStory) {
+    val month = story.month
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            "${MONTHS[month.month - 1]} امسال",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.m))
+        MonthFlow(story)
+
+        story.bufferDays?.let { days ->
+            Spacer(Modifier.height(Space.m))
+            Panel {
+                Text(
+                    "پولت برای چند روز می‌رسه",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    "${faNumber(days.toDouble())} روز",
+                    style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+                    fontSize = 22.sp,
+                )
+            }
+        }
+
+        if (month.byCategory.isNotEmpty() && month.spentRial > 0) {
+            Spacer(Modifier.height(Space.xl))
+            Text(
+                "خرج‌هات",
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(Modifier.height(Space.s))
+            for ((name, rial) in month.byCategory.take(6)) {
+                CategoryShare(name, rial.toFloat() / month.spentRial, rial)
+            }
+        }
+
+        for (insight in story.insights) {
+            Spacer(Modifier.height(Space.m))
+            InsightCard(insight, onWhy = {})
+        }
+        for (win in story.wins) {
+            Spacer(Modifier.height(Space.m))
+            InsightCard(win, onWhy = {})
+        }
+    }
+}
+
+@Composable
+private fun CategoryShare(name: String, share: Float, rial: Long) {
+    Column(Modifier.fillMaxWidth().padding(vertical = Space.s)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CategoryIcon(name, MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, stroke = 1.5.dp)
+            Spacer(Modifier.width(Space.s))
+            Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                bidi(faCompact(tomanOf(rial))),
+                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                fontSize = 14.sp,
+            )
+        }
+        Spacer(Modifier.height(Space.xs))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(share.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
     }
 }
