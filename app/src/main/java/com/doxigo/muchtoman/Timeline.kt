@@ -369,9 +369,7 @@ fun TransactionScreen(
         txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} تومان")) }
         txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} تومان")) }
     }
-    val choices = categories.filter {
-        it.kind != CategoryKind.TRANSFER && it.id != CAT_UNCATEGORISED
-    }
+    val choices = categoryChoices(categories, txn.direction)
 
     // The hero bleeds to both edges and under the status bar, so the gutter belongs to the
     // items rather than to the list.
@@ -807,18 +805,20 @@ fun ReviewDeck(
                 return@Column
             }
 
-            // «دسته‌بندی نشده» is the absence of an answer, not one of them, and a transfer is
-            // something the detector settles rather than something she files by hand.
-            val choices = ledger.categories.filter {
-                it.kind != CategoryKind.TRANSFER && it.id != CAT_UNCATEGORISED
-            }
+            val choices = categoryChoices(ledger.categories, entry.txn.direction)
             // The question and the choices scroll; the answers do not. Only the grid can grow
             // past a short screen, and an answer she has to go looking for is one she will not
             // give.
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
                 Spacer(Modifier.height(Space.xxl))
                 Text(
-                    "این خرج رو چی حساب کنم؟",
+                    // «خرج» on money that arrived is the question asking her to agree with
+                    // something untrue before she has answered it.
+                    when (entry.txn.direction) {
+                        "in" -> "این واریز رو چی حساب کنم؟"
+                        "out" -> "این خرج رو چی حساب کنم؟"
+                        else -> "این تراکنش رو چی حساب کنم؟"
+                    },
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,

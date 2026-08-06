@@ -503,13 +503,12 @@ private fun MonthStory(story: HomeStory) {
             }
         }
 
-        for (insight in story.insights) {
+        // Findings and wins in one grid, not two runs of one: paired by kind, each run could end
+        // on a lone card and leave a hole mid-page.
+        val cards = story.insights + story.wins
+        if (cards.isNotEmpty()) {
             Spacer(Modifier.height(Space.m))
-            InsightCard(insight, onWhy = {})
-        }
-        for (win in story.wins) {
-            Spacer(Modifier.height(Space.m))
-            InsightCard(win, onWhy = {})
+            InsightGrid(cards)
         }
     }
 }

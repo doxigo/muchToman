@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -14,9 +13,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -32,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -233,7 +231,6 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var deck by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf(false) }
     var transactionRef by rememberSaveable { mutableStateOf<String?>(null) }
-    var whyOpen by remember { mutableStateOf<String?>(null) }
 
     // One tab, not three booleans. Three could be true at once, and were: every screen was an
     // overlay with its own «بستن», so an overlay opened from an overlay left her somewhere the
@@ -529,40 +526,30 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
                         }
                     }
                 }
-                story.headline?.let { insight ->
-                    item(key = "headline") {
-                        Column(Modifier.padding(edge).padding(top = Space.m)) {
-                            InsightCard(
-                                insight,
-                                onWhy = { whyOpen = if (whyOpen == insight.text) null else insight.text },
-                            )
-                            // Asked for by hand and read once, so it is worth opening rather
-                            // than appearing: the note slides out of the card that explains it
-                            // instead of shoving the page down in one frame.
-                            AnimatedVisibility(
-                                visible = whyOpen == insight.text,
-                                enter = expandVertically(tween(Motion.medium, easing = Motion.enter)) +
-                                    fadeIn(tween(Motion.medium)),
-                                exit = shrinkVertically(tween(Motion.fast, easing = Motion.exit)) +
-                                    fadeOut(tween(Motion.fast)),
-                            ) {
-                                Column {
-                                    Spacer(Modifier.height(Space.s))
-                                    WhyNote(insight)
-                                }
+                // Side by side, and each without its «why»: this is the glance surface, and the
+                // sentence behind the sentence is on the report where there is room to read it.
+                // A lone card of the two still takes the whole row.
+                if (story.headline != null || story.attention != null) {
+                    item(key = "story") {
+                        Row(
+                            Modifier
+                                .padding(edge)
+                                .padding(top = Space.m)
+                                .height(IntrinsicSize.Min),
+                            horizontalArrangement = Arrangement.spacedBy(Space.m),
+                        ) {
+                            story.headline?.let {
+                                InsightCard(it, Modifier.weight(1f).fillMaxHeight())
                             }
-                        }
-                    }
-                }
-                story.attention?.let { insight ->
-                    item(key = "attention") {
-                        Box(Modifier.padding(edge).padding(top = Space.m)) {
-                            // This one leaves the screen, so it says where it goes.
-                            InsightCard(
-                                insight,
-                                onWhy = { tab = Tab.LEDGER },
-                                action = "دفتر رو باز کن",
-                            )
+                            story.attention?.let {
+                                // This one leaves the screen, so it says where it goes.
+                                InsightCard(
+                                    it,
+                                    Modifier.weight(1f).fillMaxHeight(),
+                                    action = "دفتر رو باز کن",
+                                    onAction = { tab = Tab.LEDGER },
+                                )
+                            }
                         }
                     }
                 }
@@ -888,18 +875,20 @@ internal fun HeroField(
                 modifier = Modifier.padding(top = Space.xs),
             )
 
+            // The month band is خانه's door to the report, so the field only needs a standalone
+            // link when there is no band — a first month with nothing recorded in it yet.
+            val band = !portfolio && state.story.month.transactions > 0
             when {
                 change != null -> {
                     Spacer(Modifier.height(Space.m))
                     ChangePill(change, onClick = onReport)
                 }
                 // Before there are thirty days to compare against, the pill has nothing it can
-                // honestly state — and on خانه it is the only door to the report. A door that
-                // only appears in the second month is a door nobody finds, so the slot keeps
-                // its target and drops the figure.
+                // honestly state. A door that only appears in the second month is a door nobody
+                // finds, so the slot keeps its target and drops the figure.
                 // No spacer: the link's own 48dp target already carries more air than the pill
                 // needs, and stacked they left a hole under the total.
-                !portfolio -> ReportLink(onClick = onReport)
+                !portfolio && !band -> ReportLink(onClick = onReport)
             }
 
             if (portfolio) {
@@ -930,14 +919,14 @@ internal fun HeroField(
                         modifier = Modifier.weight(1f),
                     )
                 }
-            } else if (state.story.month.transactions > 0) {
+            } else if (band) {
                 // What she has, and how the month is going, in one screen without scrolling.
                 // This used to sit in a card below the fold, which meant the answer the home
                 // screen exists to give arrived only if she thought to scroll for it.
                 Spacer(Modifier.height(Space.l))
                 HorizontalDivider(color = Hero.hairline)
                 Spacer(Modifier.height(Space.l))
-                HeroMonth(state.story)
+                HeroMonth(state.story, onOpen = onReport)
             }
 
             Spacer(Modifier.height(if (portfolio) Space.xl else Space.l))

@@ -235,21 +235,45 @@ private fun DrawScope.drawHome(tint: Color) {
 }
 
 /**
- * Ruled lines, shortest at the top.
+ * A receipt: a slip with a torn foot and two rules on it.
  *
- * A list icon normally runs longest-first. This one is upside down on purpose: the review count
- * lands on the top corner nearest the screen edge — the start corner, which in Persian is the
- * left — and a full-width top rule is precisely what that badge would sit on top of. Turning
- * the stack over hands the badge an empty corner instead of fighting it for one.
+ * This was three ruled lines, and three ruled lines is the menu glyph — every icon sheet on the
+ * shelf uses it for "a list of anything", which is precisely the wrong word for a book of money.
+ * They were also stacked shortest-first to hand the review badge an empty corner, and the badge
+ * landed on the short rule anyway. So: a shape with a noun. The torn foot is the whole tell —
+ * cover it and this is a document; show it and it is a receipt — and the badge now sits over a
+ * corner, the way a badge sits over every other icon ever drawn.
  */
 private fun DrawScope.drawLedger(tint: Color) {
-    val rows = listOf(0.4f, 0.72f, 1f)
-    for ((i, len) in rows.withIndex()) {
-        val y = size.height * (0.16f + i * 0.34f)
+    val w = size.width
+    val h = size.height
+    // Nearly the full box. Narrower, it read as a ruler: a tall thin outline with rungs in it.
+    val left = w * 0.06f
+    val right = w * 0.94f
+    val top = h * 0.08f
+    val foot = h * 0.92f
+    val teeth = 4
+    val step = (right - left) / teeth
+    val slip = Path().apply {
+        moveTo(left, foot)
+        lineTo(left, top)
+        lineTo(right, top)
+        lineTo(right, foot)
+        for (i in 0 until teeth) {
+            val x = right - step * i
+            lineTo(x - step / 2f, foot - h * 0.11f)
+            lineTo(x - step, foot)
+        }
+    }
+    drawPath(slip, tint, style = pen())
+    // Two rules, the lower one short — a line item and its amount, not a paragraph.
+    for ((i, len) in listOf(1f, 0.55f).withIndex()) {
+        val y = h * (0.34f + i * 0.19f)
+        val inset = (right - left) * 0.16f
         drawLine(
             tint,
-            Offset(size.width * (1f - len), y),
-            Offset(size.width, y),
+            Offset(left + inset, y),
+            Offset(left + inset + (right - left - inset * 2f) * len, y),
             strokeWidth = 2.dp.toPx(),
             cap = StrokeCap.Round,
         )
@@ -274,34 +298,49 @@ private fun DrawScope.drawGoals(tint: Color) {
  * companion cards use, which is what makes those two read as one hand.
  */
 private fun DrawScope.drawAssets(tint: Color) {
-    val r = size.minDimension * 0.3f
-    val near = Offset(size.width * 0.36f, size.height * 0.64f)
-    drawCircle(tint, r, Offset(size.width * 0.64f, size.height * 0.36f), style = pen())
+    // The radius and the separation are load-bearing, and the first pairing had them wrong.
+    // The near coin clears a hole of r + knockOut around itself; at r = 0.30 and centres 0.28
+    // apart that hole was 7.8dp against a 7.1dp separation, so it reached past the far coin's
+    // own centre and the two discs fused into one continuous curve. It drew a «۶», not money.
+    // Smaller and further apart: the hole now stops well short, and the far coin keeps the
+    // three quarters of its outline that make it legible as a second coin.
+    val r = size.minDimension * 0.26f
+    val near = Offset(size.width * 0.32f, size.height * 0.68f)
+    drawCircle(tint, r, Offset(size.width * 0.68f, size.height * 0.32f), style = pen())
     drawCircle(Color.Black, r + knockOut(), near, blendMode = BlendMode.Clear)
     drawCircle(tint, r, near, style = pen())
 }
 
 /**
- * Her phone, and the one she set up for someone else.
+ * The two of them.
  *
- * Two whole rounded rectangles overlapping is what this was, and two strokes crossing at 24dp
- * is a blob. Same fix as the coins: the near card cuts its own silhouette out of the far one,
- * so the far card is genuinely behind rather than tangled with it.
+ * This was two overlapping rounded rectangles — her phone and the one she set up for someone
+ * else — which is a perfectly good drawing of the mechanism and the universal glyph for *copy*.
+ * Nobody reads a screen's plumbing off its tab; they read who it is for. This tab is for the
+ * person she shares a household with, so it draws people.
+ *
+ * One figure, and it took three tries to get there. Two heads over a shared shoulder line was
+ * the obvious drawing of a household, and it is also — at any head size, any spacing, any
+ * curvature — a face. Two round marks above a symmetric arc is a face; small ones set wide over
+ * a flat arc is a face wearing a frown. There is no tuning out of it, because the reading does
+ * not come from the proportions, it comes from the arrangement.
+ *
+ * So: one person, which is what «همراه» says anyway. A single circle over an arc cannot be
+ * misread as a face — there is only one eye — and it cannot be misread as *copy*, which is the
+ * whole reason the two cards had to go.
  */
 private fun DrawScope.drawCompanion(tint: Color) {
     val w = size.width
     val h = size.height
-    val card = Size(w * 0.7f, h * 0.7f)
-    val radius = CornerRadius(w * 0.16f)
-    val near = Offset(w * 0.02f, h * 0.28f)
-    val cut = knockOut()
-    drawRoundRect(tint, Offset(w * 0.28f, h * 0.02f), card, radius, style = pen())
-    drawRoundRect(
-        Color.Black,
-        topLeft = Offset(near.x - cut, near.y - cut),
-        size = Size(card.width + cut * 2f, card.height + cut * 2f),
-        cornerRadius = CornerRadius(radius.x + cut),
-        blendMode = BlendMode.Clear,
+    drawCircle(tint, w * 0.2f, Offset(w * 0.5f, h * 0.26f), style = pen())
+    drawArc(
+        color = tint,
+        startAngle = 180f,
+        sweepAngle = 180f,
+        useCenter = false,
+        topLeft = Offset(w * 0.08f, h * 0.56f),
+        // Only the top half of the box is swept, so a tall box draws a shallow curve.
+        size = Size(w * 0.84f, h * 0.8f),
+        style = pen(),
     )
-    drawRoundRect(tint, near, card, radius, style = pen())
 }

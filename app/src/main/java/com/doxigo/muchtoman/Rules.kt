@@ -46,11 +46,15 @@ const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
 
 /**
- * The categories the app ships with, deliberately few.
+ * The categories the app ships with.
  *
- * Setup does not ask her to build a taxonomy. These cover what the parser can actually tell
- * apart from a bank SMS; everything finer than this she adds herself, once, by correcting
- * something real.
+ * Setup does not ask her to build a taxonomy. The first block is what the parser can actually
+ * tell apart from a bank SMS; the second is the household's own list, which no SMS will ever
+ * name on its own — they are here so the choice exists the first time she files something by
+ * hand, not because anything can guess them.
+ *
+ * The last four are the machine's: withdrawal, fee, income, transfer. They sort last because
+ * they are what the app says about money, not what she spent it on.
  */
 val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category(CAT_UNCATEGORISED, nameFa = "دسته‌بندی نشده", kind = CategoryKind.EXPENSE, sort = 0, builtin = true),
@@ -60,11 +64,53 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category("cat_bills", nameFa = "قبض‌ها", kind = CategoryKind.EXPENSE, sort = 40, builtin = true),
     Category("cat_health", nameFa = "سلامت", kind = CategoryKind.EXPENSE, sort = 50, builtin = true),
     Category("cat_shopping", nameFa = "خرید", kind = CategoryKind.EXPENSE, sort = 60, builtin = true),
-    Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 70, builtin = true),
-    Category(CAT_FEES, nameFa = "کارمزد", kind = CategoryKind.EXPENSE, sort = 80, builtin = true),
-    Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 90, builtin = true),
-    Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 100, builtin = true),
+
+    Category("cat_savings", nameFa = "پس‌انداز و سرمایه", kind = CategoryKind.EXPENSE, sort = 70, builtin = true),
+    // EXPENSE, not TRANSFER: «انتقال بین حساب‌ها» is her own money moving and must not count,
+    // while this is money that left for someone else — a کارت‌به‌کارت is spending with a nicer
+    // name. TRANSFER would also hide it from the picker, which is the one place it is chosen.
+    Category("cat_send", nameFa = "انتقال وجه", kind = CategoryKind.EXPENSE, sort = 80, builtin = true),
+    Category("cat_gifts", nameFa = "هدیه و نیکوکاری", kind = CategoryKind.EXPENSE, sort = 90, builtin = true),
+    Category("cat_beauty", nameFa = "زیبایی", kind = CategoryKind.EXPENSE, sort = 100, builtin = true),
+    Category("cat_clothing", nameFa = "مد و پوشاک", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
+    Category("cat_culture", nameFa = "فرهنگی و هنری", kind = CategoryKind.EXPENSE, sort = 120, builtin = true),
+    Category("cat_home", nameFa = "خانه و کاشانه", kind = CategoryKind.EXPENSE, sort = 130, builtin = true),
+    Category("cat_atina", nameFa = "خرج اتینا", kind = CategoryKind.EXPENSE, sort = 140, builtin = true),
+    // The two halves of a قرض, which only balance out over time: neither is really spending or
+    // really income, but EXPENSE and INCOME are the only kinds that stay visible — TRANSFER
+    // means «not her decision, do not count», and money lent is very much a decision.
+    Category("cat_loan", nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 150, builtin = true),
+
+    Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 160, builtin = true),
+    Category(CAT_FEES, nameFa = "کارمزد", kind = CategoryKind.EXPENSE, sort = 170, builtin = true),
+    Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 180, builtin = true),
+    // «پس‌گرفتن», not «پس‌دادن»: the ledger is hers, and on money coming in she is the one
+    // getting it back — the other side is who gave it. Sorted beside درآمد because the picker
+    // shows it on the same rows: the ones where money arrived.
+    Category("cat_loan_back", nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 190, builtin = true),
+    Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 200, builtin = true),
 )
+
+/**
+ * The categories worth offering for one transaction.
+ *
+ * «دسته‌بندی نشده» is the absence of an answer, not one of them, and a transfer is something the
+ * detector settles rather than something she files by hand.
+ *
+ * Direction does the rest, and it is what makes this list usable now that it is long: money that
+ * arrived was never خواربار or مد و پوشاک, so offering them means reading past sixteen wrong
+ * answers to reach the two right ones. A transaction the parser read no direction from gets
+ * everything — that is the honest answer to «which way did this go», and guessing here would file
+ * money on the wrong side of the report.
+ */
+fun categoryChoices(categories: List<Category>, direction: String?): List<Category> =
+    categories.filter {
+        it.id != CAT_UNCATEGORISED && when (direction) {
+            "in" -> it.kind == CategoryKind.INCOME
+            "out" -> it.kind == CategoryKind.EXPENSE
+            else -> it.kind != CategoryKind.TRANSFER
+        }
+    }
 
 // ─────────────────────────── rules ───────────────────────────
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -134,22 +135,42 @@ private const val FLOW_FLOOR = 0.06f
  * labels; read out together they are the sentence the sighted eye gets in one glance.
  */
 @Composable
-fun HeroMonth(story: HomeStory, modifier: Modifier = Modifier) {
+fun HeroMonth(story: HomeStory, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val month = story.month
     val income = tomanOf(month.incomeRial)
     val spent = tomanOf(month.spentRial)
     Column(
         modifier
             .fillMaxWidth()
+            // No corner clip. The band runs the full width with the label flush to one corner
+            // and the bar flush to the opposite edge, so any radius at all eats them: a 24dp
+            // one sliced the alef off «این ماه» and took a diagonal bite out of both ends of
+            // the bar. A rectangular ripple across a full-width band is the correct shape here
+            // anyway — this is a band, not a card sitting on one.
+            .clickable(role = Role.Button, onClick = onOpen)
             .semantics(mergeDescendants = true) {
-                contentDescription =
-                    "درآمد این ماه ${faCompact(income)} تومان، خرج این ماه ${faCompact(spent)} تومان"
+                contentDescription = "این ماه: درآمد ${faCompact(income)} تومان، " +
+                    "خرج ${faCompact(spent)} تومان. برای گزارش کامل باز کن"
             },
     ) {
+        // The band is the report's own opening paragraph — گزارش دارایی leads with these two
+        // figures and this bar — so the band is the door to the rest of it. Tapping the summary
+        // to get the long form is the one gesture on this screen that needs no explaining, and
+        // it is why the report does not need a tab: it is already on the front page, in short.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("این ماه", fontSize = 12.sp, color = Hero.muted)
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Hero.muted,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.height(Space.s))
         Row(Modifier.fillMaxWidth()) {
-            HeroFlowHalf("درآمد این ماه", income, Hero.mint, Modifier.weight(1f))
+            HeroFlowHalf("درآمد", income, Hero.mint, Modifier.weight(1f))
             Spacer(Modifier.width(Space.m))
-            HeroFlowHalf("خرج این ماه", spent, Hero.strong, Modifier.weight(1f))
+            HeroFlowHalf("خرج", spent, Hero.strong, Modifier.weight(1f))
         }
         if (month.incomeRial > 0 || month.spentRial > 0) {
             Spacer(Modifier.height(Space.l))
@@ -193,25 +214,23 @@ private fun FlowHalf(label: String, rial: Long, tone: Color, modifier: Modifier 
 }
 
 /**
- * One statement, and the control that answers for it.
+ * One statement, and — only where there is somewhere to go — the control that goes there.
  *
- * «چرا این را می‌بینم؟» is not a nicety — a number she cannot trace is a number she has to take
- * on faith, and this app has spent its whole life refusing to ask for that.
- *
- * The two kinds of insight were the same card down to the pixel, separated only by an 8dp dot,
- * and both offered «این عدد از کجا اومده؟» — which on the one asking for her did not answer that
- * question at all, it left the screen. A finding is something to read and its control is a quiet
- * link; a thing waiting on her is something to do, and its control is filled, in the same gold
- * the ledger and the tab bar use for exactly that. [action] names where it actually goes.
+ * «چرا این را می‌بینم؟» is not a nicety: a number she cannot trace is a number she has to take on
+ * faith. But every card asking «این عدد از کجا اومده؟» was the wrong way to answer it — on the
+ * report the question did nothing at all, and on the home screen it made her tap for a sentence
+ * we could simply say. [why] says it, unasked. The pill is left to the one card that actually
+ * leaves the screen, filled in the same gold the ledger and the tab bar use for exactly that;
+ * [action] names where it goes.
  */
 @Composable
 fun InsightCard(
     insight: Insight,
-    onWhy: () -> Unit,
     modifier: Modifier = Modifier,
-    action: String = "این عدد از کجا اومده؟",
+    why: Boolean = false,
+    action: String? = null,
+    onAction: () -> Unit = {},
 ) {
-    val asking = insight.tone == Insight.Tone.ATTENTION
     val accent = when (insight.tone) {
         Insight.Tone.GOOD -> Color(0xFF2E9E5B)
         // Not `tertiary`: in dark theme that is the same green income speaks in, so the one
@@ -235,55 +254,61 @@ fun InsightCard(
                 lineHeight = 26.sp,
             )
         }
-        Spacer(Modifier.height(Space.xs))
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(Radius.pill))
-                .then(
-                    if (asking) Modifier.background(MaterialTheme.colorScheme.primary)
-                    else Modifier,
-                )
-                .clickable(role = Role.Button, onClick = onWhy)
-                // The label sets its own height: at 12sp with 4dp of padding the target was
-                // half the floor, on the only control these cards have.
-                .heightIn(min = 48.dp)
-                .padding(horizontal = if (asking) Space.l else Space.s),
-            contentAlignment = Alignment.Center,
-        ) {
+        if (why) {
+            Spacer(Modifier.height(Space.xs))
             Text(
-                action,
-                fontSize = 13.sp,
-                fontWeight = if (asking) FontWeight.Bold else FontWeight.Medium,
-                color = if (asking) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.primary,
+                insight.why,
+                fontSize = 12.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        action?.let {
+            Spacer(Modifier.height(Space.xs))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(role = Role.Button, onClick = onAction)
+                    // The label sets its own height: at 12sp with 4dp of padding the target was
+                    // half the floor, on the only control these cards have.
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = Space.l),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    it,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
         }
     }
 }
 
-/** The «why» panel: the sentence behind the sentence, and how many transactions are under it. */
+/**
+ * Insights two to a row.
+ *
+ * One short sentence per full-width card was a column of mostly empty space, and the report had
+ * eight of them to scroll past. The row measures to the taller of its pair and both cards fill
+ * it, so a long sentence beside a short one still reads as two cards and not as a step.
+ */
 @Composable
-fun WhyNote(insight: Insight, modifier: Modifier = Modifier) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(Space.l),
-    ) {
-        Text(
-            insight.why,
-            fontSize = 13.sp,
-            lineHeight = 22.sp,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-        if (insight.refs.isNotEmpty()) {
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                "از ${faNumber(insight.refs.size.toDouble())} تراکنش",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
-            )
+fun InsightGrid(insights: List<Insight>, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.m)) {
+        for (pair in insights.chunked(2)) {
+            Row(
+                Modifier.height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(Space.m),
+            ) {
+                for (insight in pair) {
+                    InsightCard(insight, Modifier.weight(1f).fillMaxHeight(), why = true)
+                }
+                // An odd count leaves the last card in its half rather than stretched across a
+                // row of its own: the grid keeps one edge to read down.
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }

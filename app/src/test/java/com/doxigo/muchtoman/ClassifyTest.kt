@@ -137,6 +137,25 @@ class ClassifyTest {
         assertTrue(!c.needsReview)
     }
 
+    @Test
+    fun `the picker offers only the side of the ledger the money went`() {
+        val incoming = categoryChoices(BUILTIN_CATEGORIES, "in").map { it.nameFa }
+        assertEquals(listOf("درآمد", "پس‌گرفتن قرض"), incoming)
+
+        val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
+        assertTrue("خواربار" in outgoing)
+        assertTrue("درآمد" !in outgoing)
+
+        // Neither list may offer the two that are never hers to pick.
+        for (list in listOf(incoming, outgoing, categoryChoices(BUILTIN_CATEGORIES, null).map { it.nameFa })) {
+            assertTrue("انتقال بین حساب‌ها" !in list)
+            assertTrue("دسته‌بندی نشده" !in list)
+        }
+
+        // A direction the parser could not read is not a reason to hide half the answers.
+        assertEquals(BUILTIN_CATEGORIES.size - 2, categoryChoices(BUILTIN_CATEGORIES, null).size)
+    }
+
     // ─────────────────────────── links ───────────────────────────
 
     @Test
