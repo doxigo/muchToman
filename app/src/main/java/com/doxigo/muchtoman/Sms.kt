@@ -93,8 +93,9 @@ fun senderKey(sender: String): String {
 }
 
 // Bank headers really do arrive with non-breaking spaces. Android does not support Java's
-// inline (?U) flag, so include Unicode separator categories explicitly.
-private val WHITESPACE = Regex("[\\s\\p{Z}]+")
+// inline (?U) flag, so include Unicode separator categories explicitly. merchantNorm persists
+// this output as a rule needle, so changing the pattern requires a rule migration.
+internal val WHITESPACE = Regex("[\\s\\p{Z}]+")
 
 private val BANK_BY_NUMBER: Map<String, Bank> =
     Bank.entries.flatMap { bank -> bank.numbers.map { senderKey(it) to bank } }.toMap()
@@ -151,6 +152,20 @@ data class BankSms(
     val balance: Double?,
     val at: Long,
     val inferred: Boolean,
+    // Everything below is new and every one of it is defaulted, so every existing construction
+    // and every existing assertion kept compiling and passing untouched when it arrived. The
+    // ledger reads these; the balance fold above does not read any of them.
+    /** Magnitude, in whole Rial. Present even when the direction is not, unlike [delta]. */
+    val amountRial: Long? = null,
+    val balanceRial: Long? = null,
+    val feeRial: Long? = null,
+    val merchant: String = "",
+    val refNo: String = "",
+    /** The bank's own date string, verbatim and unparsed. */
+    val printedAt: String = "",
+    val channel: Channel = Channel.UNKNOWN,
+    val instrument: Instrument = Instrument.UNKNOWN,
+    val unitPrinted: PrintedUnit = PrintedUnit.NONE,
 ) {
     /** Nothing to fold in — no amount and no balance means the message was not a transaction. */
     val empty: Boolean get() = delta == null && balance == null
@@ -268,7 +283,7 @@ private fun figureAfter(
             val ahead = text.substring(start, minOf(text.length, start + 16))
             if (veto.any { ahead.contains(it) }) continue
 
-            for (m in NUMBER.findAll(text).dropWhile { it.range.first < start }) {
+            for (m in NUMBER.findAll(text, start)) {
                 if (m.range.first - start > window) break
                 if (isIdentifierPart(text, m.range)) continue
                 val v = moneyOf(m.value) ?: continue
@@ -335,20 +350,179 @@ fun parseBankSms(
         withdrawal && !deposit -> -moved
         else -> null // both or neither: the message does not say which way the money went
     }
+    if (delta == null && balance == null) return null
 
+    val mask = accountIn(text)
+    val extras = enrich(text, body, fallback)
     val sms = BankSms(
         bank = bank,
         sender = sender.trim(),
-        mask = accountIn(text),
+        mask = mask,
         delta = delta,
         balance = balance,
         at = at,
         // The bank is no longer ever a guess — the sender settled it. What is left is a
         // message that named an amount and a balance but not which way the money went.
         inferred = delta == null && balance != null && amount != null,
+        // Whole Rial, taken off the figure before it was ever divided. Rial is what these
+        // messages actually print; Toman is a display transform, and rounding one leg of a
+        // transfer down while the other rounds up is how exact-amount matching stops working.
+        amountRial = amount?.rial(fallback),
+        balanceRial = balance?.let { Math.round(it * 10.0) },
+        feeRial = extras.feeRial,
+        merchant = extras.merchant,
+        refNo = extras.refNo,
+        printedAt = extras.printedAt,
+        channel = extras.channel,
+        instrument = instrumentOf(mask),
+        unitPrinted = when (amount?.divisor) {
+            1.0 -> PrintedUnit.TOMAN
+            10.0 -> PrintedUnit.RIAL
+            else -> PrintedUnit.NONE
+        },
     )
-    return sms.takeIf { !it.empty }
+    return sms
 }
+
+// ───────────────────────── enrichment ─────────────────────────
+// Everything below reads the body and returns new fields. Nothing on the money path above
+// reads any of it. That is not a convention to be careful about — there is no data path from
+// [Extras] back into delta, balance, mask or inferred, so a bug in merchant extraction
+// *cannot* move a number. A guarantee that holds because of the shape of the code beats one
+// that holds because everyone remembered.
+
+/** How the money moved, as far as the message says. */
+enum class Channel { UNKNOWN, POS, ATM, PAYA, SATNA, CARD, TRANSFER, FEE, BILL }
+
+/** What the message named the account by. Both collapse into one [BankSms.mask] string. */
+enum class Instrument { UNKNOWN, CARD, ACCOUNT }
+
+/** The unit the amount actually carried, before it was converted. */
+enum class PrintedUnit { NONE, RIAL, TOMAN }
+
+/** Named after the label it follows, so a fee is never mistaken for the transaction. */
+private val FEE_WORDS = listOf("کارمزد", "هزینه")
+
+private val REF_WORDS = listOf("پیگیری", "رهگیری", "مرجع", "شماره سند", "شناسه پرداخت")
+
+/** خاورمیانه prints its reference as "020/000016703" with no label at all. */
+private val SLASHED_REF = Regex("[0-9۰-۹٠-٩]{2,}/[0-9۰-۹٠-٩]{4,}")
+
+private val MERCHANT_WORDS = listOf("فروشگاه", "پذیرنده", "مرکز", "به نام", "بنام")
+
+/**
+ * A date the bank printed itself, matched verbatim and never parsed here.
+ *
+ * The separator classes are deliberately different on the two halves. Date parts join with
+ * `/` or `.`; a time is introduced by a space, an underscore or a dash. Sharing one class made
+ * "05/08_13:37" read as the three-part date "05/08_13" and swallow the time, and letting `-`
+ * join date parts did the same to "5/8-10:04".
+ *
+ * The lookbehind is what keeps it off account numbers: without it "276.800.504939.1" offers
+ * "800.50" as a date.
+ */
+private val PRINTED_AT = Regex(
+    "(?<![0-9۰-۹٠-٩./\\-_])" +
+        "[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?" +
+        "(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?" +
+        "(?![0-9۰-۹٠-٩])"
+)
+
+/** What a message carries beyond the money. Every field is optional and every default is empty. */
+internal class Extras(
+    val merchant: String,
+    val refNo: String,
+    val printedAt: String,
+    val channel: Channel,
+    val feeRial: Long?,
+)
+
+/** Rial, as an integer, straight off a figure and before any division. */
+private fun Figure.rial(fallback: Double): Long =
+    Math.round(value * (10.0 / (divisor ?: fallback)))
+
+private fun instrumentOf(mask: String): Instrument = when {
+    mask.isEmpty() -> Instrument.UNKNOWN
+    mask.contains('*') -> Instrument.CARD
+    // A sixteen-digit run is a card number however it is punctuated — "6037-9911-1234-5678"
+    // is a card, not an account, and only the length says so once the stars are gone.
+    // Iranian account numbers are shorter than that.
+    digitsIn(mask) >= 16 -> Instrument.CARD
+    else -> Instrument.ACCOUNT
+}
+
+/**
+ * The channel, most specific first. "پایانه فروش" must beat "خرید", and "کارت به کارت" must
+ * beat the "انتقال" it usually appears beside, or every transfer reads as a generic one.
+ */
+private fun channelOf(text: String): Channel = when {
+    text.contains("خودپرداز") || text.contains("atm") -> Channel.ATM
+    text.contains("پایانه فروش") || text.contains("پایانه") -> Channel.POS
+    text.contains("کارت به کارت") -> Channel.CARD
+    text.contains("ساتنا") -> Channel.SATNA
+    text.contains("پایا") -> Channel.PAYA
+    text.contains("قبض") -> Channel.BILL
+    text.contains("خرید") -> Channel.POS
+    text.contains("انتقال") -> Channel.TRANSFER
+    // Last, because a fee named beside a purchase does not make the purchase a fee.
+    FEE_WORDS.any { text.contains(it) } -> Channel.FEE
+    else -> Channel.UNKNOWN
+}
+
+/**
+ * A fee named inside another transaction's message.
+ *
+ * The first figure after the word is not always money: پاسارگاد writes "کارمزد پیامک بانکی
+ * ۶ ماهه دوم سال ۱۴۰۰", where it is a number of months. So a fee must either name its own unit
+ * or be big enough that it cannot be a count of anything.
+ *
+ * ponytail: a flat four-digit floor. If a real fee is ever quoted under 1,000 with no unit,
+ * this needs the parent amount to compare against instead.
+ */
+private fun feeIn(text: String, fallback: Double): Long? {
+    val fee = figureAfter(text, FEE_WORDS) ?: return null
+    if (fee.divisor == null && fee.value < 1000) return null
+    return fee.rial(fallback)
+}
+
+private fun refIn(text: String): String {
+    for (word in REF_WORDS) {
+        val at = text.indexOf(word)
+        if (at < 0) continue
+        val start = at + word.length
+        val m = NUMBER.findAll(text, start)
+            .firstOrNull { it.range.first - start <= 24 && digitsIn(it.value) >= 6 }
+        if (m != null) return m.value
+    }
+    return SLASHED_REF.find(text)?.value.orEmpty()
+}
+
+/**
+ * The shop or terminal, where the bank names one. Cut at a colon, a line break or a digit run,
+ * because "مرکزآواي نوين:02162740" is a name followed by a phone number.
+ *
+ * "پایانه" is deliberately not a merchant word even though it introduces one on some banks: on
+ * صادرات it is followed by "فروش", and the merchant would come out as the word "sale".
+ */
+private fun merchantIn(text: String): String {
+    for (word in MERCHANT_WORDS) {
+        val at = text.indexOf(word)
+        if (at < 0) continue
+        val tail = text.substring(at + word.length).trimStart(' ', ':', '-', '،')
+        val name = tail.takeWhile { it != '\n' && it != ':' && it != '،' && !isDigit(it) }.trim()
+        if (name.length >= 2) return name.replace(WHITESPACE, " ")
+    }
+    return ""
+}
+
+internal fun enrich(normalised: String, rawBody: String, fallback: Double): Extras = Extras(
+    merchant = merchantIn(normalised),
+    refNo = refIn(normalised),
+    // Off the raw body, not the normalised one: this is quoted back to her as the bank wrote it.
+    printedAt = PRINTED_AT.find(rawBody)?.value?.trim().orEmpty(),
+    channel = channelOf(normalised),
+    feeRial = feeIn(normalised, fallback),
+)
 
 /** Words that mark a مانده as an operator's bundle — data, minutes, credit — not money at a bank. */
 private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "مکالمه", "شارژ")
@@ -547,6 +721,17 @@ fun bankTotal(accounts: List<BankAccount>, disabled: Set<String>): Double =
 fun smsKey(sender: String, body: String, at: Long): String {
     val digest = MessageDigest.getInstance("SHA-256")
         .digest("${senderKey(sender)}\u0000$at\u0000${body.trim()}".toByteArray(Charsets.UTF_8))
+    return hexOf(digest)
+}
+
+/**
+ * Shared with [srcHash], which takes the same digest over a deliberately different input —
+ * [srcAddrKeyV1] rather than [senderKey], for the reason spelled out there.
+ */
+internal fun sha256Hex(input: String): String =
+    hexOf(MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8)))
+
+internal fun hexOf(digest: ByteArray): String {
     val hex = "0123456789abcdef"
     return buildString(digest.size * 2) {
         for (byte in digest) {

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "refah-lettered-header-with-spaces",
+      "sender": "Refah Bank",
+      "at": 1,
+      "body": [
+        "بانک رفاه",
+        "واریز مبلغ 5,000,000 ریال",
+        "مانده 80,000,000 ریال"
+      ],
+      "why": "Refah really does send from «Refah Bank» — a name, not a number. The whole header is the identity: case and the spacing between the words are the carrier's noise, but a different name, or the words run together, is a different sender.",
+      "expect": {
+        "bank": "REFAH",
+        "direction": "in",
+        "amountRial": 5000000,
+        "balanceRial": 80000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    }
+  ]
+}

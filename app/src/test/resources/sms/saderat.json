@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "saderat-paya-deposit-trailing-plus",
+      "sender": "98700719",
+      "at": 1,
+      "body": [
+        "پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04"
+      ],
+      "why": "Direction is a trailing + rather than a word, so no delta is stated — the مانده it prints is what the balance comes from. No unit anywhere reads as Rial.",
+      "expect": {
+        "bank": "SADERAT",
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 32203090,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "paya",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "saderat-pos-purchase-trailing-minus",
+      "sender": "BankSaderat",
+      "at": 2,
+      "body": [
+        "پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06"
+      ],
+      "why": "The same shape the other way, from the lettered header rather than the shortcode. «پايانه فروش» is a POS terminal — the only hint of a merchant in the whole message.",
+      "expect": {
+        "bank": "SADERAT",
+        "amountRial": null,
+        "balanceRial": 28103090,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "pos",
+        "unitPrinted": "none"
+      }
+    }
+  ]
+}

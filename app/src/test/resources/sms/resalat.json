@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "resalat-balance-only-no-direction",
+      "sender": "ResalatBank",
+      "at": 1,
+      "body": [
+        "10.7488478.1",
+        "-1,000,000,000",
+        "05/03_15:14",
+        "مانده: 2,807,813"
+      ],
+      "why": "رسالت writes no واریز and no برداشت — just a signed amount on its own line. So there is no delta to be had, and the مانده is the whole message. That is the safe half: a stated balance replaces what we hold outright and never needs a sign.",
+      "expect": {
+        "bank": "RESALAT",
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 2807813,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "05/03_15:14",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    }
+  ]
+}

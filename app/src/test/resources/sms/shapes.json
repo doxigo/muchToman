@@ -1,0 +1,372 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "shape-rial-is-never-read-as-toman",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "بانک سامان",
+        "برداشت: 5,000,000 ریال",
+        "مانده: 12,000,000 ریال"
+      ],
+      "why": "The tenfold error. 5,000,000 ریال is 500,000 تومان and nothing else.",
+      "expect": {
+        "bank": "SAMAN",
+        "direction": "out",
+        "amountRial": 5000000,
+        "balanceRial": 12000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
+    },
+    {
+      "id": "shape-toman-is-taken-at-face-value",
+      "sender": "0999 998 7641",
+      "at": 1000,
+      "body": [
+        "واریز مبلغ 250,000 تومان",
+        "مانده 3,000,000 تومان"
+      ],
+      "why": "Stated in Toman, a figure is taken at face value rather than divided.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "in",
+        "amountRial": 2500000,
+        "balanceRial": 30000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "toman"
+      }
+    },
+    {
+      "id": "shape-both-units-in-one-body",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "واریز مبلغ 300,000,000 ریال (معادل 30,000,000 تومان)",
+        "مانده 1,978,750,309 ریال"
+      ],
+      "why": "The tenfold error arriving by the back door: deciding the unit once for the whole message meant one «معادل … تومان» aside made every ریال figure in it ten times bigger. Each figure is read in the unit printed beside it.",
+      "expect": {
+        "direction": "in",
+        "amountRial": 300000000,
+        "balanceRial": 1978750309,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-toman-fee-does-not-lift-the-rial-balance",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "برداشت مبلغ 5,000,000 ریال",
+        "مانده 200,000,000 ریال",
+        "کارمزد 500 تومان"
+      ],
+      "why": "The same trap from the other side: a fee quoted in Toman must not lift the Rial balance printed beside it. This body is also the one concrete case for a fee named inside another transaction's message.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 5000000,
+        "balanceRial": 200000000,
+        "feeRial": 5000,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "fee",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-account-number-between-label-and-figure",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "برداشت 5,000,000 ریال",
+        "مانده حساب 829-800-1092308-1 : 50,000,000 ریال"
+      ],
+      "why": "The first digits after the label are the account, not the balance. Reading them as the balance turned five million into 82 Toman.",
+      "expect": {
+        "amountRial": 5000000,
+        "balanceRial": 50000000,
+        "feeRial": null,
+        "mask": "829-800-1092308-1",
+        "instrument": "account",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-masked-card-number-is-skipped",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "موجودی کارت 6037-9911-1234-5678 مبلغ 5,000,000 ریال"
+      ],
+      "why": "A masked card number is skipped the same way an account number is, and the figure after it is the one that counts.",
+      "expect": {
+        "amountRial": 5000000,
+        "balanceRial": 5000000,
+        "feeRial": null,
+        "mask": "6037-9911-1234-5678",
+        "instrument": "card",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-long-figure-not-cut-by-the-window",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "موجودی قابل برداشت حساب سپرده کوتاه مدت 1,978,750,309 ریال"
+      ],
+      "why": "The search window is applied after the whole body has been scanned for numbers, so a long figure sitting past the window boundary is never truncated into a smaller one. NOTE: «برداشت» in «قابل برداشت» is also a direction word, so today's parser reads this one figure as BOTH the amount and the balance. Pinned as it stands — the corpus records what the parser does, and a fix is a deliberate edit here rather than a surprise. Harmless while a stated balance wins, wrong the moment a ledger counts the amount as spending.",
+      "expect": {
+        "amountRial": 1978750309,
+        "balanceRial": 1978750309,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-dot-is-a-thousands-separator",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "واریز مبلغ 500.000 ریال",
+        "مانده 20.000.000 ریال"
+      ],
+      "why": "Rial has no fractions. Reading «500.000» as five hundred is the same figure a thousand times too small.",
+      "expect": {
+        "direction": "in",
+        "amountRial": 500000,
+        "balanceRial": 20000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-loan-balance-is-debt-not-money",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "قسط تسهیلات پرداخت مبلغ 3,000,000 ریال",
+        "مانده بدهی 2,400,000,000 ریال"
+      ],
+      "why": "«مانده بدهی» is what she owes. Counting it as cash adds the size of her debt to her wealth — wrong in the one direction this app must never be wrong in.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 3000000,
+        "balanceRial": null,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-no-unit-anywhere-reads-as-rial",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "واریز 10,000,000",
+        "مانده 45,000,000"
+      ],
+      "why": "Saman's own withdrawals name no unit at all. Flagging that would put a warning on half her statement, and a warning that is always on is one she stops reading.",
+      "expect": {
+        "direction": "in",
+        "amountRial": 10000000,
+        "balanceRial": 45000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "shape-persian-digits-read-like-latin",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "واریز مبلغ ۱٬۲۰۰٬۰۰۰ ریال",
+        "مانده ۸٬۰۰۰٬۰۰۰ ریال"
+      ],
+      "why": "Persian digits and the Persian thousands separator ٬ read exactly as Latin ones do.",
+      "expect": {
+        "direction": "in",
+        "amountRial": 1200000,
+        "balanceRial": 8000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-no-direction-word-states-no-delta",
+      "sender": "0999 992 0000",
+      "at": 1000,
+      "body": [
+        "مانده حساب شما: 9,000,000 ریال"
+      ],
+      "why": "Guessing a direction is how a deposit becomes a withdrawal. A balance with no direction word states a balance and nothing else.",
+      "expect": {
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 9000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none"
+      }
+    },
+    {
+      "id": "shape-emptied-account-reads-zero",
+      "sender": "0999 992 0000",
+      "at": 2,
+      "body": [
+        "برداشت 50,000,000 ریال",
+        "مانده: 0 ریال"
+      ],
+      "why": "Zero is allowed for a balance and nowhere else, because an emptied account really can hold nothing — and it is still a stated balance, so it still counts.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 50000000,
+        "balanceRial": 0,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-purchase-naming-no-account",
+      "sender": "0999 992 0000",
+      "at": 2,
+      "body": [
+        "خرید مبلغ 5,000,000 ریال",
+        "مانده 1,973,750,309 ریال"
+      ],
+      "why": "Saman prints the account number on a transfer and leaves it off a card purchase. Keying an account on the printed identifier forked one real account into two and the total added both.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 5000000,
+        "balanceRial": 1973750309,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "pos",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-purchase-naming-a-card-mask",
+      "sender": "0999 992 0000",
+      "at": 2,
+      "body": [
+        "خرید مبلغ 1,000,000 ریال کارت 6037****1234 مانده 460,725,309 ریال"
+      ],
+      "why": "The third way one account gets named: a starred card mask. The doubling bug was this message and the transfer above both stating the same مانده under two different printed identifiers.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 1000000,
+        "balanceRial": 460725309,
+        "feeRial": null,
+        "mask": "6037****1234",
+        "instrument": "card",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "pos",
+        "unitPrinted": "rial"
+      }
+    },
+    {
+      "id": "shape-balance-only-movjoodi",
+      "sender": "0999 998 7641",
+      "at": 3,
+      "body": [
+        "موجودی 20,000,000 ریال"
+      ],
+      "why": "The smallest message that is still a transaction: a balance word, a figure, a unit, nothing else.",
+      "expect": {
+        "bank": "BLU",
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 20000000,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none"
+      }
+    }
+  ]
+}

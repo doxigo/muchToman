@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "rejected-stranger-sending-a-real-saman-message",
+      "sender": "+989121234567",
+      "at": 1,
+      "body": [
+        "بانك سامان",
+        "واريز مبلغ  300,000,000ريال",
+        "به  829-800-1092308-1",
+        "مانده 1,978,750,309"
+      ],
+      "why": "This is the whole point of matching on the sender: no one-time code, no advert, no message from her family can reach a function that moves money, whatever it says. Not even a message that reads exactly like a real one.",
+      "expect": null
+    },
+    {
+      "id": "rejected-unknown-shortcode",
+      "sender": "10001",
+      "at": 1,
+      "body": [
+        "بانک سامان واریز 500,000,000 ریال مانده 900,000,000"
+      ],
+      "why": "A shortcode nobody confirmed is a stranger, however bank-shaped the body is.",
+      "expect": null
+    },
+    {
+      "id": "rejected-header-merely-containing-a-shortcode",
+      "sender": "Tel100031",
+      "at": 1,
+      "body": [
+        "مانده حساب: 500,000,000 ریال"
+      ],
+      "why": "«Tel100031» reduced to digits is Refah's shortcode. Reading it would let a sender that is neither built in nor confirmed overwrite her Refah balance.",
+      "expect": null
+    },
+    {
+      "id": "rejected-otp-from-a-real-bank-number",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "رمز یکبار مصرف شما: 48213"
+      ],
+      "why": "From a real bank, but it names no amount and no balance, so it is not a transaction and must produce nothing rather than something at low confidence.",
+      "expect": null
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "pasargad-bare-figure-no-direction",
+      "sender": "B.Pasargad",
+      "at": 1,
+      "body": [
+        "276.800.504939.1",
+        "-30,000,000",
+        "05/08_13:37",
+        "مانده: 33,916,067"
+      ],
+      "why": "Real message, shape and all: a dotted account number, a bare minus figure with no direction word, a date with an underscore in it, and a مانده that names no unit. No direction word means no delta is stated at all — the مانده is the truth, and it is trusted outright.",
+      "expect": {
+        "bank": "PASARGAD",
+        "direction": null,
+        "amountRial": null,
+        "balanceRial": 33916067,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "05/08_13:37",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "pasargad-sms-fee-movjoodi-in-rial",
+      "sender": "B.Pasargad",
+      "at": 1,
+      "body": [
+        "*بانك ياساركاد* كارمزد پيامك بانكي 6 ماهه دوم سال 1400 برداشت از: 1503.8000.11222610.1 مبلغ: 75,000 ريال 00/12/17_16:43 موجودي: 154,874 ريال"
+      ],
+      "why": "A different shape from the bare-figure one: موجودی rather than مانده, a dotted account number, the whole thing on one line, and both figures naming ریال outright. برداشت and کارمزد both say which way the money went.",
+      "expect": {
+        "bank": "PASARGAD",
+        "direction": "out",
+        "amountRial": 75000,
+        "balanceRial": 154874,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "00/12/17_16:43",
+        "channel": "fee",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "mellat-glued-labels-no-unit",
+      "sender": "Bank Mellat",
+      "at": 1,
+      "body": [
+        "حساب7591126460",
+        "برداشت500,000,000",
+        "مانده140,285,187",
+        "05/05/11-11:52"
+      ],
+      "why": "ملت glues its figures straight onto the label — «برداشت500,000,000» — and names neither ریال nor تومان anywhere, so both figures fall back to ریال. The date on the last line is digits and a dash and must not be read as an account number.",
+      "expect": {
+        "bank": "MELLAT",
+        "direction": "out",
+        "amountRial": 500000000,
+        "balanceRial": 140285187,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "05/05/11-11:52",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    }
+  ]
+}

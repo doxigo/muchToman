@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "saman-deposit-arabic-kaf",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "بانك سامان",
+        "واريز مبلغ  300,000,000ريال",
+        "به  829-800-1092308-1",
+        "مانده 1,978,750,309",
+        "1405/5/1",
+        "11:26"
+      ],
+      "why": "Real message from her own phone, character for character. The Arabic ك and ي, the doubled space after مبلغ, no space at all before ريال, and a مانده carrying no unit of its own. The account number must be read as the mask and the 1405/5/1 date must not be.",
+      "expect": {
+        "bank": "SAMAN",
+        "direction": "in",
+        "amountRial": 300000000,
+        "balanceRial": 1978750309,
+        "feeRial": null,
+        "mask": "829-800-1092308-1",
+        "instrument": "account",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "1405/5/1",
+        "channel": "unknown",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
+    },
+    {
+      "id": "saman-withdrawal-arabic-kaf",
+      "sender": "0999 992 0000",
+      "at": 2,
+      "body": [
+        "بانك سامان",
+        "برداشت مبلغ 1,500,000,000 انتقال وجه",
+        "از  829-800-1092308-1",
+        "مانده 460,725,309",
+        "1405/5/3",
+        "21:59:27"
+      ],
+      "why": "The other half of the same real thread. Same account named the same way, so this and the deposit fold into one balance rather than two.",
+      "expect": {
+        "bank": "SAMAN",
+        "direction": "out",
+        "amountRial": 1500000000,
+        "balanceRial": 460725309,
+        "feeRial": null,
+        "mask": "829-800-1092308-1",
+        "instrument": "account",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "1405/5/3",
+        "channel": "transfer",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "saman-lettered-header-she-confirmed",
+      "sender": "SAMANBANK",
+      "at": 1,
+      "extra": {
+        "SAMAN": [
+          "SAMANBANK"
+        ]
+      },
+      "body": [
+        "بانك سامان",
+        "برداشت مبلغ 1,500,000,000 انتقال وجه",
+        "از  829-800-1092308-1",
+        "مانده 460,725,309",
+        "1405/5/3",
+        "21:59:27"
+      ],
+      "why": "Banks really do send from IDs like SAMANBANK. Reducing a sender to its digits reduced those to nothing, so confirming one changed nothing — the silent kind of broken, since the tap 'worked' and the balance stayed frozen.",
+      "expect": {
+        "bank": "SAMAN",
+        "amountRial": 1500000000,
+        "balanceRial": 460725309,
+        "feeRial": null,
+        "mask": "829-800-1092308-1",
+        "instrument": "account",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "1405/5/3",
+        "channel": "transfer",
+        "unitPrinted": "none"
+      }
+    }
+  ]
+}

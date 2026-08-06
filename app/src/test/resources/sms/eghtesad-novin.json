@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "enbank-withdrawal-glued-unit",
+      "sender": "ENBank",
+      "at": 1,
+      "body": [
+        "برداشت: 126-800-1026659-1",
+        "-3,100,000ريال",
+        "مانده:2,271,325,358ريال",
+        "5/8-10:04",
+        "مرکزآواي نوين:02162740"
+      ],
+      "why": "Real withdrawal. The unit is glued straight onto both figures with no space, the label is glued onto the balance too, and the last line names the terminal — «مرکزآواي نوين:02162740» — which is the merchant this message is carrying and which nothing reads yet.",
+      "expect": {
+        "bank": "EGHTESAD_NOVIN",
+        "direction": "out",
+        "amountRial": 3100000,
+        "balanceRial": 2271325358,
+        "feeRial": null,
+        "mask": "126-800-1026659-1",
+        "instrument": "account",
+        "merchant": "آوای نوین",
+        "refNo": "",
+        "printedAt": "5/8-10:04",
+        "channel": "unknown",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
+    }
+  ]
+}

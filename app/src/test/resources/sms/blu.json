@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "blu-deposit-neshast",
+      "sender": "0999 998 7641",
+      "at": 1,
+      "body": [
+        "بلو",
+        "واریز پول",
+        "سیدسهیل عزیز، 1,000,000,000 ریال به حساب شما نشست.",
+        "موجودی: 1,863,578,773 ریال",
+        "۱۹:۵۸",
+        "۱۴۰۵.۰۵.۰۳"
+      ],
+      "why": "Real message. There is no مبلغ label anywhere to hang the amount on, the direction comes from Blu's own «نشست», and the balance word is موجودی rather than مانده.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "in",
+        "amountRial": 1000000000,
+        "balanceRial": 1863578773,
+        "inferred": false
+      }
+    },
+    {
+      "id": "blu-withdrawal-parid",
+      "sender": "0999 998 7641",
+      "at": 2,
+      "body": [
+        "بلو",
+        "برداشت پول",
+        "سیدسهیل عزیز، 25,000,000 ریال از حساب شما پرید.",
+        "موجودی: 1,566,643,023 ریال",
+        "۱۶:۰۰",
+        "۱۴۰۵.۰۵.۰۴"
+      ],
+      "why": "Blu's own phrasing for money leaving is «پرید», which no other bank writes.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "out",
+        "amountRial": 25000000,
+        "balanceRial": 1566643023,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "۱۴۰۵.۰۵.۰۴",
+        "channel": "unknown",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
+    },
+    {
+      "id": "blu-transfer-typo",
+      "sender": "0999 998 7641",
+      "at": 3,
+      "body": [
+        "بلو",
+        "انتقال پل",
+        " سیدسهیل عزیز، 500,000,000 ریال از حساب شما پرید.",
+        " موجودی: 1,007,033,963 ریال",
+        "۱۰:۰۴",
+        "۱۴۰۵.۰۵.۰۵"
+      ],
+      "why": "The message says «انتقال پل» — a typo for پول, and not «انتقال وجه» either. The direction has to come from «از حساب شما پرید» instead. The single leading space on the two middle lines is real and is kept.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "out",
+        "amountRial": 500000000,
+        "balanceRial": 1007033963,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "۱۴۰۵.۰۵.۰۵",
+        "channel": "transfer",
+        "unitPrinted": "rial"
+      }
+    }
+  ]
+}

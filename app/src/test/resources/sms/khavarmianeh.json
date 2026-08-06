@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "khavarmianeh-atm-bare-minus",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "برداشت وجه از خودپرداز",
+        "-5,025,000",
+        "020/000016703",
+        "مانده 338,185,038",
+        "05/03",
+        "15:39"
+      ],
+      "why": "Real message. No مبلغ label, the amount is a bare -5,025,000 on its own line, and a reference number sits between it and the مانده. Reading the minus sign as an identifier dash skipped the amount and took «020» out of the reference instead — harmless here because the مانده wins, and a silent nonsense in any message without one.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "out",
+        "amountRial": 5025000,
+        "balanceRial": 338185038,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "020/000016703",
+        "printedAt": "05/03",
+        "channel": "atm",
+        "unitPrinted": "none",
+        "inferred": false
+      }
+    },
+    {
+      "id": "khavarmianeh-shortcode-she-confirmed",
+      "sender": "20004001",
+      "at": 1,
+      "extra": {
+        "KHAVARMIANEH": [
+          "2000 4001"
+        ]
+      },
+      "body": [
+        "بانک خاورمیانه برداشت وجه از خودپرداز",
+        "-5,025,000",
+        "مانده 338,185,038"
+      ],
+      "why": "A number she confirmed herself must read exactly like a built-in one. A shortcode is exactly itself: no country code bolted on, nothing trimmed off.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "amountRial": 5025000,
+        "balanceRial": 338185038,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "atm",
+        "unitPrinted": "none"
+      }
+    }
+  ]
+}
