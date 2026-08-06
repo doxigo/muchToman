@@ -137,6 +137,56 @@ class RatesFallbackTest {
     }
 
     @Test
+    fun `release notes are trimmed of anything that would misdraw the update sheet`() {
+        val now = 1_000_000L
+        val page = "https://github.com/doxigo/muchToman/releases/tag/v2.0"
+        val ours = "https://rates.muchtoman.com/rates"
+
+        val clean = sanitizeRates(
+            Rates(
+                now,
+                mapOf("usd" to 1.0),
+                latest = Release(
+                    "2.0",
+                    page,
+                    notes = listOf(
+                        "  سود بانکی رو دیگه درست می‌خونه  ",
+                        // A control character in a bullet is either a mistake upstream or an
+                        // attempt to draw something the sheet's own layout did not put there.
+                        "دو تا بانک\u0000 جدید",
+                        "",
+                        "   ",
+                        "ط".repeat(200),
+                        "پنجم",
+                        "ششم",
+                        "هفتم",
+                        "هشتم که دیگه جا نمی‌شه",
+                    ),
+                ),
+            ),
+            ours,
+            now,
+        )
+
+        val notes = clean.latest!!.notes
+        // The blanks are gone rather than kept as empty bullets, so the six that survive are
+        // six real lines, and it is the eighth that falls off the end.
+        assertEquals(6, notes.size)
+        assertEquals("سود بانکی رو دیگه درست می‌خونه", notes.first())
+        assertEquals("دو تا بانک جدید", notes[1])
+        assertEquals(120, notes[2].length)
+        assertEquals(listOf("پنجم", "ششم", "هفتم"), notes.drop(3))
+
+        // A release with nothing to say still announces itself.
+        val bare = sanitizeRates(
+            Rates(now, mapOf("usd" to 1.0), latest = Release("2.0", page)),
+            ours,
+            now,
+        )
+        assertEquals(emptyList<String>(), bare.latest?.notes)
+    }
+
+    @Test
     fun `a future rates timestamp cannot suppress refresh indefinitely`() {
         val now = 1_000_000L
         val raw = Rates(now + 5 * 60_000L + 1, mapOf("usd" to 1.0))

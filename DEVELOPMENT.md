@@ -177,8 +177,16 @@ A signed APK is built and attached to a GitHub Release whenever a tag is pushed,
 [release.yml](.github/workflows/release.yml):
 
 ```bash
-git tag v1.0.1 && git push origin v1.0.1
+git tag -a v1.0.1 -m 'سود بانکی رو دیگه اشتباه نمی‌خونه' && git push origin v1.0.1
 ```
+
+**Annotate the tag, and write its message in Persian.** That message is what the app shows on
+the update sheet to someone still running the old build — casual, one short line per change, no
+commit subjects. The workflow copies it into the release body between `<!--fa-->` markers, the
+Worker reads it back out of the GitHub API, and the phone caps it at six lines of 120
+characters. A lightweight tag (`git tag v1.0.1`) has no message: the update card still appears
+and the sheet simply lists nothing. The English `## Changes` list under it is the commit
+subjects, for whoever is reading the diff rather than using the app.
 
 `versionName` comes from the tag, `versionCode` from the CI run number, so each release
 installs over the last. `mapping.txt` is attached beside the APK: R8 renames everything, so a

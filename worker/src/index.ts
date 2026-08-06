@@ -884,7 +884,9 @@ async function fetchCoinIcon(url: URL): Promise<Response> {
  * hand GitHub a list of user IPs besides. The subrequest is cached at the edge for an hour on
  * top of the /rates cache, which is the longest a new release can take to start showing up.
  */
-async function fetchLatestRelease(): Promise<{ name: string; url: string; asset: string | null }> {
+async function fetchLatestRelease(): Promise<
+  { name: string; url: string; asset: string | null; notes: string[] }
+> {
   const res = await fetchWithTimeout(`https://api.github.com/repos/${REPO}/releases/latest`, {
     headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
     cf: { cacheTtl: 3600, cacheEverything: true },
@@ -918,7 +920,35 @@ async function fetchLatestRelease(): Promise<{ name: string; url: string; asset:
       ? body.html_url
       : `https://github.com/${REPO}/releases/latest`,
     asset: asset == null ? null : asset.browser_download_url as string,
+    notes: releaseNotesFa(body.body),
   };
+}
+
+/**
+ * The Persian half of a release body: what the phone actually shows someone running an old
+ * build. The rest of the body is the commit subjects, which are English and written for whoever
+ * is reading the diff, not for her.
+ *
+ * Markers rather than a heading, because a heading is prose and prose gets edited. Everything
+ * between them is taken a line at a time, with any leading bullet stripped — release.yml writes
+ * the annotated tag's own message in there, and a tag message is written however it is written.
+ *
+ * The app caps this again on arrival. Doing it here as well is not belt and braces for its own
+ * sake: it keeps a release body with a novel in it from being cached at the edge for an hour and
+ * served to every phone that asks.
+ */
+const NOTES_FA = /<!--fa-->([\s\S]*?)<!--\/fa-->/;
+
+function releaseNotesFa(body: unknown): string[] {
+  if (typeof body !== 'string') return [];
+  const block = NOTES_FA.exec(body);
+  if (block == null) return [];
+  return block[1]
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*•]\s*/, '').trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 6)
+    .map((line) => line.slice(0, 120));
 }
 
 /**
@@ -1101,6 +1131,7 @@ async function buildRates(): Promise<Response> {
         name: release.value.name,
         url: release.value.url,
         apk: release.value.asset == null ? '' : `${PUBLIC_ORIGIN}${APK_PATH}`,
+        notes: release.value.notes,
       }
       : null,
   };

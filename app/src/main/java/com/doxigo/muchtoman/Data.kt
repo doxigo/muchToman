@@ -83,7 +83,17 @@ data class Coin(
  * GitHub is routinely unreachable from Iran, so the page is the worse of the two links.
  */
 @Serializable
-data class Release(val name: String = "", val url: String = "", val apk: String = "") {
+data class Release(
+    val name: String = "",
+    val url: String = "",
+    val apk: String = "",
+    /**
+     * What changed, in her own language, one short line at a time — written on the tag itself
+     * and carried here by the Worker. Empty is an ordinary case, not a failure: a release cut
+     * without a note still announces itself, and the sheet simply has nothing to list.
+     */
+    val notes: List<String> = emptyList(),
+) {
     /** Whichever of the two she has the better chance of actually opening. */
     val downloadUrl: String get() = apk.ifBlank { url }
 }
@@ -248,6 +258,8 @@ private const val MAX_ASSET_ID_LENGTH = 64
 private const val MAX_COIN_NAME_LENGTH = 100
 private const val MAX_NETWORK_NAME_LENGTH = 40
 private const val MAX_CONTRACT_LENGTH = 128
+private const val MAX_RELEASE_NOTES = 6
+private const val MAX_RELEASE_NOTE_LENGTH = 120
 private const val MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60_000L
 private const val OFFICIAL_RATES_ORIGIN = "https://rates.muchtoman.com"
 
@@ -320,6 +332,10 @@ private fun trustedCoinIcon(value: String, ratesUrl: String): String {
  * it are checked against a fixed origin: GitHub for the release page, and the Worker she is
  * already talking to for the proxied APK. An [apk] that fails is dropped on its own rather than
  * taking the whole note with it — [Release.downloadUrl] then falls back to the page.
+ *
+ * [Release.notes] is free text that ends up on screen, so it is capped in both directions here
+ * rather than trusted to be short: six lines of 120 characters is a changelog, and anything
+ * longer is either a mistake upstream or someone using the update card as a billboard.
  */
 private fun trustedRelease(value: Release?, ratesUrl: String): Release? {
     value ?: return null
@@ -331,6 +347,11 @@ private fun trustedRelease(value: Release?, ratesUrl: String): Release? {
         name = name,
         url = url.toExternalForm(),
         apk = trustedApk(value.apk, ratesUrl),
+        notes = value.notes.asSequence()
+            .map { safeText(it, MAX_RELEASE_NOTE_LENGTH, "") }
+            .filter { it.isNotEmpty() }
+            .take(MAX_RELEASE_NOTES)
+            .toList(),
     ).takeIf {
         url.protocol.equals("https", ignoreCase = true) &&
             url.host.equals("github.com", ignoreCase = true) &&

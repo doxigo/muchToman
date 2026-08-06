@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,32 +66,113 @@ fun MonthFlow(story: HomeStory, modifier: Modifier = Modifier) {
         }
         if (month.incomeRial > 0 || month.spentRial > 0) {
             Spacer(Modifier.height(Space.l))
-            Row(
-                Modifier.fillMaxWidth().height(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                // A gap and two pills, not one split bar: joined, the two shares read as a
-                // single quantity filling up rather than as two amounts being weighed.
-                if (month.incomeRial > 0) {
-                    Box(
-                        Modifier
-                            .weight(month.incomeRial.toFloat())
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(Radius.pill))
-                            .background(gain),
-                    )
-                }
-                if (month.spentRial > 0) {
-                    Box(
-                        Modifier
-                            .weight(month.spentRial.toFloat())
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(Radius.pill))
-                            .background(spend),
-                    )
-                }
-            }
+            FlowBar(month.incomeRial, month.spentRial, gain, spend)
         }
+    }
+}
+
+/**
+ * The comparison itself: two lengths off one baseline, in whichever two colours the surface
+ * under them calls for.
+ *
+ * **The shares are floored, and that is the point of the function.** Weighted by the raw
+ * figures, ۲٫۵ میلیون beside ۱۰۰ میلیون is two per cent of the row — which at 8dp tall draws as
+ * a dot, and a dot reads as *nothing here* rather than as *a little*. Both exact figures are
+ * stated in full directly above, so the floor costs no honesty and buys back the one thing the
+ * bar exists for: seeing which is the larger before reading either.
+ */
+@Composable
+private fun FlowBar(incomeRial: Long, spentRial: Long, income: Color, spend: Color) {
+    if (incomeRial <= 0 && spentRial <= 0) return
+    // A gap and two pills, not one split bar: joined, the two shares read as a single quantity
+    // filling up rather than as two amounts being weighed.
+    Row(
+        Modifier.fillMaxWidth().height(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        val share = when {
+            incomeRial <= 0 -> 0f
+            spentRial <= 0 -> 1f
+            else -> (incomeRial.toFloat() / (incomeRial + spentRial))
+                .coerceIn(FLOW_FLOOR, 1f - FLOW_FLOOR)
+        }
+        if (incomeRial > 0) {
+            Box(
+                Modifier
+                    .weight(share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(income),
+            )
+        }
+        if (spentRial > 0) {
+            Box(
+                Modifier
+                    .weight(1f - share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(spend),
+            )
+        }
+    }
+}
+
+/** The shortest a segment may be drawn while still reading as a bar rather than a dot. */
+private const val FLOW_FLOOR = 0.06f
+
+/**
+ * The same month, on the hero field, where it is now the second half of the first screen.
+ *
+ * Not [MonthFlow] with a different parent: its greens are surface greens, and one of them —
+ * `0xFF2E9E5B` — is a green sitting on a green up here. [InsightCard] refused that same swap for
+ * the same reason. Income speaks in `Hero.mint`, which is what every bank app in the country
+ * uses for it and what the field already uses on the change pill; spend speaks in the field's
+ * plain foreground. So the pair reads as one amount weighed against another rather than as good
+ * against bad, and the bar underneath does the comparing, exactly as it does on the card.
+ *
+ * One accessibility node, not five. Read out separately these are four loose numbers and two
+ * labels; read out together they are the sentence the sighted eye gets in one glance.
+ */
+@Composable
+fun HeroMonth(story: HomeStory, modifier: Modifier = Modifier) {
+    val month = story.month
+    val income = tomanOf(month.incomeRial)
+    val spent = tomanOf(month.spentRial)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription =
+                    "درآمد این ماه ${faCompact(income)} تومان، خرج این ماه ${faCompact(spent)} تومان"
+            },
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            HeroFlowHalf("درآمد این ماه", income, Hero.mint, Modifier.weight(1f))
+            Spacer(Modifier.width(Space.m))
+            HeroFlowHalf("خرج این ماه", spent, Hero.strong, Modifier.weight(1f))
+        }
+        if (month.incomeRial > 0 || month.spentRial > 0) {
+            Spacer(Modifier.height(Space.l))
+            // Not `Hero.muted` for the spend leg: against mint at this height it has to hold
+            // its own, and muted is the colour of things that recede.
+            FlowBar(month.incomeRial, month.spentRial, Hero.mint, Hero.strong.copy(alpha = 0.55f))
+        }
+    }
+}
+
+@Composable
+private fun HeroFlowHalf(label: String, toman: Double, tone: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, fontSize = 12.sp, color = Hero.muted)
+        Spacer(Modifier.height(Space.xs))
+        // The same ceiling and floor as the card's, so the two halves step down together and a
+        // milliard beside a thousand does not knock the pair out of alignment.
+        BasicText(
+            text = bidi(faCompact(toman)),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 26.sp),
+            style = figureStyle(tone, FontWeight.ExtraBold),
+        )
     }
 }
 
@@ -202,49 +285,6 @@ fun WhyNote(insight: Insight, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
             )
         }
-    }
-}
-
-/**
- * The way to the holdings, which are no longer the first thing on the screen.
- *
- * It used to end in the portfolio's total, which is `state.totals.toman` — the same number the
- * hero states at the top of this very screen, in gold, at four times the size. A row that
- * repeats the headline is not telling her anything; a row that goes somewhere should say so, so
- * the figure is gone and the chevron is the point.
- */
-@Composable
-fun PortfolioEntry(
-    count: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "دارایی‌ها",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                "${faNumber(count.toDouble())} مورد",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

@@ -66,6 +66,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
@@ -497,10 +498,8 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
                     onRefresh = vm::refreshAll,
                     onReport = { report = true },
                     onSettings = { settings = true },
-                    onAdd = {
-                        if (portfolio) { adding = true; vm.refreshStocksForPicker() }
-                        else tab = Tab.ASSETS
-                    },
+                    onAdd = { adding = true; vm.refreshStocksForPicker() },
+                    portfolio = portfolio,
                 )
             }
 
@@ -509,7 +508,7 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
             state.update?.let { release ->
                 item(key = "update") {
                     Box(Modifier.padding(edge).padding(top = Space.l)) {
-                        UpdateNote(release, onDismiss = { vm.dismissUpdate(release.name) })
+                        UpdateNote(release, onLater = { vm.dismissUpdate(release.name) })
                     }
                 }
             }
@@ -520,12 +519,13 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 // row at the bottom, because what she opened the app for is how things are
                 // going, not a list of what she owns.
                 val story = state.story
-                item(key = "flow") {
-                    Box(Modifier.padding(edge).padding(top = Space.l)) {
-                        if (story.month.transactions == 0) {
+                // The month itself is on the field now. What is left down here is the one case
+                // the field cannot carry: nothing recorded yet, which is not a status but a
+                // thing to do — switch the messages on — and a task does not belong on the hero.
+                if (story.month.transactions == 0) {
+                    item(key = "flow") {
+                        Box(Modifier.padding(edge).padding(top = Space.l)) {
                             QuietStart(state.smsEnabled)
-                        } else {
-                            MonthFlow(story)
                         }
                     }
                 }
@@ -564,14 +564,6 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
                                 action = "دفتر رو باز کن",
                             )
                         }
-                    }
-                }
-                item(key = "portfolio_entry") {
-                    Box(Modifier.padding(edge).padding(top = Space.m)) {
-                        PortfolioEntry(
-                            count = state.listHoldings.count { !it.excluded },
-                            onClick = { tab = Tab.ASSETS },
-                        )
                     }
                 }
                 if (state.totals.missing.isNotEmpty()) {
@@ -756,6 +748,8 @@ internal fun HeroField(
     onReport: () -> Unit,
     onSettings: () -> Unit,
     onAdd: () -> Unit,
+    /** Which screen this field is heading — the one thing that changes below the total. */
+    portfolio: Boolean,
 ) {
     val total = state.totals.toman
 
@@ -894,39 +888,65 @@ internal fun HeroField(
                 modifier = Modifier.padding(top = Space.xs),
             )
 
-            change?.let {
-                Spacer(Modifier.height(Space.m))
-                ChangePill(it, onClick = onReport)
+            when {
+                change != null -> {
+                    Spacer(Modifier.height(Space.m))
+                    ChangePill(change, onClick = onReport)
+                }
+                // Before there are thirty days to compare against, the pill has nothing it can
+                // honestly state — and on خانه it is the only door to the report. A door that
+                // only appears in the second month is a door nobody finds, so the slot keeps
+                // its target and drops the figure.
+                // No spacer: the link's own 48dp target already carries more air than the pill
+                // needs, and stacked they left a hole under the total.
+                !portfolio -> ReportLink(onClick = onReport)
             }
 
-            Spacer(Modifier.height(Space.xl))
-            Row(Modifier.fillMaxWidth()) {
-                HeroAction(
-                    label = "اضافه کردن",
-                    icon = Icons.Rounded.Add,
-                    onClick = onAdd,
-                    modifier = Modifier.weight(1f),
-                )
-                HeroAction(
-                    label = "گزارش",
-                    onClick = onReport,
-                    modifier = Modifier.weight(1f),
-                ) { BarsIcon(Hero.strong) }
-                HeroAction(
-                    label = "تازه کردن",
-                    icon = Icons.Rounded.Refresh,
-                    spinning = state.refreshing,
-                    enabled = !state.refreshing,
-                    onClick = onRefresh,
-                    modifier = Modifier.weight(1f),
-                )
+            if (portfolio) {
+                // Kept whole on دارایی, where all three verbs are real: اضافه کردن adds,
+                // گزارش is this screen's only way into the report, and تازه کردن is the
+                // labelled refresh. On خانه every one of them was navigation wearing a verb's
+                // icon — «اضافه کردن» went to this very screen, and the tab bar was already
+                // going there — so there the band carries the month instead.
+                Spacer(Modifier.height(Space.xl))
+                Row(Modifier.fillMaxWidth()) {
+                    HeroAction(
+                        label = "اضافه کردن",
+                        icon = Icons.Rounded.Add,
+                        onClick = onAdd,
+                        modifier = Modifier.weight(1f),
+                    )
+                    HeroAction(
+                        label = "گزارش",
+                        onClick = onReport,
+                        modifier = Modifier.weight(1f),
+                    ) { BarsIcon(Hero.strong) }
+                    HeroAction(
+                        label = "تازه کردن",
+                        icon = Icons.Rounded.Refresh,
+                        spinning = state.refreshing,
+                        enabled = !state.refreshing,
+                        onClick = onRefresh,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else if (state.story.month.transactions > 0) {
+                // What she has, and how the month is going, in one screen without scrolling.
+                // This used to sit in a card below the fold, which meant the answer the home
+                // screen exists to give arrived only if she thought to scroll for it.
+                Spacer(Modifier.height(Space.l))
+                HorizontalDivider(color = Hero.hairline)
+                Spacer(Modifier.height(Space.l))
+                HeroMonth(state.story)
             }
 
-            Spacer(Modifier.height(Space.xl))
+            Spacer(Modifier.height(if (portfolio) Space.xl else Space.l))
             HorizontalDivider(color = Hero.hairline)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = Space.m),
+                // The control carries its own optical space, so the strip does not need the
+                // full step above it when one is there.
+                modifier = Modifier.padding(top = if (portfolio) Space.m else Space.xs),
             ) {
                 val failed = state.error != null && state.rates.updatedAt == 0L
                 // Colour confirms; the words carry it. A dot on its own would be the one
@@ -956,6 +976,17 @@ internal fun HeroField(
                     color = if (stale || failed) Hero.warn else Hero.muted,
                     modifier = Modifier.weight(1f),
                 )
+                // The circle that used to carry this is gone from خانه, and the strip is where
+                // it belonged all along: this line is about how fresh the numbers are, and the
+                // control that changes that answer now sits at the end of the sentence stating
+                // it. Labelled, not a bare glyph — a control you can be told about over the
+                // phone has to have a name.
+                if (!portfolio) {
+                    HeroRefresh(
+                        spinning = state.refreshing,
+                        onClick = onRefresh,
+                    )
+                }
             }
             if (state.error != null && state.rates.updatedAt > 0L) {
                 Text(
@@ -966,6 +997,97 @@ internal fun HeroField(
                     modifier = Modifier.padding(top = Space.xs),
                 )
             }
+    }
+}
+
+/**
+ * Refresh, at the end of the line that says how old the numbers are.
+ *
+ * Pull-to-refresh does the same thing and is the gesture most people will use. This is the one
+ * that can be named down a telephone, which is why it survives the circle it used to live in.
+ */
+@Composable
+private fun HeroRefresh(spinning: Boolean, onClick: () -> Unit) {
+    val angle = if (spinning) {
+        val spin = rememberInfiniteTransition(label = "strip-spin")
+        spin.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                tween(900, easing = LinearEasing), RepeatMode.Restart,
+            ),
+            label = "strip-angle",
+        ).value
+    } else {
+        0f
+    }
+
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(role = Role.Button, enabled = !spinning, onClick = onClick)
+            // The visible pill is 32dp; the row around it takes the press, so the target
+            // clears the floor without a control that looks like it wants the whole line.
+            .heightIn(min = 48.dp)
+            .padding(start = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(Hero.well)
+                .padding(horizontal = Space.m, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Muted, not `strong`: this annotates the sentence beside it, and at full contrast
+            // it became the brightest thing in the band — a second call to act, sitting
+            // directly above the tab bar's gold one.
+            Icon(
+                Icons.Rounded.Refresh,
+                contentDescription = null,
+                tint = Hero.muted,
+                modifier = Modifier
+                    .size(15.dp)
+                    // Counter-clockwise, like every other spinner in this app: the icon is
+                    // drawn with its arrowhead leading anticlockwise.
+                    .graphicsLayer { rotationZ = -angle },
+            )
+            Spacer(Modifier.width(Space.xs))
+            Text(
+                "تازه کردن",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Hero.muted,
+            )
+        }
+    }
+}
+
+/**
+ * The way into the report when the change pill has nothing to say yet.
+ *
+ * Same slot, same target, no figure — because inventing one before there are thirty days to
+ * compare against is exactly the kind of confident wrong number this app exists to not show.
+ */
+@Composable
+private fun ReportLink(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(end = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Weighted like the pill's own tail, which is what it stands in for. At `strong` and
+        // SemiBold it read as a heading — the loudest line under a total it is subordinate to.
+        Text("گزارش دارایی", fontSize = 13.sp, color = Hero.muted)
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Hero.muted,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -1138,6 +1260,15 @@ private fun ChangePill(change: Change, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(Space.s))
         Text(tail, fontSize = 13.sp, color = Hero.muted, maxLines = 1)
+        // On خانه this is the only way into the report, so it has to look like a way in. A
+        // percentage sitting on a green field reads as a statistic; the chevron is what makes
+        // it a door.
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Hero.muted,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -1167,20 +1298,19 @@ private fun openUrl(context: Context, url: String): Boolean =
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 
 /**
- * Nothing updates a sideloaded app on its own, so this line is the entire update path: it hands
- * the file to whatever she downloads with and she installs it herself. Tapping is the only thing
- * it does — the app never fetches the APK, never asks for the installer permission, and nothing
- * touches the phone without her.
- *
- * The link is the Worker's proxied copy, which answers with a Content-Disposition attachment, so
- * the download starts on the tap instead of landing her on a github.com page that, from Iran,
- * most often does not load at all.
+ * That there is a newer build, and nothing else. The card is one tap target: what changed and
+ * both of the decisions live in the sheet behind it, because a line of card is no place to read
+ * a changelog and a dismiss button sitting beside the thing it dismisses gets pressed by
+ * accident.
  */
 @Composable
-private fun UpdateNote(release: Release, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+private fun UpdateNote(release: Release, onLater: () -> Unit) {
+    // Keyed on the version: a newer release arriving while she has the card open must not
+    // inherit the sheet state of the one it replaced.
+    var open by remember(release.name) { mutableStateOf(false) }
+
     Card(
-        onClick = { openUrl(context, release.downloadUrl) },
+        onClick = { open = true },
         shape = RoundedCornerShape(Radius.card),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -1188,31 +1318,122 @@ private fun UpdateNote(release: Release, onDismiss: () -> Unit) {
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = Space.l, top = Space.m, bottom = Space.m),
+        Column(Modifier.padding(horizontal = Space.l, vertical = Space.m)) {
+            Text(
+                // Latin digits, and bidi() so the runs do not reorder inside the sentence:
+                // this is the tag she will see on the page the card opens, not a quantity.
+                "نسخه ${bidi(release.name)} اومد",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text(
+                "بزن ببین چی عوض شده.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = Space.xs),
+            )
+        }
+    }
+
+    if (open) {
+        UpdateSheet(
+            release = release,
+            onClose = { open = false },
+            onLater = { open = false; onLater() },
+        )
+    }
+}
+
+/**
+ * What the new build changes, and the two things she can do about it.
+ *
+ * Nothing updates a sideloaded app on its own, so the button is the entire update path: it hands
+ * the file to whatever she downloads with and she installs it herself. The app never fetches the
+ * APK, never asks for the installer permission, and nothing touches the phone without her. The
+ * link is the Worker's proxied copy, which answers with a Content-Disposition attachment, so the
+ * download starts on the tap instead of landing her on a github.com page that, from Iran, most
+ * often does not load at all.
+ *
+ * The two ways out are deliberately not the same. «بعداً» is an answer — the card goes away and
+ * this version is not mentioned again. Swiping the sheet down or tapping the scrim is not an
+ * answer, so the card is still there afterwards; nobody should lose the update by brushing it
+ * away before reading it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Unit) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    // Play the sheet out before removing it from composition, or the choice just blinks.
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    // Latin digits, and bidi() so the runs do not reorder inside the sentence:
-                    // this is the tag she will see on the page the card opens, not a quantity.
-                    "نسخه ${bidi(release.name)} اومد",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                "برای گرفتن فایل نصب، اینجا بزن.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(top = Space.xs),
-                )
+            Text(
+                "نسخه ${bidi(release.name)} اومد",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                // A release cut without a note is not an error worth showing her as one.
+                if (release.notes.isEmpty()) "توضیحی همراهش نیومده، ولی از این که داری تازه‌تره."
+                else "این چیزهاییه که عوض شده:",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+
+            // weight(fill = false) rather than a fixed max height: the list takes what is left
+            // above the buttons and no more, so a short changelog sizes the sheet to itself and
+            // a long one scrolls instead of pushing the button that acts on it off the bottom.
+            // A dp cap does neither — it clips four ordinary lines mid-sentence on a tall screen
+            // and still overflows a short one.
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .nestedScroll(SheetFlingGuard)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                release.notes.forEach { line ->
+                    Row(Modifier.padding(top = Space.m)) {
+                        Text("•", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(Space.s))
+                        Text(line, fontSize = 15.sp, lineHeight = 26.sp)
+                    }
+                }
             }
+
+            Spacer(Modifier.height(Space.xl))
+            Button(
+                onClick = { close { onClose(); openUrl(context, release.downloadUrl) } },
+                shape = RoundedCornerShape(Radius.pill),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 60.dp),
+            ) { Text("گرفتن فایل نصب", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+
             TextButton(
-                onClick = onDismiss,
+                onClick = { close(onLater) },
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
-            ) { Text("بعداً") }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
+            ) { Text("بعداً", fontSize = 15.sp) }
         }
     }
 }
@@ -1389,7 +1610,9 @@ private fun bankNote(state: UiState): String {
 // the jump every list gives at the end of its scroll. Upward leftovers have nowhere to go
 // here (onPreFling already pulls a half-dragged sheet back up), so swallow them; downward
 // ones still fling the sheet closed.
-// ponytail: attach to each sheet's scrolling content — worth a shared wrapper at sheet four.
+// ponytail: attach to each sheet's scrolling content. Four sheets in, still no wrapper: three
+// of them bound a LazyColumn to 0.88 of the screen and the fourth wraps its content, so the
+// shared part is this one line. Extract when two sheets want the same body, not the same guard.
 internal val SheetFlingGuard = object : NestedScrollConnection {
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
         if (available.y < 0f) available else Velocity.Zero

@@ -154,10 +154,23 @@ jobs:
       # The changelog is the commit subjects since the previous tag. GitHub's own
       # --generate-notes lists merged pull requests, and this repo commits straight to main,
       # so it would publish an empty release every time.
+      #
+      # Above it, between markers, goes the annotated tag's own message. That is the Persian
+      # note the app shows on the update sheet to someone still running the old build, and it
+      # lives on the tag rather than in a file in the repo for one reason: a file gets forgotten
+      # and then describes the release before this one, which is worse than describing none. A
+      # lightweight tag has no message, and the sheet then simply lists nothing.
+      #
+      #   git tag -a v1.0.5 -m 'سود بانکی رو دیگه اشتباه نمی‌خونه' && git push origin v1.0.5
       - name: Prepare release artifacts
         run: |
           prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          echo "## Changes" > notes.md
+          : > notes.md
+          fa=$(git tag -l --format='%(contents:subject)%0a%(contents:body)' "${GITHUB_REF_NAME}")
+          if [ -n "$(printf '%s' "$fa" | tr -d '[:space:]')" ]; then
+            { echo '<!--fa-->'; printf '%s\n' "$fa"; echo '<!--/fa-->'; echo; } >> notes.md
+          fi
+          echo "## Changes" >> notes.md
           git log --no-merges --reverse --pretty='- %s' "${prev:+$prev..}${GITHUB_REF_NAME}" >> notes.md
           if [ -n "$prev" ]; then
             echo >> notes.md
