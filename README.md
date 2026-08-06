@@ -29,8 +29,11 @@ Sample data, live rates.
 - **One total, three ways.** Scannable ("۱۰٫۸ میلیون تومان"), spelled out in Persian words,
   and exact digits. Displayed figures truncate rather than round, so the number shown is never
   larger than the real one.
-- **Bank balances from SMS.** Read locally from the phone's inbox, no login and no bank API.
-  Nothing leaves the device.
+- **Bank balances from SMS.** Read and parsed locally from the phone's inbox, with no bank API.
+  SMS sharing is off by default.
+- **Optional family ledger.** Two or more people can join by one-time QR code. Each person chooses
+  whether their parsed SMS transactions are shared. Every shared item names its owner, and any
+  family member can categorize it.
 - **Public-wallet tracking, or manual entry.** Save a public address and the app refreshes BTC,
   ETH/ERC-20, SOL, TRX/TRC-20, and supported EVM-token balances on BSC, Arbitrum, Polygon,
   Optimism, and Avalanche. Anything else can be entered by hand.
@@ -75,8 +78,22 @@ is what adds it, on that phone only.
 
 ## Install
 
-Grab the APK from [Releases](https://github.com/doxigo/muchToman/releases). One APK covers
-every device, Android 7.0 (API 24) and newer.
+Grab the APK from [Releases](https://github.com/doxigo/muchToman/releases). Each covers every
+device, Android 7.0 (API 24) and newer.
+
+Two of them are published side by side:
+
+| File | What it is |
+| --- | --- |
+| `muchtoman-vX.Y.Z.apk` | everything below — the household ledger, goals, the companion phone |
+| `muchtoman-lite-vX.Y.Z.apk` | دارایی only: what you own and what it is worth today |
+
+Take the lite one if you want a portfolio and not a budget. It installs under its own name, so
+you can have both on one phone and try the full app without giving up the simple one. Both read
+the same bank پیامک and get the same detection fixes — they are one codebase, built twice.
+
+If you are already running an earlier version, the plain `muchtoman-` file is your update: it
+keeps its package, so the balances you typed in and every category you confirmed carry over.
 
 New releases show up as a line under your total the next time you open the app. To be notified
 without opening it, add `https://github.com/doxigo/muchToman` to
@@ -89,13 +106,20 @@ Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian ex
 
 ## Privacy
 
-No account, no login, no analytics. Holdings and saved wallet links live in the app's own
-storage on the phone, are excluded from Android backup and device transfer, and bank SMS is
-parsed on-device. Wallet tracking is opt-in: when it is enabled, the public address is sent
-through the configured Worker to a public blockchain RPC or indexer. The app never asks for a
-recovery phrase or private key. Rates and coin logos come through the configured Worker. The
-only direct price-source request is TSETMC, and only when the stock picker is opened or a stock
-is already held.
+No account, no login, no analytics. Holdings, saved wallet links, and raw bank SMS live in the
+app's own storage on the phone and are excluded from Android backup and device transfer.
+
+Family sync is optional and end-to-end encrypted. SMS sharing starts off. When a person enables
+it, their phone shares only the parsed amount, direction, time, bank, merchant, and category. It
+never uploads the raw SMS text. Manual family-ledger items are shared. The sync service can see
+opaque household/member ids, record types, timestamps, and ciphertext, but not the transaction
+contents or member names. Turning SMS sharing off sends deletion markers for that person's
+previously shared SMS items. It cannot erase anything another member already saw or copied.
+
+Wallet tracking is opt-in: when enabled, the public address is sent through the configured
+Worker to a public blockchain RPC or indexer. The app never asks for a recovery phrase or private
+key. Rates and coin logos come through the configured Worker. The only direct price-source
+request is TSETMC, and only when the stock picker is opened or a stock is already held.
 
 ## Building it yourself
 

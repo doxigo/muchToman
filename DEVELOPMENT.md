@@ -3,6 +3,8 @@
 ```
 app/      Android app (Kotlin + Compose)
 worker/   Cloudflare Worker that serves prices and public-wallet balances
+sync/     Cloudflare Worker + Durable Object for encrypted family sync
+pwa/      browser companion served by sync/
 ```
 
 The Worker normalises fiat, metal, coin, and crypto prices so the app only ever multiplies
@@ -14,19 +16,36 @@ fetches it directly only while the stock picker is used or a stock is held.
 Needs Android Studio (for the SDK) or a standalone Android SDK + JDK 17.
 
 ```bash
-./gradlew installDev
+./gradlew installFullDev
 ```
 
 `dev` installs beside the released app with its own data. `debug` can replace the released app
 when a local release keystore is configured, so use it only when testing an in-place upgrade
 and pass a `muchtoman.versionCode` at least as high as the installed release.
 
+### Editions
+
+Two flavours, `full` and `lite`, so every task name carries one: `installFullDev`,
+`assembleLiteRelease`, and so on. `assembleRelease` builds both.
+
+`lite` is دارایی and nothing else — the app as it shipped through v1.0.4, for someone who wants
+to know what their gold is worth and has no household to run. It installs as
+`com.doxigo.muchtoman.lite` under the name `muchToman lite`, so both can sit on one phone. `full`
+keeps the released `com.doxigo.muchtoman`, which is why a v1.0.4 install upgrades into it in place
+with its balances and categories intact.
+
+The difference is one boolean, read in one place — `tabs` in `TabBar.kt`. Nothing else in the app
+branches on the edition, and nothing else should: a bank detection fix has to land in both APKs
+without anyone remembering to do it twice, which is the entire reason this is a flavour and not a
+second repository. The cost is that the lite APK carries the ledger code it never shows, so it is
+fewer screens rather than a smaller download.
+
 Both builds talk to the deployed Worker, so a debug install behaves like the shipped app —
 same prices, same wallet lookups. Point it somewhere else with `-Pmuchtoman.ratesUrl`:
 
 ```bash
 cd worker && npx wrangler dev --port 8787
-./gradlew installDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates
+./gradlew installFullDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates
 ```
 
 `10.0.2.2` is how the **emulator** reaches this machine; a physical device cannot route it at
@@ -40,6 +59,18 @@ Tests are plain JVM, no device needed:
 
 ```bash
 ./gradlew test
+```
+
+Use `-Pmuchtoman.syncUrl` to point family sync at a local Worker. The emulator reaches a local
+port through `10.0.2.2`; a physical phone needs `adb reverse`, as with the rates Worker.
+
+Family records are encrypted on the client. The sync Worker stores routing metadata and
+ciphertext only. A member's SMS sharing starts off, raw SMS bodies are never synchronized, and
+disabling sharing publishes tombstones for that member's previously shared SMS transactions.
+
+```bash
+cd pwa && npm ci && npm run check
+cd sync && npm ci && npm run check
 ```
 
 ## The Worker
@@ -214,12 +245,27 @@ default to Regular at normal width, keeping both axis ranges:
 python3 tools/make-font.py "/path/to/Modam Pro/04 - Modam Variable/ModamVF.ttf"
 ```
 
+The companion PWA is set in the same face, from the same file, in the container browsers want.
+It is generated out of the app's copy rather than from the foundry's, so the two can never drift
+apart:
+
+```bash
+python3 -c "from fontTools.ttLib import TTFont; f=TTFont('app/src/main/res/font/modam.ttf'); f.flavor='woff2'; f.save('pwa/public/modam.woff2')"
+```
+
+Both axes survive the conversion, so `font-stretch: 90%` in `pwa/index.html` is exactly
+`ModamFigures` and `font-variant-numeric: tabular-nums` is exactly `tnum`. 106 KB, preloaded in
+the head, and in the service worker's cache from the first visit on.
+
 > **Licensing.** Modam is a commercial face from fontiran.com — its name table reads "To use
 > this font, it is necessary to obtain the license from www.fontiran.com". Embedding it in the
 > APK is one permission; committing the `.ttf` to a public repository redistributes the binary
-> and is another. Check your licence before pushing `app/src/main/res/font/`. If it does not
-> allow redistribution, gitignore that path and regenerate it with the script above — note that
-> the release workflow builds from a clean checkout and would need the font restored there too.
+> and is another; **serving `modam.woff2` from sync.muchtoman.com is a third**, because a webfont
+> is handed to every browser that asks for the page. Check your licence covers web use before
+> deploying the PWA. If it does not, gitignore both font paths and regenerate them with the
+> commands above — note that the release workflow builds from a clean checkout and would need
+> them restored there too, and that dropping the woff2 leaves the PWA on the system face while
+> the app keeps Modam.
 
 Modam has no `·` (U+00B7), `≈`, `…` or `▲`. Separators in the UI use `•` (U+2022), which the
 font does have; the trend caret is drawn. Anything else falls back to a system face, which for
@@ -246,3 +292,62 @@ punctuation is invisible in practice.
   inflates them in its own process and cannot load this APK's fonts, so every line is a
   bitmap set in the real Modam instance; and `fitCenter` scales those bitmaps *up* to fill
   the view, which is how a four-cell tile ended up showing less than a two-cell one.
+
+## The ledger
+
+```
+app/      Android app (Kotlin + Compose) — the household's sensor
+worker/   Cloudflare Worker: public prices and wallet balances
+sync/     Cloudflare Worker: the household ledger, as ciphertext it cannot read
+pwa/      the iPhone companion, served by sync/ as its static assets
+```
+
+Two databases on the phone, and the split between them is the whole design:
+
+| | `durable.db` | `derived.db` |
+|---|---|---|
+| holds | the messages themselves, and every decision she makes | everything a parser computed |
+| migrations | hand-written and tested; destructive fallback **forbidden** | version bump drops every table, on purpose |
+| rebuild cost | irreplaceable | ~40 ms |
+
+`sms_source` is durable rather than derived because the inbox stops being a trustworthy source
+of truth at a thirteen-month horizon — SMS apps prune, people clear bank threads, phone
+migrations lose messages. Once a message is here, re-deriving is offline, instant, needs no
+permission, and still works after `READ_SMS` is revoked.
+
+Money in the ledger is **`Long` Rial**, never Toman and never a `Double`. Rial is what the
+messages actually print; Toman is a display transform, and rounding one leg of a transfer down
+while the other rounds up is how exact-amount matching stops working silently.
+
+### Shipping a parser fix
+
+Bump `PARSER_VERSION` in `Derived.kt`. The next launch re-derives every transaction from the
+stored messages and replays her corrections onto them. It does not read the inbox, does not need
+the permission, and does not touch a single anchor.
+
+**Do not bump `SMS_SCHEMA`.** That block was deleted; `Store.init` removed `bankAccounts` before
+any migration could read it, which would have deleted every balance she typed in by hand — the
+one figure no rescan can rebuild.
+
+### Tests
+
+```bash
+./gradlew test                    # 197 JVM tests, no device
+cd sync && npm run check          # real Durable Objects under workerd
+cd pwa  && npm run check          # incl. the shared-corpus agreement check
+```
+
+The golden corpus is `app/src/test/resources/sms/*.json` — real bank messages kept verbatim,
+each with the reading it must produce and a `why` explaining which phone produced that shape.
+Both parsers read it, so the Kotlin and TypeScript sides cannot drift on the cases they share.
+An absent key is not asserted; an unknown key fails the run, so a typo cannot quietly weaken it.
+
+### Deploying
+
+```bash
+cd pwa  && npm run build          # sync/ serves this as its assets
+cd sync && npm run deploy
+```
+
+`sync.muchtoman.com`, custom domain only — `workers.dev` is DNS-sinkholed inside Iran, same as
+for the rates Worker.
