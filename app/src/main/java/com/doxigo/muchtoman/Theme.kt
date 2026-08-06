@@ -8,14 +8,19 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.withStyle
 
 /**
  * Modam, as one variable font file with two axes: wght 200–900 and wdth 70–100.
@@ -77,6 +82,21 @@ fun figureStyle(color: Color, weight: FontWeight = FontWeight.ExtraBold) = TextS
     fontFeatureSettings = TABULAR,
     color = color,
 )
+
+internal fun heroFigure(figure: String, tone: Color): AnnotatedString =
+    heroFigure(AnnotatedString(figure), tone)
+
+internal fun heroFigure(figure: AnnotatedString, tone: Color): AnnotatedString = buildAnnotatedString {
+    append(figure)
+    withStyle(SpanStyle(fontSize = 0.9.em)) { append(" ") }
+    withStyle(
+        SpanStyle(
+            fontSize = 0.42.em,
+            fontWeight = FontWeight.Bold,
+            color = tone.copy(alpha = 0.75f),
+        ),
+    ) { append("تومان") }
+}
 
 /**
  * The hero is the same object in both themes — deep green field, gold number. Fixing it here

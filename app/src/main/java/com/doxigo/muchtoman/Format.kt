@@ -9,10 +9,13 @@ import kotlin.math.roundToLong
 import kotlin.math.truncate
 
 private val FA: Locale = Locale.forLanguageTag("fa-IR")
+private val FA_INTEGER = object : ThreadLocal<NumberFormat>() {
+    override fun initialValue(): NumberFormat = NumberFormat.getIntegerInstance(FA)
+}
 
 /** Grouped Persian digits: 118500 -> "۱۱۸٬۵۰۰" */
 fun faNumber(value: Double): String =
-    NumberFormat.getIntegerInstance(FA).format(value.roundToLong())
+    FA_INTEGER.get()!!.format(value.roundToLong())
 
 /**
  * Persian digits with decimals kept: 0.0345 -> "۰٫۰۳۴۵". With [pad] the decimals are held at
@@ -30,6 +33,8 @@ fun faDecimal(value: Double, decimals: Int, pad: Boolean = false): String {
  * digits is exactly what an older reader can't scan. Iranians say the magnitude out loud,
  * so we do too: "۳۰۰ میلیون" instead of "۳۰۰٬۰۰۰٬۰۰۰".
  */
+fun tomanOf(rial: Long): Double = rial / 10.0
+
 fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String {
     val n = abs(toman)
     val (unit, div) = when {
@@ -187,6 +192,46 @@ fun faRate(rate: Double): String =
 fun bidi(s: String): String = "⁨$s⁩"
 
 /**
+ * The same isolate, but forced left-to-right, for the digits of a signed amount.
+ *
+ * [bidi] resolves direction from the first strong character, so an isolate wrapped around
+ * "+۱۶۵٫۱ میلیون" takes its direction from the «م» of the magnitude, turns the whole run
+ * right-to-left, and throws the sign to the far side of the figure.
+ */
+// Same reasoning as above: LRI and PDI, balanced, wrapping exactly the argument.
+@Suppress("BidiSpoofing")
+fun ltrFigure(s: String): String = "⁦$s⁩"
+
+/**
+ * «−۴۰۰ میلیون»: signed, compact, and laid out the way Persian actually reads it.
+ *
+ * Two things have to be true at once, and only one arrangement gives both. The sign belongs on
+ * the left of the digits, the way every bank writes it — and the magnitude and «تومان» after it
+ * belong at the end of the phrase, which in a right-to-left line is the left end. So the digits
+ * and their sign are isolated as one left-to-right island, and the magnitude word is left
+ * outside it to flow on in the RTL line: «تومان میلیون −۴۰۰» on screen, «−۴۰۰ میلیون تومان»
+ * read aloud. Isolating the pair together, or forcing the whole line left-to-right, each
+ * satisfies one of the two and breaks the other.
+ */
+fun faSignedCompact(toman: Double, positive: Boolean): String =
+    faSignedParts(toman, positive).let { (digits, magnitude) ->
+        if (magnitude == null) digits else "$digits $magnitude"
+    }
+
+/**
+ * The same figure, split where a display-sized one needs to set the two halves differently.
+ *
+ * At 50sp with a magnitude word the same size beside it, the sign sits between two equal runs
+ * and stops reading as a sign at all — «۴۰۰ − میلیون» looks like a dash joining two words. The
+ * split lets the caller step the magnitude down so the sign clearly belongs to the digits.
+ * Returns the isolated signed digits, and the magnitude word, which is null under a thousand.
+ */
+fun faSignedParts(toman: Double, positive: Boolean): Pair<String, String?> {
+    val parts = faCompact(abs(toman)).split(' ', limit = 2)
+    return ltrFigure((if (positive) "+" else "−") + parts[0]) to parts.getOrNull(1)
+}
+
+/**
  * Plain ASCII digits for the *raw* text-field state — Locale.US on purpose, so the stored
  * string always round-trips through [parseAmount] no matter what the device locale is.
  * Grouping and Persian digits are applied on top of this purely for display.
@@ -253,7 +298,7 @@ fun groupDigits(raw: String): GroupedDigits {
 
 /** "۵ دقیقه پیش" — vague on purpose; the exact second never matters here. */
 fun faAgo(epochMillis: Long, now: Long): String {
-    if (epochMillis <= 0) return "بدون به‌روزرسانی"
+    if (epochMillis <= 0) return "هنوز به‌روز نشده"
     val mins = ((now - epochMillis) / 60_000L).coerceAtLeast(0)
     return when {
         mins < 1 -> "همین الان"
