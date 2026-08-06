@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The top of the page is the top of the hero field, so this is `Hero.top`, not the bottom
+         of its gradient — a browser chrome in the darker green read as a seam across the field. -->
+    <meta name="theme-color" content="#0C544A" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Blocking, and worth it: the whole page is figures, and a fallback face swapping out from
+         under a Toman total is the one reflow that changes what the number looks like. -->
+    <link rel="preload" href="/modam.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Web Push on iOS only works once this is on the Home Screen, so say so in the app. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>چقدر تومن</title>
+    <style>
+      /*
+       * Modam, the same variable file the app ships (`app/src/main/res/font/modam.ttf`), in the
+       * container browsers want. Both axes survive the conversion, so `font-stretch: 90%` here is
+       * exactly `ModamFigures` there — width, not letter-spacing, is what buys room for a long
+       * total, because Persian is a connected script and negative tracking breaks the joins.
+       */
+      @font-face {
+        font-family: Modam;
+        src: url('/modam.woff2') format('woff2');
+        font-weight: 200 900;
+        font-stretch: 70% 100%;
+        font-display: swap;
+      }
+
+      /*
+       * The palette, verbatim from `Theme.kt` — the hero's fixed greens and gold first, then the
+       * two Material schemes under the same role names. A colour that moves there is one line here.
+       */
+      :root {
+        color-scheme: light dark;
+
+        /* The hero is the same object in both themes: deep green field, gold number. */
+        --hero-top: #0c544a;
+        --hero-bottom: #03201c;
+        --gold: #f7c948;
+        --hero-muted: #93b7b0;   /* green-tinted secondary text, never flat grey */
+        --hero-strong: #eaf3f0;
+        --mint: #3be0a8;
+        --hero-warn: #ffb4a6;    /* the field's one warning colour; gold already means "act" */
+        --hero-well: rgba(255, 255, 255, 0.1);
+        --hero-hairline: rgba(255, 255, 255, 0.12);
+
+        /* Money coming in, fixed in both themes as in `MonthFlow` — in the dark scheme the
+           theme's own green is the one the hero speaks in. */
+        --gain: #2e9e5b;
+
+        --bg: #f4f1e9;                  /* warm paper, not clinical white */
+        --on-bg: #101a18;
+        --surface: #ffffff;
+        --on-surface: #101a18;
+        --surface-variant: #e4eae6;
+        --on-surface-variant: #4a5c57;
+        --primary: #0a423b;
+        --on-primary: #ffffff;
+        --outline-variant: #d5dcd8;
+        --error: #b3261e;
+
+        --r-field: 18px;
+        --r-card: 24px;
+        --r-group: 28px;
+        --r-hero: 36px;
+        --r-pill: 999px;
+
+        /* One spacing scale, `Space`. Anything not on it is a decision someone has to defend. */
+        --xs: 4px;
+        --s: 8px;
+        --m: 12px;
+        --l: 16px;
+        --xl: 20px;
+        --xxl: 28px;
+
+        /* `Motion`: everything that enters decelerates hard from an already-visible state. */
+        --enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+        --fast: 180ms;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #070c0b;
+          --on-bg: #e8eeec;
+          --surface: #121a18;
+          --on-surface: #e8eeec;
+          --surface-variant: #26302e;
+          --on-surface-variant: #a9bcb7;
+          --primary: #f2c64d;
+          --on-primary: #2c2004;
+          --outline-variant: #33403d;
+          --error: #ffb4ab;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--on-bg);
+        font-family: Modam, system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+        /* Big type beats density everywhere: this was built for a parent to read. */
+        font-size: 17px;
+        line-height: 1.6;
+        /* No safe-area padding out here on purpose: the field runs to the glass, exactly as it
+           does in the app, and every other block insets itself. */
+      }
+      #app { max-width: 34rem; margin: 0 auto; }
+      .page {
+        padding: var(--xl) calc(env(safe-area-inset-right) + var(--xl))
+                 calc(env(safe-area-inset-bottom) + var(--xxl))
+                 calc(env(safe-area-inset-left) + var(--xl));
+      }
+      .stack > * + * { margin-top: var(--m); }
+
+      /* Size containers, so the figures inside them can be sized off the width they actually
+         get — see `.total`. Nothing else depends on it. */
+      .hero, .panel { container-type: inline-size; }
+
+      /*
+       * The reason the app exists, and the ground the page stands on rather than a card floating
+       * on it: a deep green field that runs off the top of the screen with the total in gold
+       * across it. The radial wash is the light hitting the top corner, as on a card.
+       */
+      .hero {
+        position: relative;
+        color: var(--hero-strong);
+        border-end-start-radius: var(--r-hero);
+        border-end-end-radius: var(--r-hero);
+        background:
+          radial-gradient(circle at 88% -5%, rgba(247, 201, 72, 0.13), rgba(247, 201, 72, 0) 55%),
+          linear-gradient(180deg, var(--hero-top), var(--hero-bottom));
+        padding: calc(env(safe-area-inset-top) + var(--xl))
+                 calc(env(safe-area-inset-right) + var(--xl)) var(--xl)
+                 calc(env(safe-area-inset-left) + var(--xl));
+      }
+      .hero h1 { font-size: 1rem; font-weight: 700; color: var(--hero-muted); margin: 0; }
+      .hero .muted { color: var(--hero-muted); }
+      .hero-label { font-size: .94rem; color: var(--hero-muted); margin: var(--m) 0 0; }
+
+      /*
+       * Every figure in the app, and the reason the width axis exists: tabular digits so an
+       * unchanged ۱ beside a changed ۸ does not shift the line, at `wdth` 90 so the longest
+       * string on the screen never has to shrink to fit.
+       */
+      .figure {
+        font-stretch: 90%;
+        font-variant-numeric: tabular-nums;
+        font-weight: 800;
+      }
+      /*
+       * The app steps this figure between 28 and 60sp so a long total never wraps and never
+       * shrinks below reading size. CSS has no autosize and does not need one here: the digits
+       * are tabular, so the figure's width is exactly its length — `--fit` is that width in ems,
+       * measured where the string is built, and the field divides its own width by it.
+       */
+      .total {
+        font-size: max(1.5rem, min(3.5rem, calc(100cqi / var(--fit, 8))));
+        font-weight: 900;
+        line-height: 1.15;
+        color: var(--gold);
+        margin: var(--xs) 0 0;
+        white-space: nowrap;
+      }
+      /* The unit is an aside, not a second headline — `heroFigure`, to the em. */
+      .total .unit { font-size: .42em; font-weight: 700; opacity: .75; margin-inline-start: .2em; }
+
+      /* The things she might do next, directly under the number that prompts them. */
+      .hero-actions { display: flex; margin-top: var(--xl); }
+      .hero-action {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--s);
+        width: auto;
+        min-height: 0;
+        padding: var(--s) 0;
+        border: 0;
+        border-radius: var(--r-card);
+        background: none;
+        color: var(--hero-muted);
+        font-size: .75rem;
+        font-weight: 500;
+      }
+      .hero-action .disc {
+        display: grid;
+        place-items: center;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background: var(--hero-well);
+        color: var(--hero-strong);
+        /* The give is what makes a 54px disc feel pushed rather than flashed. */
+        transition: transform var(--fast) var(--enter);
+      }
+      .hero-action:active .disc { transform: scale(.96); }
+
+      /* Below a hairline at the foot of the field: how fresh what she is reading is. */
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: var(--s);
+        margin-top: var(--xl);
+        padding-top: var(--m);
+        border-top: 1px solid var(--hero-hairline);
+        font-size: .8rem;
+        color: var(--hero-muted);
+      }
+      /* Colour confirms; the words carry it. */
+      .strip::before {
+        content: "";
+        flex: none;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+      .strip.warn { color: var(--hero-warn); }
+      .strip.warn::before { background: var(--hero-warn); }
+
+      .panel { background: var(--surface-variant); border-radius: var(--r-card); padding: var(--l); }
+      .panel p { margin: 0; }
+      .panel p + p { margin-top: var(--xs); }
+      /* A control that answers for the field above it, rather than one floating beside it. */
+      :where(.panel, form) > button { margin-top: var(--l); }
+      .muted { color: var(--on-surface-variant); font-size: .85rem; }
+      .error { color: var(--error); margin: 0; }
+
+      /* What came in against what went out, as one object: two lengths off the same baseline. */
+      .flow { display: flex; flex-wrap: wrap; gap: var(--m); }
+      /*
+       * Side by side while both figures fit whole, stacked the moment they do not. Truncating
+       * instead would eat the leading digits — in RTL the tail is the small end — and a total
+       * that reads ten times too small is the one mistake this app exists to prevent.
+       */
+      .flow > div { flex: 1 1 auto; min-width: calc(var(--fit, 6) * 1em); }
+      /* Both halves step down from the same ceiling, by the same rule as `.total`. */
+      .flow .amount {
+        display: block;
+        font-size: max(1rem, min(1.5rem, calc(46cqi / var(--fit, 8))));
+        font-weight: 800;
+        /* Below the floor a figure would run into the half beside it, which is worse than
+           losing its tail — the app's `maxLines = 1`. */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .bar { display: flex; gap: 3px; height: 8px; margin-top: var(--l); }
+      /* A gap and two pills, not one split bar: joined, the two shares read as a single
+         quantity filling up rather than as two amounts being weighed. */
+      .bar span { border-radius: var(--r-pill); }
+      .bar .in { background: var(--gain); }
+      .bar .out { background: var(--on-surface-variant); }
+
+      .section { display: flex; align-items: baseline; gap: var(--s); padding: var(--xxl) var(--xs) var(--m); }
+      .section h2 { flex: 1; font-size: 1rem; font-weight: 700; margin: 0; }
+
+      /*
+       * A band is one object with rows inside it, not a stack of cards: only its outer corners
+       * are round, and the rows are divided by a hairline that starts where the text does.
+       */
+      .band { background: var(--surface); border-radius: var(--r-group); overflow: hidden; }
+      .row { position: relative; display: flex; align-items: center; gap: var(--m); padding: var(--l); }
+      .row + .row::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        inset-inline: var(--l) 0;
+        border-top: 1px solid var(--outline-variant);
+      }
+      .row .grow { flex: 1; min-width: 0; }
+      .row .grow > div:first-child { font-weight: 600; }
+      /* One step under the hero's own device: the money is the answer a row exists to give. */
+      .amount { font-weight: 700; color: var(--on-surface); }
+      .amount.in { color: var(--gain); }
+
+      label { display: block; margin: var(--m) 0 var(--xs); font-size: .8rem; font-weight: 600; color: var(--on-surface-variant); }
+      input, select, textarea {
+        font: inherit;
+        font-family: inherit;
+        width: 100%;
+        color: var(--on-surface);
+        background: var(--surface);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--r-field);
+        padding: .6rem .9rem;
+        min-height: 48px;
+      }
+      textarea { min-height: 5.5rem; resize: vertical; }
+      :focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+      button {
+        font: inherit;
+        font-weight: 700;
+        width: 100%;
+        /* 44px minimum, because a deck answered one-handed is the point of the deck. */
+        min-height: 52px;
+        padding: .7rem 1.25rem;
+        /* Raised, not tonal: a panel is already `surface-variant`, so a tonal button on one is
+           a button-shaped hole. This is the same surface and hairline its inputs wear. */
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--r-pill);
+        background: var(--surface);
+        color: var(--on-surface);
+        cursor: pointer;
+        transition: transform var(--fast) var(--enter);
+      }
+      button:active { transform: scale(.98); }
+      button.primary { background: var(--primary); color: var(--on-primary); border-color: transparent; font-weight: 800; }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app">
+      <p class="page muted">داره آماده می‌شه...</p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "چقدر تومن",
+  "short_name": "چقدر تومن",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#03201C",
+  "theme_color": "#0C544A",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
