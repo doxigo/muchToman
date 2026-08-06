@@ -1,0 +1,353 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "a2595fc7fcb92adfcc7074c6c11856f0",
+    "entities": [
+      {
+        "tableName": "txn",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ref` TEXT NOT NULL, `src_hash` TEXT NOT NULL, `seq` INTEGER NOT NULL, `at` INTEGER NOT NULL, `day` INTEGER NOT NULL, `bank` TEXT NOT NULL, `account_id` TEXT NOT NULL, `direction` TEXT, `amount_rial` INTEGER, `signed_rial` INTEGER, `balance_rial` INTEGER, `fee_rial` INTEGER, `mask` TEXT NOT NULL, `instrument` TEXT NOT NULL, `merchant` TEXT NOT NULL, `merchant_norm` TEXT NOT NULL, `ref_no` TEXT NOT NULL, `printed_at` TEXT NOT NULL, `channel` TEXT NOT NULL, `unit_printed` TEXT NOT NULL, `inferred` INTEGER NOT NULL, `parser_ver` INTEGER NOT NULL, PRIMARY KEY(`ref`))",
+        "fields": [
+          {
+            "fieldPath": "ref",
+            "columnName": "ref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "srcHash",
+            "columnName": "src_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "at",
+            "columnName": "at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bank",
+            "columnName": "bank",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "amountRial",
+            "columnName": "amount_rial",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "signedRial",
+            "columnName": "signed_rial",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "balanceRial",
+            "columnName": "balance_rial",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feeRial",
+            "columnName": "fee_rial",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mask",
+            "columnName": "mask",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instrument",
+            "columnName": "instrument",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchant",
+            "columnName": "merchant",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "merchantNorm",
+            "columnName": "merchant_norm",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refNo",
+            "columnName": "ref_no",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "printedAt",
+            "columnName": "printed_at",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channel",
+            "columnName": "channel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPrinted",
+            "columnName": "unit_printed",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inferred",
+            "columnName": "inferred",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parserVer",
+            "columnName": "parser_ver",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ref"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_day",
+            "unique": false,
+            "columnNames": [
+              "day"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_day` ON `${TABLE_NAME}` (`day`)"
+          },
+          {
+            "name": "index_txn_account_id_at",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_account_id_at` ON `${TABLE_NAME}` (`account_id`, `at`)"
+          },
+          {
+            "name": "index_txn_amount_rial_at",
+            "unique": false,
+            "columnNames": [
+              "amount_rial",
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_amount_rial_at` ON `${TABLE_NAME}` (`amount_rial`, `at`)"
+          },
+          {
+            "name": "index_txn_bank_ref_no",
+            "unique": false,
+            "columnNames": [
+              "bank",
+              "ref_no"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_bank_ref_no` ON `${TABLE_NAME}` (`bank`, `ref_no`)"
+          },
+          {
+            "name": "index_txn_account_id_balance_rial",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "balance_rial"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_account_id_balance_rial` ON `${TABLE_NAME}` (`account_id`, `balance_rial`)"
+          },
+          {
+            "name": "index_txn_merchant_norm",
+            "unique": false,
+            "columnNames": [
+              "merchant_norm"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_merchant_norm` ON `${TABLE_NAME}` (`merchant_norm`)"
+          }
+        ]
+      },
+      {
+        "tableName": "txn_class",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ref` TEXT NOT NULL, `category_id` TEXT NOT NULL, `rule_id` TEXT, `confidence` INTEGER NOT NULL, `needs_review` INTEGER NOT NULL, PRIMARY KEY(`ref`))",
+        "fields": [
+          {
+            "fieldPath": "ref",
+            "columnName": "ref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoryId",
+            "columnName": "category_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruleId",
+            "columnName": "rule_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "needsReview",
+            "columnName": "needs_review",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ref"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_class_needs_review_ref",
+            "unique": false,
+            "columnNames": [
+              "needs_review",
+              "ref"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_class_needs_review_ref` ON `${TABLE_NAME}` (`needs_review`, `ref`)"
+          }
+        ]
+      },
+      {
+        "tableName": "link_candidate",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`a_ref` TEXT NOT NULL, `b_ref` TEXT NOT NULL, `kind` TEXT NOT NULL, `reason` TEXT NOT NULL, `auto` INTEGER NOT NULL, PRIMARY KEY(`a_ref`, `b_ref`, `kind`))",
+        "fields": [
+          {
+            "fieldPath": "aRef",
+            "columnName": "a_ref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bRef",
+            "columnName": "b_ref",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "auto",
+            "columnName": "auto",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "a_ref",
+            "b_ref",
+            "kind"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_link_candidate_a_ref",
+            "unique": false,
+            "columnNames": [
+              "a_ref"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_link_candidate_a_ref` ON `${TABLE_NAME}` (`a_ref`)"
+          },
+          {
+            "name": "index_link_candidate_b_ref",
+            "unique": false,
+            "columnNames": [
+              "b_ref"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_link_candidate_b_ref` ON `${TABLE_NAME}` (`b_ref`)"
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`k` TEXT NOT NULL, `v` TEXT NOT NULL, PRIMARY KEY(`k`))",
+        "fields": [
+          {
+            "fieldPath": "k",
+            "columnName": "k",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "v",
+            "columnName": "v",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "k"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a2595fc7fcb92adfcc7074c6c11856f0')"
+    ]
+  }
+}

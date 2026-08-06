@@ -1,0 +1,112 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "f357cebae0d3b785ab78d4bf74c86d54",
+    "entities": [
+      {
+        "tableName": "sms_source",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`src_hash` TEXT NOT NULL, `sender` TEXT NOT NULL, `addr_key` TEXT NOT NULL, `body` TEXT NOT NULL, `at` INTEGER NOT NULL, `ingested_at` INTEGER NOT NULL, `key_gen` INTEGER NOT NULL, PRIMARY KEY(`src_hash`))",
+        "fields": [
+          {
+            "fieldPath": "srcHash",
+            "columnName": "src_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sender",
+            "columnName": "sender",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addrKey",
+            "columnName": "addr_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "at",
+            "columnName": "at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ingestedAt",
+            "columnName": "ingested_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyGen",
+            "columnName": "key_gen",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "src_hash"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sms_source_at",
+            "unique": false,
+            "columnNames": [
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sms_source_at` ON `${TABLE_NAME}` (`at`)"
+          },
+          {
+            "name": "index_sms_source_addr_key_at",
+            "unique": false,
+            "columnNames": [
+              "addr_key",
+              "at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sms_source_addr_key_at` ON `${TABLE_NAME}` (`addr_key`, `at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "durable_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`k` TEXT NOT NULL, `v` TEXT NOT NULL, PRIMARY KEY(`k`))",
+        "fields": [
+          {
+            "fieldPath": "k",
+            "columnName": "k",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "v",
+            "columnName": "v",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "k"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f357cebae0d3b785ab78d4bf74c86d54')"
+    ]
+  }
+}
