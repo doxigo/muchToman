@@ -260,11 +260,17 @@ private fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val categoryFa = if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
-                // Same mark as the grid she chose it in. A hundred rows of grey 12sp are read by
-                // the shape at the start of the line long before the word is.
+                // Same mark *and* same colour as the grid she chose it in. A hundred rows of grey
+                // 12sp are read by the shape at the start of the line long before the word is,
+                // and in colour they are read before the shape.
+                //
+                // Nothing had to be special-cased for «دسته‌بندی نشده»: it has no mark of its own,
+                // so it falls to DOTS, and DOTS is the one entry in [categoryHue] that returns
+                // muted text rather than a hue. A row still waiting for her stays grey while every
+                // filed row beside it carries colour — which is the distinction this line is for.
                 CategoryIcon(
                     categoryFa,
-                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    categoryHue(categoryFa),
                     size = 14.dp,
                     stroke = 1.4.dp,
                 )

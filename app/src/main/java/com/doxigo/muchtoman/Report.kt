@@ -517,7 +517,11 @@ private fun MonthStory(story: HomeStory) {
 private fun CategoryShare(name: String, share: Float, rial: Long) {
     Column(Modifier.fillMaxWidth().padding(vertical = Space.s)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CategoryIcon(name, MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, stroke = 1.5.dp)
+            // The bar stays `primary` on purpose. The mark says which category this is and the
+            // bar says how much of the month it took — colouring both would have the same row
+            // answering one question twice, in two colours, and the six bars stop being
+            // comparable the moment they stop being the same colour.
+            CategoryIcon(name, categoryHue(name), size = 16.dp, stroke = 1.5.dp)
             Spacer(Modifier.width(Space.s))
             Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
             Text(
