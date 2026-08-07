@@ -1,24 +1,30 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -32,6 +38,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -49,14 +57,21 @@ import androidx.compose.ui.unit.sp
  *
  * ## Why it looks like this
  *
- * An island, not a floor. A bar welded edge to edge is a wall the page ends against; the bars
- * worth copying float clear of both edges and let the page run underneath, so the phone reads
- * as one continuous surface with a control resting on it.
+ * An island, not a floor — clear of both edges, the page running underneath. And translucent,
+ * which is Telegram's move: enough of the list ghosts through the slab to read "resting on
+ * the page" rather than "end of the page", and the shadow holds the edge the alpha gives up.
+ * A green-field version of this bar existed for a day; it made the bar a second hero, and an
+ * app gets one face. The bar is furniture.
  *
- * There is exactly one loud thing on it: the gold slug under the tab she is on. Everything
- * else — the slab, the labels, the glyphs — is held quiet so that one shape is unmissable
- * across the room, which is the only job this bar has. Gold is already the app's colour for
- * "this is the answer"; here it answers *where am I*.
+ * Compact on purpose, which is why it is drawn by hand. Material's bars are 80 and 64dp tall
+ * and will not be talked below it; Telegram's is ~56, a glyph and a word with no shelf under
+ * them, and five words she reads every day do not need more. The pill still measures exactly
+ * what M3's indicator measures (56×32), so the one loud mark keeps its licensed proportions.
+ *
+ * There is exactly one loud thing on it: the pill under the tab she is on — gold in the dark,
+ * the deep green in the light. Everything else — the slab, the labels, the glyphs — is held
+ * quiet so that one shape is unmissable across the room, which is the only job this bar has.
+ * That colour is already the app's colour for "this is the answer"; here it answers *where am I*.
  */
 enum class Tab(val fa: String) {
     HOME("خانه"),
@@ -86,78 +101,100 @@ fun TabBar(
     onSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier
-            // The island's own ground. It floats, but not over a hole: the screens that take
-            // the bar's height as an inset and draw under it would otherwise show a list
-            // scrolling through the strip beside the island.
-            .background(MaterialTheme.colorScheme.background)
+    val shape = RoundedCornerShape(Radius.group)
+    Row(
+        modifier
             .navigationBarsPadding()
-            .padding(horizontal = Space.m, vertical = Space.s),
-        shape = RoundedCornerShape(Radius.group),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        // Lifted, not outlined. A hairline would put a fifth line weight on a bar that already
-        // carries four; a real shadow says "on top of" without adding one.
-        shadowElevation = 12.dp,
+            .padding(horizontal = Space.m, vertical = Space.s)
+            // Lifted, not outlined. A hairline would put a fifth line weight on a bar that
+            // already carries four; a real shadow says "on top of" without adding one — and
+            // over a moving list it is the shadow, not the outline, that reads as height.
+            .shadow(12.dp, shape)
+            // 0.92, not lower: translucency here is a hint, not a window. Any thinner and the
+            // labels start competing with whatever row happens to be passing underneath.
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f), shape)
+            .height(56.dp)
+            .selectableGroup(),
     ) {
-        NavigationBar(
-            // The island owns the shape, the colour and the gesture inset, so the component is
-            // asked for its behaviour only: the sliding slug, the ripple, the tab semantics.
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            windowInsets = WindowInsets(0),
-            modifier = Modifier.height(72.dp),
-        ) {
-            for (tab in tabs) {
-                val badge = if (tab == Tab.LEDGER) ledgerBadge else 0
-                NavigationBarItem(
-                    selected = tab == selected,
-                    onClick = { onSelect(tab) },
-                    icon = {
-                        BadgedBox(
-                            badge = {
-                                if (badge > 0) {
-                                    // Gold again, and deliberately: the slug says where she is,
-                                    // the slug-coloured dot says where she is wanted next. Two
-                                    // sizes of one idea reads as a system. Red would read as a
-                                    // fault, and twelve receipts to sort is not one.
-                                    Badge(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                                    ) {
-                                        Text(
-                                            faNumber(badge.coerceAtMost(99).toDouble()),
-                                            style = figureStyle(MaterialTheme.colorScheme.onPrimary),
-                                            fontSize = 10.sp,
-                                        )
-                                    }
-                                }
-                            },
-                        ) {
-                            // The item hands its animated selected/unselected colour down
-                            // through LocalContentColor, so the drawn glyph tints with it.
-                            val tint = LocalContentColor.current
-                            Canvas(
-                                Modifier
-                                    .size(24.dp)
-                                    // Its own layer, so the two glyphs that cut a hole in
-                                    // themselves cut it in the glyph and not in the slug
-                                    // underneath. See [knockOut].
-                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-                            ) { drawTabIcon(tab, tint) }
+        for (tab in tabs) {
+            val here = tab == selected
+            // Not on the tab she is standing on: there the same count is already on screen,
+            // in the «مرور ۱۲ مورد» pill at the top of the ledger. A 56dp bar has no room
+            // to hang a numbered chip clear of a 32dp pill, and the version that tried put
+            // it *inside* the pill — a hole punched in the one mark that must stay whole.
+            val badge = if (tab == Tab.LEDGER && !here) ledgerBadge else 0
+            // One animator per channel, so a tab change is a crossfade rather than a jump —
+            // the whole of what NavigationBarItem was being paid for.
+            val pill by animateColorAsState(
+                if (here) MaterialTheme.colorScheme.primary else Color.Transparent,
+                label = "pill",
+            )
+            val glyph by animateColorAsState(
+                if (here) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                label = "glyph",
+            )
+            val ink by animateColorAsState(
+                if (here) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                label = "ink",
+            )
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .selectable(selected = here, role = Role.Tab) { onSelect(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                BadgedBox(
+                    badge = {
+                        if (badge > 0) {
+                            // The pill's own colour, deliberately: the pill says where she is,
+                            // the chip says where she is wanted next. Two sizes of one idea
+                            // reads as a system. Red would read as a fault, and twelve
+                            // receipts to sort is not one.
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ) {
+                                Text(
+                                    faNumber(badge.coerceAtMost(99).toDouble()),
+                                    style = figureStyle(MaterialTheme.colorScheme.onPrimary),
+                                    fontSize = 10.sp,
+                                )
+                            }
                         }
                     },
-                    label = { Text(tab.fa, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    colors = NavigationBarItemDefaults.colors(
-                        // Full-strength gold, not the container tint the component defaults to:
-                        // that default is a brown wash on this palette, and a wash is exactly
-                        // what a "you are here" mark must not be.
-                        indicatorColor = MaterialTheme.colorScheme.primary,
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                ) {
+                    Box(
+                        // M3's exact indicator: 24dp glyph + 16dp beside, 4dp above = 56×32.
+                        Modifier
+                            .background(pill, RoundedCornerShape(Radius.pill))
+                            .padding(horizontal = Space.l, vertical = Space.xs),
+                    ) {
+                        Canvas(
+                            Modifier
+                                .size(24.dp)
+                                // Its own layer, so the two glyphs that cut a hole in
+                                // themselves cut it in the glyph and not in the pill
+                                // underneath. See [knockOut].
+                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+                        ) { drawTabIcon(tab, glyph) }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    tab.fa,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // The chosen one is the only bold one, which is the rule every other
+                    // "pick exactly one" in the app already follows (SegmentedChoice).
+                    // Colour alone would leave the mark to a single channel.
+                    fontWeight = if (here) FontWeight.ExtraBold else FontWeight.Medium,
+                    color = ink,
                 )
             }
         }
