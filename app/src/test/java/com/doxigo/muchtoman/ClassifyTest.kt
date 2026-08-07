@@ -216,6 +216,36 @@ class ClassifyTest {
     }
 
     @Test
+    fun `the receiving bank is usually the one that names the rail`() {
+        // Only the credit says «پایا» — سامان's debit calls it nothing but an انتقال. Reading
+        // the rail off the sender alone gave this pair the fifteen-minute window and left a
+        // real transfer showing as spending on one side and income on the other.
+        val out = txn(at = 1_000_000, signed = -75_000_000, account = "SAMAN", channel = "transfer")
+        val into = txn(at = 1_000_000 + 6L * 3600_000, signed = 75_000_000, account = "BLU", channel = "paya")
+        val link = findTransfers(listOf(out, into)).single()
+        assertEquals("paya", link.reason)
+        assertTrue("forty hours is never automatic, whichever leg named it", !link.auto)
+    }
+
+    @Test
+    fun `satna is a slow rail too, not an instant one`() {
+        val out = txn(at = 1_000_000, signed = -75_000_000, account = "SAMAN", channel = "satna")
+        val into = txn(at = 1_000_000 + 4L * 3600_000, signed = 75_000_000, account = "BLU")
+        val link = findTransfers(listOf(out, into)).single()
+        assertEquals("satna", link.reason)
+        assertTrue(!link.auto)
+    }
+
+    @Test
+    fun `an instant rail still gets only its fifteen minutes`() {
+        // The wide window is for the slow rails alone. Two unrelated equal amounts six hours
+        // apart must stay unrelated, or every salary and rent of the same size pairs up.
+        val out = txn(at = 1_000_000, signed = -75_000_000, account = "SAMAN", channel = "card")
+        val into = txn(at = 1_000_000 + 6L * 3600_000, signed = 75_000_000, account = "BLU")
+        assertTrue(findTransfers(listOf(out, into)).isEmpty())
+    }
+
+    @Test
     fun `money sent to someone else is spending, not a transfer`() {
         // Both legs have to be in the ledger. Pretending otherwise makes her spending vanish.
         val out = txn(at = 1_000_000, signed = -50_000_000, account = "SAMAN")

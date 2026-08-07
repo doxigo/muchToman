@@ -78,8 +78,22 @@ const val TRANSFER_FEE_MAX_RIAL = 120_000L
 /** Instant rails settle in seconds; anything past this is two separate movements. */
 const val TRANSFER_WINDOW_MS = 15 * 60 * 1000L
 
-/** پایا settles in batches, genuinely next-business-day. Too wide to ever trust silently. */
-const val PAYA_WINDOW_MS = 40 * 60 * 60 * 1000L
+/**
+ * پایا settles in batches, genuinely next-business-day, and ساتنا in banking-hour cycles.
+ * Neither is the seconds that [TRANSFER_WINDOW_MS] assumes. Too wide to ever trust silently —
+ * a pair found this way is always a question for the deck, never an answer.
+ */
+const val SLOW_RAIL_WINDOW_MS = 40 * 60 * 60 * 1000L
+
+/**
+ * The rails that do not settle while she watches.
+ *
+ * Read off *either* leg, because the two banks describe one transfer differently: the receiving
+ * bank is usually the one that writes «واریز پایا», while the sending bank says only «انتقال».
+ * Taking the rail from the sender alone gave those transfers the fifteen-minute instant window,
+ * and a leg that landed six hours later was never paired with anything.
+ */
+private val SLOW_RAILS = setOf("paya", "satna")
 
 /** Two identical purchases this close together are a real thing; only the deck may decide. */
 const val DUPLICATE_WINDOW_MS = 90 * 1000L
@@ -161,18 +175,22 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
  * and fifty million of spending — the same quietly-wrong total this app was built to avoid,
  * arriving from a new direction.
  */
+private fun railOf(sent: Txn, received: Txn): String? =
+    listOf(sent.channel, received.channel).firstOrNull { it in SLOW_RAILS }
+
 fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
     val out = mutableListOf<LinkCandidate>()
     val outgoing = transactions.filter { it.direction == "out" && it.amountRial != null }
     val incoming = transactions.filter { it.direction == "in" && it.amountRial != null }
     for (sent in outgoing) {
-        val paya = sent.channel == "paya"
-        val window = if (paya) PAYA_WINDOW_MS else TRANSFER_WINDOW_MS
         val matches = incoming.filter { received ->
+            val slow = railOf(sent, received) != null
             received.accountId != sent.accountId &&
-                kotlin.math.abs(received.at - sent.at) <= window &&
-                if (paya) {
-                    // پایا fees debit separately, so the two legs are exactly equal or unrelated.
+                kotlin.math.abs(received.at - sent.at) <=
+                (if (slow) SLOW_RAIL_WINDOW_MS else TRANSFER_WINDOW_MS) &&
+                if (slow) {
+                    // پایا and ساتنا debit their fee separately, so the two legs are exactly
+                    // equal or unrelated.
                     received.amountRial == sent.amountRial
                 } else {
                     received.amountRial!! <= sent.amountRial!! &&
@@ -182,16 +200,15 @@ fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
         }
         if (matches.isEmpty()) continue
         val nearest = matches.minByOrNull { kotlin.math.abs(it.at - sent.at) }!!
+        val rail = railOf(sent, nearest)
         val exact = nearest.amountRial == sent.amountRial
         val unique = matches.size == 1
         // Automatic only when nothing about it is ambiguous: one candidate, exactly equal, and
         // not on a rail whose forty-hour window makes coincidence plausible.
-        val auto = unique && exact && !paya
-        val reason = when {
-            paya -> "paya"
-            exact -> "exact"
-            else -> "fee-band"
-        }
+        val auto = unique && exact && rail == null
+        // The rail is its own reason, so the deck can say which one it noticed rather than
+        // asserting a pairing she has no way to check.
+        val reason = rail ?: if (exact) "exact" else "fee-band"
         out += pair(sent, nearest, LinkKind.TRANSFER, reason, auto)
     }
     return out
