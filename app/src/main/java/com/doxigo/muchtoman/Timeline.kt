@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -445,25 +448,18 @@ fun TransactionScreen(
             }
 
             item(key = "categories") {
-                // Pills that wrap, not a stack of full-width rows: ten categories are three
-                // lines instead of ten screens' worth of scrolling, and the one already on
-                // this transaction is visible without hunting for it.
-                FlowRow(
-                    Modifier.fillMaxWidth().then(gutter),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    verticalArrangement = Arrangement.spacedBy(Space.s),
-                ) {
-                    choices.forEach { category ->
-                        CategoryChip(
-                            category = category,
-                            selected = category.id == chosen,
-                            onClick = {
-                                chosen = category.id
-                                onCategorise(entry, category.id, learnSimilar)
-                            },
-                        )
-                    }
-                }
+                // A grid, not a stack of full-width rows: seventeen categories are five lines
+                // instead of seventeen screens' worth of scrolling, and the one already on this
+                // transaction is visible without hunting for it.
+                CategoryGrid(
+                    choices = choices,
+                    selectedId = chosen,
+                    onPick = { category ->
+                        chosen = category.id
+                        onCategorise(entry, category.id, learnSimilar)
+                    },
+                    modifier = gutter,
+                )
             }
 
             item(key = "details") {
@@ -623,65 +619,137 @@ private fun TransactionHero(
     }
 }
 
+/** Four across. Three wastes the row on «خواربار»; five puts «پس‌انداز و سرمایه» on three lines. */
+private const val CATEGORY_COLUMNS = 4
+
 /**
- * The chosen category wears the same filled pill the selected tab does — the app already says
+ * The categories, as a grid of equal cells rather than a wrap of pills.
+ *
+ * Pills are sized by their labels, and Persian category names run from three characters to
+ * seventeen — so the wrap came out three-two-three-three-two with both edges ragged, and the
+ * only thing the eye could do with it was read every word in order. Nothing about it said these
+ * are seventeen of one kind of thing. A fixed column does, and it is what lets the mark and its
+ * colour do the finding instead of the text.
+ *
+ * [Modifier.weight] is what makes the cells equal, which is also why the short last row has to
+ * be padded: four tiles of one width and then one tile of four widths is not a grid.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryGrid(
+    choices: List<Category>,
+    selectedId: String?,
+    onPick: (Category) -> Unit,
+    modifier: Modifier = Modifier,
+    // What «selected» means differs by screen: on a transaction it is what the entry is filed
+    // as; in the deck it is what she has just picked and not yet confirmed.
+    selectedLabel: String = "دسته فعلی",
+) {
+    FlowRow(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
+        maxItemsInEachRow = CATEGORY_COLUMNS,
+    ) {
+        choices.forEach { category ->
+            CategoryTile(
+                category = category,
+                selected = category.id == selectedId,
+                onClick = { onPick(category) },
+                selectedLabel = selectedLabel,
+                // fillMaxRowHeight so a two-line label in one cell lifts its whole row instead
+                // of leaving its neighbours short and the row bottom broken.
+                modifier = Modifier.weight(1f).fillMaxRowHeight(),
+            )
+        }
+        repeat((CATEGORY_COLUMNS - choices.size % CATEGORY_COLUMNS) % CATEGORY_COLUMNS) {
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * The chosen category wears the same filled block the selected tab does — the app already says
  * "this one" in `primary`, and the screen whose whole job is choosing was saying it in a
  * container colour a shade off the unselected ones.
+ *
+ * The mark carries the category's own hue, on a disc of the same hue: a 1.6dp stroke is too
+ * little ink to read as colour on its own, and the disc is what gives it area. The label stays
+ * `onSurface` throughout — the colour is for finding the cell, never for reading it, so nothing
+ * legible depends on a hue.
+ *
+ * Selecting takes the hue away rather than intensifying it, which looks backwards written down
+ * and is right on the screen: «this one» is a thing the app says in exactly one colour, and a
+ * grid where the chosen cell is merely a stronger version of its own colour has seventeen cells
+ * all claiming it at once.
  *
  * Tapping writes immediately, so the colour landing over [Motion.fast] is the only receipt the
  * choice gets. It is the one authored moment on the screen; a snap reads as a redraw.
  */
 @Composable
-private fun CategoryChip(
+private fun CategoryTile(
     category: Category,
     selected: Boolean,
     onClick: () -> Unit,
-    // What «selected» means differs by screen: on a transaction it is what the entry is filed
-    // as; in the deck it is what she has just picked and not yet confirmed.
-    selectedLabel: String = "دسته فعلی",
+    selectedLabel: String,
+    modifier: Modifier = Modifier,
 ) {
+    val hue = categoryHue(category.nameFa)
     val fill by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.surfaceVariant,
         tween(Motion.fast, easing = Motion.enter),
-        label = "chipFill",
+        label = "tileFill",
     )
     val ink by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.onPrimary
         else MaterialTheme.colorScheme.onSurface,
         tween(Motion.fast, easing = Motion.enter),
-        label = "chipInk",
+        label = "tileInk",
     )
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
+    val mark by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimary else hue,
+        tween(Motion.fast, easing = Motion.enter),
+        label = "tileMark",
+    )
+    Column(
+        modifier
+            .clip(RoundedCornerShape(Radius.field))
             .background(fill)
             .clickable(role = Role.Button, onClick = onClick)
-            // The pill is sized by its label, so the tap target needs a floor of its own.
-            .heightIn(min = 48.dp)
-            .padding(horizontal = Space.m)
+            // A floor, not a height: at a large system font the label takes a third line and the
+            // cell has to grow with it rather than clip it.
+            .heightIn(min = 92.dp)
+            .padding(horizontal = Space.xs, vertical = Space.m)
             .semantics {
                 contentDescription = category.nameFa + if (selected) ", $selectedLabel" else ""
             },
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(mark.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
         ) {
-            // The mark, in the same ink as the label: a second colour here would make the grid
-            // eleven competing objects rather than one grid she reads at a glance.
-            CategoryIcon(category.nameFa, ink)
-            Text(
-                category.nameFa,
-                fontSize = 14.sp,
-                // One weight for every state. Modam's weight axis changes the advance, so a bold
-                // selected label is a wider pill — and the whole grid reflowed under her finger on
-                // the tap that chose it. The fill says «this one» louder than a weight step could.
-                fontWeight = FontWeight.SemiBold,
-                color = ink,
-            )
+            CategoryIcon(category.nameFa, mark, size = 20.dp)
         }
+        Spacer(Modifier.height(Space.s))
+        Text(
+            category.nameFa,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            // One weight for every state. Modam's weight axis changes the advance, so a bold
+            // selected label is a wider word — and in a fixed cell that is a word that rewraps
+            // under her finger on the tap that chose it.
+            fontWeight = FontWeight.SemiBold,
+            color = ink,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -825,20 +893,12 @@ fun ReviewDeck(
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(Space.m))
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    verticalArrangement = Arrangement.spacedBy(Space.s),
-                ) {
-                    choices.forEach { category ->
-                        CategoryChip(
-                            category = category,
-                            selected = category.id == picked,
-                            onClick = { picked = category.id },
-                            selectedLabel = "انتخاب‌شده",
-                        )
-                    }
-                }
+                CategoryGrid(
+                    choices = choices,
+                    selectedId = picked,
+                    onPick = { picked = it.id },
+                    selectedLabel = "انتخاب‌شده",
+                )
                 Spacer(Modifier.height(Space.l))
             }
 
