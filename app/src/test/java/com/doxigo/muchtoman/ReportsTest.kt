@@ -193,4 +193,23 @@ class ReportsTest {
         assertTrue(wins.any { it.text.contains("یک ماه خرج") })
         assertTrue(wins.all { it.tone == Insight.Tone.GOOD })
     }
+
+    @Test
+    fun `the review queue counts every open item, not a capped deck's worth`() {
+        // This number is the tab badge. It used to be trimmed to twelve, which meant a real
+        // backlog of sixty-seven read as twelve and never moved as she worked through it.
+        val open = (1..40).map { entry(first, -it * 1_000_000L, review = true) }
+        val settled = (1..5).map { entry(first, -1_000_000, review = false) }
+        val excluded = listOf(
+            entry(first, -999_000_000, review = true, transfer = true),
+            entry(first, -998_000_000, review = true, duplicate = true),
+        )
+        val view = LedgerView(entries = open + settled + excluded)
+
+        assertEquals(40, view.review.size)
+        // Biggest first, so the deck opens on the ones worth her attention.
+        assertEquals(40_000_000L, view.review.first().txn.amountRial)
+        // A transfer and a hidden duplicate are bookkeeping; neither is a question for her.
+        assertTrue(view.review.none { it.transfer || it.duplicate })
+    }
 }

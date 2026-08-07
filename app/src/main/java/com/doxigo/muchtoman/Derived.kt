@@ -425,19 +425,20 @@ data class LedgerView(
     val worthIt: Map<String, String> = emptyMap(),
     val ready: Boolean = false,
 ) {
-    /** Only what she actually has to answer, biggest first, and never more than a week's worth. */
+    /**
+     * Everything she actually has to answer, biggest first.
+     *
+     * Uncapped on purpose: this list is both the deck and the number on the tab badge, and a
+     * badge that reads 12 against a backlog of 67 is telling her something false about her own
+     * ledger. The deck is finishable because she can close it at any card, not because the
+     * count was trimmed to look finishable. The only ceiling left is the [ledgerEntries] window
+     * — anything older than the newest 300 transactions is not loaded, so it cannot be counted.
+     */
     val review: List<LedgerEntry> by lazy {
         entries.filter { it.needsReview && !it.duplicate && !it.transfer }
             .sortedByDescending { it.txn.amountRial ?: 0L }
-            .take(DECK_CAP)
     }
 }
-
-/**
- * A week with three hundred transactions still has to produce a deck she can finish. An
- * unbounded deck is a deck nobody opens, and one she never finishes is worse than none.
- */
-const val DECK_CAP = 12
 
 data class LedgerEntries(
     val entries: List<LedgerEntry>,
