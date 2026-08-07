@@ -96,6 +96,9 @@ class LedgerTest {
 
     @Test
     fun `the prune floor sits below the horizon by its grace period`() {
+        // A first ingest reads nothing historical — it starts at `now` — so rewindIngest is the
+        // only thing that ever reaches backwards, and it stops at the horizon. Retention has to
+        // stay below that, or a rewind would store a sender's history and prune it in one call.
         val now = System.currentTimeMillis()
         val floor = sourcePruneFloor(now)
         assertTrue("prune floor must not reach above the horizon", floor < sourceHorizon(now))

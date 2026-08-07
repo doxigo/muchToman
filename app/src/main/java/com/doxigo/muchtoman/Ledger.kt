@@ -452,7 +452,7 @@ interface DurableMetaDao {
     suspend fun put(row: DurableMeta)
 }
 
-/** How far back the first ingest reaches, in Jalali months. */
+/** How far back the ledger keeps messages it has read, in Jalali months. */
 const val SOURCE_HORIZON_MONTHS = 13
 
 /**
@@ -469,7 +469,12 @@ const val SOURCE_HARD_CAP = 50_000
 
 private const val SOURCE_SCANNED_TO = "source_scanned_to"
 
-/** The oldest message the ledger will reach for, as an epoch millisecond. */
+/**
+ * The oldest message the ledger will hold on to, as an epoch millisecond.
+ *
+ * Retention, not reach. It stays a year deep so a ledger that has already been backfilled — or
+ * one filled month by month as she uses the app — keeps its year-over-year comparisons.
+ */
 fun sourceHorizon(now: Long): Long =
     tehranDayStart(jalaliMonthsBack(tehranDay(now), SOURCE_HORIZON_MONTHS))
 
@@ -553,14 +558,19 @@ suspend fun ingestBankSms(
     now: Long = System.currentTimeMillis(),
 ): Int {
     if (!canReadSms(context)) return 0
-    val since = db.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull() ?: sourceHorizon(now)
+    // A first ingest starts here, at `now`: nothing already sitting in the inbox is read. This
+    // used to start at the first of the current Jalali month, which let the calendar decide how
+    // much homework a new ledger opened on — four weeks of it on the 29th, none on the 1st.
+    // Reaching back is [rewindIngest]'s job, and that one is asked for. A watermark, once
+    // written, always wins, so this is only ever consulted when nothing has been read yet.
+    val since = db.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull() ?: now
     val messages = readSmsInbox(context, since)
     if (messages.isEmpty()) return 0
 
     var stored = 0
-    // Chunked so a kill part way through a thirteen-month backfill resumes at the last chunk
-    // boundary rather than starting again: the rows and the watermark move in one transaction,
-    // so they can never disagree about what has been read.
+    // Chunked so a kill part way through resumes at the last chunk boundary rather than starting
+    // again: the rows and the watermark move in one transaction, so they can never disagree about
+    // what has been read.
     for (chunk in messages.chunked(500)) {
         val rows = chunk.mapNotNull { m ->
             if (bankOf(m.from, extra) == null) return@mapNotNull null
@@ -653,7 +663,11 @@ suspend fun migrateAnchorsFromPrefs(accounts: List<BankAccount>, db: DurableDb, 
  * bank is added to the enum. Those messages were skipped by the gate above, so the watermark has
  * long since passed them and only a walk back to the horizon finds them. Idempotent: re-reading
  * costs time and nothing else, because the primary key absorbs everything already held.
+ *
+ * The horizon is written out rather than the watermark cleared. Clearing it would fall through to
+ * `now` — reading nothing at all — and a sender she has just confirmed is one whose *history* she
+ * is asking for. Retention reaches a year back, so nothing read here is pruned on the way out.
  */
-suspend fun rewindIngest(db: DurableDb) {
-    db.meta().put(DurableMeta(SOURCE_SCANNED_TO, ""))
+suspend fun rewindIngest(db: DurableDb, now: Long = System.currentTimeMillis()) {
+    db.meta().put(DurableMeta(SOURCE_SCANNED_TO, sourceHorizon(now).toString()))
 }
