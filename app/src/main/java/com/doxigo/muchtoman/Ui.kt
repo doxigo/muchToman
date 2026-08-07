@@ -491,17 +491,19 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                         .statusBarsPadding(),
                 )
             },
-            modifier = Modifier
-                .padding(pad)
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
         ) {
         // No horizontal contentPadding and no vertical arrangement: the hero field is
         // full-bleed and the rows in a band have to sit flush against each other, so every
         // item owns its own inset. `edge` is the one place that number lives.
+        //
+        // The bar's height arrives as content padding rather than as padding on the list, which
+        // is the whole difference between a bar the page stops above and one the page runs
+        // under. Every other screen already did it this way; this one held its list up.
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = Space.l),
+            contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + Space.l),
         ) {
             item(key = "hero") {
                 HeroField(
