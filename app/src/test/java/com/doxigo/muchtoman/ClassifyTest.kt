@@ -140,7 +140,10 @@ class ClassifyTest {
     @Test
     fun `the picker offers only the side of the ledger the money went`() {
         val incoming = categoryChoices(BUILTIN_CATEGORIES, "in").map { it.nameFa }
-        assertEquals(listOf("درآمد", "پس‌گرفتن قرض"), incoming)
+        assertEquals(
+            listOf("درآمد", "حقوق", "پاداش", "فروش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "سایر"),
+            incoming,
+        )
 
         val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
         assertTrue("خواربار" in outgoing)
