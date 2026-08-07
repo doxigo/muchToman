@@ -78,6 +78,28 @@
         "channel": "transfer",
         "unitPrinted": "rial"
       }
+    },
+    {
+      "id": "blu-deposit-pol",
+      "sender": "0999 998 7641",
+      "at": 4,
+      "body": [
+        "بلو",
+        "دریافت پل",
+        "سیدسهیل عزیز، 1,000,000,000 ریال به حساب شما نشست.",
+        "موجودی: 1,651,455,946 ریال",
+        "۱۲:۵۲",
+        "۱۴۰۵.۰۵.۱۴"
+      ],
+      "why": "Real message, and the same body as blu-deposit-neshast under a different heading: «دریافت پل» matches no direction word, where «واریز پول» matched one on its first line. That leaves «نشست», which Blu writes *after* the amount — so a forward-only search walked past the amount, crossed «موجودی» and reported the balance as the sum received. The ledger showed +۱۶۵٫۱ میلیون for a message about ۱۰۰ میلیون.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "in",
+        "amountRial": 1000000000,
+        "balanceRial": 1651455946,
+        "unitPrinted": "rial",
+        "inferred": false
+      }
     }
   ]
 }

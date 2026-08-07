@@ -274,6 +274,7 @@ private fun figureAfter(
     window: Int = 48,
     allowZero: Boolean = false,
     veto: List<String> = emptyList(),
+    stopAt: List<String> = emptyList(),
 ): Figure? {
     for (label in labels) {
         var from = 0
@@ -285,14 +286,51 @@ private fun figureAfter(
             // "مانده بدهی" is a different noun from "مانده".
             val ahead = text.substring(start, minOf(text.length, start + 16))
             if (veto.any { ahead.contains(it) }) continue
+            // Where this search must give up rather than keep walking. A figure on the far side
+            // of «موجودی» is that balance being stated, and returning it as the amount reports
+            // everything she has as the sum that just moved.
+            val limit = stopAt
+                .mapNotNull { word -> text.indexOf(word, start).takeIf { it >= 0 } }
+                .minOrNull() ?: text.length
 
             for (m in NUMBER.findAll(text, start)) {
                 if (m.range.first - start > window) break
+                if (m.range.first >= limit) break
                 if (isIdentifierPart(text, m.range)) continue
                 val v = moneyOf(m.value) ?: continue
                 if (v == 0.0 && !allowZero) continue
                 return Figure(v, unitAfter(text, m.range.last + 1))
             }
+        }
+    }
+    return null
+}
+
+/**
+ * The last money figure *before* any of [labels], never crossing a line break.
+ *
+ * Most banks name the amount and then say what became of it — "واریز مبلغ ۵۰۰٬۰۰۰" — which is
+ * what [figureAfter] reads. Blu says it the other way round: "۱٬۰۰۰٬۰۰۰٬۰۰۰ ریال به حساب شما
+ * نشست", with the only word that gives the money a direction trailing the figure it belongs to.
+ *
+ * Bounded to the one line because that is how these messages are written: an amount and the
+ * phrase directing it are a sentence, while the موجودی, the time and the date each get a line of
+ * their own. Without the bound the nearest thing behind «نشست» on the previous line is the
+ * balance, which is the bug this exists to fix, arriving from the other side.
+ */
+private fun figureBefore(text: String, labels: List<String>): Figure? {
+    for (label in labels) {
+        var from = 0
+        while (true) {
+            val at = text.indexOf(label, from)
+            if (at < 0) break
+            from = at + label.length
+            val lineStart = text.lastIndexOf('\n', at - 1) + 1
+            val found = NUMBER.findAll(text.substring(lineStart, at))
+                .map { IntRange(lineStart + it.range.first, lineStart + it.range.last) }
+                .lastOrNull { !isIdentifierPart(text, it) && (moneyOf(text.substring(it)) ?: 0.0) > 0.0 }
+                ?: continue
+            return Figure(moneyOf(text.substring(found))!!, unitAfter(text, found.last + 1))
         }
     }
     return null
@@ -343,9 +381,16 @@ fun parseBankSms(
     // guessing one is how a deposit becomes a withdrawal.
     val deposit = IN_WORDS.any { text.contains(it) }
     val withdrawal = OUT_WORDS.any { text.contains(it) }
+    val inWords = IN_WORDS.takeIf { deposit } ?: emptyList()
+    val outWords = OUT_WORDS.takeIf { withdrawal } ?: emptyList()
     val amount = figureAfter(text, AMOUNT_WORDS)
-        ?: figureAfter(text, IN_WORDS.takeIf { deposit } ?: emptyList())
-        ?: figureAfter(text, OUT_WORDS.takeIf { withdrawal } ?: emptyList())
+        ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
+        ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
+        // Nothing after the direction word, so the figure it refers to is the one in front of
+        // it: Blu heads a deposit «دریافت پل», which names no direction at all, leaving «نشست»
+        // at the end of the sentence as the only word that says which way the money went.
+        ?: figureBefore(text, inWords)
+        ?: figureBefore(text, outWords)
     val moved = amount?.let { it.value / (it.divisor ?: fallback) }
     val delta = when {
         moved == null -> null
