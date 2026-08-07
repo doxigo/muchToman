@@ -84,6 +84,8 @@ data class SyncEntry(
     val categoryId: String = "",
     val categoryName: String = "",
     val categoryKind: String = CategoryKind.EXPENSE,
+    /** The mark, for a category she made. Blank on shipped ones, which every build looks up. */
+    val categoryGlyph: String = "",
     val categoryEditorId: String = "",
     val categoryUpdatedAt: Long = 0L,
     /** Compatibility with records written before category ids were synchronized. */
@@ -107,6 +109,7 @@ private data class SyncCategoryPayload(
     val categoryId: String,
     val categoryName: String,
     val categoryKind: String,
+    val categoryGlyph: String = "",
     val editedByMemberId: String,
 )
 
@@ -446,6 +449,7 @@ private suspend fun outgoingRecords(
                 categoryId = entry.categoryId,
                 categoryName = entry.categoryFa,
                 categoryKind = category?.kind ?: CategoryKind.EXPENSE,
+                categoryGlyph = category?.glyph.orEmpty(),
                 categoryEditorId = categoryDecision?.memberId.orEmpty().ifBlank { session.member },
                 categoryUpdatedAt = categoryDecision?.updatedAt ?: 0L,
                 merchant = txn.merchant,
@@ -503,6 +507,7 @@ private suspend fun outgoingRecords(
                 categoryId = category.id,
                 categoryName = category.nameFa,
                 categoryKind = category.kind,
+                categoryGlyph = category.glyph,
                 editedByMemberId = editor,
             )
         )
@@ -529,6 +534,16 @@ private suspend fun outgoingRecords(
 
 private fun safeSyncedText(value: String, max: Int, fallback: String = ""): String =
     value.filterNot(Char::isISOControl).trim().take(max).ifBlank { fallback }
+
+/**
+ * A mark another phone chose, kept only if this build draws it.
+ *
+ * Storing the name as sent would put a glyph from a newer edition in the database and leave the
+ * lookup returning null for ever after. Blank is the honest answer instead — the category falls
+ * back to the table by name, and an unknown name there already draws three dots.
+ */
+private fun safeSyncedGlyph(value: String): String =
+    glyphNamed(value.filterNot(Char::isISOControl).trim())?.name.orEmpty()
 
 fun categoryUpdateWins(
     existingAt: Long?,
@@ -629,6 +644,7 @@ private suspend fun applyTransaction(
                         } ?: CategoryKind.EXPENSE,
                         sort = 500,
                         updatedAt = record.updatedAt,
+                        glyph = safeSyncedGlyph(payload.categoryGlyph),
                     )
                 )
             )
@@ -688,6 +704,7 @@ private suspend fun applyCategory(
                     kind = categoryKind,
                     sort = 500,
                     updatedAt = record.updatedAt,
+                    glyph = safeSyncedGlyph(payload.categoryGlyph),
                 )
             )
         )

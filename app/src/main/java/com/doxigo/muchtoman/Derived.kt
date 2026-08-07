@@ -428,6 +428,14 @@ data class LedgerView(
     val goals: List<GoalProgress> = emptyList(),
     /** ref → yes | no | needed, for the ones she has answered. */
     val worthIt: Map<String, String> = emptyMap(),
+    /**
+     * The marks she picked, by category name — [LocalCustomGlyphs]'s contents.
+     *
+     * Read off every category rather than off [categories], archived ones included, for the same
+     * reason the names are: a row filed under a category she has retired keeps saying what it was
+     * filed as, and it must keep drawing it too.
+     */
+    val marks: Map<String, CategoryGlyph> = emptyMap(),
     val ready: Boolean = false,
 ) {
     /**
@@ -449,12 +457,16 @@ data class LedgerEntries(
     val entries: List<LedgerEntry>,
     val categories: List<Category>,
     val categoryDecisions: Map<String, TxnDecision>,
+    val marks: Map<String, CategoryGlyph> = emptyMap(),
 )
 
 suspend fun ledgerEntries(derived: DerivedDb, durable: DurableDb, limit: Int = 300): LedgerEntries {
     val transactions = derived.txn().newest(limit)
     val categories = durable.categories().all()
-    val names = categories.associate { it.id to it.nameFa }
+    // Every category ever, for the names — a transaction filed under one she has since retired
+    // still says what she filed it as. `categories` stays the live list: that one is the picker.
+    val everyCategory = durable.categories().withArchived()
+    val names = everyCategory.associate { it.id to it.nameFa }
     val members = durable.familyMembers().all().associateBy { it.id }
     val currentMemberId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
     val categoryDecisions = durable.decisions().ofKind(DecisionKind.CATEGORY).associateBy { it.ref }
@@ -479,7 +491,7 @@ suspend fun ledgerEntries(derived: DerivedDb, durable: DurableDb, limit: Int = 3
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),
         )
     }
-    return LedgerEntries(entries, categories, categoryDecisions)
+    return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory))
 }
 
 suspend fun ledgerView(derived: DerivedDb, durable: DurableDb, limit: Int = 300): LedgerView {
@@ -489,7 +501,7 @@ suspend fun ledgerView(derived: DerivedDb, durable: DurableDb, limit: Int = 300)
         .toMap()
     val today = tehranDay(System.currentTimeMillis())
     val goals = durable.goals().active().map { goalProgress(it, ledger.entries, today) }
-    return LedgerView(ledger.entries, ledger.categories, goals, answers, ready = true)
+    return LedgerView(ledger.entries, ledger.categories, goals, answers, ledger.marks, ready = true)
 }
 
 /**

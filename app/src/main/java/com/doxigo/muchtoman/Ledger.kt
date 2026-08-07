@@ -38,7 +38,7 @@ import androidx.sqlite.execSQL
         ManualTxn::class, Goal::class, FamilyMember::class, FamilyTxn::class,
         SyncPublication::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class DurableDb : RoomDatabase() {
@@ -208,6 +208,15 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        /** A mark of her own on a category she made. Blank on everything that shipped. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "ALTER TABLE `category` ADD COLUMN `glyph` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: Room
                 .databaseBuilder(context.applicationContext, DurableDb::class.java, "durable.db")
@@ -216,7 +225,7 @@ abstract class DurableDb : RoomDatabase() {
                 // copy of messages her inbox may no longer have.
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6,
+                    MIGRATION_5_6, MIGRATION_6_7,
                 )
                 .build()
                 .also { instance = it }

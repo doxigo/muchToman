@@ -91,6 +91,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -221,9 +222,20 @@ internal fun bandShape(index: Int, count: Int): Shape {
  */
 private data class Editing(val typeId: String, val key: String)
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The marks she chose are put in scope once, here, rather than passed to every screen that draws
+ * one — see [LocalCustomGlyphs] for why that is the shape of it.
+ */
 @Composable
 fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
+    CompositionLocalProvider(LocalCustomGlyphs provides state.ledger.marks) {
+        AppScreens(vm, state, activity)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
     var settings by remember { mutableStateOf(false) }
@@ -306,6 +318,7 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
             smsEnabled = state.smsEnabled,
             bankAccounts = state.bankAccounts,
             disabledBanks = state.disabledBanks,
+            categories = state.ledger.categories,
             activity = activity,
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
@@ -318,6 +331,8 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 else vm.setLockEnabled(false)
             },
             onWidgetLockChange = vm::setWidgetLock,
+            onAddCategory = vm::addCategory,
+            onRemoveCategory = vm::archiveCategory,
             onBack = { settings = false },
         )
         return

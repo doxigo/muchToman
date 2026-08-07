@@ -37,6 +37,12 @@ data class Category(
     /** Never deleted, only archived: rows written last year still name it. */
     val archived: Boolean = false,
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0L,
+    /**
+     * The mark she picked for a category she made, as a [CategoryGlyph] name. Blank on everything
+     * that ships, which is looked up by name instead — a shipped category's mark is not a thing
+     * stored per install, or renaming one in a build would leave the old mark in the database.
+     */
+    @ColumnInfo(defaultValue = "''") val glyph: String = "",
 )
 
 const val CAT_UNCATEGORISED = "cat_uncategorised"
@@ -389,6 +395,17 @@ interface CategoryDao {
 
     @Query("SELECT * FROM category WHERE archived = 0 ORDER BY sort, name_fa")
     suspend fun all(): List<Category>
+
+    /**
+     * Including the retired ones, which is what naming a transaction needs.
+     *
+     * Archiving takes a category out of the picker and nothing else — «rows written last year
+     * still name it» is only true if the row's name can still be found. Reading [all] here is
+     * what made an archived category quietly turn every transaction under it into
+     * «دسته‌بندی نشده» on the timeline and drop it out of the month's report.
+     */
+    @Query("SELECT * FROM category ORDER BY sort, name_fa")
+    suspend fun withArchived(): List<Category>
 
     @Query("SELECT * FROM category WHERE id = :id LIMIT 1")
     suspend fun get(id: String): Category?

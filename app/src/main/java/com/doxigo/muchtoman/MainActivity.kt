@@ -375,6 +375,43 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         updateTotalWidget(getApplication())
     }
 
+    /**
+     * A category of her own, with the mark she picked for it.
+     *
+     * Nothing is re-derived and nothing is re-classified: a new category is an answer that becomes
+     * available, not one that changes any answer already given. It appears in the picker on the
+     * next read of the ledger, which is the update below.
+     */
+    fun addCategory(nameFa: String, kind: String, glyph: CategoryGlyph) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(customCategory(nameFa, kind, glyph, System.currentTimeMillis()))
+                )
+                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+            }.onFailure { android.util.Log.w("muchtoman", "addCategory failed: $it") }
+        }
+    }
+
+    /**
+     * Archived, never deleted — every transaction she ever filed under it still names it, and the
+     * timeline reads that name off the row rather than off this table.
+     */
+    fun archiveCategory(category: Category) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(category.copy(archived = true, updatedAt = System.currentTimeMillis()))
+                )
+                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+            }.onFailure { android.util.Log.w("muchtoman", "archiveCategory failed: $it") }
+        }
+    }
+
     /** Called when the app leaves the foreground, so returning to it asks again. */
     fun relock() {
         if (store.lockEnabled) _state.update { it.copy(locked = true) }
@@ -413,9 +450,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     /**
      * ingest → derive, and then a check that the two ways of reaching a balance agree.
      *
-     * Reaching back thirteen Jalali months on the first run is the point of ingest: her ledger
-     * can only ever go as far back as the messages still in her inbox on the day this arrives,
-     * and every release without it is a month of history nobody can get back.
+     * Ingest starts at the first of the current Jalali month and grows forward from there. It
+     * used to reach thirteen months back on the first run, which handed a new user a ledger with
+     * a year of unfiled transactions in it — history she never asked for, priced as a review deck
+     * she would never finish.
      *
      * The fold and the derivation both run for now, and disagreeing is a log line rather than a
      * visible change. The fold is what she sees until they have agreed on a real phone for a
@@ -439,13 +477,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
         _state.update { it.copy(ledger = ledgerView(derived, durable)) }
 
-        // Only a disagreement about the *same* evidence is worth a line. The backfill reaches
-        // thirteen months back while the fold only ever saw what arrived after its watermark,
-        // so the ledger routinely knows about messages the fold never read — and then the two
-        // differ because the ledger is right, which is the whole point of the backfill.
+        // Only a disagreement about the *same* evidence is worth a line, and anchored balances
+        // are the only ones that qualify: a stated مانده is an absolute figure both sides must
+        // land on. The two read from different start points on purpose — the fold walks the whole
+        // inbox, ingest starts at this month — so an unanchored balance is a sum of deltas over a
+        // different span on each side, and comparing those two numbers only ever prints noise.
         for (balance in allBalances(derived, durable)) {
+            if (!balance.anchored) continue
             val folded = store.bankAccounts.firstOrNull { it.bank == balance.accountId } ?: continue
-            if (folded.anchored != balance.anchored) continue
+            if (!folded.anchored) continue
             if (balance.at > folded.updatedAt) continue
             val foldedRial = Math.round(folded.balance * 10.0)
             if (foldedRial != balance.rial) {

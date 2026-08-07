@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -190,6 +192,7 @@ fun SettingsScreen(
     smsEnabled: Boolean,
     bankAccounts: List<BankAccount>,
     disabledBanks: Set<String>,
+    categories: List<Category>,
     activity: FragmentActivity,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
@@ -197,6 +200,8 @@ fun SettingsScreen(
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
     onWidgetLockChange: (Boolean) -> Unit,
+    onAddCategory: (String, String, CategoryGlyph) -> Unit,
+    onRemoveCategory: (Category) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -345,6 +350,14 @@ fun SettingsScreen(
                 }
             }
 
+            SectionLabel("دسته‌های خودت")
+            CategoryMaker(
+                mine = categories.filter { !it.builtin },
+                taken = categories.map { it.nameFa },
+                onAdd = onAddCategory,
+                onRemove = onRemoveCategory,
+            )
+
             SectionLabel("امنیت")
             // One band of two rows, like the banks: the app's lock and the widget's mask are
             // siblings, not the same switch — she may want the app guarded but the number
@@ -404,6 +417,197 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(bottom = Space.l),
             )
+        }
+    }
+}
+
+/**
+ * Categories of her own, and the mark each one wears.
+ *
+ * The marks offered are the ones the app already draws ([PICKABLE_GLYPHS]) rather than an emoji
+ * keyboard or an imported icon set. One pen and one weight is what keeps a category she invented
+ * from looking like a sticker stuck on top of the app — and each mark arrives with the hue the
+ * grid, the timeline and the month's report all already agree on, so choosing the drawing is the
+ * whole choice. Nothing else about a category is hers to set, which is why this is a strip and a
+ * text field rather than a screen.
+ */
+@Composable
+private fun CategoryMaker(
+    mine: List<Category>,
+    taken: List<String>,
+    onAdd: (String, String, CategoryGlyph) -> Unit,
+    onRemove: (Category) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
+    var glyph by remember { mutableStateOf(PICKABLE_GLYPHS.first()) }
+    // Archiving is one tap away from being irreversible from here — there is no «برگردون» — so
+    // the row asks once. Held by id, so opening a second row closes the first.
+    var confirming by remember { mutableStateOf<String?>(null) }
+
+    // ZWNJ and spaces vary by keyboard, so «پس‌انداز» typed three ways is one name.
+    fun key(s: String) = faLetters(s).replace("‌", "").replace(" ", "").trim()
+    val clash = draft.isNotBlank() && taken.any { key(it) == key(draft) }
+    val usable = draft.isNotBlank() && !clash
+
+    Text(
+        "هر چیزی که توی لیست نیست رو خودت اضافه کن. تراکنش‌هایی که قبلاً توی یه دسته گذاشتی، " +
+            "با برداشتنش دست‌نخورده می‌مونن.",
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = Space.m, start = Space.xs, end = Space.xs),
+    )
+
+    mine.forEachIndexed { i, category ->
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(bandShape(i, mine.size))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                Modifier.padding(horizontal = Space.l, vertical = Space.m),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val hue = categoryHue(category.nameFa)
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(hue.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) { CategoryIcon(category.nameFa, hue, size = 20.dp) }
+                Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
+                    Text(
+                        category.nameFa,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (category.kind == CategoryKind.INCOME) "درآمد" else "خرج",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (confirming == category.id) {
+                    TextButton(onClick = { confirming = null }) { Text("بی‌خیال", fontSize = 15.sp) }
+                    TextButton(onClick = { confirming = null; onRemove(category) }) {
+                        Text("مطمئنم", fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    TextButton(onClick = { confirming = category.id }) {
+                        Text("بردار", fontSize = 15.sp)
+                    }
+                }
+            }
+            if (i < mine.size - 1) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = Space.l + 44.dp + Space.m),
+                )
+            }
+        }
+    }
+
+    if (!open) {
+        Spacer(Modifier.height(if (mine.isEmpty()) 0.dp else Space.m))
+        TextButton(onClick = { open = true }) { Text("دستهٔ تازه", fontSize = 16.sp) }
+        return
+    }
+
+    Spacer(Modifier.height(if (mine.isEmpty()) 0.dp else Space.m))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(Space.l),
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(24) },
+            singleLine = true,
+            isError = clash,
+            placeholder = { Text("مثلاً باشگاه") },
+            shape = RoundedCornerShape(Radius.field),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "اسم دسته" },
+        )
+        if (clash) {
+            Text(
+                "یه دسته با همین اسم داری.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = Space.s, start = Space.xs),
+            )
+        }
+        Spacer(Modifier.height(Space.m))
+        // Which side of the ledger it belongs to, and the only thing here she cannot change
+        // later: the picker offers a category only on transactions that went that way.
+        SegmentedChoice(
+            options = listOf(CategoryKind.EXPENSE, CategoryKind.INCOME),
+            selected = kind,
+            label = { if (it == CategoryKind.INCOME) "درآمد" else "خرج" },
+            onSelect = { kind = it },
+        )
+        Spacer(Modifier.height(Space.m))
+        Text(
+            "نشونه‌اش",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = Space.xs, bottom = Space.s),
+        )
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Space.s),
+            verticalArrangement = Arrangement.spacedBy(Space.s),
+        ) {
+            PICKABLE_GLYPHS.forEach { option ->
+                val chosen = option == glyph
+                val hue = glyphHue(option)
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        // Selected wears the app's one «this one» colour, exactly as the category
+                        // grid does — and, as there, the hue steps aside rather than intensifying.
+                        .background(
+                            if (chosen) MaterialTheme.colorScheme.primary
+                            else hue.copy(alpha = 0.18f),
+                        )
+                        .selectable(
+                            selected = chosen,
+                            role = Role.RadioButton,
+                            onClick = { glyph = option },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        option,
+                        if (chosen) MaterialTheme.colorScheme.onPrimary else hue,
+                        size = 22.dp,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(Space.l))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            TextButton(onClick = { open = false; draft = "" }) { Text("بی‌خیال", fontSize = 16.sp) }
+            Button(
+                enabled = usable,
+                onClick = {
+                    onAdd(draft.trim(), kind, glyph)
+                    draft = ""
+                    open = false
+                },
+                shape = RoundedCornerShape(Radius.pill),
+            ) { Text("اضافه کن", fontSize = 16.sp) }
         }
     }
 }
