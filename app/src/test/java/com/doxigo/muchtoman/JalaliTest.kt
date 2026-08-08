@@ -112,6 +112,33 @@ class JalaliTest {
     }
 
     @Test
+    fun `the clock on a transaction reads the tehran wall time`() {
+        // Same instant as the test above: 00:30 Tehran is 21:00 UTC the day before, which is what
+        // an hour taken from the raw epoch would print. Zero-padded so a column of them lines up.
+        val firstOfMordad = jalaliDay(1405, 5, 1)
+        assertEquals("۰۰:۰۰", faClock(tehranDayStart(firstOfMordad)))
+        assertEquals("۰۰:۳۰", faClock(tehranDayStart(firstOfMordad) + 30 * 60 * 1000L))
+        assertEquals("۱۴:۰۳", faClock(tehranDayStart(firstOfMordad) + (14 * 60 + 3) * 60_000L))
+        assertEquals("۲۳:۵۹", faClock(tehranDayStart(firstOfMordad + 1) - 1))
+    }
+
+    @Test
+    fun `a moment states its minute only when the record knows one`() {
+        // A row written from a date alone lands on Tehran midnight exactly, and «۰۰:۰۰» there
+        // would be a minute nobody recorded. Anything else in the day keeps its clock.
+        val firstOfMordad = jalaliDay(1405, 5, 1)
+        val midnight = tehranDayStart(firstOfMordad)
+        // The clock is spelled through bidi() rather than written out, so this file never has to
+        // carry the isolate characters the lint check exists to catch.
+        assertEquals("۱ مرداد ۱۴۰۵", faMoment(midnight, firstOfMordad))
+        assertEquals("۱ مرداد ۱۴۰۵، ${bidi("۰۰:۰۰")}", faMoment(midnight + 1, firstOfMordad))
+        assertEquals(
+            "۱ مرداد ۱۴۰۵، ${bidi("۱۴:۰۳")}",
+            faMoment(midnight + (14 * 60 + 3) * 60_000L, firstOfMordad),
+        )
+    }
+
+    @Test
     fun `days before the epoch floor rather than truncate toward zero`() {
         // Integer division truncates toward zero, which would put every instant in the twelve
         // hours before 1970 on the wrong day. Nothing in the ledger reaches back that far, but

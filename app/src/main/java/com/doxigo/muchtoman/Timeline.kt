@@ -86,11 +86,43 @@ internal val MONTHS = listOf(
 fun faDay(day: Long, today: Long = tehranDay(System.currentTimeMillis())): String = when (day) {
     today -> "امروز"
     today - 1 -> "دیروز"
-    else -> jalaliOf(day).let { "${faNumber(it.day.toDouble())} ${MONTHS[it.month - 1]} ${faYear(it.year)}" }
+    else -> faDate(day)
 }
 
-private fun faYear(year: Int): String = buildString {
-    for (c in year.toString()) append('۰' + (c - '0'))
+/** The same day, always written out — where «امروز» would be less information rather than more. */
+fun faDate(day: Long): String =
+    jalaliOf(day).let { "${faNumber(it.day.toDouble())} ${MONTHS[it.month - 1]} ${faYear(it.year)}" }
+
+/**
+ * «۱۴:۰۳» — the wall clock in Tehran, zero-padded so two of them line up under each other.
+ *
+ * Read off the same day arithmetic the ledger files the transaction under, so the hour can never
+ * disagree with the date printed beside it.
+ */
+fun faClock(epochMillis: Long): String {
+    val sinceMidnight = epochMillis - tehranDayStart(tehranDay(epochMillis))
+    val hour = sinceMidnight / 3_600_000L
+    val minute = sinceMidnight / 60_000L % 60
+    return faDigits("$hour".padStart(2, '0') + ":" + "$minute".padStart(2, '0'))
+}
+
+/**
+ * «۳ مرداد ۱۴۰۵، ۱۴:۰۳» — the day a transaction happened, and the minute where one is known.
+ *
+ * Every writer stamps `day` as `tehranDay(at)`, so the two halves cannot disagree. What they can
+ * differ in is how much they know: a message carries the instant the network stamped it, while a
+ * row entered from a date alone — a hand-entered one back-dated to last Tuesday — lands on that
+ * day's Tehran midnight exactly. Printing «۰۰:۰۰» there would state a minute nobody recorded, so
+ * the date stands on its own instead. A message that genuinely arrived at midnight is stamped to
+ * the millisecond and keeps its clock.
+ */
+fun faMoment(at: Long, day: Long): String =
+    if (at == tehranDayStart(day)) faDate(day) else "${faDate(day)}، ${bidi(faClock(at))}"
+
+private fun faYear(year: Int): String = faDigits(year.toString())
+
+private fun faDigits(s: String): String = buildString {
+    for (c in s) append(if (c in '0'..'9') '۰' + (c - '0') else c)
 }
 
 /**
@@ -476,7 +508,11 @@ fun TransactionScreen(
         })
         entry.ownerName.takeIf { it.isNotBlank() }?.let { add("صاحب تراکنش" to it) }
         entry.categoryEditorName.takeIf { it.isNotBlank() }?.let { add("دسته‌بندی توسط" to it) }
-        // No «تاریخ» row: the field above states the day, and «زمان ثبت» carries the exact one.
+        // The field above says «امروز» for the two days she is thinking about, so the written-out
+        // date belongs here — with the minute beside it, which nothing else on the screen states.
+        // «زمان ثبت» below is a different fact: the stamp the bank itself printed in the message,
+        // which is often the date alone and can lag the minute the message actually arrived.
+        add("تاریخ" to faMoment(txn.at, txn.day))
         add("ثبت شده از" to if (txn.sourceKind == "manual") "ورود دستی" else bankNameOf(txn.bank))
         txn.printedAt.takeIf { it.isNotBlank() }?.let { add("زمان ثبت" to bidi(it)) }
         txn.mask.takeIf { it.isNotBlank() }?.let { add("کارت یا حساب" to bidi(it)) }
