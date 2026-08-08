@@ -12,6 +12,9 @@ Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), and سکه پارسیان 
 from ۱۰۰ to ۱۵۰۰ سوت. Everything is valued at **free-market** rates — the official ~42,000
 IRR peg is not used anywhere.
 
+خودرو, خانه و ویلا and زمین are held too, and are the only rows with no price behind them:
+nobody quotes *your* car, so you type what it is worth in Toman and that figure is the value.
+
 سکه پارسیان is quoted per size rather than weighed as gold: the اجرت is close to fixed per
 coin, so a ۱۰۰ سوت piece goes for about a quarter more than the gold in it.
 

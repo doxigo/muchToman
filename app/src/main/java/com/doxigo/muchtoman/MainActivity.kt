@@ -517,7 +517,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val previous = durable.decisions().forRef(entry.txn.ref)
                     .firstOrNull { it.kind == DecisionKind.CATEGORY }
                 val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
-                if (entry.transfer) {
+                // Filing a leg under a real category is her saying the detector was wrong, so the
+                // pair dies. Filing it under انتقال is her saying it was right — rejecting then
+                // would throw the other leg back into income, which is the bug this guards.
+                if (entry.transfer && categoryId != CAT_TRANSFER) {
                     derived.links().touching(entry.txn.ref)
                         .filter { it.kind == LinkKind.TRANSFER && it.auto }
                         .forEach { link ->

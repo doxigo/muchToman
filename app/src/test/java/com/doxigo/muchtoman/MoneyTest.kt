@@ -89,6 +89,19 @@ class MoneyTest {
     }
 
     @Test
+    fun `a car is worth what she typed, whatever any rate says`() {
+        // Nobody quotes her car, so the figure she typed IS the value: a stray "car" price from
+        // the network, or a نرخ she once typed against it, must not scale her own valuation.
+        val rates = effectiveRates(Rates(1L, mapOf("car" to 7.0)), mapOf("car" to 99.0))
+        for (id in listOf("car", "house", "land")) {
+            assertEquals(Kind.PROPERTY, resolveType(id, emptyList()).kind)
+            val t = computeTotals(listOf(Holding(id, 900_000_000.0)), rates)
+            assertEquals(id, 900_000_000.0, t.toman, 0.0)
+            assertTrue(t.missing.isEmpty())
+        }
+    }
+
+    @Test
     fun `toman adds to the rest of the portfolio`() {
         val holdings = listOf(Holding(TOMAN_ID, 50_000_000.0), Holding("usd", 3000.0))
         val rates = effectiveRates(Rates(1L, mapOf("usd" to 187_000.0)), emptyMap())

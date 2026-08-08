@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -92,6 +93,31 @@ private fun faYear(year: Int): String = buildString {
     for (c in year.toString()) append('۰' + (c - '0'))
 }
 
+/**
+ * Which side of the ledger she is looking at.
+ *
+ * Not a search and not a date range — three lenses on the same rows, in the order she reads them:
+ * «همه» first because it is the one she is in unless she asked for otherwise.
+ *
+ * [matches] does not invent a second definition of money moving. A transfer leg is neither income
+ * nor spending — that is the whole reason both legs are struck through and left out of every total
+ * — so it appears under «همه» and nowhere else. A row the parser read no amount from is a stated
+ * balance rather than a movement, and it goes the same way.
+ */
+internal enum class LedgerLens(val fa: String, val emptyFa: String) {
+    ALL("همه", ""),
+    INCOME("درآمد", "هنوز درآمدی ثبت نشده"),
+    EXPENSE("خرج", "هنوز خرجی ثبت نشده"),
+    ;
+
+    fun matches(entry: LedgerEntry): Boolean {
+        if (this == ALL) return true
+        if (entry.transfer) return false
+        val signed = entry.txn.signedRial ?: return false
+        return if (this == INCOME) signed > 0 else signed < 0
+    }
+}
+
 @Composable
 fun TimelineScreen(
     ledger: LedgerView,
@@ -100,9 +126,21 @@ fun TimelineScreen(
     onOpen: (LedgerEntry) -> Unit,
 ) {
     val today = remember { tehranDay(System.currentTimeMillis()) }
-    val visible = ledger.entries.filterNot { it.duplicate }
+    var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
+    val listState = rememberLazyListState()
+    // Two lists, not one: «nothing here at all» and «nothing on this side» are different facts
+    // and get different answers, and telling her the ledger is empty when she has merely filtered
+    // it to a side she has none of would be the screen lying about her money.
+    val everything = remember(ledger.entries) { ledger.entries.filterNot { it.duplicate } }
+    val visible = remember(everything, lens) { everything.filter { lens.matches(it) } }
     val grouped = remember(visible) { visible.groupBy { it.txn.day }.toSortedMap(compareByDescending { it }) }
     val waiting = ledger.review.size
+
+    // The newest of what she just asked for, not wherever the old offset happened to land — two
+    // hundred rows into «همه» is the middle of nothing in a list that is now nine rows long.
+    // Instant rather than animated: the content was replaced, not moved, so there is no distance
+    // to travel and scrolling it would only be a delay wearing choreography.
+    LaunchedEffect(lens) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         // statusBars only: the tab bar below owns the bottom, and taking systemBars here
@@ -123,13 +161,24 @@ fun TimelineScreen(
                 if (waiting > 0) ReviewPill(waiting, onReview)
             }
 
-            if (visible.isEmpty()) {
+            if (everything.isEmpty()) {
                 EmptyLedger()
+                return@Column
+            }
+
+            // Pinned above the list rather than scrolled with it. A filter she cannot see is a
+            // filter she forgets she set, and on this screen that reads as money having gone
+            // missing — the one thing the ledger must never look like.
+            LensPicker(lens) { lens = it }
+
+            if (visible.isEmpty()) {
+                LensEmpty(lens) { lens = LedgerLens.ALL }
                 return@Column
             }
 
             LazyColumn(
                 Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = Space.xl, end = Space.xl, bottom = bottomInset + Space.l,
                 ),
@@ -152,6 +201,10 @@ fun TimelineScreen(
  * for — "the container a band of rows sits in, as one object rather than a stack of cards" — and
  * it lets the heading carry the day's net, which is the one figure the ledger owns and no other
  * screen shows.
+ *
+ * The figure is the sum of the rows actually in the band, so under a [LedgerLens] it is that day's
+ * income or that day's spending rather than its net — which is what the heading of a filtered day
+ * should say, and why the picker stays on screen to name which of the three she is reading.
  */
 @Composable
 private fun DayBand(
@@ -163,7 +216,8 @@ private fun DayBand(
     // Transfers move money between her own accounts. Counting them would show a day that only
     // shuffled funds as a day she earned or spent, which is the whole reason they are struck
     // through in the rows below.
-    val net = rows.filterNot { it.transfer }.sumOf { it.txn.signedRial ?: 0L }
+    val moved = rows.filterNot { it.transfer }.mapNotNull { it.txn.signedRial }.filter { it != 0L }
+    val net = moved.sum()
     Row(
         Modifier
             .fillMaxWidth()
@@ -177,7 +231,11 @@ private fun DayBand(
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f).semantics { heading() },
         )
-        if (net != 0L) {
+        // Only when it is actually summarising. A day holding one movement already prints this
+        // exact figure two lines down, and under a [LedgerLens] most days hold exactly one — so
+        // the filter turned a rare bit of redundancy into the dominant pattern on the screen. A
+        // heading that repeats the row beneath it is noise wearing the costume of a summary.
+        if (net != 0L && moved.size > 1) {
             Text(
                 faSignedCompact(tomanOf(net), net > 0),
                 // A step under the rows it summarises: the day's figure is context for them,
@@ -228,6 +286,54 @@ private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onPrimary,
         )
+    }
+}
+
+/**
+ * Which side she is looking at, in the app's own shape for picking exactly one of a few.
+ *
+ * Deliberately not a new control. [SegmentedChoice] already answers this question on the report
+ * and in settings, and a filter that invented its own chips would be a fourth answer to a question
+ * the app settled once. `Role.Tab` and 14sp are the report's window picker exactly, because this is
+ * the same kind of question — which slice of the same data am I reading — and it has earned the
+ * same kind of answer.
+ */
+@Composable
+private fun LensPicker(lens: LedgerLens, onSelect: (LedgerLens) -> Unit) {
+    SegmentedChoice(
+        options = LedgerLens.entries,
+        selected = lens,
+        label = { it.fa },
+        onSelect = onSelect,
+        role = Role.Tab,
+        fontSize = 14.sp,
+        modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
+    )
+}
+
+/**
+ * A side of the ledger she has nothing on.
+ *
+ * Not [EmptyLedger]: that one says the ledger is empty and tells her how to fill it, and saying
+ * either here would be false. This one names the absence and hands back the only thing that
+ * undoes it — a filter with no way out is a dead end she has to guess her way off.
+ */
+@Composable
+private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(Space.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            lens.emptyFa,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(Space.s))
+        TextButton(onClick = onClear) {
+            Text("همه رو نشون بده", fontWeight = FontWeight.Bold)
+        }
     }
 }
 

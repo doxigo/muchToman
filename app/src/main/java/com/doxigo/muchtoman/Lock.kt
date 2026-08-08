@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -193,7 +194,9 @@ fun SettingsScreen(
     bankAccounts: List<BankAccount>,
     disabledBanks: Set<String>,
     categories: List<Category>,
+    family: FamilyState,
     activity: FragmentActivity,
+    onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onSmsChange: (Boolean) -> Unit,
@@ -239,6 +242,16 @@ fun SettingsScreen(
                 TextButton(onClick = { onNameChange(draft); onBack() }) {
                     Text("ذخیره", fontSize = 17.sp)
                 }
+            }
+
+            // First on the page and above its own label, which is the whole compensation for
+            // giving up a tab: everything below here is a switch she flips once, this is a
+            // place she goes. A card directly under the title, with no heading over it, is the
+            // page's headline item — the settings equivalent of the slot it used to hold.
+            // Not in the lite edition, which has no household and never had the tab either.
+            if (!BuildConfig.LITE) {
+                Spacer(Modifier.height(Space.s))
+                CompanionRow(family, onCompanion)
             }
 
             SectionLabel("اسمت")
@@ -630,6 +643,67 @@ private fun SectionLabel(text: String) {
             // Real headings, so TalkBack can jump between sections of this long page.
             .semantics { heading() },
     )
+}
+
+/**
+ * The way into [CompanionScreen], and the only row on this page that is a door rather than a
+ * switch — so it is the only one that says what is behind it instead of what it does.
+ *
+ * The subtitle is the promotion. «خانواده ›» on its own is a word she has no reason to press;
+ * a household of one is an unfinished setup and says so, and an unpaired one makes the offer in
+ * the words she would use for it herself. This is the line that has to do the work the tab was
+ * doing, so it is never the same line twice.
+ *
+ * Titled «خانواده» and not «همراه»: the tab said همراه because 11sp in a 56dp bar has room for
+ * one short word, and the page it opens has called itself خانواده all along. With the bar out
+ * of the way there is no reason for the app to have two names for one thing.
+ */
+@Composable
+private fun CompanionRow(family: FamilyState, onClick: () -> Unit) {
+    val subtitle = when {
+        !family.paired -> "خرج‌های خونه رو با هم توی یک دفتر ببینید"
+        family.members.size < 2 -> "هنوز کسی اضافه نشده — دعوتش کن"
+        else -> "${faNumber(family.members.size.toDouble())} عضو"
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            Modifier
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = Space.l, vertical = Space.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    // The one row on the page with a real mark instead of an emoji, and the
+                    // plate is what keeps that from reading as a missing emoji: same disc,
+                    // same size, same place as the ✉️ and 🔒 below it.
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) { CompanionGlyph(MaterialTheme.colorScheme.onSurface) }
+            Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
+                Text("خانواده", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    subtitle,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /** Three choices, not a switch: a two-state toggle cannot express "follow the phone". */

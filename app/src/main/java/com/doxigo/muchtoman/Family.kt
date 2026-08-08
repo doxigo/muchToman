@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -36,14 +37,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
@@ -70,6 +76,46 @@ fun qrBitmap(content: String, size: Int = 720): Bitmap {
     return bitmap
 }
 
+/**
+ * The two of them, on the row in تنظیمات that leads here.
+ *
+ * This was a tab icon — two overlapping rounded rectangles first, her phone and the one she set
+ * up for someone else, which is a perfectly good drawing of the mechanism and the universal
+ * glyph for *copy*. Nobody reads a screen's plumbing off its label; they read who it is for.
+ *
+ * One figure, and it took three tries to get there. Two heads over a shared shoulder line was
+ * the obvious drawing of a household, and it is also — at any head size, any spacing, any
+ * curvature — a face. Two round marks above a symmetric arc is a face; small ones set wide over
+ * a flat arc is a face wearing a frown. There is no tuning out of it, because the reading does
+ * not come from the proportions, it comes from the arrangement.
+ *
+ * So: one person. A single circle over an arc cannot be misread as a face — there is only one
+ * eye — and it cannot be misread as *copy*, which is the whole reason the two cards had to go.
+ * It keeps the tab set's pen ([pen]) even though it left the bar: it is still the app's only
+ * drawing of a person, and the row it sits on is beside rows wearing emoji, which makes the
+ * one-pen discipline the only thing holding it to the app.
+ */
+@Composable
+fun CompanionGlyph(tint: Color, size: Dp = 24.dp) {
+    Canvas(Modifier.size(size)) {
+        inset(this.size.minDimension * 0.125f) {
+            val w = this.size.width
+            val h = this.size.height
+            drawCircle(tint, w * 0.2f, Offset(w * 0.5f, h * 0.26f), style = pen())
+            drawArc(
+                color = tint,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = false,
+                topLeft = Offset(w * 0.08f, h * 0.56f),
+                // Only the top half of the box is swept, so a tall box draws a shallow curve.
+                size = Size(w * 0.84f, h * 0.8f),
+                style = pen(),
+            )
+        }
+    }
+}
+
 @Composable
 fun CompanionScreen(
     state: FamilyState,
@@ -83,6 +129,7 @@ fun CompanionScreen(
     /** How many ledger entries each member id has put in, for the rows to report. */
     contributions: Map<String, Int>,
     bottomInset: androidx.compose.ui.unit.Dp,
+    onBack: () -> Unit,
 ) {
     var name by remember(state.memberId, state.memberName, state.pendingPairing, suggestedName) {
         mutableStateOf(state.memberName.ifBlank { suggestedName })
@@ -98,13 +145,21 @@ fun CompanionScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = bottomInset + Space.l),
         ) {
-            Text(
-                "خانواده",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(vertical = Space.m).semantics { heading() },
-            )
+            // This was a tab, and the bar was its way out. Pushed from تنظیمات it needs one of
+            // its own, in the same corner every other pushed page in the app puts it.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "خانواده",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = Space.m)
+                        .semantics { heading() },
+                )
+                TextButton(onClick = onBack) { Text("برگشت") }
+            }
             Text(
                 "تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

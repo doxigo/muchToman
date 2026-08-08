@@ -138,10 +138,13 @@ class ClassifyTest {
     }
 
     @Test
-    fun `the picker offers only the side of the ledger the money went`() {
+    fun `the picker offers the side the money went, plus the way back from a transfer`() {
         val incoming = categoryChoices(BUILTIN_CATEGORIES, "in").map { it.nameFa }
         assertEquals(
-            listOf("درآمد", "حقوق", "پاداش", "فروش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "سایر"),
+            listOf(
+                "درآمد", "حقوق", "پاداش", "فروش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "سایر",
+                "همسر", "انتقال بین حساب‌ها",
+            ),
             incoming,
         )
 
@@ -149,14 +152,21 @@ class ClassifyTest {
         assertTrue("خواربار" in outgoing)
         assertTrue("درآمد" !in outgoing)
 
-        // Neither list may offer the two that are never hers to pick.
+        // همسر is the other one that ignores direction: money between the two of them is one
+        // category whichever way it went, and it is an EXPENSE row, so only the id can carry it
+        // into the incoming grid.
+        assertTrue("همسر" in outgoing)
+
+        // «دسته‌بندی نشده» is the absence of an answer and never one of them. انتقال is the one
+        // that ignores direction: both legs of a real transfer must be able to reach it, and the
+        // incoming leg is exactly the one that reads as invented income without it.
         for (list in listOf(incoming, outgoing, categoryChoices(BUILTIN_CATEGORIES, null).map { it.nameFa })) {
-            assertTrue("انتقال بین حساب‌ها" !in list)
+            assertTrue("انتقال بین حساب‌ها" in list)
             assertTrue("دسته‌بندی نشده" !in list)
         }
 
         // A direction the parser could not read is not a reason to hide half the answers.
-        assertEquals(BUILTIN_CATEGORIES.size - 2, categoryChoices(BUILTIN_CATEGORIES, null).size)
+        assertEquals(BUILTIN_CATEGORIES.size - 1, categoryChoices(BUILTIN_CATEGORIES, null).size)
     }
 
     // ─────────────────────────── links ───────────────────────────

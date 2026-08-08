@@ -42,6 +42,21 @@ class HoldingLabelTest {
     }
 
     @Test
+    fun `two cars are two rows, each worth what she typed`() {
+        // The reason املاک و خودرو needs its name field at add time: nothing else tells one
+        // خودرو row from the other, and both have to count with no rates fetched at all.
+        val hers = Holding("car", 1_200_000_000.0, id = newHoldingId(), label = "پژوی من")
+        val his = Holding("car", 800_000_000.0, id = newHoldingId(), label = "پراید بابا")
+
+        assertNotEquals(hers.key, his.key)
+        assertEquals(
+            2_000_000_000.0,
+            computeTotals(listOf(hers, his), effectiveRates(Rates(), emptyMap())).toman,
+            0.0,
+        )
+    }
+
+    @Test
     fun `a holding saved before multiples were allowed is keyed by its asset`() {
         val old = Json.decodeFromString<Holding>("""{"typeId":"usdt","amount":10.5}""")
 

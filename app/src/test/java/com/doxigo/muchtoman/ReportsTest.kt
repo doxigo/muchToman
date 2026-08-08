@@ -82,6 +82,29 @@ class ReportsTest {
     }
 
     @Test
+    fun `each lens shows its own side, and only «همه» shows what is neither`() {
+        val income = entry(first, 100_000_000)
+        val spent = entry(first, -30_000_000)
+        // Both legs of a transfer, and a message that stated a balance without moving anything.
+        val legIn = entry(first, 500_000_000, transfer = true)
+        val legOut = entry(first, -500_000_000, transfer = true)
+        val stated = entry(first, null)
+        val rows = listOf(income, spent, legIn, legOut, stated)
+
+        assertEquals(rows, rows.filter { LedgerLens.ALL.matches(it) })
+        assertEquals(listOf(income), rows.filter { LedgerLens.INCOME.matches(it) })
+        assertEquals(listOf(spent), rows.filter { LedgerLens.EXPENSE.matches(it) })
+
+        // The load-bearing one: a transfer leg is her own money moving, so it is neither income
+        // nor spending on either side. Letting the incoming leg through «درآمد» would show her
+        // half a million she never earned — the same wrong total the struck-through row prevents.
+        for (lens in listOf(LedgerLens.INCOME, LedgerLens.EXPENSE)) {
+            assertTrue(rows.filter { lens.matches(it) }.none { it.transfer })
+            assertTrue(rows.filter { lens.matches(it) }.all { it.txn.signedRial != null })
+        }
+    }
+
+    @Test
     fun `a month with no income has no savings rate rather than a bad one`() {
         // Zero income is not a hard month, it is no information. A rate here would be a
         // division by zero wearing a percentage sign.

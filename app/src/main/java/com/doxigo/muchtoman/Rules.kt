@@ -47,6 +47,7 @@ data class Category(
 
 const val CAT_UNCATEGORISED = "cat_uncategorised"
 const val CAT_TRANSFER = "cat_transfer"
+const val CAT_SPOUSE = "cat_spouse"
 const val CAT_FEES = "cat_fees"
 const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
@@ -103,6 +104,19 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // in the middle shifts every category after it into a new neighbourhood and lands two purples
     // side by side. Appending moves nothing, so every mark she has learned keeps its hue.
     Category("cat_tobacco", nameFa = "دخانیات", kind = CategoryKind.EXPENSE, sort = 175, builtin = true),
+    // Appended for the same reason دخانیات was, not slotted beside حمل و نقل and قبض‌ها where they
+    // belong by meaning: `sort` is grid position, and every mark she has learned keeps its hue only
+    // as long as nothing before it moves.
+    //
+    // خودرو is the car itself — بنزین, سرویس, بیمه, جریمه — and حمل و نقل stays what it was, the
+    // fare she pays somebody else. اینترنت is out of قبض‌ها for the same reason قسط و وام is: it is
+    // the one line of the utilities she actually decides the size of.
+    //
+    // No shipped rule behind either. Both arrive as an ordinary برداشت on whichever channel the
+    // bank used, so there is nothing to key on that is not a guess; they earn a rule the first time
+    // she files one and says «همیشه».
+    Category("cat_car", nameFa = "خودرو", kind = CategoryKind.EXPENSE, sort = 176, builtin = true),
+    Category("cat_internet", nameFa = "اینترنت", kind = CategoryKind.EXPENSE, sort = 177, builtin = true),
 
     Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 180, builtin = true),
     // What درآمد is actually made of. درآمد stays, and stays first: it is what `rule_income` files
@@ -119,6 +133,18 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // Last of the income side on purpose: «سایر» is where the eye goes after reading the others
     // and finding none of them, so it must not be the first thing read.
     Category("cat_income_other", nameFa = "سایر", kind = CategoryKind.INCOME, sort = 195, builtin = true),
+    // Money between the two of them, and it runs both ways: what she pays for him is spending,
+    // what he sends her is income, and both belong under the same word. One row and not a pair —
+    // the month's report totals by name, so two rows called همسر would be one line anyway, and
+    // one name is one mark to learn. [categoryChoices] offers it in both directions, the way
+    // انتقال بین حساب‌ها already is.
+    //
+    // EXPENSE by kind for the reason قرض is: EXPENSE and INCOME are the only kinds that stay
+    // visible, and what a row counts as is read off the amount's sign, never off this field.
+    //
+    // Sorted past سایر so it is the last cell of both grids, right before انتقال — appended for
+    // the reason دخانیات was: nothing before it moves, so every mark she has learned keeps its hue.
+    Category(CAT_SPOUSE, nameFa = "همسر", kind = CategoryKind.EXPENSE, sort = 198, builtin = true),
     Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 200, builtin = true),
 )
 
@@ -143,8 +169,13 @@ fun customCategory(nameFa: String, kind: String, glyph: CategoryGlyph, now: Long
 /**
  * The categories worth offering for one transaction.
  *
- * «دسته‌بندی نشده» is the absence of an answer, not one of them, and a transfer is something the
- * detector settles rather than something she files by hand.
+ * «دسته‌بندی نشده» is the absence of an answer, not one of them.
+ *
+ * «انتقال بین حساب‌ها» is offered in both directions, and it is the one category that ignores
+ * direction, because it is the only way back from a rejected transfer link. Filing one leg of a
+ * real transfer under a spending category rejects that link for ever and hands the other leg to
+ * the income rule — the same money counted twice, with no undo anywhere in the app. The detector
+ * settling most transfers is not a reason to make the correction unreachable.
  *
  * Direction does the rest, and it is what makes this list usable now that it is long: money that
  * arrived was never خواربار or مد و پوشاک, so offering them means reading past sixteen wrong
@@ -154,9 +185,13 @@ fun customCategory(nameFa: String, kind: String, glyph: CategoryGlyph, now: Long
  */
 fun categoryChoices(categories: List<Category>, direction: String?): List<Category> =
     categories.filter {
-        it.id != CAT_UNCATEGORISED && when (direction) {
-            "in" -> it.kind == CategoryKind.INCOME
-            "out" -> it.kind == CategoryKind.EXPENSE
+        it.id != CAT_UNCATEGORISED && when {
+            // The two that ignore direction: انتقال because it is the only way back from a
+            // rejected transfer link, همسر because money between the two of them is one category
+            // whichever way it went.
+            it.id == CAT_TRANSFER || it.id == CAT_SPOUSE -> true
+            direction == "in" -> it.kind == CategoryKind.INCOME
+            direction == "out" -> it.kind == CategoryKind.EXPENSE
             else -> it.kind != CategoryKind.TRANSFER
         }
     }

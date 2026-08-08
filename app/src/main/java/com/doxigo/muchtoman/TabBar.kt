@@ -25,9 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -52,8 +50,13 @@ import androidx.compose.ui.unit.sp
  * with a «بستن» in the corner, and overlays over overlays meant she could get somewhere she
  * could not get out of. A bar that is always there is not only tidier, it is the fix.
  *
- * Goals and the companion ledger are roots because they hold things she manages. The report is
- * a read-only drill-down from the total on Home, so it does not take a permanent slot here.
+ * Goals is a root because it holds things she manages. The report is here because "بیشتر شده یا
+ * کمتر؟" is a question she asks as often as "چقدر دارم؟", and as an overlay every door into it
+ * was on خانه — a screen she has to be standing on to remember the report exists at all.
+ *
+ * The household is not here. It is the one thing on this list she sets up once and then never
+ * opens again, and a slot on this bar is rent paid every day; it lives at the top of تنظیمات
+ * now, which is where the other once-and-done things already are.
  *
  * ## Why it looks like this
  *
@@ -78,7 +81,7 @@ enum class Tab(val fa: String) {
     LEDGER("دفتر"),
     GOALS("هدف‌ها"),
     ASSETS("دارایی"),
-    COMPANION("همراه"),
+    REPORT("گزارش"),
 }
 
 /**
@@ -90,7 +93,8 @@ enum class Tab(val fa: String) {
  *
  * Every `tab = …` in the app has to go through a member of this list, or the lite build can be
  * navigated somewhere it has no way out of. There is exactly one such assignment that could
- * ([Tab.COMPANION], from a pairing deep link), and it is guarded at the source.
+ * ([Tab.REPORT], from the گزارش button on the دارایی field), and the screen it lands on keeps
+ * its own «برگشت» for precisely the edition that has no bar to leave by.
  */
 val tabs: List<Tab> = if (BuildConfig.LITE) listOf(Tab.ASSETS) else Tab.entries
 
@@ -220,7 +224,7 @@ private fun DrawScope.drawTabIcon(tab: Tab, tint: Color) {
             Tab.LEDGER -> drawLedger(tint)
             Tab.GOALS -> drawGoals(tint)
             Tab.ASSETS -> drawAssets(tint)
-            Tab.COMPANION -> drawCompanion(tint)
+            Tab.REPORT -> drawReport(tint)
         }
     }
 }
@@ -349,35 +353,32 @@ private fun DrawScope.drawAssets(tint: Color) {
 }
 
 /**
- * The two of them.
+ * Three rising bars, in the pen.
  *
- * This was two overlapping rounded rectangles — her phone and the one she set up for someone
- * else — which is a perfectly good drawing of the mechanism and the universal glyph for *copy*.
- * Nobody reads a screen's plumbing off its tab; they read who it is for. This tab is for the
- * person she shares a household with, so it draws people.
+ * The same three bars [BarsIcon] draws for the گزارش button on the field, and deliberately not
+ * the same drawing: that one is filled rounded rects, because it stands beside two filled
+ * Material glyphs on the hero. Here it stands beside four stroked ones. A shape belongs to the
+ * family it sits in, and the family here is the pen — a solid glyph among four outlines is the
+ * one that looks like it was pasted in from somewhere else.
  *
- * One figure, and it took three tries to get there. Two heads over a shared shoulder line was
- * the obvious drawing of a household, and it is also — at any head size, any spacing, any
- * curvature — a face. Two round marks above a symmetric arc is a face; small ones set wide over
- * a flat arc is a face wearing a frown. There is no tuning out of it, because the reading does
- * not come from the proportions, it comes from the arrangement.
- *
- * So: one person, which is what «همراه» says anyway. A single circle over an arc cannot be
- * misread as a face — there is only one eye — and it cannot be misread as *copy*, which is the
- * whole reason the two cards had to go.
+ * Rising to the right, matching the report's own chart, where time runs left to right and the
+ * newest point is the right-hand end regardless of the page's direction.
  */
-private fun DrawScope.drawCompanion(tint: Color) {
+private fun DrawScope.drawReport(tint: Color) {
     val w = size.width
     val h = size.height
-    drawCircle(tint, w * 0.2f, Offset(w * 0.5f, h * 0.26f), style = pen())
-    drawArc(
-        color = tint,
-        startAngle = 180f,
-        sweepAngle = 180f,
-        useCenter = false,
-        topLeft = Offset(w * 0.08f, h * 0.56f),
-        // Only the top half of the box is swept, so a tall box draws a shallow curve.
-        size = Size(w * 0.84f, h * 0.8f),
-        style = pen(),
-    )
+    val stroke = pen()
+    // Inset half a stroke top and bottom, so the round caps land inside the box rather than
+    // half outside it — the same reason nothing else in this set draws to its own edge.
+    val cap = stroke.width / 2f
+    for ((i, top) in listOf(0.55f, 0.28f, 0.0f).withIndex()) {
+        val x = w * (0.14f + i * 0.36f)
+        drawLine(
+            tint,
+            Offset(x, h * top + cap),
+            Offset(x, h - cap),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round,
+        )
+    }
 }

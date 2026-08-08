@@ -622,14 +622,14 @@ class Store(context: Context) {
  * Manual overrides layered on top of fetched rates, with Toman pinned at 1 on top of both.
  * Toman-in-the-bank must still count when the network is down and must not be "correctable"
  * to anything other than itself — and the same goes for the bank balances, which are already
- * Toman by the time [parseBankSms] is done with them.
+ * Toman by the time [parseBankSms] is done with them, and for the assets she prices herself.
  */
 fun effectiveRates(
     fetched: Rates,
     overrides: Map<String, Double>,
     tse: TseSnapshot = TseSnapshot(),
 ): Map<String, Double> =
-    fetched.toman + tse.toman + overrides + mapOf(TOMAN_ID to 1.0, BANK_ID to 1.0)
+    fetched.toman + tse.toman + overrides + TOMAN_BY_DEFINITION
 
 /**
  * Fresh prices, but the old catalogue if the new one is empty. When the Worker's name-and-logo

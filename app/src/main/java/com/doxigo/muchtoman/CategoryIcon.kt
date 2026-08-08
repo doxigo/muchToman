@@ -43,7 +43,8 @@ import kotlin.math.sin
 enum class CategoryGlyph {
     BASKET, CUP, BUS, RECEIPT, CROSS, TAG, NOTE, PERCENT, TRAY, SWAP,
     STACK, PLANE, GIFT, BLOOM, SHIRT, MUSIC, HOUSE, PERSON, LEND, PAYBACK,
-    INSTALMENT, SMOKE, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
+    INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
+    RING,
     DOTS,
 }
 
@@ -84,6 +85,8 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
     "دخانیات" -> CategoryGlyph.SMOKE
+    "خودرو" -> CategoryGlyph.WHEEL
+    "اینترنت" -> CategoryGlyph.WIFI
     "برداشت نقدی" -> CategoryGlyph.NOTE
     "کارمزد" -> CategoryGlyph.PERCENT
     "درآمد" -> CategoryGlyph.TRAY
@@ -92,6 +95,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "فروش" -> CategoryGlyph.SHOP
     "سود سرمایه‌گذاری" -> CategoryGlyph.CHART
     "سایر" -> CategoryGlyph.ASTERISK
+    "همسر" -> CategoryGlyph.RING
     "انتقال بین حساب‌ها" -> CategoryGlyph.SWAP
     else -> CategoryGlyph.DOTS
 }
@@ -182,6 +186,16 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // above — which leaves most of the wheel free, and plum is the part of it this grid
         // never used.
         CategoryGlyph.SMOKE -> if (dark) Color(0xFFDDA2E0) else Color(0xFF96479B)
+        // ── row 5 continued, and row 6 ──
+        // خودرو lands beside دخانیات's plum with قسط و وام's blue directly above it, which rules out
+        // both halves of the wheel from teal round to red and leaves the green nobody took: خواربار
+        // is yellower and پس‌انداز bluer, and neither is within three cells of this one.
+        CategoryGlyph.WHEEL -> if (dark) Color(0xFF89D486) else Color(0xFF348030)
+        // اینترنت opens row 6, so برداشت نقدی's green directly above is the only cell it touches —
+        // خودرو is at the far end of the row above, not beside it. Blue-violet, which is what a
+        // wifi mark is everywhere; a plain blue is what it wanted and cannot have, sitting 48° off
+        // that green — and حمل و نقل and قسط و وام are both already using it anyway.
+        CategoryGlyph.WIFI -> if (dark) Color(0xFFA59EEB) else Color(0xFF4538B2)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -202,6 +216,12 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // something worse, and on that surface the category's name is set beside the mark at the
         // same size — the colour narrows it, the word and the shape finish it. The grid, where
         // the label is 12sp underneath, is the surface that had to be solved exactly.
+        // همسر is the last cell of both grids, and what it touches there is: انتقال's teal beside
+        // it in both, اینترنت's blue-violet on its other side in the spending grid, کارمزد's grey
+        // above it there, and سود سرمایه‌گذاری's purple above it in the income one. That rules out
+        // everything from teal round to red and leaves the yellow-green between خانه و کاشانه's
+        // olive and خواربار's leaf — and neither of those two comes near this cell in either grid.
+        CategoryGlyph.RING -> if (dark) Color(0xFFB6D877) else Color(0xFF638A1B)
         CategoryGlyph.TRAY -> if (dark) Color(0xFF6FD5A0) else Color(0xFF17805A)
         CategoryGlyph.PAYBACK -> if (dark) Color(0xFFEFC177) else Color(0xFFA9761F)
         CategoryGlyph.SWAP -> if (dark) Color(0xFF6FCFDE) else Color(0xFF14798C)
@@ -643,6 +663,51 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 )
             }
         }
+        // A steering wheel. Not a car from the side: that is حمل و نقل's bus with a lower roof, and
+        // the two categories nearest in meaning are the two that must not share a drawing. The
+        // wheel is also the half of a car she is actually paying for — بنزین, سرویس, بیمه.
+        //
+        // Three spokes and not four: a four-spoke wheel at 18dp is سلامت's plus inside a circle.
+        CategoryGlyph.WHEEL -> {
+            drawCircle(tint, w * 0.42f, Offset(w * 0.5f, h * 0.5f), style = ink)
+            drawCircle(tint, w * 0.13f, Offset(w * 0.5f, h * 0.5f), style = ink)
+            drawLine(tint, Offset(w * 0.08f, h * 0.5f), Offset(w * 0.37f, h * 0.5f), stroke.toPx(), StrokeCap.Butt)
+            drawLine(tint, Offset(w * 0.63f, h * 0.5f), Offset(w * 0.92f, h * 0.5f), stroke.toPx(), StrokeCap.Butt)
+            drawLine(tint, Offset(w * 0.5f, h * 0.63f), Offset(w * 0.5f, h * 0.92f), stroke.toPx(), StrokeCap.Butt)
+        }
+        // The wifi fan: three arcs over a dot, which is the one mark nobody has to be taught. A
+        // globe would have been a circle with lines in it, and the wheel above is now exactly that.
+        //
+        // The arcs widen to the full box rather than staying a tidy fan, for the reason دخانیات's
+        // smoke does: ink that sits in the middle of its cell reads as a smaller icon beside marks
+        // that run edge to edge, not as a different one.
+        CategoryGlyph.WIFI -> {
+            drawCircle(tint, w * 0.075f, Offset(w * 0.5f, h * 0.84f))
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.34f, h * 0.66f)
+                    quadraticTo(w * 0.5f, h * 0.48f, w * 0.66f, h * 0.66f)
+                },
+                tint,
+                style = ink,
+            )
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.18f, h * 0.5f)
+                    quadraticTo(w * 0.5f, h * 0.22f, w * 0.82f, h * 0.5f)
+                },
+                tint,
+                style = ink,
+            )
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.04f, h * 0.34f)
+                    quadraticTo(w * 0.5f, h * -0.04f, w * 0.96f, h * 0.34f)
+                },
+                tint,
+                style = ink,
+            )
+        }
         // An envelope, for حقوق — a فیش, and the one shape that says «this arrives every month»
         // rather than «money came in», which is درآمد's tray and already taken.
         CategoryGlyph.ENVELOPE -> {
@@ -749,6 +814,26 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
             drawLine(tint, Offset(w * 0.5f, h * 0.08f), Offset(w * 0.5f, h * 0.92f), stroke.toPx(), StrokeCap.Round)
             drawLine(tint, Offset(w * 0.14f, h * 0.29f), Offset(w * 0.86f, h * 0.71f), stroke.toPx(), StrokeCap.Round)
             drawLine(tint, Offset(w * 0.14f, h * 0.71f), Offset(w * 0.86f, h * 0.29f), stroke.toPx(), StrokeCap.Round)
+        }
+        // A ring with its stone. Not two interlocking rings, which is what the word wants and what
+        // the دارایی tab already draws — two overlapping circles is «coins» in this app, and a mark
+        // must not mean two things. Not a heart either, for the reason سلامت is not one: a heart is
+        // «favourite» in every app she has ever used.
+        CategoryGlyph.RING -> {
+            drawCircle(tint, w * 0.3f, Offset(w * 0.5f, h * 0.64f), style = ink)
+            // The stone sits on the band rather than floating over it: a diamond with a gap under
+            // it reads as an arrow above a circle.
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.5f, h * 0.06f)
+                    lineTo(w * 0.68f, h * 0.22f)
+                    lineTo(w * 0.5f, h * 0.38f)
+                    lineTo(w * 0.32f, h * 0.22f)
+                    close()
+                },
+                tint,
+                style = ink,
+            )
         }
         // Nothing known yet. Three dots say «unset» without the alarm a «؟» carries.
         CategoryGlyph.DOTS -> {

@@ -485,7 +485,10 @@ suspend fun ledgerEntries(derived: DerivedDb, durable: DurableDb, limit: Int = 3
             confidence = filed?.confidence ?: Confidence.NONE,
             needsReview = filed?.needsReview ?: true,
             duplicate = txn.ref in hidden,
-            transfer = txn.ref in transfers,
+            // A detector's pair, or her own answer. Both mean the same thing to every total, so
+            // they are the same flag: `spendable`, the day's net and the deck all read this one
+            // field, and only this field keeps a transfer out of income and out of spending.
+            transfer = txn.ref in transfers || filed?.categoryId == CAT_TRANSFER,
             ownerMemberId = ownerMemberId,
             ownerName = members[ownerMemberId]?.name.orEmpty(),
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),

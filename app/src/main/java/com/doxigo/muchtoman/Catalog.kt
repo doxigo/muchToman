@@ -8,6 +8,7 @@ enum class Kind(val fa: String) {
     SILVER("نقره"),
     COIN("سکه"),
     STOCK("بورس"),
+    PROPERTY("املاک و خودرو"),
 }
 
 /** Toman held as Toman. Its rate is 1 by definition and never comes from the network. */
@@ -101,7 +102,31 @@ val STATIC_CATALOG: List<AssetType> = listOf(
     // the market quotes as a reference; a shelf of ۱۰۰ سوت pieces is worth somewhat more than
     // this says, and the manual rate override is the way to say so.
     AssetType("parsian", "سکه پارسیان", Kind.COIN, "سوت", en = "Parsian Gold Coin", emoji = "🪙"),
+
+    // Nobody quotes *her* car or *her* land, so these are the assets with no rate to fetch: the
+    // figure she types is the value in Toman, and the unit says so. Counted in تومان rather than
+    // in "عدد" at a hand-typed نرخ, because a house is worth what she says it is worth and asking
+    // for that in two fields is asking the same question twice. A second car or a second ملک is
+    // another holding of the same row with a name of her own on it, the way a second تتر already is.
+    AssetType("car", "خودرو", Kind.PROPERTY, "تومان", en = "Car Vehicle", emoji = "🚗"),
+    AssetType("house", "خانه و ویلا", Kind.PROPERTY, "تومان", en = "House Villa Home", emoji = "🏡"),
+    AssetType("land", "زمین", Kind.PROPERTY, "تومان", en = "Land Plot", emoji = "🏞️"),
 )
+
+/**
+ * Rate 1 by definition, and not correctable to anything else: Toman itself, the bank balances
+ * [parseBankSms] has already turned into Toman, and everything she values herself.
+ */
+val TOMAN_BY_DEFINITION: Map<String, Double> =
+    (STATIC_CATALOG.filter { it.kind == Kind.PROPERTY }.map { it.id } + TOMAN_ID + BANK_ID)
+        .associateWith { 1.0 }
+
+/**
+ * Does she type this one's value straight in Toman? Then there is no rate to show her, none to
+ * correct, and no "یعنی … تومان" to print under a figure that is already in Toman.
+ */
+val AssetType.valuedInToman: Boolean
+    get() = kind == Kind.CASH || kind == Kind.PROPERTY
 
 /**
  * The one asset she never adds by hand: it appears the moment a bank message is read and goes

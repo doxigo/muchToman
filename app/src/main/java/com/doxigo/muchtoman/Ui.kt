@@ -67,7 +67,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -76,7 +75,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -239,9 +237,12 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
     var settings by remember { mutableStateOf(false) }
+    // A page of تنظیمات, not a peer of it: `companion` is only ever read while `settings` is
+    // true, so closing it lands back on the settings page she opened it from rather than on
+    // whatever tab is underneath both.
+    var companion by remember { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
     var deck by remember { mutableStateOf(false) }
-    var report by remember { mutableStateOf(false) }
     var transactionRef by rememberSaveable { mutableStateOf<String?>(null) }
 
     // One tab, not three booleans. Three could be true at once, and were: every screen was an
@@ -253,10 +254,13 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     val portfolio = tab == Tab.ASSETS
 
     LaunchedEffect(state.family.pendingPairing) {
-        // A pairing link can still arrive at the lite build — the intent filter is in the shared
-        // manifest — and sending it to a tab that edition does not have would strand her on a
-        // screen with no bar to leave by.
-        if (Tab.COMPANION in tabs && state.family.pendingPairing != null) tab = Tab.COMPANION
+        // Scanning the invite must still land on the join card, and that card is two taps deep
+        // now. A pairing link can also arrive at the lite build — the intent filter is in the
+        // shared manifest — and that edition has no household to join it to.
+        if (!BuildConfig.LITE && state.family.pendingPairing != null) {
+            settings = true
+            companion = true
+        }
     }
 
     // Leaving the app re-arms the lock, so coming back asks again — and coming back also
@@ -286,8 +290,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     }
     // The tabs that start at the paper rather than at the field, plus every pushed screen.
     val paperUnderStatusBar = !state.locked && (
-        settings || deck || report || transactionRef != null ||
-            tab == Tab.LEDGER || tab == Tab.GOALS || tab == Tab.COMPANION ||
+        settings || companion || deck || transactionRef != null ||
+            tab == Tab.LEDGER || tab == Tab.GOALS || tab == Tab.REPORT ||
             !heroUnderStatusBar
         )
     val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -307,6 +311,33 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         return
     }
 
+    if (companion) {
+        // Back steps to تنظیمات, the page it was opened from — one level, like every other
+        // pushed screen here. Only reachable with `settings` already true, so the page behind
+        // it is always the one it belongs to.
+        BackHandler { companion = false }
+        CompanionScreen(
+            state = state.family,
+            suggestedName = state.name,
+            onStart = vm::startFamily,
+            onJoin = vm::joinFamily,
+            onNameChange = vm::setFamilyName,
+            onShareSmsChange = vm::setFamilySmsSharing,
+            onInvite = vm::inviteDevice,
+            onSync = vm::syncFamily,
+            contributions = remember(state.ledger.entries) {
+                state.ledger.entries.filterNot { it.duplicate }
+                    .groupingBy { it.ownerMemberId }
+                    .eachCount()
+            },
+            // No bar under this one any more: it is a pushed page, so it runs to the gesture
+            // area and takes that inset itself, as the report and the settings page do.
+            bottomInset = 0.dp,
+            onBack = { companion = false },
+        )
+        return
+    }
+
     if (settings) {
         // The system back button must step back to the list, not out of the app.
         BackHandler { settings = false }
@@ -319,7 +350,9 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             bankAccounts = state.bankAccounts,
             disabledBanks = state.disabledBanks,
             categories = state.ledger.categories,
+            family = state.family,
             activity = activity,
+            onCompanion = { companion = true },
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
             onSmsChange = vm::setSmsEnabled,
@@ -334,22 +367,6 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onAddCategory = vm::addCategory,
             onRemoveCategory = vm::archiveCategory,
             onBack = { settings = false },
-        )
-        return
-    }
-
-    if (report) {
-        BackHandler { report = false }
-        val composition = remember(state.listHoldings, state.coins, state.effective, state.stocks) {
-            compositionByKind(state.listHoldings, state.coins, state.effective, state.stocks)
-        }
-        ReportScreen(
-            history = state.history,
-            current = state.totals.toman,
-            composition = composition,
-            story = state.story,
-            bottomInset = 0.dp,
-            onBack = { report = false },
         )
         return
     }
@@ -445,22 +462,20 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         )
         return@Scaffold
       }
-      if (tab == Tab.COMPANION) {
-        CompanionScreen(
-            state = state.family,
-            suggestedName = state.name,
-            onStart = vm::startFamily,
-            onJoin = vm::joinFamily,
-            onNameChange = vm::setFamilyName,
-            onShareSmsChange = vm::setFamilySmsSharing,
-            onInvite = vm::inviteDevice,
-            onSync = vm::syncFamily,
-            contributions = remember(state.ledger.entries) {
-                state.ledger.entries.filterNot { it.duplicate }
-                    .groupingBy { it.ownerMemberId }
-                    .eachCount()
-            },
+      if (tab == Tab.REPORT) {
+        val composition = remember(state.listHoldings, state.coins, state.effective, state.stocks) {
+            compositionByKind(state.listHoldings, state.coins, state.effective, state.stocks)
+        }
+        ReportScreen(
+            history = state.history,
+            current = state.totals.toman,
+            composition = composition,
+            story = state.story,
             bottomInset = pad.calculateBottomPadding(),
+            // The bar is the way out wherever there is one. The lite edition has no bar and
+            // still opens this from the گزارش button on its field, so there it keeps the
+            // «برگشت» it had as an overlay — see [tabs].
+            onBack = ({ tab = tabs.first() }).takeIf { tabs.size == 1 },
         )
         return@Scaffold
       }
@@ -510,7 +525,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                     state = state,
                     usdRate = effective["usd"],
                     onRefresh = vm::refreshAll,
-                    onReport = { report = true },
+                    onReport = { tab = Tab.REPORT },
                     onSettings = { settings = true },
                     onAdd = { adding = true; vm.refreshStocksForPicker() },
                     portfolio = portfolio,
@@ -677,7 +692,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         val available = remember(state.coins, state.stocks) { catalog(state.coins, state.stocks) }
         PickTypeSheet(
             all = available,
-            already = state.holdings.map { it.typeId }.toSet(),
+            // How many she already holds, not merely whether — picking again adds a second one,
+            // and "۲ تا اضافه شده" is the difference between that reading as allowed and as a
+            // row she has already dealt with.
+            already = state.holdings.groupingBy { it.typeId }.eachCount(),
             onDismiss = { adding = false },
             // A fresh key every time: picking تتر when she already holds some opens an empty
             // sheet for a second one, rather than her existing balance.
@@ -784,31 +802,7 @@ internal fun HeroField(
     }
 
     HeroPanel {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    // The name turns the header into a greeting; without one the app just
-                    // says what it is.
-                    if (state.name.isNotBlank()) "سلام، ${state.name}" else "چقدر تومن",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Hero.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onSettings) {
-                    // Rounded, like every other icon on this field: Material's Outlined and
-                    // Rounded sets differ in corner treatment, and one gear drawn from the
-                    // other set is the sort of mismatch that reads as sloppiness without ever
-                    // being noticed. Still not filled — fill is the selected-state variant in
-                    // Material's icon language, and this marks no active state.
-                    Icon(
-                        Icons.Rounded.Settings,
-                        contentDescription = "تنظیمات",
-                        tint = Hero.muted,
-                    )
-                }
-            }
+            HeroAccount(state.name, onSettings)
 
             Spacer(Modifier.height(Space.m))
             // Label and dollar figure share a line, so the top of the field reads as one
@@ -909,11 +903,11 @@ internal fun HeroField(
             }
 
             if (portfolio) {
-                // Kept whole on دارایی, where all three verbs are real: اضافه کردن adds,
-                // گزارش is this screen's only way into the report, and تازه کردن is the
-                // labelled refresh. On خانه every one of them was navigation wearing a verb's
-                // icon — «اضافه کردن» went to this very screen, and the tab bar was already
-                // going there — so there the band carries the month instead.
+                // Only real verbs here: اضافه کردن adds and تازه کردن refetches. On خانه every
+                // one of these was navigation wearing a verb's icon — «اضافه کردن» went to this
+                // very screen, and the tab bar was already going there — so there the band
+                // carries the month instead. گزارش went the same way the moment the report took
+                // a slot on the bar: a door two inches above another door to the same room.
                 Spacer(Modifier.height(Space.xl))
                 Row(Modifier.fillMaxWidth()) {
                     HeroAction(
@@ -922,11 +916,15 @@ internal fun HeroField(
                         onClick = onAdd,
                         modifier = Modifier.weight(1f),
                     )
-                    HeroAction(
-                        label = "گزارش",
-                        onClick = onReport,
-                        modifier = Modifier.weight(1f),
-                    ) { BarsIcon(Hero.strong) }
+                    // …except in the lite edition, which has no bar. There this is the report's
+                    // only door, and [tabs] is what says so.
+                    if (tabs.size == 1) {
+                        HeroAction(
+                            label = "گزارش",
+                            onClick = onReport,
+                            modifier = Modifier.weight(1f),
+                        ) { BarsIcon(Hero.strong) }
+                    }
                     HeroAction(
                         label = "تازه کردن",
                         icon = Icons.Rounded.Refresh,
@@ -1003,6 +1001,86 @@ internal fun HeroField(
                     modifier = Modifier.padding(top = Space.xs),
                 )
             }
+    }
+}
+
+/**
+ * Her, and the door to تنظیمات — one object at the top of the field instead of two.
+ *
+ * تنظیمات is not on the tab bar and should not be: [Tab] is five money questions she asks daily,
+ * تنظیمات is a room she visits twice a year, and a slot on that bar is rent paid every day —
+ * the same argument that already moved the household off it. What was wrong was not the missing
+ * slot, it was the door. A bare 24dp gear in `Hero.muted` was the only control on this field
+ * with no container under it: the action circles, the change pill, the refresh chip all sit on
+ * `Hero.well`, so the one thing she had to *find* was the one thing drawn as decoration.
+ *
+ * So the greeting becomes the door — the disc, the name and the chevron are one target, the way
+ * every phone on the planet gets you to your own account. Built like the field's three other
+ * quiet doors ([ChangePill], [ReportLink], [HeroRefresh]): pill-clipped, a 48dp target around a
+ * shorter visible object, muted ink. It is louder than the gear was and still quieter than the
+ * total, which is the only thing up here allowed to shout.
+ *
+ * In the disc, a drawn mark and not her initial. A monogram is a label for a row in a list of
+ * people — which is exactly the job it does in خانواده and should keep doing there — and one
+ * letter alone on a green field is a letter, not a picture of anybody. [CompanionGlyph] is the
+ * app's one drawing of a person, and it is drawn with [pen], the same nib every category mark in
+ * the ledger is drawn with: 2dp in 24 here against [CategoryIcon]'s 1.6 in 18 is the same ratio
+ * to two figures, which is what makes it read as one hand rather than as an icon fetched in.
+ *
+ * 24dp in a 38dp disc, and not the 20 the gear sat at. The glyph insets an eighth of its own box
+ * and its widest stroke spans 0.84 of what is left, so 20dp of box was 13dp of ink — a mark
+ * floating in a circle. The box is bigger so the drawing lands where the gear's did.
+ *
+ * It is the same mark تنظیمات puts on the خانواده row one tap below, and that is the point
+ * rather than a collision. It says *a person* in both places; the word beside it says which —
+ * her name here, «خانواده» there. Two drawings of a head and shoulders that far apart is the
+ * near-duplicate this app spends its icon comments refusing.
+ *
+ * Only the label carries the state. With a name it greets her; without one it reads «تنظیمات»,
+ * because on a first run the app's own name at the top of its own screen tells her nothing,
+ * while the empty state two inches below is at that very moment telling her to go «از تنظیمات»
+ * and turn the پیامک‌ها on.
+ */
+@Composable
+private fun HeroAccount(name: String, onClick: () -> Unit) {
+    val her = name.trim()
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(role = Role.Button, onClick = onClick)
+            // The disc is 38dp so it does not out-weigh the 54dp actions below it; the row
+            // around it carries the target, exactly as the pills further down do.
+            .heightIn(min = 48.dp)
+            .padding(end = Space.s)
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (her.isNotBlank()) "$her، تنظیمات" else "تنظیمات"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(CircleShape).background(Hero.well),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompanionGlyph(Hero.strong, size = 24.dp)
+        }
+        Spacer(Modifier.width(Space.m))
+        Text(
+            if (her.isNotBlank()) "سلام، $her" else "تنظیمات",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Hero.muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // `fill = false` so a short name keeps the chevron against the word rather than
+            // pushed to the far edge: the arrow belongs to the door, not to the field.
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Hero.muted,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -1507,6 +1585,7 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
         Kind.FIAT -> scheme.tertiaryContainer
         Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.secondaryContainer
         Kind.CRYPTO, Kind.STOCK -> scheme.surfaceVariant
+        Kind.PROPERTY -> scheme.tertiaryContainer
     }
     Box(contentAlignment = Alignment.Center) {
         Box(
@@ -2178,14 +2257,15 @@ private fun HoldingRow(
 
                 val held = "${faHeld(amount, type.dec)} ${bidi(type.unitFa)}"
                 // null when this line is a sentence rather than an amount-and-rate pair.
-                val shownRate = rate?.takeIf { note == null && type.id != TOMAN_ID }?.let(::faRate)
+                val shownRate = rate?.takeIf { note == null && !type.valuedInToman }?.let(::faRate)
                 if (shownRate == null) {
                     Text(
                         when {
                             note != null -> note
                             // Says how the figure got here, which is the whole difference
-                            // between this row and the bank one right below it.
-                            type.id == TOMAN_ID -> "دستی وارد شده"
+                            // between this row and the bank one right below it — and the only
+                            // thing there is to say about a car nobody quotes a price for.
+                            type.valuedInToman -> "دستی وارد شده"
                             else -> held
                         },
                         fontSize = 13.sp,
@@ -2345,7 +2425,7 @@ private val BROWSABLE_BY_SEARCH = mapOf(
 @Composable
 private fun PickTypeSheet(
     all: List<AssetType>,
-    already: Set<String>,
+    already: Map<String, Int>,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
@@ -2450,7 +2530,7 @@ private fun PickTypeSheet(
                         }
                     }
                     items(items, key = { it.id }) { type ->
-                        PickRow(type, type.id in already) { close { onPick(type.id) } }
+                        PickRow(type, already[type.id] ?: 0) { close { onPick(type.id) } }
                     }
                     // The cue that more exist sits under the rows it discloses — at the
                     // bottom of the whole sheet, after gold and سکه, a capped section just
@@ -2473,7 +2553,7 @@ private fun PickTypeSheet(
 }
 
 @Composable
-private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
+private fun PickRow(type: AssetType, already: Int, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -2510,11 +2590,11 @@ private fun PickRow(type: AssetType, already: Boolean, onClick: () -> Unit) {
                 )
             }
         }
-        if (already) {
+        if (already > 0) {
             // A chip, not loose grey words: it is a state this row is in, and it has to read
             // as attached to the row rather than as a second, quieter label.
             Text(
-                "اضافه شده",
+                if (already == 1) "اضافه شده" else "${faNumber(already.toDouble())} تا اضافه شده",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2827,7 +2907,10 @@ private fun EditSheet(
     var rateText by remember { mutableStateOf(rate?.let { trimNumber(it, 0) } ?: "") }
     var editingRate by remember { mutableStateOf(false) }
     var labelText by remember(key) { mutableStateOf(holding?.label.orEmpty()) }
-    var naming by remember(key) { mutableStateOf(false) }
+    var naming by remember(key) {
+        mutableStateOf(holding == null && type.kind == Kind.PROPERTY)
+    }
+    var nameFocusWanted by remember(key) { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     var deltaText by remember { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -2863,12 +2946,20 @@ private fun EditSheet(
         }
     }
 
+    // The name she typed, written to the row — from ذخیره, from ذخیره اسم, and from closing the
+    // sheet. Typing a name and swiping the sheet away is not "cancel", it is how anyone would
+    // expect a name to be given, and until this ran on dismiss too it was thrown away in silence.
+    // Nothing to write to while adding: there is no row until ذخیره makes one, and that path
+    // calls this itself, in order.
+    val nameIt = { if (labelText.trim() != holding?.label.orEmpty()) onLabel(labelText) }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        // Nothing to write to while adding: there is no row until ذخیره makes one.
+        onDismissRequest = { if (holding != null) nameIt(); onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -2909,42 +3000,64 @@ private fun EditSheet(
             }
 
             // Named, not renamed: the asset keeps its own name everywhere else, and this is
-            // the label on this particular holding of it — "تتر شخصی" beside "تتر مشترک".
-            // Behind a tap, like every other secondary field in this sheet, because most
-            // holdings never need one.
-            if (holding != null) {
-                if (!naming) {
-                    TextButton(
-                        onClick = { naming = true },
-                        modifier = Modifier.padding(top = Space.s),
-                    ) {
-                        Text(
-                            if (holding.label.isBlank()) "اسم دلخواه بذار"
-                            else "تغییر اسم",
-                            fontSize = 14.sp,
-                        )
-                    }
-                } else {
-                    val nameFocus = remember { FocusRequester() }
-                    LaunchedEffect(Unit) { nameFocus.requestFocus() }
-                    SheetLabel("اسم دلخواه")
-                    OutlinedTextField(
-                        value = labelText,
-                        onValueChange = { labelText = it.take(32) },
-                        singleLine = true,
-                        // A label that stays, not a placeholder that vanishes at the first
-                        // letter — the example is the whole explanation of what this is for.
-                        placeholder = { Text("مثلاً ${type.fa} شخصی") },
-                        shape = RoundedCornerShape(Radius.field),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = { onLabel(labelText); naming = false },
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(nameFocus)
-                            .semantics { contentDescription = "اسم دلخواه" },
+            // the label on this particular holding of it — "تتر شخصی" beside "تتر مشترک",
+            // "پراید سفید" beside "ویلای شمال".
+            //
+            // Offered while adding too, not only when editing. The moment a name is needed is
+            // the moment she is adding the *second* خودرو, and until now that meant saving a
+            // row indistinguishable from the first one and coming back for it. Open from the
+            // start for املاک و خودرو, where the asset's own name never tells two apart, and
+            // behind a tap everywhere else, where it usually does.
+            if (!naming) {
+                TextButton(
+                    onClick = { naming = true; nameFocusWanted = true },
+                    modifier = Modifier.padding(top = Space.s),
+                ) {
+                    Text(
+                        if (labelText.isBlank()) "اسم دلخواه بذار" else "تغییر اسم",
+                        fontSize = 14.sp,
                     )
+                }
+            } else {
+                val nameFocus = remember { FocusRequester() }
+                // Only when she asked for the field. Opened on its own for a new ملک the amount
+                // is still the first thing to type, and the caret must not be taken off it.
+                LaunchedEffect(nameFocusWanted) {
+                    if (nameFocusWanted) {
+                        nameFocus.requestFocus()
+                        nameFocusWanted = false
+                    }
+                }
+                SheetLabel("اسم دلخواه")
+                OutlinedTextField(
+                    value = labelText,
+                    onValueChange = { labelText = it.take(32) },
+                    singleLine = true,
+                    // A label that stays, not a placeholder that vanishes at the first
+                    // letter — the example is the whole explanation of what this is for.
+                    placeholder = {
+                        Text(
+                            if (type.kind == Kind.PROPERTY) "مثلاً ${type.fa} دوم"
+                            else "مثلاً ${type.fa} شخصی",
+                        )
+                    },
+                    shape = RoundedCornerShape(Radius.field),
+                    // While adding, the amount is the next thing to type and the keyboard says
+                    // so; there is no row yet for a Done to write to.
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = if (holding == null) ImeAction.Next else ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { onLabel(labelText); naming = false },
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(nameFocus)
+                        .semantics { contentDescription = "اسم دلخواه" },
+                )
+                // A name can be saved on its own only once there is a row to hang it on. While
+                // adding, ذخیره at the bottom carries it in together with the amount.
+                if (holding != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
                         TextButton(onClick = { onLabel(labelText); naming = false }) {
                             Text("ذخیره اسم", fontSize = 14.sp)
@@ -3008,7 +3121,13 @@ private fun EditSheet(
             }
 
             if (source == AmountSource.MANUAL) {
-                SheetLabel("چقدر ${bidi(type.unitFa)} داری؟")
+                // "چقدر تومان داری؟" is the right question for cash and the wrong one for a
+                // house: what is being asked for there is a valuation, and she is the only one
+                // who can give it.
+                val prompt =
+                    if (type.kind == Kind.PROPERTY) "به نظرت چند تومن می‌ارزه؟"
+                    else "چقدر ${bidi(type.unitFa)} داری؟"
+                SheetLabel(prompt)
                 val amountInvalid = manualAmount == null && (text.isNotBlank() || manualSubmitted)
                 OutlinedTextField(
                 value = text,
@@ -3036,7 +3155,7 @@ private fun EditSheet(
                     .fillMaxWidth()
                     .focusRequester(amountFocus)
                     // The visible prompt above is not programmatically attached; this is.
-                    .semantics { contentDescription = "چقدر ${type.unitFa} داری؟" },
+                    .semantics { contentDescription = prompt },
                 )
 
             // The figure she just typed, in words — the guard against an extra zero.
@@ -3260,7 +3379,7 @@ private fun EditSheet(
             // and the two of them said the same conversion twice, in two differently sized
             // boxes, one under the other.
             val balanceCardShown = source == AmountSource.WALLET && linkedSelection && current != null
-            if (amount != null && previewRate != null && type.id != TOMAN_ID && !balanceCardShown) {
+            if (amount != null && previewRate != null && !type.valuedInToman && !balanceCardShown) {
                 Spacer(Modifier.height(Space.l))
                 Box(
                     Modifier
@@ -3284,7 +3403,7 @@ private fun EditSheet(
                 }
             }
 
-            if (type.id != TOMAN_ID) {
+            if (!type.valuedInToman) {
                 Spacer(Modifier.height(Space.m))
                 if (!editingRate) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3364,9 +3483,11 @@ private fun EditSheet(
             Spacer(Modifier.height(Space.xl))
             Button(
                 onClick = {
+                    // After the amount, never before: a name is written onto a row by its key,
+                    // and while adding there is no such row until this save makes one.
                     if (source == AmountSource.MANUAL) {
                         manualSubmitted = true
-                        if (manualAmount != null) close { onSaveManual(manualAmount) }
+                        if (manualAmount != null) close { onSaveManual(manualAmount); nameIt() }
                         else amountFocus.requestFocus()
                     } else {
                         val option = selectedWallet ?: return@Button
@@ -3377,7 +3498,7 @@ private fun EditSheet(
                             localWalletError = "این آدرس با شبکه انتخاب‌شده جور نیست."
                             walletAddressFocus.requestFocus()
                         } else {
-                            onSaveWallet(option, walletAddress.trim()) { close(onDismiss) }
+                            onSaveWallet(option, walletAddress.trim()) { nameIt(); close(onDismiss) }
                         }
                     }
                 },
