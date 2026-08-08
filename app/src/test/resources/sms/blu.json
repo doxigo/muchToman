@@ -45,7 +45,7 @@
         "instrument": "unknown",
         "merchant": "",
         "refNo": "",
-        "printedAt": "۱۴۰۵.۰۵.۰۴",
+        "printedAt": "۱۴۰۵.۰۵.۰۴ ۱۶:۰۰",
         "channel": "unknown",
         "unitPrinted": "rial",
         "inferred": false
@@ -74,7 +74,7 @@
         "instrument": "unknown",
         "merchant": "",
         "refNo": "",
-        "printedAt": "۱۴۰۵.۰۵.۰۵",
+        "printedAt": "۱۴۰۵.۰۵.۰۵ ۱۰:۰۴",
         "channel": "transfer",
         "unitPrinted": "rial"
       }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -288,26 +289,42 @@ fun InsightCard(
 }
 
 /**
- * Insights two to a row.
+ * The narrowest a card may be drawn and still be read as a sentence rather than as a column of
+ * words. Sixteen of the card's width is the dot and its gap and thirty-two is the panel's own
+ * padding, so the sentence itself gets what is left.
+ */
+private val PAIRABLE = 168.dp
+
+/**
+ * Insights two to a row — wherever two of them fit.
  *
  * One short sentence per full-width card was a column of mostly empty space, and the report had
  * eight of them to scroll past. The row measures to the taller of its pair and both cards fill
  * it, so a long sentence beside a short one still reads as two cards and not as a step.
+ *
+ * On a small phone the pair stops paying for itself: at 320dp of screen each column leaves the
+ * sentence about eighty to say itself in, which wraps every two words and turns a two-line
+ * finding into ten — the tall, narrow, hyphen-less columns Persian handles worst. So the grid
+ * measures the width it was actually given rather than assuming a pair will fit in it, and drops
+ * to one card per row before it shrinks a card past [PAIRABLE].
  */
 @Composable
 fun InsightGrid(insights: List<Insight>, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.m)) {
-        for (pair in insights.chunked(2)) {
-            Row(
-                Modifier.height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(Space.m),
-            ) {
-                for (insight in pair) {
-                    InsightCard(insight, Modifier.weight(1f).fillMaxHeight(), why = true)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val columns = if ((maxWidth - Space.m) / 2 >= PAIRABLE) 2 else 1
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.m)) {
+            for (row in insights.chunked(columns)) {
+                Row(
+                    Modifier.height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(Space.m),
+                ) {
+                    for (insight in row) {
+                        InsightCard(insight, Modifier.weight(1f).fillMaxHeight(), why = true)
+                    }
+                    // An odd count leaves the last card in its half rather than stretched across
+                    // a row of its own: the grid keeps one edge to read down.
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                // An odd count leaves the last card in its half rather than stretched across a
-                // row of its own: the grid keeps one edge to read down.
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }

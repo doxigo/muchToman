@@ -3,7 +3,6 @@ package com.doxigo.muchtoman
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -503,26 +502,7 @@ fun TransactionScreen(
     LaunchedEffect(txn.ref) { source = onLoadSource(entry) }
     LaunchedEffect(entry.categoryId) { chosen = entry.categoryId }
 
-    val details = buildList {
-        add("نوع" to when (txn.direction) {
-            "in" -> "واریز"
-            "out" -> "برداشت"
-            else -> "نامشخص"
-        })
-        entry.ownerName.takeIf { it.isNotBlank() }?.let { add("صاحب تراکنش" to it) }
-        entry.categoryEditorName.takeIf { it.isNotBlank() }?.let { add("دسته‌بندی توسط" to it) }
-        // The field above says «امروز» for the two days she is thinking about, so the written-out
-        // date belongs here — with the minute beside it, which nothing else on the screen states.
-        // «زمان ثبت» below is a different fact: the stamp the bank itself printed in the message,
-        // which is often the date alone and can lag the minute the message actually arrived.
-        add("تاریخ" to faMoment(txn.at, txn.day))
-        add("ثبت شده از" to if (txn.sourceKind == "manual") "ورود دستی" else bankNameOf(txn.bank))
-        txn.printedAt.takeIf { it.isNotBlank() }?.let { add("زمان ثبت" to bidi(it)) }
-        txn.mask.takeIf { it.isNotBlank() }?.let { add("کارت یا حساب" to bidi(it)) }
-        txn.refNo.takeIf { it.isNotBlank() }?.let { add("شماره پیگیری" to bidi(it)) }
-        txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} تومان")) }
-        txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} تومان")) }
-    }
+    val details = transactionDetails(entry)
     // Worked out once for this transaction and held there. The order follows what she files
     // things under, and filing this one changes that — so recomputing on every recomposition
     // would rearrange the grid under her thumb in the instant after she tapped it. It settles
@@ -623,37 +603,20 @@ fun TransactionScreen(
             item(key = "details") {
                 Column(gutter) {
                     Spacer(Modifier.height(Space.xxl))
-                    Text(
-                        "جزئیات",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.semantics { heading() },
-                    )
+                    SectionHeading("جزئیات")
                     Spacer(Modifier.height(Space.m))
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.card))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = Space.l, vertical = Space.m),
-                    ) {
-                        details.forEach { (label, value) -> DetailRow(label, value) }
-                    }
+                    DetailsPanel(details)
                 }
             }
 
             item(key = "source") {
                 Column(gutter) {
                     Spacer(Modifier.height(Space.xxl))
-                    Text(
-                        "منبع",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.semantics { heading() },
-                    )
+                    SectionHeading("منبع")
                     Spacer(Modifier.height(Space.m))
+                    // Whole and selectable here, where the message is the subject of the screen
+                    // rather than one of the things on it. The deck shows the same text with a
+                    // floor under it, because there the grid has to stay reachable.
                     SelectionContainer {
                         Text(
                             sourceText(entry, source),
@@ -666,6 +629,63 @@ fun TransactionScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Everything the app knows about one transaction that is not its figure, in reading order.
+ *
+ * Built here rather than on the screen that shows it, because two screens now show it: the
+ * transaction page and the deck. A card in the deck is the same transaction it would be one tap
+ * further in, and «which of the two am I looking at» must never change what the app says about it.
+ */
+private fun transactionDetails(entry: LedgerEntry): List<Pair<String, String>> {
+    val txn = entry.txn
+    return buildList {
+        add("نوع" to when (txn.direction) {
+            "in" -> "واریز"
+            "out" -> "برداشت"
+            else -> "نامشخص"
+        })
+        entry.ownerName.takeIf { it.isNotBlank() }?.let { add("صاحب تراکنش" to it) }
+        entry.categoryEditorName.takeIf { it.isNotBlank() }?.let { add("دسته‌بندی توسط" to it) }
+        // The field above says «امروز» for the two days she is thinking about, so the written-out
+        // date belongs here — with the minute beside it, which nothing else on the screen states.
+        // «زمان ثبت» below is a different fact: the stamp the bank itself printed in the message,
+        // which is often the date alone and can lag the minute the message actually arrived.
+        add("تاریخ" to faMoment(txn.at, txn.day))
+        add("ثبت شده از" to if (txn.sourceKind == "manual") "ورود دستی" else bankNameOf(txn.bank))
+        txn.printedAt.takeIf { it.isNotBlank() }?.let { add("زمان ثبت" to bidi(it)) }
+        txn.mask.takeIf { it.isNotBlank() }?.let { add("کارت یا حساب" to bidi(it)) }
+        txn.refNo.takeIf { it.isNotBlank() }?.let { add("شماره پیگیری" to bidi(it)) }
+        txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} تومان")) }
+        txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} تومان")) }
+    }
+}
+
+/** «جزئیات», «منبع» — the one heading a band of a transaction sits under, on either screen. */
+@Composable
+private fun SectionHeading(text: String) {
+    Text(
+        text,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.semantics { heading() },
+    )
+}
+
+/** [transactionDetails], as the panel both screens set it in. */
+@Composable
+private fun DetailsPanel(details: List<Pair<String, String>>) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.card))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = Space.l, vertical = Space.m),
+    ) {
+        details.forEach { (label, value) -> DetailRow(label, value) }
     }
 }
 
@@ -691,29 +711,22 @@ private fun sourceText(entry: LedgerEntry, source: String?): String = when {
 }
 
 /**
- * The message this card is asking about, quoted under the question.
+ * The message the card was read out of, in the panel the transaction page sets it in.
  *
  * The deck used to ask «این خرج رو چی حساب کنم؟» over a bank name, a figure, and nothing else —
  * and the parser reads no merchant out of a transfer, so on those cards the bank name *was* the
  * whole card. A hundred and fifty million Toman from بانک سامان is not a question anybody can
- * answer. The two lines of the message it came from are, and they were already on the phone: the
- * transaction page has printed them since the beginning, one tap away in a screen the deck does
- * not go through.
+ * answer. The message is, and it was already on the phone: the transaction page has printed it
+ * since the beginning, one tap away in a screen the deck does not go through.
  *
- * Ruled rather than filled. Everything under it is a `surfaceVariant` tile waiting to be pressed,
- * so a filled block here would read as the first cell of the grid — an outline says «read me»
- * where a fill says «press me», and only one of those is true of a bank's own words.
- *
- * Four lines, then a tap for the rest. Banks write their messages with hard line breaks, and Blu
- * writes seven lines to say that a hundred million Toman arrived — printed whole, that one card
- * pushed every category off the bottom of the screen and left the deck asking a question it
- * showed no way to answer. The amount is already in the field above, so what the first four lines
- * have to carry is only *what kind of thing this was*, and they do.
+ * The one difference from that page is a floor of four lines. Banks write with hard line breaks
+ * and Blu takes seven of them to say a hundred million Toman arrived, so printed whole under a
+ * grid that already fills the screen it is a scroll with no end in sight. Four lines and a tap
+ * for the rest; nothing is hidden, only folded.
  */
 @Composable
-private fun SourceQuote(entry: LedgerEntry, source: String?) {
+private fun SourcePreview(entry: LedgerEntry, source: String?) {
     val txn = entry.txn
-    val shape = RoundedCornerShape(Radius.card)
     var expanded by rememberSaveable(txn.ref) { mutableStateOf(false) }
     // Set by the layout rather than guessed from the string: a message wraps differently at every
     // system font size, and «متن کامل» on a message already showing all of itself is a promise of
@@ -721,14 +734,6 @@ private fun SourceQuote(entry: LedgerEntry, source: String?) {
     var clipped by remember(txn.ref, source) { mutableStateOf(false) }
     Column(
         Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            // Lifted a shade off the page and ruled, rather than filled like the tiles. On paper
-            // the hairline alone is nearly the background's own colour, so the block lost its
-            // edges in light theme; `surfaceContainerLow` is the quietest surface the scheme has
-            // and it is not the one the grid is drawn in, which is the whole distinction.
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .then(
                 if (clipped || expanded) {
                     Modifier.clickable(role = Role.Button) { expanded = !expanded }
@@ -736,25 +741,13 @@ private fun SourceQuote(entry: LedgerEntry, source: String?) {
                     Modifier
                 }
             )
-            .padding(Space.l),
+            .panel(),
     ) {
-        if (txn.sourceKind != "manual") {
-            Text(
-                // Who sent it and at what minute. The hero above prints the day and says «امروز»
-                // for two of them, so the clock is the one fact on this card that is new — and on
-                // a day with three withdrawals it is the only thing telling them apart.
-                "${bankNameOf(txn.bank)}، ${bidi(faClock(txn.at))}",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(Space.s))
-        }
         Text(
             sourceText(entry, source),
             fontSize = 13.sp,
-            lineHeight = 22.sp,
-            color = MaterialTheme.colorScheme.onSurface,
+            lineHeight = 23.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else 4,
             overflow = TextOverflow.Ellipsis,
             // Sticky: expanded, nothing overflows any more, and the way back would vanish under
@@ -1151,9 +1144,11 @@ fun ReviewDeck(
             val choices = remember(entry.txn.ref, ledger.categories) {
                 categoryChoices(ledger.categories, entry.txn.direction, ledger.categoryUse)
             }
-            // The question, the evidence and the choices scroll; the one answer that is always
-            // available does not. Only the grid can grow past a short screen, and an answer she
-            // has to go looking for is one she will not give.
+            // The card scrolls; the one answer that is always available does not. It is the
+            // transaction page's own order under a different heading — the question where that
+            // page says «دسته‌بندی», then the same grid, the same «جزئیات», the same «منبع» — so
+            // that opening a row and being handed one in the deck are the same screen, and what
+            // she learns to look for in either place is where she left it in the other.
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(cardScroll)) {
                 Spacer(Modifier.height(Space.xl))
                 Text(
@@ -1169,17 +1164,23 @@ fun ReviewDeck(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.semantics { heading() },
                 )
-                // Between the question and the answers, because that is the order they are used
-                // in: nothing in the grid means anything until she knows what she is filing.
                 Spacer(Modifier.height(Space.m))
-                SourceQuote(entry, source)
-                Spacer(Modifier.height(Space.l))
                 CategoryGrid(
                     choices = choices,
                     selectedId = picked,
                     onPick = { picked = it.id },
                     selectedLabel = "انتخاب‌شده",
                 )
+
+                Spacer(Modifier.height(Space.xxl))
+                SectionHeading("جزئیات")
+                Spacer(Modifier.height(Space.m))
+                DetailsPanel(remember(entry.txn.ref) { transactionDetails(entry) })
+
+                Spacer(Modifier.height(Space.xxl))
+                SectionHeading("منبع")
+                Spacer(Modifier.height(Space.m))
+                SourcePreview(entry, source)
                 Spacer(Modifier.height(Space.l))
             }
 

@@ -367,6 +367,32 @@ class MoneyTest {
         ۱۴۰۵.۰۵.۰۵
     """.trimIndent()
 
+    // ───────────────── the stamp the bank printed ─────────────────
+
+    /**
+     * «زمان ثبت» is the bank's own stamp, and for three of the banks in the corpus that stamp is
+     * two lines rather than one. Reading only the date meant the hour sat visible in «منبع» right
+     * under a row that would not say it.
+     */
+    @Test
+    fun `a time on its own line belongs to the date above or below it`() {
+        // سامان writes the time under the date, بلو over it, and both are the bank's own stamp.
+        assertEquals("1405/5/1 11:26", printedStampIn(SAMAN_IN))
+        assertEquals("1405/5/3 21:59:27", printedStampIn(SAMAN_OUT))
+        assertEquals("۱۴۰۵.۰۵.۰۵ ۱۰:۰۴", printedStampIn(BLU_TRANSFER))
+
+        // Where the bank set the two together itself, its own separator stands untouched.
+        assertEquals("05/08_13:37", printedStampIn("276.800.504939.1\n-30,000,000\n05/08_13:37"))
+
+        // Only whitespace may stand between the two, so a colon from elsewhere in the message is
+        // never mistaken for the time of the transaction.
+        assertEquals("05/04/27", printedStampIn("ساعات کار: 08:00 تا 14:00\nمبلغ8,444,425\n05/04/27"))
+
+        // A bare hour is not a stamp: most messages print no date at all, and answering «زمان ثبت»
+        // with one would have the bank state a time it never stated.
+        assertEquals("", printedStampIn("ملت\nبرداشت4,960,000\n11:26"))
+    }
+
     // ───────────────── who sent it ─────────────────
 
     @Test

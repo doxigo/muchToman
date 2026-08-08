@@ -205,6 +205,8 @@ fun SettingsScreen(
     onWidgetLockChange: (Boolean) -> Unit,
     onAddCategory: (String, String, CategoryGlyph) -> Unit,
     onRemoveCategory: (Category) -> Unit,
+    /** Only ever called from the dev build's own section at the bottom of this page. */
+    onDemoData: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -406,6 +408,14 @@ fun SettingsScreen(
                 )
             }
 
+            // Only ever on the dev build — see [AppVm.setDemoData]. Last on the page, under the
+            // real settings and above the version line, because it is a bench tool and not a
+            // thing about her money.
+            if (BuildConfig.DEMO) {
+                SectionLabel("داده‌های نمایشی")
+                DemoDataRow(onDemoData)
+            }
+
             // The answer to "which version do you have?" over the phone, without her having
             // to find the system app-info page. A fixed gap, not weight(1f): inside a scrolling
             // column a weighted spacer has nothing to push against.
@@ -430,6 +440,66 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(bottom = Space.l),
             )
+        }
+    }
+}
+
+/**
+ * The bench tool: fourteen months of invented household, in and out again.
+ *
+ * Two buttons rather than a switch, and the second one is a confirm, because «پاک کردن» is the
+ * only control on this page that deletes transactions — and on a dev build the ledger it is
+ * pointed at is usually the one somebody is halfway through testing against.
+ *
+ * It says what it writes. A demo generator whose output is a mystery is a thing you end up
+ * debugging instead of the feature you built it for.
+ */
+@Composable
+private fun DemoDataRow(onDemoData: (Boolean) -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(Space.l),
+    ) {
+        Text(
+            "${faNumber(DEMO_MONTHS.toDouble())} ماه تراکنش ساختگی، با حقوق و اجاره و قسط و خرید " +
+                "روزانه — برای اینکه بازه‌های «۳ ماه» و «۶ ماه» و «۱ سال» گزارش‌ها را بشود دید. " +
+                "همهٔ ردیف‌ها نشان‌دار هستند و «پاک کردن» دقیقاً همان‌ها را برمی‌دارد.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Space.s))
+        // Asking replaces the row rather than growing it: three buttons and a question do not
+        // fit across a 320dp phone, and «مطمئنم» broken over two lines is a control that looks
+        // like a bug at the exact moment it is asking permission to delete something.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (confirming) {
+                Text(
+                    "پاک بشه؟",
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { confirming = false }) {
+                    Text("بی‌خیال", fontSize = 15.sp, maxLines = 1)
+                }
+                TextButton(onClick = { confirming = false; onDemoData(false) }) {
+                    Text("آره", fontSize = 15.sp, maxLines = 1, color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                TextButton(onClick = { onDemoData(true) }) {
+                    Text("ساختن", fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { confirming = true }) {
+                    Text("پاک کردن", fontSize = 15.sp, maxLines = 1)
+                }
+            }
         }
     }
 }

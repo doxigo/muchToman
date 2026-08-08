@@ -167,7 +167,7 @@ data class BankSms(
     val feeRial: Long? = null,
     val merchant: String = "",
     val refNo: String = "",
-    /** The bank's own date string, verbatim and unparsed. */
+    /** The bank's own date, and the time beside it where it printed one. Verbatim and unparsed. */
     val printedAt: String = "",
     val channel: Channel = Channel.UNKNOWN,
     val instrument: Instrument = Instrument.UNKNOWN,
@@ -479,6 +479,46 @@ private val PRINTED_AT = Regex(
         "(?![0-9۰-۹٠-٩])"
 )
 
+/** A clock time, hours to optional seconds, in either set of digits. */
+private const val CLOCK = "[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?"
+
+/**
+ * The same time, on a line of its own rather than glued to the date.
+ *
+ * [PRINTED_AT] only ever caught an hour the bank set beside the date with a space, an underscore
+ * or a dash. Half the corpus does not write it that way: سامان and خاورمیانه put the time on the
+ * line under the date, and بلو puts it on the line above — so «۲۱:۵۱» was sitting in the message,
+ * visible in «منبع» directly under a «زمان ثبت» that said only «۱۴۰۵.۰۵.۱۶».
+ *
+ * Anchored to the date on both sides, which is what keeps this from finding any colon in the
+ * message: only whitespace may stand between the two, so a stamp is a date and the time written
+ * against it and never a figure from two lines away.
+ */
+private val CLOCK_AFTER = Regex("^\\s*($CLOCK)(?![0-9۰-۹٠-٩:])")
+private val CLOCK_BEFORE = Regex("(?<![0-9۰-۹٠-٩:])($CLOCK)\\s*$")
+
+/**
+ * The stamp the bank printed, which is a date and — where it wrote one — the time beside it.
+ *
+ * Verbatim in its parts: every character here is the bank's own, in the bank's own digits, and
+ * nothing is parsed or reformatted. The one thing this decides is order. The two runs are joined
+ * date first whichever way round the message printed them, because «زمان ثبت» is a column, and a
+ * column of stamps that leads with the hour on some rows and the year on others cannot be read
+ * down. Where the bank set them together already — «05/08_13:37» — its own separator stands.
+ *
+ * A time with no date beside it is not a stamp and is left alone: half the messages in the corpus
+ * carry no date at all, and answering «زمان ثبت» with a bare hour would say the bank stated when
+ * this happened when it did no such thing.
+ */
+internal fun printedStampIn(rawBody: String): String {
+    val date = PRINTED_AT.find(rawBody) ?: return ""
+    val stamp = date.value.trim()
+    if (':' in stamp) return stamp
+    val time = CLOCK_AFTER.find(rawBody.substring(date.range.last + 1))?.groupValues?.get(1)
+        ?: CLOCK_BEFORE.find(rawBody.substring(0, date.range.first))?.groupValues?.get(1)
+    return if (time == null) stamp else "$stamp $time"
+}
+
 /** What a message carries beyond the money. Every field is optional and every default is empty. */
 internal class Extras(
     val merchant: String,
@@ -570,7 +610,7 @@ internal fun enrich(normalised: String, rawBody: String, fallback: Double): Extr
     merchant = merchantIn(normalised),
     refNo = refIn(normalised),
     // Off the raw body, not the normalised one: this is quoted back to her as the bank wrote it.
-    printedAt = PRINTED_AT.find(rawBody)?.value?.trim().orEmpty(),
+    printedAt = printedStampIn(rawBody),
     channel = channelOf(normalised),
     feeRial = feeIn(normalised, fallback),
 )

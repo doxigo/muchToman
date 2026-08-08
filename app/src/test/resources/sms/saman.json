@@ -24,7 +24,7 @@
         "instrument": "account",
         "merchant": "",
         "refNo": "",
-        "printedAt": "1405/5/1",
+        "printedAt": "1405/5/1 11:26",
         "channel": "unknown",
         "unitPrinted": "rial",
         "inferred": false
@@ -53,7 +53,7 @@
         "instrument": "account",
         "merchant": "",
         "refNo": "",
-        "printedAt": "1405/5/3",
+        "printedAt": "1405/5/3 21:59:27",
         "channel": "transfer",
         "unitPrinted": "none",
         "inferred": false
@@ -86,7 +86,7 @@
         "instrument": "account",
         "merchant": "",
         "refNo": "",
-        "printedAt": "1405/5/3",
+        "printedAt": "1405/5/3 21:59:27",
         "channel": "transfer",
         "unitPrinted": "none"
       }

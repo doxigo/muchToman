@@ -775,6 +775,66 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Fill the dev build with a household's year, or take it back out again.
+     *
+     * Guarded here as well as in تنظیمات, because this is the method that writes the rows and a
+     * guard on the button that calls it is a guard on one caller. `BuildConfig.DEMO` is a compile
+     * -time constant, so in every other build this is `if (false)` and R8 removes the body along
+     * with [demoLedger] itself.
+     *
+     * Deliberately not wired to family sync: nothing invented here should reach another phone,
+     * and the sync that would carry it is only ever started by something she did.
+     */
+    fun setDemoData(on: Boolean) {
+        if (!BuildConfig.DEMO) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                // Cleared first either way, so «ساختن» twice is one demo ledger rather than two
+                // laid on top of each other.
+                durable.manual().deleteWithIdPrefix(DEMO_PREFIX)
+                durable.decisions().deleteForRefPrefix(manualRef(DEMO_PREFIX))
+                if (on) {
+                    val ledger = demoLedger(tehranDay(now), now)
+                    durable.manual().putAll(ledger.transactions)
+                    durable.decisions().putAll(ledger.filings)
+                }
+                // The same total rebuild a parser fix runs, which is the point: the invented rows
+                // go through the reading, the linking and the filing that every other row does.
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+
+                // Balances and holdings are the store's, not the ledger's, and each is marked so
+                // that clearing takes back exactly what was put in. Anything she added by hand on
+                // this build stays where it is.
+                val banks = store.bankAccounts.filterNot { it.sender == DEMO_PREFIX } +
+                    if (on) demoBankAccounts(now) else emptyList()
+                val holdings = store.holdings.filterNot { it.id.startsWith(DEMO_PREFIX) } +
+                    if (on) demoHoldings() else emptyList()
+                store.bankAccounts = banks
+                store.holdings = holdings
+                _state.update {
+                    it.copy(
+                        bankAccounts = store.bankAccounts,
+                        holdings = holdings,
+                        ledger = ledgerView(derived, durable),
+                    )
+                }
+                // A year of daily totals, ending at what the holdings just written are actually
+                // worth — so گزارش دارایی has its «۶ ماه» and «۱ سال» too, and its newest point is
+                // the one the app would have recorded on its own. Cleared outright when the demo
+                // is: the chart is a record of days, and days it invented are not worth keeping.
+                val history = if (on) demoHistory(now, _state.value.totals.toman) else emptyMap()
+                store.history = history
+                _state.update { it.copy(history = history) }
+                recordSnapshot()
+            }.onFailure { android.util.Log.w("muchtoman", "demo data failed: $it") }
+        }
+    }
+
     /** Her verdict on one purchase. No rule follows from it — it is an opinion, not a pattern. */
     fun answerWorthIt(entry: LedgerEntry, answer: String) {
         val app = getApplication<Application>()

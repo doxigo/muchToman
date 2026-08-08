@@ -568,6 +568,9 @@ interface TxnDecisionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(row: TxnDecision)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAll(rows: List<TxnDecision>)
+
     @Query("SELECT * FROM txn_decision WHERE deleted = 0")
     suspend fun all(): List<TxnDecision>
 
@@ -576,6 +579,10 @@ interface TxnDecisionDao {
 
     @Query("SELECT * FROM txn_decision WHERE kind = :kind AND deleted = 0")
     suspend fun ofKind(kind: String): List<TxnDecision>
+
+    /** The answers to transactions nobody ever made. See [ManualTxnDao.deleteWithIdPrefix]. */
+    @Query("DELETE FROM txn_decision WHERE ref LIKE :prefix || '%'")
+    suspend fun deleteForRefPrefix(prefix: String)
 }
 
 @Dao

@@ -30,7 +30,11 @@ import androidx.room.withTransaction
 // rather than what arrived, and only a rebuild puts those rows right. The same rebuild reruns
 // [findLinks], which is what this bump also buys: the transfer detector now reads the rail off
 // either leg, and the pairs it previously missed are only found by looking again.
-const val PARSER_VERSION = 3
+// 4: «زمان ثبت» now carries the hour when the bank printed one on its own line rather than
+// beside the date — سامان, خاورمیانه and بلو all do, and all three were stored as a bare date.
+// The time was never lost, only unread: it is in the message, so the rebuild recovers it for
+// every transaction already in the ledger.
+const val PARSER_VERSION = 4
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
@@ -472,7 +476,30 @@ data class LedgerEntries(
     val marks: Map<String, CategoryGlyph> = emptyMap(),
 )
 
-suspend fun ledgerEntries(derived: DerivedDb, durable: DurableDb, limit: Int = 300): LedgerEntries {
+/**
+ * How much of the ledger every screen holds at once.
+ *
+ * Not a page size — the timeline is lazy and the reports walk the whole list. It is how far back
+ * the app can see, and it used to be three hundred, which is about ten months of a household's
+ * messages. That was invisible while the longest report was six months and became wrong the day
+ * دخل و خرج offered «۱ سال»: the twelfth month back would have been reported from however much of
+ * it fitted under the cap — not empty, which reads as *no data*, but short, which reads as *a
+ * quiet month*, and a quietly wrong figure is the one thing this app must never produce.
+ *
+ * Four thousand is a decade at a household's rate and comfortably past [MAX_REPORT_MONTHS], which
+ * bounds what can be asked for. The cost is a few thousand small objects built off the main
+ * thread when the ledger changes; the walks over them are linear and there are a dozen per report.
+ *
+ * ponytail: still a full read. If this ever shows up in a frame, the answer is to sum in SQL per
+ * month rather than to shorten the list again — the list being short is what was wrong.
+ */
+const val LEDGER_VIEW_LIMIT = 4_000
+
+suspend fun ledgerEntries(
+    derived: DerivedDb,
+    durable: DurableDb,
+    limit: Int = LEDGER_VIEW_LIMIT,
+): LedgerEntries {
     val transactions = derived.txn().newest(limit)
     val categories = durable.categories().all()
     // Every category ever, for the names — a transaction filed under one she has since retired
@@ -509,7 +536,11 @@ suspend fun ledgerEntries(derived: DerivedDb, durable: DurableDb, limit: Int = 3
     return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory))
 }
 
-suspend fun ledgerView(derived: DerivedDb, durable: DurableDb, limit: Int = 300): LedgerView {
+suspend fun ledgerView(
+    derived: DerivedDb,
+    durable: DurableDb,
+    limit: Int = LEDGER_VIEW_LIMIT,
+): LedgerView {
     val ledger = ledgerEntries(derived, durable, limit)
     val answers = durable.decisions().ofKind(DecisionKind.WORTH_IT)
         .mapNotNull { d -> d.value?.let { d.ref to it } }

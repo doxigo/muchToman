@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,17 +21,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,13 +52,17 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -68,14 +83,125 @@ private val WINDOWS: List<Pair<String, Int?>> = listOf(
 
 private fun today(): Long = System.currentTimeMillis() / DAY_MS
 
+/**
+ * The two questions this tab answers, as peers.
+ *
+ * They were not peers: the whole screen called itself «گزارش دارایی» and the month's money was
+ * appended underneath it, which told anyone reading the tab that the app reports on what she
+ * owns and not on what she earns and spends. It reports on both, and a full app that has a
+ * دارایی root tab of its own has no reason to open the reports on the asset side.
+ */
+enum class ReportMode(val fa: String) {
+    CASH_FLOW("دخل و خرج"),
+    ASSETS("دارایی"),
+}
+
+/**
+ * The report modes *this edition* has.
+ *
+ * Read off [tabs] rather than off `BuildConfig.LITE`, because the edition flag lives in exactly
+ * one place and this is not it: the lite build is a list of what you own, so the only report it
+ * can honestly offer is the one about what you own.
+ */
+val reportModes: List<ReportMode> =
+    if (tabs.size > 1) ReportMode.entries.toList() else listOf(ReportMode.ASSETS)
+
 @Composable
 fun ReportScreen(
     history: Map<Long, Double>,
     current: Double,
     composition: List<Pair<Kind, Double>>,
-    story: HomeStory,
-    bottomInset: androidx.compose.ui.unit.Dp,
+    cash: CashFlowReport,
+    smsEnabled: Boolean,
+    mode: ReportMode,
+    onMode: (ReportMode) -> Unit,
+    /** The window دخل و خرج should read: the month it ends at, and how far back it reaches. */
+    onWindow: (ReportMonth, ReportSpan) -> Unit,
+    bottomInset: Dp,
     onBack: (() -> Unit)? = null,
+) {
+    val modes = reportModes
+    // The lite edition is handed CASH_FLOW by any caller that does not know which build it is
+    // in; it has no such report, so the mode it can show is the mode it shows.
+    val shown = if (mode in modes) mode else modes.first()
+
+    // One scroll position per report, kept apart on purpose: switching to دارایی and finding it
+    // already scrolled to wherever دخل و خرج happened to be is the mode selector losing the
+    // reader's place in a screen she never left.
+    val cashScroll = rememberScrollState()
+    val assetScroll = rememberScrollState()
+
+    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = Space.xl),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    // Neutral where there are two of them: naming the screen after one of its
+                    // two halves is what hid the other one for a year.
+                    if (modes.size > 1) "گزارش‌ها" else "گزارش دارایی",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() },
+                )
+                onBack?.let { back ->
+                    TextButton(onClick = back) { Text("برگشت") }
+                }
+            }
+
+            // Pinned above the scroll, not inside it: which report she is reading has to stay
+            // answerable at the bottom of a long one. A one-option segment is not a choice, so
+            // the edition that has one does not draw it.
+            if (modes.size > 1) {
+                Spacer(Modifier.height(Space.l))
+                SegmentedChoice(
+                    options = modes,
+                    selected = shown,
+                    label = { it.fa },
+                    onSelect = onMode,
+                    role = Role.Tab,
+                )
+            }
+
+            when (shown) {
+                ReportMode.CASH_FLOW -> CashFlowReportContent(
+                    cash = cash,
+                    smsEnabled = smsEnabled,
+                    onWindow = onWindow,
+                    bottomInset = bottomInset,
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(cashScroll),
+                )
+                ReportMode.ASSETS -> AssetReportContent(
+                    history = history,
+                    current = current,
+                    composition = composition,
+                    bottomInset = bottomInset,
+                    modifier = Modifier
+                        .weight(1f)
+                        // The composition legend can push past one screen on short phones.
+                        .verticalScroll(assetScroll),
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────── دارایی ───────────────────────────
+
+@Composable
+private fun AssetReportContent(
+    history: Map<Long, Double>,
+    current: Double,
+    composition: List<Pair<Kind, Double>>,
+    bottomInset: Dp,
+    modifier: Modifier = Modifier,
 ) {
     val now = today()
     val sorted = remember(history) { history.toSortedMap() }
@@ -107,85 +233,55 @@ fun ReportScreen(
             (now to current)
     } ?: emptyList()
 
-    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = Space.xl)
-                // The composition legend can push past one screen on short phones.
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "گزارش دارایی",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() },
-                )
-                onBack?.let { back ->
-                    TextButton(onClick = back) { Text("برگشت") }
-                }
-            }
+    Column(modifier) {
+        Spacer(Modifier.height(Space.l))
+        WindowPicker(selected, ::available) { selected = it }
 
-            Spacer(Modifier.height(Space.l))
-            WindowPicker(selected, ::available) { selected = it }
-
-            Spacer(Modifier.height(Space.xxl))
-            if (change == null || points.size < 2) {
-                EmptyReport()
-            } else {
-                ChangeFigure(change, selected, now)
-                Spacer(Modifier.height(Space.xl))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(Radius.group))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(Space.l),
-                ) {
-                    Column {
-                        HistoryChart(
-                            points,
-                            tone = changeTone(change),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp),
-                        )
-                        Spacer(Modifier.height(Space.l))
-                        // Time flows left to right inside the chart, so in this RTL row the
-                        // first caption lands on the right — under the newest end of the line.
-                        Row(Modifier.fillMaxWidth()) {
-                            ChartCaption("اکنون", current)
-                            Spacer(Modifier.weight(1f))
-                            ChartCaption("شروع", sorted.getValue(change.sinceDay))
-                        }
+        Spacer(Modifier.height(Space.xxl))
+        if (change == null || points.size < 2) {
+            EmptyReport()
+        } else {
+            ChangeFigure(change, selected, now)
+            Spacer(Modifier.height(Space.xl))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.group))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(Space.l),
+            ) {
+                Column {
+                    HistoryChart(
+                        points,
+                        tone = changeTone(change),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                    )
+                    Spacer(Modifier.height(Space.l))
+                    // Time flows left to right inside the chart, so in this RTL row the
+                    // first caption lands on the right — under the newest end of the line.
+                    Row(Modifier.fillMaxWidth()) {
+                        ChartCaption("اکنون", current)
+                        Spacer(Modifier.weight(1f))
+                        ChartCaption("شروع", sorted.getValue(change.sinceDay))
                     }
                 }
-                Text(
-                    "هر روز یک نقطه ثبت می‌شه، حتی اگه برنامه رو باز نکنی.",
-                    fontSize = 12.sp,
-                    lineHeight = 19.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
-                )
             }
-            // One kind is the hero total said twice — same rule the list's section heads use.
-            if (composition.size > 1) {
-                Spacer(Modifier.height(Space.xxl))
-                CompositionBar(composition)
-            }
-
-            // The month, which is a different question from the chart above it: that one is
-            // "is there more than there was", this one is "where did it go".
-            if (story.month.transactions > 0) {
-                Spacer(Modifier.height(Space.xxl))
-                MonthStory(story)
-            }
-            Spacer(Modifier.height(bottomInset + Space.xl))
+            Text(
+                "هر روز یک نقطه ثبت می‌شه، حتی اگه برنامه رو باز نکنی.",
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+            )
         }
+        // One kind is the hero total said twice — same rule the list's section heads use.
+        if (composition.size > 1) {
+            Spacer(Modifier.height(Space.xxl))
+            CompositionBar(composition)
+        }
+        Spacer(Modifier.height(bottomInset + Space.xl))
     }
 }
 
@@ -452,79 +548,570 @@ private fun HistoryChart(
     }
 }
 
+// ─────────────────────────── دخل و خرج ───────────────────────────
+
+/** Growth, in the colour every bank app in the country uses for it. */
+private val INCOME_TINT = Color(0xFF2E9E5B)
+
 /**
- * The month's story — what came in, what went out, where, and how long the cash would last.
+ * The month she picked: what came in, what went out, what remained, how it sits against the
+ * months around it, where each side came from, and what changed.
  *
- * Every figure comes from [buildStory]; nothing here computes anything, so what she reads and
- * what the tests assert are the same function. Categories are shown as a share of spending
- * rather than in Toman: with this inflation a smaller number of Toman is not a smaller amount
- * of money, and reporting it as progress would be a lie.
+ * Every figure arrives already worked out by [buildCashFlow] — including which month this is
+ * and whether it is allowed to say «این ماه» — so nothing on this screen can disagree with
+ * anything else on it, and what she reads is what the tests assert.
  */
 @Composable
-private fun MonthStory(story: HomeStory) {
-    val month = story.month
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            "${MONTHS[month.month - 1]} امسال",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.semantics { heading() },
-        )
-        Spacer(Modifier.height(Space.m))
-        MonthFlow(story)
+private fun CashFlowReportContent(
+    cash: CashFlowReport,
+    smsEnabled: Boolean,
+    onWindow: (ReportMonth, ReportSpan) -> Unit,
+    bottomInset: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val period = cash.period
+    Column(modifier) {
+        Spacer(Modifier.height(Space.l))
+        SpanPicker(cash) { onWindow(cash.selected, it) }
+        WindowNavigator(cash, onWindow)
 
-        story.bufferDays?.let { days ->
-            Spacer(Modifier.height(Space.m))
-            Panel {
-                Text(
-                    "پولت برای چند روز می‌رسه",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(Space.xs))
-                Text(
-                    "${faNumber(days.toDouble())} روز",
-                    style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
-                    fontSize = 22.sp,
-                )
+        Spacer(Modifier.height(Space.l))
+        if (period.transactions == 0) {
+            // A window with nothing in it is two different facts. This month with nothing in it
+            // yet is a thing to do; a past one with nothing in it may simply be older than the
+            // ledger, and printing zeros for it would report months nobody watched.
+            if (cash.current) {
+                QuietStart(smsEnabled)
+            } else {
+                EmptyMonth(cash.range)
             }
+        } else {
+            MonthSummary(period, cash.current)
         }
 
-        if (month.byCategory.isNotEmpty() && month.spentRial > 0) {
+        // Two months is the least a comparison can be made of. One month drawn alone is a chart
+        // that answers «is this month unusual» with the month itself.
+        if (cash.series.size > 1 && cash.series.any { it.incomeRial > 0 || it.spentRial > 0 }) {
             Spacer(Modifier.height(Space.xl))
-            Text(
-                "خرج‌هات",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(Modifier.height(Space.s))
-            for ((name, rial) in month.byCategory.take(6)) {
-                CategoryShare(name, rial.toFloat() / month.spentRial, rial)
-            }
+            MonthBars(cash, onWindow)
+        }
+
+        if (period.transactions > 0) {
+            Spacer(Modifier.height(Space.xl))
+            CategoryDetail(period)
         }
 
         // Findings and wins in one grid, not two runs of one: paired by kind, each run could end
         // on a lone card and leave a hole mid-page.
-        val cards = story.insights + story.wins
+        val cards = cash.insights + cash.wins
         if (cards.isNotEmpty()) {
-            Spacer(Modifier.height(Space.m))
+            Spacer(Modifier.height(Space.xl))
             InsightGrid(cards)
+        }
+        Spacer(Modifier.height(bottomInset + Space.xl))
+    }
+}
+
+/**
+ * How much of the ledger she is reading — the same control, in the same place, as the one over
+ * گزارش دارایی, because it is the same question asked of the other half of her money.
+ *
+ * A length the ledger cannot fill is dimmed rather than hidden, which is the asset picker's rule
+ * and matters more here: «۱ سال» greyed out on a two-month-old install says *the app has not
+ * watched you for a year yet*, and «۱ سال» simply missing says nothing at all.
+ */
+@Composable
+private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = SegmentedChoice(
+    options = ReportSpan.entries.toList(),
+    selected = cash.span,
+    label = { it.fa },
+    enabled = { it in cash.spans },
+    onSelect = onSelect,
+    role = Role.Tab,
+    fontSize = 14.sp,
+)
+
+/**
+ * Which window she is reading, and the two steps either side of it.
+ *
+ * The arrows are auto-mirrored, so in this RTL app «ماه قبل» is the one on the right — the
+ * direction the page itself reads backwards in. Neither is ever hidden: an arrow that vanishes
+ * at the end of the ledger takes the answer «there is nothing before this» with it, so it is
+ * dimmed and stays disabled to anyone listening as well as anyone looking.
+ *
+ * A step is one month even when the window is twelve. Stepping by the whole window would make
+ * «قبل» jump a year at a time and put every month she wanted to look at in the middle of a
+ * stride; a month at a time slides the year over the ledger, which is what the arrows are for.
+ */
+@Composable
+private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = { onWindow(cash.selected.previous(), cash.span) },
+            enabled = cash.canGoBack,
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "ماه قبل")
+        }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            BasicText(
+                // The window's own name, never the span's: «خرداد تا مرداد ۱۴۰۵» is the thing
+                // every figure below is about, and «۳ ماه» is already said by the picker above.
+                //
+                // Auto-shrinking for the reason the hero figures do: «شهریور ۱۴۰۴ تا مرداد ۱۴۰۵»
+                // is three times the width of «مرداد ۱۴۰۵» between the same two arrows, and a
+                // title that ends in «…» is a window she cannot read the far end of.
+                text = cash.range.fa,
+                // Two lines where there are two months to name: between two arrows on a 320dp
+                // phone, «شهریور ۱۴۰۴ تا مرداد ۱۴۰۵» does not fit on one at any size worth
+                // reading, and it breaks at «تا» — which is where it would be read aloud.
+                maxLines = if (cash.range.count == 1) 1 else 2,
+                autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 20.sp),
+                style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+                modifier = Modifier.semantics { heading() },
+            )
+            // The month she is standing in is half-written. Saying so is the difference between
+            // a small month and a month that is not over.
+            if (cash.current) {
+                Text(
+                    "تا امروز",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        IconButton(
+            onClick = { onWindow(cash.selected.next(), cash.span) },
+            enabled = cash.canGoForward,
+        ) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "ماه بعد")
         }
     }
 }
 
+/** A window the ledger has nothing for — which is not the same as one in which nothing happened. */
 @Composable
-private fun CategoryShare(name: String, share: Float, rial: Long) {
-    Column(Modifier.fillMaxWidth().padding(vertical = Space.s)) {
+private fun EmptyMonth(range: ReportRange) {
+    Panel {
+        Text(
+            "در ${range.fa} تراکنشی ثبت نشده",
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            "دفترت از وقتی پیامک‌ها روشن شدن پر می‌شه، پس ممکنه این ماه قبل از اون باشه.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * What came in against what went out, and then the one line that settles it.
+ *
+ * The two figures and the bar are the home card's language — two lengths off one baseline, so
+ * the answer arrives before either number is read — with the exact Toman under each, which is
+ * the thing the report has room for and the card did not. The net is stated separately because
+ * it is a different question: not «which was bigger» but «what is left», and a deficit is never
+ * printed as a negative amount under the word «مانده».
+ */
+@Composable
+private fun MonthSummary(month: PeriodReport, current: Boolean) {
+    val spend = MaterialTheme.colorScheme.onSurfaceVariant
+    // «درآمد این ماه» on the month she is standing in, because a half-written month has to say
+    // so where the figure is. On a longer window it is «درآمد» and nothing else: «۶ ماه گذشته»
+    // does not fit in half a phone's width beside the word, the title two lines up already names
+    // the months, and «تا امروز» under it already says the last of them is not over.
+    val named = if (current && month.range.count == 1) " ${month.range.recentFa}" else ""
+    Panel {
+        Row(Modifier.fillMaxWidth()) {
+            FlowSide(
+                "درآمد$named",
+                month.incomeRial,
+                INCOME_TINT,
+                Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Space.m))
+            FlowSide(
+                "خرج$named",
+                month.spentRial,
+                MaterialTheme.colorScheme.onSurface,
+                Modifier.weight(1f),
+            )
+        }
+        if (month.incomeRial > 0 || month.spentRial > 0) {
+            Spacer(Modifier.height(Space.l))
+            FlowSplit(month.incomeRial, month.spentRial, INCOME_TINT, spend)
+        }
+
+        Spacer(Modifier.height(Space.l))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(Space.m))
+
+        val short = month.netRial >= 0
+        val tone = if (short) INCOME_TINT else MaterialTheme.colorScheme.error
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // The bar stays `primary` on purpose. The mark says which category this is and the
-            // bar says how much of the month it took — colouring both would have the same row
-            // answering one question twice, in two colours, and the six bars stop being
-            // comparable the moment they stop being the same colour.
+            Text(
+                // The word carries it, not the colour: «کسری» is a different thing from a
+                // «مانده» that happens to be printed in red, and only one of the two is true.
+                if (short) "مانده$named" else "کسری$named",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                bidi(faCompact(tomanOf(abs(month.netRial)))),
+                style = figureStyle(tone, FontWeight.ExtraBold),
+                fontSize = 22.sp,
+            )
+        }
+        Text(
+            "${faNumber(tomanOf(abs(month.netRial)))} تومان",
+            fontSize = 11.sp,
+            fontFamily = ModamFigures,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = Space.xs),
+            textAlign = TextAlign.End,
+        )
+    }
+}
+
+/**
+ * One side of the month: the magnitude to read at a glance, the exact figure under it.
+ *
+ * Both halves step down from the same ceiling so a milliard beside a thousand does not knock
+ * the pair out of alignment — the rule the home card's halves already follow.
+ */
+@Composable
+private fun FlowSide(label: String, rial: Long, tone: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(Space.xs))
+        BasicText(
+            text = bidi(faCompact(tomanOf(rial))),
+            maxLines = 1,
+            // Down to 13sp before it gives up, not 16: at 16 a year's «۹۳۹٫۵ میلیون» is wider
+            // than half a phone, and what it loses off the end is the word — «۹۳۹٫۵» of nothing,
+            // silently, because auto-sizing clips rather than ellipsising when it runs out.
+            autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 26.sp),
+            style = figureStyle(tone, FontWeight.ExtraBold),
+        )
+        // faCompact truncates rather than rounds, so «۱٫۲ میلیون» is never more than she has —
+        // and the exact number is right here for when the difference matters. Which is the whole
+        // reason it shrinks rather than ellipsising: «۹۳۹,۵۵۳,۹۳۳ تو…» is the exact figure with
+        // its unit cut off, on the one line that exists to be exact.
+        BasicText(
+            text = "${faNumber(tomanOf(rial))} تومان",
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
+            style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal),
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+/**
+ * The comparison itself: two lengths off one baseline.
+ *
+ * The shares are floored for the reason the home card's are — at 8dp tall, two per cent of the
+ * row draws as a dot, and a dot reads as *nothing here* rather than as *a little*. Both exact
+ * figures are stated directly above, so the floor costs no honesty.
+ */
+@Composable
+private fun FlowSplit(incomeRial: Long, spentRial: Long, income: Color, spend: Color) {
+    Row(
+        Modifier.fillMaxWidth().height(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        val share = when {
+            incomeRial <= 0 -> 0f
+            spentRial <= 0 -> 1f
+            else -> (incomeRial.toFloat() / (incomeRial + spentRial)).coerceIn(0.06f, 0.94f)
+        }
+        if (incomeRial > 0) {
+            Box(
+                Modifier
+                    .weight(share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(income),
+            )
+        }
+        if (spentRial > 0) {
+            Box(
+                Modifier
+                    .weight(1f - share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(spend),
+            )
+        }
+    }
+}
+
+/** How tall the tallest bar in the window draws. */
+private val BAR_BOX = 132.dp
+
+/** The shortest a bar may be drawn while still reading as an amount rather than as nothing. */
+private const val BAR_FLOOR = 0.03f
+
+/**
+ * Six months of دخل و خرج, side by side.
+ *
+ * One scale across every bar in the window, which is the entire point: scaling each month to
+ * itself would draw a two-million month and a two-hundred-million month at the same height and
+ * call it a comparison. Time runs left to right inside the chart even though the app reads
+ * right to left — the asset chart above made the same decision, and every Iranian bank app
+ * agrees — so the row is laid out LTR explicitly rather than inheriting the shell's direction.
+ *
+ * Each month is a control, not a picture: tapping one reads that month on its own — with the
+ * span dropping back to «۱ ماه», visibly, so the report never changes what it covers without the
+ * picker above saying so — and the whole group carries a single spoken sentence, because six bars
+ * read out as twelve loose numbers are not a chart.
+ */
+@Composable
+private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) -> Unit) {
+    val spend = MaterialTheme.colorScheme.onSurfaceVariant
+    val top = cash.series.maxOf { maxOf(it.incomeRial, it.spentRial) }.coerceAtLeast(1L)
+    // A year of months is twice what this row was built for. Thinner bars keep twelve of them on
+    // a narrow phone, and the month names — which do not shrink — are printed on every other one
+    // rather than clipped on all twelve. The unlabelled months keep their tap target and their
+    // spoken description, so nothing is lost but ink.
+    val crowded = cash.series.size > 8
+    val barWidth = if (crowded) 7.dp else 12.dp
+    val labelEvery = if (crowded) 2 else 1
+    // Only worth marking where there is something outside the window to tell it apart from.
+    val markWindow = cash.series.size > cash.range.count
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                // Not «شش ماه اخیر»: the window is six *at most*, and near the start of the
+                // ledger it slides forward, so a heading counting months would be a caption
+                // that is only sometimes true.
+                "ماه به ماه",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics { heading() },
+            )
+            BarKey("درآمد", INCOME_TINT)
+            Spacer(Modifier.width(Space.m))
+            BarKey("خرج", spend)
+        }
+        Spacer(Modifier.height(Space.m))
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(Space.xs),
+            ) {
+                cash.series.forEachIndexed { i, report ->
+                    // Read as one month, or read as part of a longer window. Only the first is a
+                    // selection — at «۶ ماه» nothing here is selected, six months are simply
+                    // being counted together, and telling a screen reader otherwise would make
+                    // six bars announce themselves as six chosen tabs.
+                    val only = cash.range.count == 1 && report.month == cash.selected
+                    val inWindow = report.month in cash.range
+                    // Counted from the newest end, so the month the window ends at is always the
+                    // one that keeps its name.
+                    val labelled = (cash.series.size - 1 - i) % labelEvery == 0
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            // Shaped background rather than clip-then-fill: the clip cut off the
+                            // month names, which at twelve bars are wider than their own column
+                            // by design — see the label below.
+                            .background(
+                                color = if (only || (inWindow && markWindow)) {
+                                    MaterialTheme.colorScheme.surfaceContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                shape = RoundedCornerShape(Radius.field),
+                            )
+                            .selectable(
+                                selected = only,
+                                role = Role.Tab,
+                                onClick = { onWindow(report.month, ReportSpan.MONTH) },
+                            )
+                            .heightIn(min = 48.dp)
+                            .padding(vertical = Space.s)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = "${report.month.fa}: " +
+                                    "درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، " +
+                                    "خرج ${faCompact(tomanOf(report.spentRial))} تومان" +
+                                    if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Row(
+                            Modifier.height(BAR_BOX),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Bar(report.incomeRial, top, INCOME_TINT, barWidth)
+                            Bar(report.spentRial, top, spend, barWidth)
+                        }
+                        Spacer(Modifier.height(Space.s))
+                        Text(
+                            if (labelled) MONTHS[report.month.month - 1] else "",
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            // Weight and a container, not a colour: the selected month has to be
+                            // findable without seeing one.
+                            fontWeight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
+                            color = if (only) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            // «شهریور» is wider than a twelfth of a phone. It is allowed to spill
+                            // over its own column, which is exactly the room the unlabelled month
+                            // beside it is not using — the alternative is six clipped names.
+                            modifier = if (crowded) {
+                                Modifier.wrapContentWidth(unbounded = true)
+                            } else {
+                                Modifier
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One bar, against the chart's own ceiling. Nothing at all is what nothing looks like. */
+@Composable
+private fun Bar(rial: Long, top: Long, tone: Color, width: Dp) {
+    if (rial <= 0L) {
+        Spacer(Modifier.width(width))
+        return
+    }
+    Box(
+        Modifier
+            .width(width)
+            .fillMaxHeight((rial.toFloat() / top).coerceIn(BAR_FLOOR, 1f))
+            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+            .background(tone),
+    )
+}
+
+@Composable
+private fun BarKey(label: String, tone: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(tone),
+        )
+        Spacer(Modifier.width(Space.xs))
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Where each side of the month came from.
+ *
+ * Both sides, not just spending: «حقوق» and «فروش» and «پس‌گرفتن قرض» are different answers to
+ * "where did it come from", and the report used to throw all of them into one figure while
+ * giving the other side six rows. The list is not truncated here either — this is the screen
+ * she came to for the detail, so the sixth-largest category is not the app's to withhold.
+ */
+@Composable
+private fun CategoryDetail(period: PeriodReport) {
+    // خرج unless there is nothing on that side to show, which is the only case where opening on
+    // it would be an empty screen with a full one one tap away.
+    var side by rememberSaveable {
+        mutableStateOf(
+            if (period.spentRial <= 0 && period.incomeRial > 0) LedgerLens.INCOME
+            else LedgerLens.EXPENSE,
+        )
+    }
+    val income = side == LedgerLens.INCOME
+    val rows = if (income) period.incomeByCategory else period.spendingByCategory
+    val total = if (income) period.incomeRial else period.spentRial
+    // The window written out, never «این ماه»: this line states which months were looked in and
+    // found empty, and that is a fact about named months rather than about where she is standing.
+    val named = period.range.fa
+
+    Column {
+        SegmentedChoice(
+            options = listOf(LedgerLens.EXPENSE, LedgerLens.INCOME),
+            selected = side,
+            label = { it.fa },
+            onSelect = { side = it },
+            fontSize = 14.sp,
+        )
+        Spacer(Modifier.height(Space.m))
+        if (rows.isEmpty() || total <= 0L) {
+            Text(
+                if (income) "در $named درآمدی ثبت نشده." else "در $named خرجی ثبت نشده.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = Space.m),
+            )
+        } else {
+            for ((name, rial) in rows) {
+                CategoryShare(name, rial, total, if (income) INCOME_TINT else null)
+            }
+        }
+    }
+}
+
+/**
+ * One category, as an amount and as a share of its own side.
+ *
+ * The share is the figure that survives inflation: a month's «خوراکی» in Toman says nothing
+ * about last month's «خوراکی» in Toman, while a third of the month's spending is a third of the
+ * month's spending in any year. The bar is on one scale within the side, so the rows are
+ * comparable with each other and with nothing else.
+ */
+@Composable
+private fun CategoryShare(name: String, rial: Long, total: Long, tint: Color?) {
+    val share = (rial.toFloat() / total).coerceIn(0f, 1f)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.s)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، " +
+                    "${faNumber(round(share * 100.0))} درصد"
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // The mark says which category this is and the bar says how much of the side it
+            // took — colouring both would have the same row answering one question twice, and
+            // the bars stop being comparable the moment they stop being the same colour.
             CategoryIcon(name, categoryHue(name), size = 16.dp, stroke = 1.5.dp)
             Spacer(Modifier.width(Space.s))
+            // Wraps rather than truncates: «دسته‌بندی نشده» beside a percentage and a figure is
+            // one character over the line on a narrow phone, and a clipped category name is the
+            // one thing in the row she cannot reconstruct from the rest of it.
             Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+            Text(
+                "${faNumber(round(share * 100.0))}٪",
+                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.width(Space.s))
             Text(
                 bidi(faCompact(tomanOf(rial))),
                 style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
@@ -541,10 +1128,10 @@ private fun CategoryShare(name: String, share: Float, rial: Long) {
         ) {
             Box(
                 Modifier
-                    .fillMaxWidth(share.coerceIn(0f, 1f))
+                    .fillMaxWidth(share)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(tint ?: MaterialTheme.colorScheme.primary),
             )
         }
     }

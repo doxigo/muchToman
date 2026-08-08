@@ -323,11 +323,24 @@ interface ManualTxnDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(row: ManualTxn)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAll(rows: List<ManualTxn>)
+
     @Query("SELECT * FROM manual_txn WHERE deleted = 0 ORDER BY at DESC")
     suspend fun all(): List<ManualTxn>
 
     @Query("SELECT COUNT(*) FROM manual_txn WHERE deleted = 0")
     suspend fun count(): Int
+
+    /**
+     * Erased outright, not tombstoned — the one place in this file that is allowed to.
+     *
+     * `deleted = 1` is how a transaction *she* entered goes away: the row stays so the other
+     * phones in the household learn it is gone. Nothing here was ever hers, so there is nobody to
+     * tell. See [DEMO_PREFIX].
+     */
+    @Query("DELETE FROM manual_txn WHERE id LIKE :prefix || '%'")
+    suspend fun deleteWithIdPrefix(prefix: String)
 }
 
 @Dao

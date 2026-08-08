@@ -30,6 +30,11 @@ android {
         versionCode = providers.gradleProperty("muchtoman.versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("muchtoman.versionName").orNull ?: "1.0"
         buildConfigField("boolean", "LITE", "false")
+        // Whether تنظیمات offers to invent a household's year of transactions. False everywhere
+        // but the `dev` build type below — including in `debug`, which is the released app with a
+        // debugger on it and shares its data. A constant, so R8 drops [demoLedger] and everything
+        // that calls it out of the release APK entirely rather than shipping it switched off.
+        buildConfigField("boolean", "DEMO", "false")
     }
 
     // Two editions out of one source tree. `lite` is the app as it shipped through v1.0.4 —
@@ -125,6 +130,9 @@ android {
             // src/dev/res overrides the app name so the two icons can be told apart.
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")
             buildConfigField("String", "SYNC_URL", "\"$syncUrl\"")
+            // The one build that may make up money. It is a separate app with its own database,
+            // so invented transactions can never land in the ledger she actually keeps.
+            buildConfigField("boolean", "DEMO", "true")
         }
         release {
             buildConfigField("String", "RATES_URL", "\"$ratesUrl\"")

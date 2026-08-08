@@ -253,6 +253,26 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var tab by rememberSaveable { mutableStateOf(tabs.first()) }
     val portfolio = tab == Tab.ASSETS
 
+    // Which report, and which month of it. Both live up here because every door into گزارش‌ها
+    // says which of the two reports it is a door to — the asset change pill opens دارایی, the
+    // month band on the field opens دخل و خرج — and the destination cannot answer that itself.
+    //
+    // The month is a start day rather than a [ReportMonth] so it survives a process death in a
+    // Bundle, and null means «the month containing today»: an app reopened tomorrow must not
+    // still be pinned to yesterday's month because it was once the current one.
+    var reportMode by rememberSaveable { mutableStateOf(ReportMode.CASH_FLOW) }
+    var reportMonth by rememberSaveable { mutableStateOf<Long?>(null) }
+    // How far back دخل و خرج reaches from that month. A door into the report opens on this month,
+    // so it resets with the month: arriving from the field's month band and finding a year's
+    // figures because that is where she left the picker last week is the door having lied.
+    var reportSpan by rememberSaveable { mutableStateOf(ReportSpan.MONTH) }
+    fun openReport(mode: ReportMode) {
+        reportMode = mode
+        reportMonth = null
+        reportSpan = ReportSpan.MONTH
+        tab = Tab.REPORT
+    }
+
     LaunchedEffect(state.family.pendingPairing) {
         // Scanning the invite must still land on the join card, and that card is two taps deep
         // now. A pairing link can also arrive at the lite build — the intent filter is in the
@@ -366,6 +386,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onWidgetLockChange = vm::setWidgetLock,
             onAddCategory = vm::addCategory,
             onRemoveCategory = vm::archiveCategory,
+            onDemoData = vm::setDemoData,
             onBack = { settings = false },
         )
         return
@@ -430,7 +451,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 TabBar(
                     selected = tab,
                     ledgerBadge = state.ledger.review.size,
-                    onSelect = { tab = it },
+                    // The bar's گزارش opens دخل و خرج: دارایی already has a root tab of its own,
+                    // so opening the reports on the asset side would be the second door to a
+                    // room she is already standing next to.
+                    onSelect = { if (it == Tab.REPORT) openReport(ReportMode.CASH_FLOW) else tab = it },
                 )
             } else {
                 // The lite edition has no bar, but the Scaffold's inset is the only thing keeping
@@ -468,11 +492,28 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         val composition = remember(state.listHoldings, state.coins, state.effective, state.stocks) {
             compositionByKind(state.listHoldings, state.coins, state.effective, state.stocks)
         }
+        // One walk over the ledger for the whole report: the totals, the six bars, the category
+        // lists and every sentence come out of it together, so the month she taps and the figure
+        // she reads cannot be two different months.
+        val cash = remember(state.ledger, state.bankToman, reportMonth, reportSpan) {
+            val today = tehranDay(System.currentTimeMillis())
+            buildCashFlow(
+                entries = state.ledger.entries,
+                liquidRial = Math.round(state.bankToman * 10.0),
+                today = today,
+                selected = reportMonth?.let { reportMonthOf(it) } ?: reportMonthOf(today),
+                span = reportSpan,
+            )
+        }
         ReportScreen(
             history = state.history,
             current = state.totals.toman,
             composition = composition,
-            story = state.story,
+            cash = cash,
+            smsEnabled = state.smsEnabled,
+            mode = reportMode,
+            onMode = { reportMode = it },
+            onWindow = { month, span -> reportMonth = month.startDay; reportSpan = span },
             bottomInset = pad.calculateBottomPadding(),
             // The bar is the way out wherever there is one. The lite edition has no bar and
             // still opens this from the گزارش button on its field, so there it keeps the
@@ -527,7 +568,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                     state = state,
                     usdRate = effective["usd"],
                     onRefresh = vm::refreshAll,
-                    onReport = { tab = Tab.REPORT },
+                    onReport = { openReport(it) },
                     onSettings = { settings = true },
                     onAdd = { adding = true; vm.refreshStocksForPicker() },
                     portfolio = portfolio,
@@ -769,7 +810,12 @@ internal fun HeroField(
     state: UiState,
     usdRate: Double?,
     onRefresh: () -> Unit,
-    onReport: () -> Unit,
+    /**
+     * Which report, not just «the report». Every affordance on this field is a door to one of
+     * the two, and the one it names is the one it has to open: a change pill that lands on
+     * دخل و خرج is the field asking a question and the report answering a different one.
+     */
+    onReport: (ReportMode) -> Unit,
     onSettings: () -> Unit,
     onAdd: () -> Unit,
     /** Which screen this field is heading — the one thing that changes below the total. */
@@ -894,14 +940,17 @@ internal fun HeroField(
             when {
                 change != null -> {
                     Spacer(Modifier.height(Space.m))
-                    ChangePill(change, onClick = onReport)
+                    // A month's change in what she owns is the asset report's own opening
+                    // figure, so that is the report it opens.
+                    ChangePill(change, onClick = { onReport(ReportMode.ASSETS) })
                 }
                 // Before there are thirty days to compare against, the pill has nothing it can
                 // honestly state. A door that only appears in the second month is a door nobody
                 // finds, so the slot keeps its target and drops the figure.
                 // No spacer: the link's own 48dp target already carries more air than the pill
                 // needs, and stacked they left a hole under the total.
-                !portfolio && !band -> ReportLink(onClick = onReport)
+                // It says «گزارش دارایی» on it, so that is where it goes.
+                !portfolio && !band -> ReportLink(onClick = { onReport(ReportMode.ASSETS) })
             }
 
             if (portfolio) {
@@ -923,7 +972,8 @@ internal fun HeroField(
                     if (tabs.size == 1) {
                         HeroAction(
                             label = "گزارش",
-                            onClick = onReport,
+                            // The lite edition's only report is the asset one — see [reportModes].
+                            onClick = { onReport(ReportMode.ASSETS) },
                             modifier = Modifier.weight(1f),
                         ) { BarsIcon(Hero.strong) }
                     }
@@ -943,7 +993,9 @@ internal fun HeroField(
                 Spacer(Modifier.height(Space.l))
                 HorizontalDivider(color = Hero.hairline)
                 Spacer(Modifier.height(Space.l))
-                HeroMonth(state.story, onOpen = onReport)
+                // The band *is* the cash-flow report in short, so it opens the long form of
+                // itself rather than the asset chart it used to land on.
+                HeroMonth(state.story, onOpen = { onReport(ReportMode.CASH_FLOW) })
             }
 
             Spacer(Modifier.height(if (portfolio) Space.xl else Space.l))
