@@ -142,8 +142,8 @@ class ClassifyTest {
         val incoming = categoryChoices(BUILTIN_CATEGORIES, "in").map { it.nameFa }
         assertEquals(
             listOf(
-                "درآمد", "حقوق", "پاداش", "فروش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "سایر",
-                "همسر", "انتقال بین حساب‌ها",
+                "درآمد", "حقوق", "فروش", "پاداش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "همسر",
+                "سایر", "انتقال بین حساب‌ها",
             ),
             incoming,
         )
@@ -152,10 +152,22 @@ class ClassifyTest {
         assertTrue("خواربار" in outgoing)
         assertTrue("درآمد" !in outgoing)
 
-        // همسر is the other one that ignores direction: money between the two of them is one
+        // Retired, and never offered again: «انتقال وجه» named how the money left and never why,
+        // which is the one thing filing it was supposed to record. It stays in the shipped list,
+        // archived, so the rows already under it keep their name.
+        assertTrue("انتقال وجه" !in outgoing)
+        assertTrue(BUILTIN_CATEGORIES.any { it.nameFa == "انتقال وجه" && it.archived })
+
+        // همسر is one of the others that ignores direction: money between the two of them is one
         // category whichever way it went, and it is an EXPENSE row, so only the id can carry it
         // into the incoming grid.
         assertTrue("همسر" in outgoing)
+
+        // سایر is the third, and it runs the other way — an INCOME row that only its id carries
+        // into the spending grid. One category and not a pair: two rows called سایر would be one
+        // line in the month's report anyway, and one name is one mark to learn.
+        assertTrue("سایر" in outgoing)
+        assertEquals(1, BUILTIN_CATEGORIES.count { it.nameFa == "سایر" })
 
         // «دسته‌بندی نشده» is the absence of an answer and never one of them. انتقال is the one
         // that ignores direction: both legs of a real transfer must be able to reach it, and the
@@ -165,8 +177,9 @@ class ClassifyTest {
             assertTrue("دسته‌بندی نشده" !in list)
         }
 
-        // A direction the parser could not read is not a reason to hide half the answers.
-        assertEquals(BUILTIN_CATEGORIES.size - 1, categoryChoices(BUILTIN_CATEGORIES, null).size)
+        // A direction the parser could not read is not a reason to hide half the answers. Two are
+        // held back whichever way the money went: «دسته‌بندی نشده» and the archived «انتقال وجه».
+        assertEquals(BUILTIN_CATEGORIES.size - 2, categoryChoices(BUILTIN_CATEGORIES, null).size)
     }
 
     // ─────────────────────────── links ───────────────────────────

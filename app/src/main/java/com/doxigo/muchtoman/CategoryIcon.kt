@@ -191,10 +191,11 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // both halves of the wheel from teal round to red and leaves the green nobody took: خواربار
         // is yellower and پس‌انداز bluer, and neither is within three cells of this one.
         CategoryGlyph.WHEEL -> if (dark) Color(0xFF89D486) else Color(0xFF348030)
-        // اینترنت opens row 6, so برداشت نقدی's green directly above is the only cell it touches —
-        // خودرو is at the far end of the row above, not beside it. Blue-violet, which is what a
-        // wifi mark is everywhere; a plain blue is what it wanted and cannot have, sitting 48° off
-        // that green — and حمل و نقل and قسط و وام are both already using it anyway.
+        // اینترنت opens row 6, so برداشت نقدی's green sits directly above it and خودرو is at the far
+        // end of the row above, not beside it. Blue-violet, which is what a wifi mark is everywhere;
+        // a plain blue is what it wanted and cannot have, sitting 48° off that green — and حمل و نقل
+        // and قسط و وام are both already using it anyway. سایر came to sit beside it later and
+        // cleared it by 61°, which is the constraint that picked the orchid rather than this.
         CategoryGlyph.WIFI -> if (dark) Color(0xFFA59EEB) else Color(0xFF4538B2)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
@@ -204,10 +205,20 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         CategoryGlyph.STAR -> if (dark) Color(0xFFE8C46A) else Color(0xFFA07A12)
         CategoryGlyph.SHOP -> if (dark) Color(0xFFF29BBB) else Color(0xFFB43F6B)
         CategoryGlyph.CHART -> if (dark) Color(0xFFDCA0F0) else Color(0xFFA33FBE)
-        // «سایر» is «none of the others», which is the one thing کارمزد's grey already says: a
-        // category with no character of its own. It never shares a grid with کارمزد — one is
-        // income and one is spending — so the two can honestly say it in the same colour.
-        CategoryGlyph.ASTERISK -> if (dark) Color(0xFFB4C0C6) else Color(0xFF66737A)
+        // «سایر» borrowed کارمزد's grey while it was income only: both are «no character of its
+        // own», and the two never met in a grid. Offering it on the spending side ended that —
+        // it lands directly under کارمزد there, and two touching cells in the same grey is the
+        // one thing this table exists to prevent. کارمزد keeps the grey, because a fee has no
+        // character to lose; سایر is the one that had somewhere to go.
+        //
+        // Orchid, at the widest gap left on the wheel — دخانیات's plum is 15° below it and مد و
+        // پوشاک's magenta 16° above, and neither comes within a cell of it in either grid. What
+        // it does touch it clears by more than the 60° the grid is tuned to: کارمزد's grey above
+        // it, اینترنت's blue-violet and همسر's yellow-green beside it in the spending grid, and
+        // پاداش's gold above with پس‌گرفتن قرض's amber beside it in the income one. The dark
+        // variant is pushed pinker than the plum it sits nearest, which is where the two would
+        // otherwise be hardest to tell apart.
+        CategoryGlyph.ASTERISK -> if (dark) Color(0xFFE892DB) else Color(0xFF9F4191)
         // Income and transfer. `categoryChoices` never puts these in the same *grid* as anything
         // above, so reusing a hue costs nothing there — but the timeline mixes income and
         // spending row by row, and there درآمد and برداشت نقدی do land side by side in the same
@@ -216,11 +227,12 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // something worse, and on that surface the category's name is set beside the mark at the
         // same size — the colour narrows it, the word and the shape finish it. The grid, where
         // the label is 12sp underneath, is the surface that had to be solved exactly.
-        // همسر is the last cell of both grids, and what it touches there is: انتقال's teal beside
-        // it in both, اینترنت's blue-violet on its other side in the spending grid, کارمزد's grey
-        // above it there, and سود سرمایه‌گذاری's purple above it in the income one. That rules out
-        // everything from teal round to red and leaves the yellow-green between خانه و کاشانه's
-        // olive and خواربار's leaf — and neither of those two comes near this cell in either grid.
+        // همسر sits at the end of both grids, beside انتقال's teal in the spending one and beside
+        // سایر's orchid in both. Adding سایر moved it one cell along the spending row, so what is
+        // above it there is دخانیات's plum rather than کارمزد's grey, and فروش's pink in the income
+        // grid. All four rule out everything from teal round to red and leave the yellow-green
+        // between خانه و کاشانه's olive and خواربار's leaf — and neither of those two comes near
+        // this cell in either grid.
         CategoryGlyph.RING -> if (dark) Color(0xFFB6D877) else Color(0xFF638A1B)
         CategoryGlyph.TRAY -> if (dark) Color(0xFF6FD5A0) else Color(0xFF17805A)
         CategoryGlyph.PAYBACK -> if (dark) Color(0xFFEFC177) else Color(0xFFA9761F)

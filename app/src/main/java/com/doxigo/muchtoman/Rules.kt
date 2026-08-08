@@ -48,46 +48,55 @@ data class Category(
 const val CAT_UNCATEGORISED = "cat_uncategorised"
 const val CAT_TRANSFER = "cat_transfer"
 const val CAT_SPOUSE = "cat_spouse"
+
+/**
+ * «سایر», which is offered on both sides of the ledger.
+ *
+ * The id still says income because that is the only side it was offered on when it shipped, and
+ * an id is what every stored row, rule and decision names — renaming it would orphan them all.
+ */
+const val CAT_OTHER = "cat_income_other"
 const val CAT_FEES = "cat_fees"
 const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
 
 /**
- * The categories the app ships with.
+ * The categories the app ships with, in the order a household generally reaches for them.
  *
- * Setup does not ask her to build a taxonomy. The first block is what the parser can actually
- * tell apart from a bank SMS; the second is the household's own list, which no SMS will ever
- * name on its own — they are here so the choice exists the first time she files something by
- * hand, not because anything can guess them.
+ * Setup does not ask her to build a taxonomy. Everything the parser can tell apart from a bank
+ * SMS is here, and so is the household's own list, which no SMS will ever name on its own —
+ * those are here so the choice exists the first time she files something by hand, not because
+ * anything can guess them.
  *
- * The last four are the machine's: withdrawal, fee, income, transfer. They sort last because
- * they are what the app says about money, not what she spent it on.
+ * `sort` is the *opening* position of a cell in the picker and no longer its permanent one:
+ * [categoryChoices] floats what she actually uses to the front, so this list is the order the
+ * app assumes before it knows anything about her, and the order the seldom-used tail keeps
+ * forever. Grouped roughly weekly-then-monthly-then-rarely: the four cells of the first row are
+ * the ones most spending in a month lands in, and what the app says about money rather than what
+ * she spent it on — کارمزد, برداشت نقدی — sorts to the back, because it is filed for her.
+ *
+ * The three at the end are the ones both grids share, and they stay at the end of both.
  */
 val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category(CAT_UNCATEGORISED, nameFa = "دسته‌بندی نشده", kind = CategoryKind.EXPENSE, sort = 0, builtin = true),
+
+    // ── the weekly ones: the first row of the spending grid ──
     Category("cat_groceries", nameFa = "خواربار", kind = CategoryKind.EXPENSE, sort = 10, builtin = true),
     Category("cat_dining", nameFa = "رستوران و کافه", kind = CategoryKind.EXPENSE, sort = 20, builtin = true),
     Category("cat_transport", nameFa = "حمل و نقل", kind = CategoryKind.EXPENSE, sort = 30, builtin = true),
-    Category("cat_bills", nameFa = "قبض‌ها", kind = CategoryKind.EXPENSE, sort = 40, builtin = true),
-    Category("cat_health", nameFa = "سلامت", kind = CategoryKind.EXPENSE, sort = 50, builtin = true),
-    Category("cat_shopping", nameFa = "خرید روزانه", kind = CategoryKind.EXPENSE, sort = 60, builtin = true),
+    Category("cat_shopping", nameFa = "خرید روزانه", kind = CategoryKind.EXPENSE, sort = 40, builtin = true),
 
-    Category("cat_savings", nameFa = "پس‌انداز و سرمایه", kind = CategoryKind.EXPENSE, sort = 70, builtin = true),
-    // EXPENSE, not TRANSFER: «انتقال بین حساب‌ها» is her own money moving and must not count,
-    // while this is money that left for someone else — a کارت‌به‌کارت is spending with a nicer
-    // name. TRANSFER would also hide it from the picker, which is the one place it is chosen.
-    Category("cat_send", nameFa = "انتقال وجه", kind = CategoryKind.EXPENSE, sort = 80, builtin = true),
-    Category("cat_gifts", nameFa = "هدیه و نیکوکاری", kind = CategoryKind.EXPENSE, sort = 90, builtin = true),
-    Category("cat_beauty", nameFa = "زیبایی", kind = CategoryKind.EXPENSE, sort = 100, builtin = true),
-    Category("cat_clothing", nameFa = "مد و پوشاک", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
-    Category("cat_culture", nameFa = "فرهنگی و هنری", kind = CategoryKind.EXPENSE, sort = 120, builtin = true),
-    Category("cat_home", nameFa = "خانه و کاشانه", kind = CategoryKind.EXPENSE, sort = 130, builtin = true),
-    Category("cat_atina", nameFa = "خرج اتینا", kind = CategoryKind.EXPENSE, sort = 140, builtin = true),
-    // The two halves of a قرض, which only balance out over time: neither is really spending or
-    // really income, but EXPENSE and INCOME are the only kinds that stay visible — TRANSFER
-    // means «not her decision, do not count», and money lent is very much a decision.
-    Category("cat_loan", nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 150, builtin = true),
-    // Sorted next to قرض and not next to قبض‌ها, though it is as fixed and as monthly as a bill.
+    // ── the monthly ones ──
+    // خودرو is the car itself — بنزین, سرویس, بیمه, جریمه — and حمل و نقل stays what it was, the
+    // fare she pays somebody else. اینترنت is out of قبض‌ها for the same reason قسط و وام is: it is
+    // the one line of the utilities she actually decides the size of, and it is topped up far more
+    // often than a quarterly gas bill arrives, which is why it sorts above one.
+    Category("cat_bills", nameFa = "قبض‌ها", kind = CategoryKind.EXPENSE, sort = 50, builtin = true),
+    Category("cat_internet", nameFa = "اینترنت", kind = CategoryKind.EXPENSE, sort = 60, builtin = true),
+    Category("cat_car", nameFa = "خودرو", kind = CategoryKind.EXPENSE, sort = 70, builtin = true),
+    Category("cat_health", nameFa = "سلامت", kind = CategoryKind.EXPENSE, sort = 80, builtin = true),
+    Category("cat_home", nameFa = "خانه و کاشانه", kind = CategoryKind.EXPENSE, sort = 90, builtin = true),
+    Category("cat_clothing", nameFa = "مد و پوشاک", kind = CategoryKind.EXPENSE, sort = 100, builtin = true),
     // A قسط is money going to a debt she already owes, and what she wants to see at the end of
     // the month is that number beside the قرض she has out — not buried in utilities.
     //
@@ -95,44 +104,46 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // and a قسط arrives as an ordinary برداشت on whichever channel the bank happened to use, so
     // there is nothing to key on that is not a guess. It earns a rule the first time she files
     // one and says «همیشه», which is the mechanism that already exists for exactly this.
-    Category("cat_instalment", nameFa = "قسط و وام", kind = CategoryKind.EXPENSE, sort = 155, builtin = true),
+    Category("cat_instalment", nameFa = "قسط و وام", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
+    Category("cat_atina", nameFa = "خرج اتینا", kind = CategoryKind.EXPENSE, sort = 120, builtin = true),
 
-    Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 160, builtin = true),
-    Category(CAT_FEES, nameFa = "کارمزد", kind = CategoryKind.EXPENSE, sort = 170, builtin = true),
-    // Last of the expenses rather than beside خرید, where it belongs by meaning. `sort` is grid
-    // position, and the grid's colours are tuned against *which cells touch* — inserting this one
-    // in the middle shifts every category after it into a new neighbourhood and lands two purples
-    // side by side. Appending moves nothing, so every mark she has learned keeps its hue.
-    Category("cat_tobacco", nameFa = "دخانیات", kind = CategoryKind.EXPENSE, sort = 175, builtin = true),
-    // Appended for the same reason دخانیات was, not slotted beside حمل و نقل and قبض‌ها where they
-    // belong by meaning: `sort` is grid position, and every mark she has learned keeps its hue only
-    // as long as nothing before it moves.
-    //
-    // خودرو is the car itself — بنزین, سرویس, بیمه, جریمه — and حمل و نقل stays what it was, the
-    // fare she pays somebody else. اینترنت is out of قبض‌ها for the same reason قسط و وام is: it is
-    // the one line of the utilities she actually decides the size of.
-    //
-    // No shipped rule behind either. Both arrive as an ordinary برداشت on whichever channel the
-    // bank used, so there is nothing to key on that is not a guess; they earn a rule the first time
-    // she files one and says «همیشه».
-    Category("cat_car", nameFa = "خودرو", kind = CategoryKind.EXPENSE, sort = 176, builtin = true),
-    Category("cat_internet", nameFa = "اینترنت", kind = CategoryKind.EXPENSE, sort = 177, builtin = true),
+    // ── the occasional ones ──
+    Category("cat_savings", nameFa = "پس‌انداز و سرمایه", kind = CategoryKind.EXPENSE, sort = 130, builtin = true),
+    Category("cat_gifts", nameFa = "هدیه و نیکوکاری", kind = CategoryKind.EXPENSE, sort = 140, builtin = true),
+    Category("cat_beauty", nameFa = "زیبایی", kind = CategoryKind.EXPENSE, sort = 150, builtin = true),
+    Category("cat_culture", nameFa = "فرهنگی و هنری", kind = CategoryKind.EXPENSE, sort = 160, builtin = true),
+    Category("cat_tobacco", nameFa = "دخانیات", kind = CategoryKind.EXPENSE, sort = 170, builtin = true),
+    // The two halves of a قرض, which only balance out over time: neither is really spending or
+    // really income, but EXPENSE and INCOME are the only kinds that stay visible — TRANSFER
+    // means «not her decision, do not count», and money lent is very much a decision.
+    Category("cat_loan", nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 180, builtin = true),
 
-    Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 180, builtin = true),
-    // What درآمد is actually made of. درآمد stays, and stays first: it is what `rule_income` files
-    // every incoming message as, so it is the answer she is confirming rather than one she has to
-    // choose — these four are for when she wants to say more than «money came in».
-    Category("cat_salary", nameFa = "حقوق", kind = CategoryKind.INCOME, sort = 182, builtin = true),
-    Category("cat_bonus", nameFa = "پاداش", kind = CategoryKind.INCOME, sort = 184, builtin = true),
-    Category("cat_sales", nameFa = "فروش", kind = CategoryKind.INCOME, sort = 186, builtin = true),
-    Category("cat_invest_income", nameFa = "سود سرمایه‌گذاری", kind = CategoryKind.INCOME, sort = 188, builtin = true),
+    // ── what the app files for her, which she rarely has to pick ──
+    Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 190, builtin = true),
+    Category(CAT_FEES, nameFa = "کارمزد", kind = CategoryKind.EXPENSE, sort = 200, builtin = true),
+
+    // Retired, and archived rather than deleted so that every row filed under it still says what
+    // it was filed as. «انتقال وجه» named the mechanism and not the reason: a کارت‌به‌کارت is how
+    // money left, never why, and the why — a gift, a loan, the rent, her husband — is what every
+    // other category on this list is for. Offering it invited her to throw that answer away at
+    // the one moment she still knew it, and left a line in the month's report that says only
+    // «money went somewhere».
+    Category("cat_send", nameFa = "انتقال وجه", kind = CategoryKind.EXPENSE, sort = 205, builtin = true, archived = true),
+
+    // ── the income grid ──
+    // درآمد stays first: it is what `rule_income` files every incoming message as, so it is the
+    // answer she is confirming rather than one she has to choose. The rest are for when she wants
+    // to say more than «money came in», in the order a household earns them.
+    Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 210, builtin = true),
+    Category("cat_salary", nameFa = "حقوق", kind = CategoryKind.INCOME, sort = 220, builtin = true),
+    Category("cat_sales", nameFa = "فروش", kind = CategoryKind.INCOME, sort = 230, builtin = true),
+    Category("cat_bonus", nameFa = "پاداش", kind = CategoryKind.INCOME, sort = 240, builtin = true),
+    Category("cat_invest_income", nameFa = "سود سرمایه‌گذاری", kind = CategoryKind.INCOME, sort = 250, builtin = true),
     // «پس‌گرفتن», not «پس‌دادن»: the ledger is hers, and on money coming in she is the one
-    // getting it back — the other side is who gave it. Sorted beside درآمد because the picker
-    // shows it on the same rows: the ones where money arrived.
-    Category("cat_loan_back", nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 190, builtin = true),
-    // Last of the income side on purpose: «سایر» is where the eye goes after reading the others
-    // and finding none of them, so it must not be the first thing read.
-    Category("cat_income_other", nameFa = "سایر", kind = CategoryKind.INCOME, sort = 195, builtin = true),
+    // getting it back — the other side is who gave it.
+    Category("cat_loan_back", nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 260, builtin = true),
+
+    // ── the three both grids end with ──
     // Money between the two of them, and it runs both ways: what she pays for him is spending,
     // what he sends her is income, and both belong under the same word. One row and not a pair —
     // the month's report totals by name, so two rows called همسر would be one line anyway, and
@@ -141,11 +152,16 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     //
     // EXPENSE by kind for the reason قرض is: EXPENSE and INCOME are the only kinds that stay
     // visible, and what a row counts as is read off the amount's sign, never off this field.
+    Category(CAT_SPOUSE, nameFa = "همسر", kind = CategoryKind.EXPENSE, sort = 270, builtin = true),
+    // «none of the others», which is a thing money going out needs as often as money coming in.
+    // One row offered both ways rather than a pair, for the reason همسر is one row. INCOME by
+    // kind is only where it shipped; the sign decides what a row counts as.
     //
-    // Sorted past سایر so it is the last cell of both grids, right before انتقال — appended for
-    // the reason دخانیات was: nothing before it moves, so every mark she has learned keeps its hue.
-    Category(CAT_SPOUSE, nameFa = "همسر", kind = CategoryKind.EXPENSE, sort = 198, builtin = true),
-    Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 200, builtin = true),
+    // Last of the answers on purpose: «سایر» is where the eye goes after reading the others and
+    // finding none of them, so it must not be the first thing read — and [categoryChoices] holds
+    // it here however often it is used, or the picker would teach her to file everything as it.
+    Category(CAT_OTHER, nameFa = "سایر", kind = CategoryKind.INCOME, sort = 280, builtin = true),
+    Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 290, builtin = true),
 )
 
 /**
