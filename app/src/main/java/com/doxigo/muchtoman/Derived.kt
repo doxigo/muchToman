@@ -451,6 +451,18 @@ data class LedgerView(
         entries.filter { it.needsReview && !it.duplicate && !it.transfer }
             .sortedByDescending { it.txn.amountRial ?: 0L }
     }
+
+    /**
+     * Which categories she actually files things under, for [categoryChoices] to order the picker.
+     *
+     * `by lazy` for the reason `review` is: it walks every entry, and both pickers ask for it on
+     * every recomposition. Read off [entries] rather than stored anywhere, so it cannot drift out
+     * of step with the ledger — and so that undoing a filing un-learns it, which a counter written
+     * at the moment she picked would not.
+     */
+    val categoryUse: Map<String, Double> by lazy {
+        categoryUseOf(entries, tehranDay(System.currentTimeMillis()))
+    }
 }
 
 data class LedgerEntries(

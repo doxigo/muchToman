@@ -182,6 +182,59 @@ class ClassifyTest {
         assertEquals(BUILTIN_CATEGORIES.size - 2, categoryChoices(BUILTIN_CATEGORIES, null).size)
     }
 
+    /**
+     * The picker learns where her money goes, and the two guards that keep it an order rather
+     * than a shuffle: nothing moves on a single filing, and the ways out never move at all.
+     */
+    @Test
+    fun `the picker puts what she actually files first`() {
+        val today = jalaliDay(1405, 5, 1)
+        fun filed(categoryId: String, daysAgo: Long, times: Int) = List(times) {
+            LedgerEntry(
+                txn = txn(at = tehranDayStart(today - daysAgo) + 1, signed = -1_000_000),
+                categoryId = categoryId,
+                categoryFa = "",
+                confidence = Confidence.NONE,
+                needsReview = false,
+                duplicate = false,
+                transfer = false,
+            )
+        }
+
+        // Four recent trips to the pharmacy and three to the tailor, against a shipped order that
+        // opens with خواربار and puts both of them well down the grid.
+        val use = categoryUseOf(filed("cat_health", 3, 4) + filed("cat_clothing", 10, 3), today)
+        val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out", use).map { it.nameFa }
+        assertEquals(listOf("سلامت", "مد و پوشاک"), outgoing.take(2))
+        // Everything it did not promote holds the shipped order exactly, so the tail of the grid
+        // stays where she last saw it.
+        val untouched = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
+        assertEquals(untouched.filter { it !in setOf("سلامت", "مد و پوشاک") }, outgoing.drop(2))
+
+        // One filing is not a habit. A grid that reorders itself the first time she answers is a
+        // grid she has to read from the top every time.
+        val once = categoryUseOf(filed("cat_beauty", 0, 1), today)
+        assertEquals(untouched, categoryChoices(BUILTIN_CATEGORIES, "out", once).map { it.nameFa })
+
+        // Older filings weigh less: the same four visits half a year back do not outrank three
+        // from last week.
+        val stale = categoryUseOf(filed("cat_health", 180, 4) + filed("cat_clothing", 7, 3), today)
+        assertEquals("مد و پوشاک", categoryChoices(BUILTIN_CATEGORIES, "out", stale).first().nameFa)
+
+        // The ways out stay ways out however often they are taken: a picker that learns to put
+        // «none of the others» under her thumb has taught her to stop filing.
+        val escapes = mapOf(CAT_OTHER to 40.0, CAT_TRANSFER to 40.0)
+        val ordered = categoryChoices(BUILTIN_CATEGORIES, "out", escapes).map { it.nameFa }
+        assertEquals(listOf("سایر", "انتقال بین حساب‌ها"), ordered.takeLast(2))
+
+        // A transfer leg is not money moving, so it is not a data point about where money goes —
+        // the same reason it is out of every total.
+        assertEquals(
+            emptyMap<String, Double>(),
+            categoryUseOf(filed("cat_health", 1, 5).map { it.copy(transfer = true) }, today),
+        )
+    }
+
     // ─────────────────────────── links ───────────────────────────
 
     @Test

@@ -380,6 +380,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 onCategorise = vm::categorise,
                 onLoadSource = vm::sourceOf,
                 onBack = { transactionRef = null },
+                categoryUse = state.ledger.categoryUse,
             )
             return
         }

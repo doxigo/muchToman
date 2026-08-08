@@ -490,6 +490,8 @@ fun TransactionScreen(
     onCategorise: (LedgerEntry, String, Boolean) -> Unit,
     onLoadSource: suspend (LedgerEntry) -> String,
     onBack: () -> Unit,
+    /** What she files things under, which decides the order of the grid. */
+    categoryUse: Map<String, Double> = emptyMap(),
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
@@ -520,7 +522,14 @@ fun TransactionScreen(
         txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} تومان")) }
         txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} تومان")) }
     }
-    val choices = categoryChoices(categories, txn.direction)
+    // Worked out once for this transaction and held there. The order follows what she files
+    // things under, and filing this one changes that — so recomputing on every recomposition
+    // would rearrange the grid under her thumb in the instant after she tapped it. It settles
+    // into its new order the next time she opens a transaction, which is the first moment the
+    // rearrangement can help rather than startle.
+    val choices = remember(txn.ref, categories) {
+        categoryChoices(categories, txn.direction, categoryUse)
+    }
 
     // The hero bleeds to both edges and under the status bar, so the gutter belongs to the
     // items rather than to the list.

@@ -8,6 +8,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlin.math.pow
 
 /**
  * Classification, which is a table of rules and nothing else.
@@ -15,6 +16,11 @@ import androidx.room.Query
  * No model, no scoring, no learned weights. "Teach it once and it never asks again" is a row
  * being written, and the reason it can be that simple is that the alternative — anything that
  * infers — would be a thing that quietly changes its mind about money she already checked.
+ *
+ * [categoryUseOf] is the one thing here that learns, and it is allowed to because of what it is
+ * not allowed to touch: it orders the cells of the picker and files nothing. Getting it wrong
+ * costs her a glance, never a wrong figure in a report, and it decides nothing that is not
+ * already visible on the screen she is looking at.
  */
 
 // ─────────────────────────── categories ───────────────────────────
@@ -183,34 +189,108 @@ fun customCategory(nameFa: String, kind: String, glyph: CategoryGlyph, now: Long
     )
 
 /**
- * The categories worth offering for one transaction.
+ * Half of a category's weight is gone this many days later.
  *
- * «دسته‌بندی نشده» is the absence of an answer, not one of them.
+ * Six weeks, which is a month's habits plus the fortnight it takes for a change of them to look
+ * like more than one odd week. Shorter and a single holiday reorders the grid; much longer and
+ * the app is still offering her what she was buying at the start of last year.
+ */
+private const val USE_HALF_LIFE = 45.0
+
+/**
+ * Weight below which a category has not earned the front of the grid.
  *
- * «انتقال بین حساب‌ها» is offered in both directions, and it is the one category that ignores
- * direction, because it is the only way back from a rejected transfer link. Filing one leg of a
- * real transfer under a spending category rejects that link for ever and hands the other leg to
- * the income rule — the same money counted twice, with no undo anywhere in the app. The detector
- * settling most transfers is not a reason to make the correction unreachable.
+ * Two recent transactions, roughly. A grid that reshuffles the moment she files one thing is a
+ * grid she cannot learn the shape of, and the cost of promoting too eagerly is paid every time
+ * she looks for a cell where it was yesterday.
+ */
+private const val USE_PROMOTES = 2.0
+
+/**
+ * How much each category is actually being used, with the recent past counting for more.
+ *
+ * Every filed row is a data point, not just the ones she corrected by hand: what the picker
+ * should offer first is where her money goes, and a category the rules file for her twenty times
+ * a month is one she reaches for when they get it wrong too. Duplicates and transfer legs are
+ * left out for the reason every total leaves them out — they are not money moving — and
+ * «دسته‌بندی نشده» is the absence of an answer rather than a popular one.
+ *
+ * Weighting is a plain exponential decay on the Tehran day, so a transaction today counts twice
+ * what one six weeks ago does. No storage and no counters to keep in step: this is read off the
+ * ledger she already has in memory, which means it can never disagree with it.
+ */
+fun categoryUseOf(
+    entries: List<LedgerEntry>,
+    today: Long,
+    halfLife: Double = USE_HALF_LIFE,
+): Map<String, Double> {
+    val use = mutableMapOf<String, Double>()
+    for (entry in entries) {
+        if (entry.duplicate || entry.transfer) continue
+        val id = entry.categoryId
+        if (id.isBlank() || id == CAT_UNCATEGORISED) continue
+        // A row dated in the future — a bank clock running fast — counts as today rather than
+        // as more than today, or one of them would outweigh a fortnight of real ones.
+        val age = (today - entry.txn.day).coerceAtLeast(0L)
+        use[id] = (use[id] ?: 0.0) + 2.0.pow(-age / halfLife)
+    }
+    return use
+}
+
+/**
+ * The categories worth offering for one transaction, the ones she actually uses first.
+ *
+ * «دسته‌بندی نشده» is the absence of an answer, not one of them, and an archived category is one
+ * she has retired — it still names the rows filed under it and is never offered again.
+ *
+ * «انتقال بین حساب‌ها» is offered in both directions, because it is the only way back from a
+ * rejected transfer link. Filing one leg of a real transfer under a spending category rejects
+ * that link for ever and hands the other leg to the income rule — the same money counted twice,
+ * with no undo anywhere in the app. The detector settling most transfers is not a reason to make
+ * the correction unreachable.
  *
  * Direction does the rest, and it is what makes this list usable now that it is long: money that
  * arrived was never خواربار or مد و پوشاک, so offering them means reading past sixteen wrong
  * answers to reach the two right ones. A transaction the parser read no direction from gets
  * everything — that is the honest answer to «which way did this go», and guessing here would file
  * money on the wrong side of the report.
+ *
+ * [use] then reorders what is left, and it is the only thing that overrides `sort`. Ranking is by
+ * weight and nothing else: a category she files four things a week under belongs where her thumb
+ * already is, and the shipped order is only the app's guess at that until it has hers. Two rules
+ * keep it from being a shuffle rather than an order — a category has to clear [USE_PROMOTES]
+ * before it moves at all, and everything below that keeps the shipped order exactly, so the tail
+ * of the grid stays where she last saw it while the head follows her.
+ *
+ * سایر and انتقال never move. Both are ways out rather than answers: a picker that learns to put
+ * «none of the others» under her thumb is one that has taught her to stop filing, and a grid that
+ * opens with the transfer escape hatch is offering a correction to someone who has nothing to
+ * correct.
  */
-fun categoryChoices(categories: List<Category>, direction: String?): List<Category> =
+fun categoryChoices(
+    categories: List<Category>,
+    direction: String?,
+    use: Map<String, Double> = emptyMap(),
+): List<Category> =
     categories.filter {
-        it.id != CAT_UNCATEGORISED && when {
-            // The two that ignore direction: انتقال because it is the only way back from a
+        it.id != CAT_UNCATEGORISED && !it.archived && when {
+            // The three that ignore direction: انتقال because it is the only way back from a
             // rejected transfer link, همسر because money between the two of them is one category
-            // whichever way it went.
-            it.id == CAT_TRANSFER || it.id == CAT_SPOUSE -> true
+            // whichever way it went, and سایر because «none of the others» is an answer either
+            // side of the ledger can need. All three are carried by id — their `kind` names the
+            // side they shipped on and nothing more.
+            it.id == CAT_TRANSFER || it.id == CAT_SPOUSE || it.id == CAT_OTHER -> true
             direction == "in" -> it.kind == CategoryKind.INCOME
             direction == "out" -> it.kind == CategoryKind.EXPENSE
             else -> it.kind != CategoryKind.TRANSFER
         }
-    }
+        // Stable, so everything that has not earned a promotion holds the shipped order.
+    }.sortedByDescending { promotionOf(it, use) }
+
+/** What a category has earned toward the front of the grid, and zero is «leave it where it is». */
+private fun promotionOf(category: Category, use: Map<String, Double>): Double =
+    if (category.id == CAT_OTHER || category.id == CAT_TRANSFER) 0.0
+    else (use[category.id] ?: 0.0).let { if (it >= USE_PROMOTES) it else 0.0 }
 
 // ─────────────────────────── rules ───────────────────────────
 
