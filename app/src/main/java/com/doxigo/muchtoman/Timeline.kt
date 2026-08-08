@@ -656,14 +656,7 @@ fun TransactionScreen(
                     Spacer(Modifier.height(Space.m))
                     SelectionContainer {
                         Text(
-                            when {
-                                txn.sourceKind == "manual" -> "این مورد دستی ثبت شده."
-                                txn.ownerMemberId.isNotBlank() ->
-                                    "متن خام پیامک فقط روی گوشی ${entry.ownerName.ifBlank { "صاحب تراکنش" }} نگه داشته می‌شه."
-                                source == null -> "در حال خواندن پیامک اصلی..."
-                                source!!.isBlank() -> "متن پیامک اصلی پیدا نشد."
-                                else -> source!!
-                            },
+                            sourceText(entry, source),
                             fontSize = 13.sp,
                             lineHeight = 23.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -672,6 +665,110 @@ fun TransactionScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The message the row was read out of, or the reason it is not here to be read.
+ *
+ * One function for two screens: the transaction page files it under «منبع», and the deck asks its
+ * whole question *about* it. «Why can I not see the text» must not have two different answers
+ * depending on which screen she happens to be standing on.
+ *
+ * [LedgerEntry.ownerMemberId] is not the field to test. That one is filled in with the local
+ * member when the transaction is this phone's own, so it is non-blank for almost every row here;
+ * `txn.ownerMemberId` is blank unless the row arrived from somebody else's phone, which is the
+ * only case where the body genuinely is not on this device.
+ */
+private fun sourceText(entry: LedgerEntry, source: String?): String = when {
+    entry.txn.sourceKind == "manual" -> "این مورد دستی ثبت شده."
+    entry.txn.ownerMemberId.isNotBlank() ->
+        "متن خام پیامک فقط روی گوشی ${entry.ownerName.ifBlank { "صاحب تراکنش" }} نگه داشته می‌شه."
+    source == null -> "در حال خواندن پیامک اصلی..."
+    source.isBlank() -> "متن پیامک اصلی پیدا نشد."
+    else -> source
+}
+
+/**
+ * The message this card is asking about, quoted under the question.
+ *
+ * The deck used to ask «این خرج رو چی حساب کنم؟» over a bank name, a figure, and nothing else —
+ * and the parser reads no merchant out of a transfer, so on those cards the bank name *was* the
+ * whole card. A hundred and fifty million Toman from بانک سامان is not a question anybody can
+ * answer. The two lines of the message it came from are, and they were already on the phone: the
+ * transaction page has printed them since the beginning, one tap away in a screen the deck does
+ * not go through.
+ *
+ * Ruled rather than filled. Everything under it is a `surfaceVariant` tile waiting to be pressed,
+ * so a filled block here would read as the first cell of the grid — an outline says «read me»
+ * where a fill says «press me», and only one of those is true of a bank's own words.
+ *
+ * Four lines, then a tap for the rest. Banks write their messages with hard line breaks, and Blu
+ * writes seven lines to say that a hundred million Toman arrived — printed whole, that one card
+ * pushed every category off the bottom of the screen and left the deck asking a question it
+ * showed no way to answer. The amount is already in the field above, so what the first four lines
+ * have to carry is only *what kind of thing this was*, and they do.
+ */
+@Composable
+private fun SourceQuote(entry: LedgerEntry, source: String?) {
+    val txn = entry.txn
+    val shape = RoundedCornerShape(Radius.card)
+    var expanded by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    // Set by the layout rather than guessed from the string: a message wraps differently at every
+    // system font size, and «متن کامل» on a message already showing all of itself is a promise of
+    // something that is not there.
+    var clipped by remember(txn.ref, source) { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            // Lifted a shade off the page and ruled, rather than filled like the tiles. On paper
+            // the hairline alone is nearly the background's own colour, so the block lost its
+            // edges in light theme; `surfaceContainerLow` is the quietest surface the scheme has
+            // and it is not the one the grid is drawn in, which is the whole distinction.
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .then(
+                if (clipped || expanded) {
+                    Modifier.clickable(role = Role.Button) { expanded = !expanded }
+                } else {
+                    Modifier
+                }
+            )
+            .padding(Space.l),
+    ) {
+        if (txn.sourceKind != "manual") {
+            Text(
+                // Who sent it and at what minute. The hero above prints the day and says «امروز»
+                // for two of them, so the clock is the one fact on this card that is new — and on
+                // a day with three withdrawals it is the only thing telling them apart.
+                "${bankNameOf(txn.bank)}، ${bidi(faClock(txn.at))}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.s))
+        }
+        Text(
+            sourceText(entry, source),
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = if (expanded) Int.MAX_VALUE else 4,
+            overflow = TextOverflow.Ellipsis,
+            // Sticky: expanded, nothing overflows any more, and the way back would vanish under
+            // her finger the moment she took it.
+            onTextLayout = { if (it.hasVisualOverflow) clipped = true },
+        )
+        if (clipped || expanded) {
+            Spacer(Modifier.height(Space.s))
+            Text(
+                if (expanded) "کوتاه‌تر" else "متن کامل پیامک",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
@@ -946,6 +1043,7 @@ fun ReviewDeck(
     ledger: LedgerView,
     onDecide: (LedgerEntry, String, Boolean) -> Unit,
     onWorthIt: (LedgerEntry, String) -> Unit,
+    onLoadSource: suspend (LedgerEntry) -> String,
     onDone: () -> Unit,
 ) {
     var index by remember { mutableStateOf(0) }
@@ -953,10 +1051,26 @@ fun ReviewDeck(
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
     val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
 
-    // The picked category, cleared whenever the deck moves on: the two answers below are about
+    // The picked category, cleared whenever the deck moves on: the answers it opens are about
     // the card on screen, and carrying a highlight onto the next one would offer to file a
     // transaction she has not looked at yet.
     var picked by remember(entry?.txn?.ref) { mutableStateOf<String?>(null) }
+
+    // Read off the database per card rather than carried in [LedgerView]: the deck holds one
+    // card at a time and the view holds three hundred rows, so keeping every message body in
+    // memory would be paying for two hundred and ninety-nine she will not read.
+    var source by remember(entry?.txn?.ref) { mutableStateOf<String?>(null) }
+
+    // A new card starts at its own top. The deck answers one question and immediately replaces
+    // everything under the field with a different transaction, and leaving the old offset in
+    // place opened the next one half way down its own message — the two lines that say what it
+    // is scrolled off the screen, above a grid asking her to file it. Instant, not animated:
+    // this is a replacement, not a movement, and there is no distance to travel.
+    val cardScroll = rememberScrollState()
+    LaunchedEffect(entry?.txn?.ref) {
+        cardScroll.scrollTo(0)
+        entry?.let { source = onLoadSource(it) }
+    }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -1031,12 +1145,17 @@ fun ReviewDeck(
                 return@Column
             }
 
-            val choices = categoryChoices(ledger.categories, entry.txn.direction)
-            // The question and the choices scroll; the answers do not. Only the grid can grow
-            // past a short screen, and an answer she has to go looking for is one she will not
-            // give.
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                Spacer(Modifier.height(Space.xxl))
+            // Per card, and held for as long as that card is up: the deck files as she answers,
+            // and a grid that reshuffles between two taps of the same card is one she has to read
+            // again from the top.
+            val choices = remember(entry.txn.ref, ledger.categories) {
+                categoryChoices(ledger.categories, entry.txn.direction, ledger.categoryUse)
+            }
+            // The question, the evidence and the choices scroll; the one answer that is always
+            // available does not. Only the grid can grow past a short screen, and an answer she
+            // has to go looking for is one she will not give.
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(cardScroll)) {
+                Spacer(Modifier.height(Space.xl))
                 Text(
                     // «خرج» on money that arrived is the question asking her to agree with
                     // something untrue before she has answered it.
@@ -1050,7 +1169,11 @@ fun ReviewDeck(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.semantics { heading() },
                 )
+                // Between the question and the answers, because that is the order they are used
+                // in: nothing in the grid means anything until she knows what she is filing.
                 Spacer(Modifier.height(Space.m))
+                SourceQuote(entry, source)
+                Spacer(Modifier.height(Space.l))
                 CategoryGrid(
                     choices = choices,
                     selectedId = picked,
@@ -1060,47 +1183,29 @@ fun ReviewDeck(
                 Spacer(Modifier.height(Space.l))
             }
 
-            // Three answers, in one block at the foot of the screen, weighted the way they
-            // actually differ. «همیشه» means she is never asked this again, which is the
-            // entire point of the product, so it is the filled one. «فعلاً نه» writes nothing
-            // at all — but it was a bare text button stranded below a screen of empty space,
-            // which made the cheapest answer the hardest one to find. It belongs with the
-            // other two: skipping must cost her nothing, including the cost of hunting for it.
-            //
-            // The two that commit need a category to commit, so they arrive with one.
+            // What is left at the foot is the answer that needs no category: «فعلاً نه» writes
+            // nothing at all, and it stays a tap away on the page rather than behind the sheet,
+            // because skipping must cost her nothing — including the cost of first choosing
+            // something she is not sure of just to reach the way out.
             Column(Modifier.fillMaxWidth().padding(bottom = Space.m).navigationBarsPadding()) {
-                AnimatedVisibility(
-                    visible = picked != null,
-                    enter = expandVertically(tween(Motion.medium, easing = Motion.enter)) +
-                        fadeIn(tween(Motion.medium)),
-                    exit = shrinkVertically(tween(Motion.fast, easing = Motion.exit)) +
-                        fadeOut(tween(Motion.fast)),
-                ) {
-                    Column {
-                        DeckAnswer(
-                            label = "از این به بعد هم همین دسته",
-                            weight = AnswerWeight.PRIMARY,
-                            onClick = {
-                                picked?.let { onDecide(entry, it, true) }
-                                index = 0
-                            },
-                        )
-                        Spacer(Modifier.height(Space.s))
-                        DeckAnswer(
-                            label = "فقط همین یکی",
-                            weight = AnswerWeight.SECONDARY,
-                            onClick = {
-                                picked?.let { onDecide(entry, it, false) }
-                                index = 0
-                            },
-                        )
-                        Spacer(Modifier.height(Space.s))
-                    }
-                }
                 DeckAnswer(
                     label = "فعلاً نه",
                     weight = AnswerWeight.QUIET,
                     onClick = { skipped = skipped + entry.txn.ref },
+                )
+            }
+
+            // The two answers that commit, over the card they are about.
+            choices.firstOrNull { it.id == picked }?.let { category ->
+                DecisionSheet(
+                    entry = entry,
+                    category = category,
+                    onDecide = { always ->
+                        onDecide(entry, category.id, always)
+                        index = 0
+                        picked = null
+                    },
+                    onDismiss = { picked = null },
                 )
             }
             }
@@ -1108,10 +1213,134 @@ fun ReviewDeck(
     }
 }
 
+/**
+ * The two answers that commit, in the drawer the app opens for every other decision.
+ *
+ * They used to expand into the page underneath the grid, which is the one place they could not be
+ * read: the grid scrolls, so a tap in its lower half pushed the answer to the question off the
+ * bottom of the screen, and a block that grows out of the middle of a scrolling column is a popup
+ * wearing a page's clothes. A sheet arrives with the scrim, the drag handle, the back gesture and
+ * the navigation-bar inset already correct, and it is the shape she has already met in
+ * «حساب‌های بانکی» and everywhere else the app needs an answer before anything else happens.
+ *
+ * The card behind it keeps her pick lit under the scrim, so the sheet never has to read the choice
+ * back to her — it names it once, at the top, and spends the rest of its room on the only thing
+ * the two buttons differ in. Dismissing un-picks: a highlighted tile with nothing left to press is
+ * a dead end she would have to guess her way off.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DecisionSheet(
+    entry: LedgerEntry,
+    category: Category,
+    onDecide: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    // Play the sheet out before acting on it, or the answer just blinks.
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    val hue = categoryHue(category.nameFa)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The same mark on the same disc she just tapped, at the size the tile drew it.
+                // The tile is two hundred pixels below and behind a scrim; this is what says the
+                // sheet is about that tap and not about the card in general.
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(hue.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CategoryIcon(category.nameFa, hue, size = 24.dp)
+                }
+                Spacer(Modifier.width(Space.m))
+                Text(
+                    category.nameFa,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+            Text(
+                learnedRule(entry.txn),
+                fontSize = 13.sp,
+                lineHeight = 21.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.m),
+            )
+
+            Spacer(Modifier.height(Space.xl))
+            DeckAnswer(
+                label = "از این به بعد هم همین دسته",
+                weight = AnswerWeight.PRIMARY,
+                onClick = { close { onDecide(true) } },
+            )
+            Spacer(Modifier.height(Space.s))
+            DeckAnswer(
+                label = "فقط همین یکی",
+                weight = AnswerWeight.SECONDARY,
+                onClick = { close { onDecide(false) } },
+            )
+            // Space.s throughout, never tighter: 8dp between touch targets is the floor, and
+            // «انصراف» sitting closer to «فقط همین یکی» than that is a mis-tap that files money.
+            Spacer(Modifier.height(Space.s))
+            // The scrim and the swipe already close it; this is for the finger that is nowhere
+            // near either, and for TalkBack, where "dismiss the sheet" is a gesture and this is
+            // a button.
+            DeckAnswer(
+                label = "انصراف",
+                weight = AnswerWeight.QUIET,
+                onClick = { close(onDismiss) },
+            )
+        }
+    }
+}
+
+/**
+ * What «از این به بعد» will actually key on, in her own words rather than the rule engine's.
+ *
+ * It is not the same promise on every card, and the difference is the whole reason this line
+ * exists: with a merchant in the message the rule is that merchant and nothing else, and without
+ * one — which is most transfers, and every card where the deck can only print a bank name — it
+ * keys on the sender, the bank and the channel together. That is a far wider net, and «همیشه» is
+ * the answer that must never be a surprise afterwards.
+ *
+ * Both apply backwards as well as forwards: rules are re-run over every stored message on the
+ * next derive, and only a transaction she has answered by hand is immune to them.
+ */
+private fun learnedRule(txn: Txn): String {
+    if (txn.merchant.isNotBlank()) {
+        return "«از این به بعد» یعنی هر تراکنش دیگه‌ای از «${txn.merchant}» هم خودکار همین دسته " +
+            "می‌شه، و مشابه‌های قبلی هم اصلاح می‌شن."
+    }
+    val kind = when (txn.direction) {
+        "in" -> "واریزهای"
+        "out" -> "برداشت‌های"
+        else -> "تراکنش‌های"
+    }
+    return "این پیامک اسم فروشنده نداره، پس «از این به بعد» روی $kind شبیه این از " +
+        "${bankNameOf(txn.bank)} اعمال می‌شه، و مشابه‌های قبلی هم اصلاح می‌شن."
+}
+
 /** How much of an answer it is: two of these write something, and one deliberately does not. */
 private enum class AnswerWeight { PRIMARY, SECONDARY, QUIET }
 
-/** One of the three answers at the foot of the deck. */
+/** One of the answers, whether it stands at the foot of the deck or inside the sheet. */
 @Composable
 private fun DeckAnswer(label: String, weight: AnswerWeight, onClick: () -> Unit) {
     Box(
