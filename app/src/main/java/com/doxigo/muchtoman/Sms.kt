@@ -51,7 +51,10 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // Saman, Mellat and Melli each also send from the four digits their own cards start with —
     // 6219, 6104, 6037. Four digits is shorter than any mobile line, so each matches itself.
     MELLAT("بانک ملت", listOf("Bank Mellat", "6104")),
-    MELLI("بانک ملی ایران", listOf("6037")),
+    // Melli's other line is a ten-digit number out of the same 98300094… block Saderat's is in,
+    // one digit apart from it — so it is listed whole, and senderKey folds the +98…/98…/0…
+    // forms of it onto one key without either bank reaching the other's.
+    MELLI("بانک ملی ایران", listOf("6037", "09830009417")),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build

@@ -66,7 +66,7 @@ or header, never words in the body.
 | بانک رسالت | `ResalatBank` |
 | بانک پارسیان | `PARSIANBANK` |
 | بانک ملت | `Bank Mellat`, `6104` |
-| بانک ملی ایران | `6037` |
+| بانک ملی ایران | `6037`, `09830009417` |
 
 **Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
 

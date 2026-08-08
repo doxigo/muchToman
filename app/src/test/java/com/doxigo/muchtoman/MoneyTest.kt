@@ -396,6 +396,13 @@ class MoneyTest {
         assertEquals(Bank.SAMAN, bankOf("+989820000"))
         assertEquals(Bank.SAMAN, bankOf("9820000"))
         assertEquals(Bank.KHAVARMIANEH, bankOf("+989820004860"))
+        // Melli sends from a card prefix and from a mobile line, and that line is one digit from
+        // Saderat's — the three forms of each fold onto its own key, never onto its neighbour's.
+        assertEquals(Bank.MELLI, bankOf("6037"))
+        assertEquals(Bank.MELLI, bankOf("09830009417"))
+        assertEquals(Bank.MELLI, bankOf("+98 983 000 9417"))
+        assertEquals(Bank.MELLI, bankOf("9830009417"))
+        assertEquals(Bank.SADERAT, bankOf("09830009419"))
         // A shortcode is exactly itself. Nothing is folded into it and nothing is trimmed off
         // it — one digit out, or a country code bolted on, is a different sender. If a carrier
         // ever does deliver one in an unexpected shape it becomes a suggestion card, which is
