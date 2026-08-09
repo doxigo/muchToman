@@ -34,6 +34,15 @@ Sample data, live rates.
   larger than the real one.
 - **Bank balances from SMS.** Read and parsed locally from the phone's inbox, with no bank API.
   SMS sharing is off by default.
+- **Budgets, per category.** Set a spending cap on «رستوران و کافه» — weekly, monthly, or by فصل,
+  the Jalali quarter that is also a season. The card shows what is gone against what is left, how
+  many days the window still has, and whether the spending is running ahead of the calendar. At 80%,
+  at 95%, and once it goes past, the phone says so — once per window, never twice. The figure is the
+  same one the دخل و خرج report shows for that category, computed from the transactions each time
+  and never stored.
+- **Savings goals, with a deadline.** «۵۰ میلیون تا ۶ ماه» carries the monthly rate that gets you
+  there, and every card states the date its progress is counted from. No points, no streaks, no
+  confetti, and no comparison with anybody else.
 - **Optional family ledger.** Two or more people can join by one-time QR code. Each person chooses
   whether their parsed SMS transactions are shared. Every shared item names its owner, and any
   family member can categorize it.
@@ -119,6 +128,16 @@ never uploads the raw SMS text. Manual family-ledger items are shared. The sync 
 opaque household/member ids, record types, timestamps, and ciphertext, but not the transaction
 contents or member names. Turning SMS sharing off sends deletion markers for that person's
 previously shared SMS items. It cannot erase anything another member already saw or copied.
+
+Notifications are computed and posted entirely on the phone. There are two: a budget of yours has
+crossed a line you asked to be told about, and a transaction has landed that nothing has filed yet.
+Neither leaves the device or reaches the family sync — not the category, not the cap, not the
+merchant, not the fact that either happened. They sit on separate channels, so you can silence the
+filing reminders and keep the budget alerts, or the other way round, in Android's own settings.
+
+The notification permission is asked for when the first budget is saved, or from دفتر once there are
+transactions waiting to be filed — never at launch. Denying it costs the alerts and nothing else:
+the آینده screen shows the same figures either way, and the badge on دفتر counts the same backlog.
 
 Wallet tracking is opt-in: when enabled, the public address is sent through the configured
 Worker to a public blockchain RPC or indexer. The app never asks for a recovery phrase or private

@@ -327,6 +327,97 @@ Money in the ledger is **`Long` Rial**, never Toman and never a `Double`. Rial i
 messages actually print; Toman is a display transform, and rounding one leg of a transfer down
 while the other rounds up is how exact-amount matching stops working silently.
 
+### Budgets and filing — the two things the app says while it is closed
+
+A budget is a `goal` row with `kind = 'cap'`, a `category_id`, and a `period` of `week`, `jmonth` or
+`jquarter`. There is no budget table and no migration: `Goals.kt` declared both shapes from the
+start and only the savings one was ever reachable from a screen. `Goals.kt` keeps the savings half,
+`Budget.kt` reads the same rows the other way, and they are two files because the arithmetic runs in
+opposite directions — a goal is met by reaching its figure, a budget by not reaching past its own.
+
+Every figure is computed from the transactions on each read, and the window is always the current
+one. Spend is counted by the same rule `periodReport` counts `spendingByCategory` by, negatives
+only, so «رستوران و کافه» on the budget card and in دخل و خرج is one number read twice. The one
+deliberate divergence is `PASS_THROUGH_CATEGORIES`: a قرض is held out of the report by default and
+is counted by a budget, because a cap on a category is an explicit request to measure it.
+
+One thing *is* stored, and it is in `SharedPreferences` rather than in either database, because it
+is neither a message nor a decision of hers: `budgetMarks`, the highest threshold this phone has
+already announced, per budget per window. Keyed by window start, so a new month is a new key and
+nothing has to remember to reset anything; `budgetNews` only ever returns a mark for a live budget in
+its current window, which is also how the list is pruned. The level is a high-water mark and never
+lowered, so refiling a receipt back under 80% and then crossing it again does not say the same thing
+twice. Another phone in the household keeps its own and neither owes the other one.
+
+**Freshness has a ceiling, and it is architectural.** There is no `RECEIVE_SMS` receiver, so a
+purchase becomes visible only when something reads the inbox. `LedgerWatchWorker` is the only thing
+that does so unattended — every six hours, no network constraint, scheduled by whether any budget
+exists **or** bank messages are switched on, and cancelled when the last of both goes. The app's own
+`publishLedger` covers the foreground case, and it is the single place any path may publish a
+ledger, precisely so that `announceBudgets` cannot be forgotten by one of the eight callers that
+change one.
+
+`announceBudgets` is shared by the worker and the app and is idempotent. Notifications use the goal
+id as the tag with one fixed id, so one budget is one live note that gets replaced rather than
+stacked, and a genuine race between the worker and the app posts one note instead of two.
+
+To watch an alert fire, set a cap below what the category has already cost this month: saving the
+budget publishes the ledger, which announces it on the spot.
+
+**The second thing it says is «این چی بود؟».** A bank message never carries a category, so anything
+the rules are not sure about lands in `LedgerView.review` and waits — and the answer decays, because
+a merchant she can place today is archaeology in two weeks. `Filing.kt` is the pure half: `filingNews`
+takes the review list and one `Long`, and returns what is worth saying plus the mark to write down.
+`filingMark` sits in `SharedPreferences` beside `budgetMarks` and is the newest `at` this phone has
+accounted for — a stamp rather than a count, so filing some and receiving more is still news, so a
+receipt refiled into the backlog is not, and so `rewindIngest` importing a year of past-stamped rows
+cannot ambush anyone. Zero means "never looked" and is read as *seed, do not speak*, which is what
+keeps a fresh install and an upgrade from opening with a note about sixty-seven old receipts.
+
+The asymmetry with budgets is deliberate and lives in two places. The worker calls `announceFiling`;
+`publishLedger` calls **`markFilingSeen`**, which takes the note down and moves the mark past
+everything on screen — the app never posts this one, because the tab badge, the pill on دفتر and the
+deck they open have already said it better, and a note about rows she is looking at is the app
+talking over itself. And the channel is `IMPORTANCE_LOW` against the budget channel's
+`IMPORTANCE_DEFAULT`: budgets are money and interrupt, filing is homework and waits in the shade.
+Two channels so either can be silenced without the other.
+
+Tapping it opens the deck rather than a tab, through `EXTRA_OPEN_DECK` → `AppVm.openDeck` →
+`UiState.openDeck`, the same one-shot shape `openTab` uses. The two `PendingIntent`s differ **only**
+in their extras, and the platform does not compare extras — so they carry request codes `0` and `1`,
+without which `FLAG_UPDATE_CURRENT` would quietly point the budget note at the review deck.
+
+**Watching it fire is harder than the budget one, and worth writing down.** Opening the app is what
+takes the note away, so it cannot be triggered from the UI, and `cmd jobscheduler run -f` does not
+work either: JobScheduler starts the job, and WorkManager then refuses it with *"executed before
+schedule"* because the six hours have not passed. Three things have to be true at once — a stale
+mark, an overdue `WorkSpec`, and no foreground app — and this is the sequence that gets there:
+
+```bash
+P=com.doxigo.muchtoman.dev
+adb shell am force-stop $P                     # also cancels its jobs; the broadcast brings them back
+
+# 1. stale mark — pull shared_prefs/muchtoman.xml, set filingMark to something older, push it back
+adb shell run-as $P cat shared_prefs/muchtoman.xml > mt.xml    # edit <long name="filingMark" …>
+adb push mt.xml /data/local/tmp/ && adb shell run-as $P cp /data/local/tmp/mt.xml shared_prefs/muchtoman.xml
+
+# 2. overdue WorkSpec — the phone has no sqlite3, so edit it here
+adb shell run-as $P cat no_backup/androidx.work.workdb > w.db
+adb shell run-as $P rm -f no_backup/androidx.work.workdb-shm no_backup/androidx.work.workdb-wal
+sqlite3 w.db "UPDATE WorkSpec SET last_enqueue_time = last_enqueue_time - 25200000
+              WHERE worker_class_name LIKE '%LedgerWatchWorker'; PRAGMA wal_checkpoint(TRUNCATE);"
+adb push w.db /data/local/tmp/ && adb shell run-as $P cp /data/local/tmp/w.db no_backup/androidx.work.workdb
+
+# 3. start the process without the activity, so nothing marks the backlog seen on the way in.
+#    WorkManager's own diagnostics receiver does it; -f 0x20 is FLAG_INCLUDE_STOPPED_PACKAGES,
+#    without which a force-stopped package never sees the broadcast.
+adb shell am broadcast -f 0x20 -a androidx.work.diagnostics.REQUEST_DIAGNOSTICS -p $P
+adb shell dumpsys notification --noredact | grep -A20 "pkg=$P" | grep android.title
+```
+
+Clearing app data puts a device back into the "never looked" state, which is the other case worth
+seeing: the first pass must stay silent.
+
 ### Shipping a parser fix
 
 Bump `PARSER_VERSION` in `Derived.kt`. The next launch re-derives every transaction from the
@@ -340,7 +431,7 @@ one figure no rescan can rebuild.
 ### Tests
 
 ```bash
-./gradlew test                    # 197 JVM tests, no device
+./gradlew test                    # 327 JVM tests, no device
 cd sync && npm run check          # real Durable Objects under workerd
 cd pwa  && npm run check          # incl. the shared-corpus agreement check
 ```
