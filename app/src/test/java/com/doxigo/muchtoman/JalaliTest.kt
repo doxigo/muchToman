@@ -138,6 +138,65 @@ class JalaliTest {
         )
     }
 
+    /**
+     * The window ends every budget is measured against.
+     *
+     * `BudgetTest` checks what a budget makes of these; this checks the arithmetic itself against a
+     * real calendar, which is the only thing that can catch a boundary that is consistently one day
+     * out — a month end one day early moves a transaction between two budgets and makes both wrong.
+     */
+    @Test
+    fun `every window end is the first day after its own window`() {
+        for (jy in 1400..1410) {
+            for (jm in 1..12) {
+                val anyDay = jalaliDay(jy, jm, 3)
+                // A month's end is the first of the next month, and اسفند's is 1 فروردین.
+                val monthEnd = jalaliMonthEnd(anyDay)
+                assertEquals(
+                    "end of $jy/$jm",
+                    if (jm == 12) JalaliDate(jy + 1, 1, 1) else JalaliDate(jy, jm + 1, 1),
+                    jalaliOf(monthEnd),
+                )
+                assertEquals("$jy/$jm length", jalaliMonthLength(jy, jm), (monthEnd - jalaliMonthStart(anyDay)).toInt())
+
+                // A quarter is three whole months, and no quarter shares a day with another.
+                val q = jalaliQuarter(jm)
+                assertEquals("quarter of $jy/$jm", (jm - 1) / 3 + 1, q)
+                assertEquals(jalaliDay(jy, (q - 1) * 3 + 1, 1), jalaliQuarterStart(anyDay))
+                assertEquals(
+                    "quarter end of $jy/$jm",
+                    if (q == 4) jalaliDay(jy + 1, 1, 1) else jalaliDay(jy, q * 3 + 1, 1),
+                    jalaliQuarterEnd(anyDay),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a week ends on the Saturday after the Saturday it began on`() {
+        for (day in 0L..400L) {
+            assertEquals(7L, weekEnd(day) - weekStart(day))
+            assertEquals(DayOfWeek.SATURDAY, LocalDate.ofEpochDay(weekEnd(day)).dayOfWeek)
+            assertTrue(day < weekEnd(day))
+        }
+    }
+
+    @Test
+    fun `a deadline months ahead rolls the year and lands on a real last day`() {
+        // اسفند plus three months is the end of خرداد in the next year, not month 15 of this one.
+        val esfand = jalaliDay(1405, 12, 10)
+        assertEquals(JalaliDate(1406, 3, 31), jalaliOf(jalaliMonthsAheadEnd(esfand, 3)))
+        assertEquals(JalaliDate(1406, 12, 29), jalaliOf(jalaliMonthsAheadEnd(esfand, 12)))
+        // Whatever the horizon, the day after it is always the first of a month.
+        for (months in 1..24) {
+            for (jm in 1..12) {
+                val end = jalaliMonthsAheadEnd(jalaliDay(1404, jm, 17), months)
+                assertEquals("$jm +$months", 1, jalaliOf(end + 1).day)
+                assertEquals("$jm +$months", jalaliMonthEnd(end), end + 1)
+            }
+        }
+    }
+
     @Test
     fun `days before the epoch floor rather than truncate toward zero`() {
         // Integer division truncates toward zero, which would put every instant in the twelve

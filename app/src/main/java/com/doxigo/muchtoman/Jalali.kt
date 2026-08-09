@@ -50,6 +50,15 @@ fun tehranDayStart(day: Long): Long = day * DAY_MS - TEHRAN_OFFSET_MS
  */
 fun weekStart(day: Long): Long = day - ((day - 2) % 7 + 7) % 7
 
+/**
+ * The Saturday *after* the week containing [day] — the exclusive end of it.
+ *
+ * Closed-open, like every other range in this app: `weekStart(d) until weekEnd(d)` is the week,
+ * and the Friday it ends on is `weekEnd(d) - 1`. Naming the end rather than the last day is what
+ * stops an off-by-one from silently moving a transaction between two weekly budgets.
+ */
+fun weekEnd(day: Long): Long = weekStart(day) + 7
+
 /** A date in the Jalali calendar. [month] and [day] are 1-based, as they are when written down. */
 data class JalaliDate(val year: Int, val month: Int, val day: Int) {
     override fun toString(): String = "%04d/%02d/%02d".format(year, month, day)
@@ -65,6 +74,57 @@ fun jalaliDay(year: Int, month: Int, day: Int): Long =
 /** The first day of the Jalali month containing [day]. */
 fun jalaliMonthStart(day: Long): Long =
     jalaliOf(day).let { jalaliDay(it.year, it.month, 1) }
+
+/**
+ * The first day of the month *after* the one containing [day] — the exclusive end of it.
+ *
+ * Built out of [jalaliMonthLength] rather than by incrementing the month and rolling the year,
+ * so اسفند gets its 29 or 30 days from the leap table instead of from an assumption.
+ */
+fun jalaliMonthEnd(day: Long): Long =
+    jalaliOf(day).let { jalaliDay(it.year, it.month, 1) + jalaliMonthLength(it.year, it.month) }
+
+/**
+ * Which فصل a Jalali [month] falls in: 1 for بهار through 4 for زمستان.
+ *
+ * The quarters of the Jalali calendar *are* the seasons — فروردین to خرداد is spring, to the day —
+ * which is why a «فصلی» budget needs no separate notion of a quarter. Three months of 31 days,
+ * then two of 30 and one of 31, then three of 30, then two of 30 and اسفند: the four are not the
+ * same length, so a season's budget cannot be a month's times three.
+ */
+fun jalaliQuarter(month: Int): Int = (month - 1) / 3 + 1
+
+/** The first day of the Jalali quarter containing [day] — فروردین, تیر, مهر or دی, day 1. */
+fun jalaliQuarterStart(day: Long): Long =
+    jalaliOf(day).let { jalaliDay(it.year, (jalaliQuarter(it.month) - 1) * 3 + 1, 1) }
+
+/**
+ * The first day *after* the quarter containing [day].
+ *
+ * زمستان is the one that rolls the year: its last month is اسفند, so the day after it is
+ * فروردین ۱ of the next year rather than month 13 of this one.
+ */
+fun jalaliQuarterEnd(day: Long): Long {
+    val here = jalaliOf(day)
+    val firstMonth = (jalaliQuarter(here.month) - 1) * 3 + 1
+    return if (firstMonth == 10) jalaliDay(here.year + 1, 1, 1)
+    else jalaliDay(here.year, firstMonth + 3, 1)
+}
+
+/**
+ * The last day of the Jalali month [months] after the one containing [day] — what a «۶ ماه»
+ * deadline actually means.
+ *
+ * Whole months, ending on the last day of the last one. A goal set on the 28th with a three-month
+ * deadline gets the whole of that third month rather than the three days of it that a
+ * `day + 90` would have left her, and the deadline lands on a date she can name.
+ */
+fun jalaliMonthsAheadEnd(day: Long, months: Int): Long {
+    val here = jalaliOf(day)
+    // +1 to step past the target month, then back a day to land on its last one.
+    val total = here.year * 12 + (here.month - 1) + months + 1
+    return jalaliDay(total / 12, total % 12 + 1, 1) - 1
+}
 
 /**
  * The first day of the Jalali month [months] before the one containing [day].
