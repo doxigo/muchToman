@@ -44,7 +44,7 @@ enum class CategoryGlyph {
     BASKET, CUP, BUS, RECEIPT, CROSS, TAG, NOTE, PERCENT, TRAY, SWAP,
     STACK, PLANE, GIFT, BLOOM, SHIRT, MUSIC, HOUSE, PERSON, LEND, PAYBACK,
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
-    RING,
+    RING, AIRPLANE,
     DOTS,
 }
 
@@ -87,6 +87,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "دخانیات" -> CategoryGlyph.SMOKE
     "خودرو" -> CategoryGlyph.WHEEL
     "اینترنت" -> CategoryGlyph.WIFI
+    "سفر" -> CategoryGlyph.AIRPLANE
     "برداشت نقدی" -> CategoryGlyph.NOTE
     "کارمزد" -> CategoryGlyph.PERCENT
     "درآمد" -> CategoryGlyph.TRAY
@@ -197,6 +198,19 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // and قسط و وام are both already using it anyway. سایر came to sit beside it later and
         // cleared it by 61°, which is the constraint that picked the orchid rather than this.
         CategoryGlyph.WIFI -> if (dark) Color(0xFFA59EEB) else Color(0xFF4538B2)
+        // سفر sits between قرض and برداشت نقدی, with زیبایی directly above it and سایر directly
+        // below. Those four take the wheel apart between them: قرض's red-orange and زیبایی's burnt
+        // orange rule out everything warm, برداشت نقدی's green rules out the greens and teals, and
+        // سایر's orchid rules out the purples — which leaves the yellow-green, and it clears all
+        // four by around 70°.
+        //
+        // What it does not clear is the two it never touches: همسر is 9° off it across a corner,
+        // and خواربار 9° the other way, four rows up. That is what a free slot looks like now — the
+        // spending grid is past twenty cells, so 360° divided by them is less than the gap this
+        // table is tuned to, and the only hues left are ones somebody non-adjacent already has. The
+        // corner is the cheapest place to spend that, which is the rule this table already keeps:
+        // the eye compares along a row and down a column, never across a diagonal.
+        CategoryGlyph.AIRPLANE -> if (dark) Color(0xFFA6D478) else Color(0xFF598A28)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -841,6 +855,47 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                     lineTo(w * 0.68f, h * 0.22f)
                     lineTo(w * 0.5f, h * 0.38f)
                     lineTo(w * 0.32f, h * 0.22f)
+                    close()
+                },
+                tint,
+                style = ink,
+            )
+        }
+        // An airliner from above, nose up. The other plane in this set is the retired «انتقال وجه»'s
+        // paper one, and the two are told apart by the thing a paper plane does not have: wings and
+        // a tailplane, swept at the same angle, on a fuselage running the height of the box. The
+        // paper one is a folded quadrilateral thrown up the diagonal; this one is symmetrical and
+        // stands upright, which is the difference read before either is identified.
+        //
+        // The fuselage is drawn far wider than a real one — a quarter of the box. At 16dp, the
+        // narrowest this mark is ever set, a scale fuselage is two 1.5dp strokes with nothing
+        // between them, and the plane fills in as a bar. What survives being small is the
+        // silhouette, not the proportions.
+        CategoryGlyph.AIRPLANE -> {
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.5f, h * 0.03f)
+                    // The nose, rounded into the fuselage rather than pointed: a sharp one at this
+                    // size is a stroke join that thickens into a dot.
+                    quadraticTo(w * 0.62f, h * 0.1f, w * 0.62f, h * 0.3f)
+                    lineTo(w * 0.97f, h * 0.55f)
+                    lineTo(w * 0.97f, h * 0.66f)
+                    lineTo(w * 0.62f, h * 0.54f)
+                    lineTo(w * 0.62f, h * 0.72f)
+                    lineTo(w * 0.8f, h * 0.86f)
+                    lineTo(w * 0.8f, h * 0.98f)
+                    // The notch the two fins leave between them, which is what says «tail» rather
+                    // than «a second, smaller wing». Cut deep on purpose: at 16dp a shallow one
+                    // closes up into ink and the plane ends in a bar.
+                    lineTo(w * 0.5f, h * 0.8f)
+                    lineTo(w * 0.2f, h * 0.98f)
+                    lineTo(w * 0.2f, h * 0.86f)
+                    lineTo(w * 0.38f, h * 0.72f)
+                    lineTo(w * 0.38f, h * 0.54f)
+                    lineTo(w * 0.03f, h * 0.66f)
+                    lineTo(w * 0.03f, h * 0.55f)
+                    lineTo(w * 0.38f, h * 0.3f)
+                    quadraticTo(w * 0.38f, h * 0.1f, w * 0.5f, h * 0.03f)
                     close()
                 },
                 tint,

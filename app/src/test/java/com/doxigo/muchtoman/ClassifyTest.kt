@@ -150,6 +150,7 @@ class ClassifyTest {
 
         val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
         assertTrue("خواربار" in outgoing)
+        assertTrue("سفر" in outgoing)
         assertTrue("درآمد" !in outgoing)
 
         // Retired, and never offered again: «انتقال وجه» named how the money left and never why,

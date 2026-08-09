@@ -123,6 +123,17 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // really income, but EXPENSE and INCOME are the only kinds that stay visible — TRANSFER
     // means «not her decision, do not count», and money lent is very much a decision.
     Category("cat_loan", nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 180, builtin = true),
+    // A trip is every other category at once — the fare, the hotel, the meals, the presents
+    // brought home — and filed under each of those it stops existing: a نوروز that cost a month's
+    // salary reads afterwards as a busy fortnight of خواربار and حمل و نقل, and the one question
+    // she actually has about it («سفر امسال چقدر شد؟») has no line to answer from. One row is what
+    // makes it answerable, because سفر is the thing she decided; its parts are only how it was paid.
+    //
+    // Last of the ones she chooses, after قرض and before the two the app files for her. A trip is
+    // occasional by definition, so this is where the shipped order can afford to put it —
+    // [categoryChoices] floats it to the front of the grid for the weeks she is taking one, which
+    // is exactly when she needs it under her thumb.
+    Category("cat_travel", nameFa = "سفر", kind = CategoryKind.EXPENSE, sort = 185, builtin = true),
 
     // ── what the app files for her, which she rarely has to pick ──
     Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 190, builtin = true),
