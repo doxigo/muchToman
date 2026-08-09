@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -117,6 +119,8 @@ fun ReportScreen(
     onMode: (ReportMode) -> Unit,
     /** The window دخل و خرج should read: the month it ends at, and how far back it reaches. */
     onWindow: (ReportMonth, ReportSpan) -> Unit,
+    /** Whether قرض and همسر should count as ordinary خرج و درآمد — see [PassThroughNote]. */
+    onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
     onBack: (() -> Unit)? = null,
 ) {
@@ -173,6 +177,7 @@ fun ReportScreen(
                     cash = cash,
                     smsEnabled = smsEnabled,
                     onWindow = onWindow,
+                    onCountPassThrough = onCountPassThrough,
                     bottomInset = bottomInset,
                     modifier = Modifier
                         .weight(1f)
@@ -566,6 +571,7 @@ private fun CashFlowReportContent(
     cash: CashFlowReport,
     smsEnabled: Boolean,
     onWindow: (ReportMonth, ReportSpan) -> Unit,
+    onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
@@ -586,7 +592,7 @@ private fun CashFlowReportContent(
                 EmptyMonth(cash.range)
             }
         } else {
-            MonthSummary(period, cash.current)
+            MonthSummary(period, cash.current, onCountPassThrough)
         }
 
         // Two months is the least a comparison can be made of. One month drawn alone is a chart
@@ -714,20 +720,39 @@ private fun EmptyMonth(range: ReportRange) {
 /**
  * What came in against what went out, and then the one line that settles it.
  *
- * The two figures and the bar are the home card's language — two lengths off one baseline, so
- * the answer arrives before either number is read — with the exact Toman under each, which is
- * the thing the report has room for and the card did not. The net is stated separately because
- * it is a different question: not «which was bigger» but «what is left», and a deficit is never
- * printed as a negative amount under the word «مانده».
+ * The figures and the bar are the home card's language — lengths off one baseline, so the answer
+ * arrives before any number is read — with the exact Toman under each, which is the thing the
+ * report has room for and the card did not. The net is stated separately because it is a
+ * different question: not «which was bigger» but «what is left», and a deficit is never printed
+ * as a negative amount under the word «مانده».
+ *
+ * A third figure joins them in any window holding money that only passed through, and it is a
+ * peer of the other two rather than a footnote to them: fifty million lent is the largest thing
+ * that happened to her account that month, and the card that reports the month cannot state it
+ * in a smaller voice than the eight million she spent on food. It is only drawn while the money
+ * is being *held apart* — once she folds it in it is inside درآمد and خرج, and a column
+ * repeating it would count the same Toman twice on one card.
  */
 @Composable
-private fun MonthSummary(month: PeriodReport, current: Boolean) {
+private fun MonthSummary(month: PeriodReport, current: Boolean, onCount: (Boolean) -> Unit) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
+    // Gold in both themes, which is the whole reason it is `secondary` and not `primary`: the
+    // scheme's primary is deep green on paper and gold in the dark — see [LightColors] — so a
+    // third quantity wearing it would be a second green beside درآمد for half the country and
+    // the colour of every button on screen for the other half. `tertiary` is spoken for too; it
+    // means gain, and this money is neither gain nor loss.
+    val passed = MaterialTheme.colorScheme.secondary
+    val apart = month.passedRial > 0 && !month.countedPassThrough
     // «درآمد این ماه» on the month she is standing in, because a half-written month has to say
     // so where the figure is. On a longer window it is «درآمد» and nothing else: «۶ ماه گذشته»
     // does not fit in half a phone's width beside the word, the title two lines up already names
     // the months, and «تا امروز» under it already says the last of them is not over.
-    val named = if (current && month.range.count == 1) " ${month.range.recentFa}" else ""
+    //
+    // And it goes again the moment a third figure joins the pair, for the same reason it was
+    // never on a longer window: at three columns on a 320dp phone «درآمد این ماه» measured as
+    // «درآمد این …». The card names the month in its own heading, says «تا امروز» beneath it and
+    // prints «مانده این ماه» below, so the words lost here are the third and fourth copy of them.
+    val named = if (current && month.range.count == 1 && !apart) " ${month.range.recentFa}" else ""
     Panel {
         Row(Modifier.fillMaxWidth()) {
             FlowSide(
@@ -743,10 +768,30 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
                 MaterialTheme.colorScheme.onSurface,
                 Modifier.weight(1f),
             )
+            if (apart) {
+                Spacer(Modifier.width(Space.m))
+                FlowSide(
+                    // The window's name is not repeated here. The other two carry it because
+                    // they are the month's headline pair; a third copy of «این ماه» on the
+                    // narrowest column of the card is the same words three times, and the figure
+                    // shrinks to pay for them. The label is «قرض», «همسر» or «قرض و همسر» — only
+                    // what this window actually holds, so the common case is one short word.
+                    month.passedFa,
+                    month.passedRial,
+                    passed,
+                    Modifier.weight(1f),
+                )
+            }
         }
-        if (month.incomeRial > 0 || month.spentRial > 0) {
+        if (month.incomeRial > 0 || month.spentRial > 0 || apart) {
             Spacer(Modifier.height(Space.l))
-            FlowSplit(month.incomeRial, month.spentRial, INCOME_TINT, spend)
+            FlowSplit(
+                listOfNotNull(
+                    month.incomeRial to INCOME_TINT,
+                    month.spentRial to spend,
+                    (month.passedRial to passed).takeIf { apart },
+                ),
+            )
         }
 
         Spacer(Modifier.height(Space.l))
@@ -782,6 +827,83 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
                 .padding(top = Space.xs),
             textAlign = TextAlign.End,
         )
+        // Attached to مانده rather than set off by a second divider: this line is what «مانده»
+        // means in a month money passed through, so it belongs to that figure and not to a
+        // section of its own. Drawn whenever there is any such money, counted or not — the way
+        // back has to be as visible as the way out.
+        if (month.passedRial > 0) {
+            Spacer(Modifier.height(Space.m))
+            PassThroughNote(month, onCount)
+        }
+    }
+}
+
+/**
+ * The line that keeps the card honest, and the switch that changes what it counts.
+ *
+ * A summary reading «خرج: ۸ م» in a month when fifty million left the account is the friendly
+ * kind of lie, and refusing it is the only reason the figures above are allowed to leave a قرض
+ * out at all: the money is named, in Toman, on the same card, one line under the مانده whose
+ * meaning it changes. That is also why the switch lives here and not up beside the span picker.
+ * The screen already carries three control rows, and a fourth naming a rule she cannot see the
+ * effect of is a setting; here it sits on the evidence, and the sentence is its own label.
+ *
+ * Sentence and pill are one target, because there is one thing to do and the sentence says what
+ * doing it would change. `Role.Switch` so it announces a state rather than a journey — she is
+ * turning counting on, not being taken somewhere.
+ */
+@Composable
+private fun PassThroughNote(month: PeriodReport, onCount: (Boolean) -> Unit) {
+    val counting = month.countedPassThrough
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .toggleable(value = counting, role = Role.Switch, onValueChange = onCount)
+            .heightIn(min = 48.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            // Says where the money stands, never how much it is. The figure is already on this
+            // card twice over — the column above prints it while it is held apart, and the
+            // دسته‌ها list below prints it once it is counted — and a third copy here ran the
+            // sentence to three lines on a 320dp phone and made the row taller than the مانده
+            // it belongs to.
+            //
+            // The verb is the button's. «حساب نشده» answered by «حسابش کن» is one word used
+            // twice, so the state and the action cannot be read as two different subjects — and
+            // at fourteen Persian characters to a line here, it is also what makes «قرض» sit on
+            // one line and «قرض و همسر حساب نشده» break in the middle instead of leaving «نیست.»
+            // alone on a line of its own.
+            "${month.passedFa} " + if (counting) "حساب شده." else "حساب نشده.",
+            fontSize = 12.sp,
+            lineHeight = 19.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(Space.s))
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(horizontal = Space.m, vertical = Space.s),
+        ) {
+            Text(
+                // Names the action, never the state. «حساب نشده» beside a sentence that already
+                // says so is the same fact twice with no verb anywhere on the row.
+                //
+                // On the screen's own well — the material the stepper, the picker's track and the
+                // chart's selected column are all cut from — rather than in coloured text. In the
+                // dark theme the interactive colour is the gold this card just spent on its third
+                // figure, and a gold word under a gold figure is one of them too many.
+                if (counting) "جداش کن" else "حسابش کن",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -794,12 +916,20 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
 @Composable
 private fun FlowSide(label: String, rial: Long, tone: Color, modifier: Modifier = Modifier) {
     Column(modifier) {
-        Text(
-            label,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        BasicText(
+            text = label,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            // Shrinks rather than ellipsising, which is the rule the figures under it already
+            // follow and matters more here: a third of a 320dp phone renders «قرض و همسر» as
+            // «قرض و ه…», and what the ellipsis takes off is the half of the label saying which
+            // money this column is. 10sp is the floor because the exact figure below sits at 8.
+            //
+            // [LocalTextStyle], not [figureStyle]: these are words, and figureStyle is the
+            // tabular-numeral face the amounts are set in.
+            autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
+            style = LocalTextStyle.current.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
         )
         Spacer(Modifier.height(Space.xs))
         BasicText(
@@ -826,39 +956,33 @@ private fun FlowSide(label: String, rial: Long, tone: Color, modifier: Modifier 
 }
 
 /**
- * The comparison itself: two lengths off one baseline.
+ * The comparison itself: lengths off one baseline, in the order the figures above are read.
  *
  * The shares are floored for the reason the home card's are — at 8dp tall, two per cent of the
- * row draws as a dot, and a dot reads as *nothing here* rather than as *a little*. Both exact
- * figures are stated directly above, so the floor costs no honesty.
+ * row draws as a dot, and a dot reads as *nothing here* rather than as *a little*. Every exact
+ * figure is stated directly above, so the floor costs no honesty.
+ *
+ * Weights rather than one computed share, which is what lets a third band join without the two
+ * that were here having to know about it: a floored weight steals its extra width from the other
+ * bands in proportion, where the old `1f - share` had to hand all of it to whichever side was
+ * not the small one.
  */
 @Composable
-private fun FlowSplit(incomeRial: Long, spentRial: Long, income: Color, spend: Color) {
+private fun FlowSplit(parts: List<Pair<Long, Color>>) {
+    val shown = parts.filter { it.first > 0L }
+    if (shown.isEmpty()) return
+    val total = shown.sumOf { it.first }.toFloat()
     Row(
         Modifier.fillMaxWidth().height(8.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        val share = when {
-            incomeRial <= 0 -> 0f
-            spentRial <= 0 -> 1f
-            else -> (incomeRial.toFloat() / (incomeRial + spentRial)).coerceIn(0.06f, 0.94f)
-        }
-        if (incomeRial > 0) {
+        shown.forEach { (rial, tone) ->
             Box(
                 Modifier
-                    .weight(share)
+                    .weight((rial / total).coerceAtLeast(0.06f))
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(Radius.pill))
-                    .background(income),
-            )
-        }
-        if (spentRial > 0) {
-            Box(
-                Modifier
-                    .weight(1f - share)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .background(spend),
+                    .background(tone),
             )
         }
     }

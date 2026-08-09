@@ -18,6 +18,7 @@ class ReportsTest {
         day: Long,
         signed: Long?,
         category: String = "خرید",
+        categoryId: String = "cat_x",
         transfer: Boolean = false,
         duplicate: Boolean = false,
         review: Boolean = false,
@@ -35,10 +36,20 @@ class ReportsTest {
                 channel = "unknown", unitPrinted = "none", inferred = false,
                 parserVer = PARSER_VERSION,
             ),
-            categoryId = "cat_x", categoryFa = category, confidence = if (review) 40 else 95,
+            categoryId = categoryId, categoryFa = category, confidence = if (review) 40 else 95,
             needsReview = review, duplicate = duplicate, transfer = transfer,
         )
     }
+
+    /** Money handed over, money handed back, money to a husband — the three that pass through. */
+    private fun loan(day: Long, signed: Long) =
+        entry(day, signed, category = "قرض", categoryId = CAT_LOAN)
+
+    private fun loanBack(day: Long, signed: Long) =
+        entry(day, signed, category = "پس‌گرفتن قرض", categoryId = CAT_LOAN_BACK)
+
+    private fun spouse(day: Long, signed: Long) =
+        entry(day, signed, category = "همسر", categoryId = CAT_SPOUSE)
 
     private val year = 1405
     private val month = 5
@@ -238,6 +249,152 @@ class ReportsTest {
         assertEquals(listOf("خوراکی" to 20_000_000L), r.spendingByCategory)
         assertEquals(100_000_000L, r.incomeRial)
         assertEquals(20_000_000L, r.spentRial)
+    }
+
+    // ─────────────────────────── money that only passes through ───────────────────────────
+
+    @Test
+    fun `a قرض is neither spent nor earned`() {
+        // Two hundred in, eighty out, and five hundred handed to somebody. Counted as خرج that
+        // is «۱۹۰٪ بیشتر از درآمدت خرج کردی» for a month she kept three fifths of her income in.
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            entry(first + 1, -80_000_000, category = "خوراکی"),
+            loan(first + 2, -500_000_000),
+        )
+        val r = monthReport(rows, here)
+        assertEquals(200_000_000L, r.incomeRial)
+        assertEquals(80_000_000L, r.spentRial)
+        assertEquals(0.6, r.savingsRate!!, 0.0001)
+        // Held apart, not dropped: the card has to be able to name it in Toman.
+        assertEquals(500_000_000L, r.passedRial)
+        assertEquals("قرض", r.passedFa)
+        // Out of the list beneath the card too, or its share would be a share of a total it is
+        // not part of.
+        assertEquals(listOf("خوراکی" to 80_000_000L), r.spendingByCategory)
+    }
+
+    @Test
+    fun `getting a قرض back is not a month to be congratulated for`() {
+        // The two halves, a month apart. Counted, the first month spends far past its income and
+        // the second earns three times what it earns, for a movement that netted nothing.
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            loan(first + 2, -500_000_000),
+            entry(first + 31, 200_000_000, category = "حقوق"),
+            loanBack(first + 33, 500_000_000),
+        )
+        val lent = monthReport(rows, here)
+        val repaid = monthReport(rows, here.next())
+        assertEquals(1.0, lent.savingsRate!!, 0.0001)
+        assertEquals(1.0, repaid.savingsRate!!, 0.0001)
+        assertEquals(200_000_000L, repaid.incomeRial)
+        // Nothing to celebrate in the second month, because nothing changed between them.
+        assertTrue(quietWins(repaid, lent, bufferDays = null, current = true).isEmpty())
+    }
+
+    @Test
+    fun `counting it puts every figure back`() {
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            entry(first + 1, -80_000_000, category = "خوراکی"),
+            loan(first + 2, -500_000_000),
+        )
+        val r = monthReport(rows, here, countPassThrough = true)
+        assertEquals(200_000_000L, r.incomeRial)
+        assertEquals(580_000_000L, r.spentRial)
+        assertTrue(r.countedPassThrough)
+        assertEquals(listOf("قرض" to 500_000_000L, "خوراکی" to 80_000_000L), r.spendingByCategory)
+        // Still measured while it is counted, or the card could never offer the way back.
+        assertEquals(500_000_000L, r.passedRial)
+    }
+
+    @Test
+    fun `the label names only what the window actually holds`() {
+        assertEquals("", monthReport(listOf(entry(first, -1_000_000)), here).passedFa)
+        assertEquals("قرض", monthReport(listOf(loan(first, -1_000_000)), here).passedFa)
+        assertEquals("همسر", monthReport(listOf(spouse(first, -1_000_000)), here).passedFa)
+        // Table order and not ledger order: همسر arriving first must not print «همسر و قرض».
+        val both = listOf(spouse(first, -1_000_000), loan(first + 1, -2_000_000))
+        assertEquals("قرض و همسر", monthReport(both, here).passedFa)
+        // One word for the two halves of a قرض, never «قرض و قرض» — and both directions are in
+        // the figure, exactly as درآمد and خرج are each one direction of the same window.
+        val halves = listOf(loan(first, -5_000_000), loanBack(first + 1, 5_000_000))
+        assertEquals("قرض", monthReport(halves, here).passedFa)
+        assertEquals(10_000_000L, monthReport(halves, here).passedRial)
+    }
+
+    @Test
+    fun `the savings rate names the قرض it left out, and only while it is out`() {
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            loan(first + 2, -500_000_000),
+        )
+        fun whyOfRate(report: PeriodReport) = narrate(report, null, rows, null, current = true)
+            .first { it.text.contains("درآمدت") }.why
+        assertTrue(whyOfRate(monthReport(rows, here)).contains("قرض"))
+        // Silent about it once it is being counted, because then it is not left out of anything.
+        assertTrue(!whyOfRate(monthReport(rows, here, countPassThrough = true)).contains("قرض"))
+    }
+
+    @Test
+    fun `انتقال بین حساب‌ها is already out, by the older and stronger gate`() {
+        // Filing a row under CAT_TRANSFER sets LedgerEntry.transfer — see [ledgerEntries] — and
+        // `spendable` drops it before [periodReport] counts anything. So it is out of both sides
+        // *and* out of [passedRial]: it never reaches the loop that measures pass-through money,
+        // and adding it to [PASS_THROUGH_CATEGORIES] would be a row that can never match.
+        //
+        // Which is the whole difference between the two mechanisms. قرض is excluded and named on
+        // the card; a transfer is excluded and silent, because moving her own money between her
+        // own accounts is not a decision the report has anything to say about.
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            entry(
+                first + 1, -500_000_000,
+                category = "انتقال بین حساب‌ها", categoryId = CAT_TRANSFER, transfer = true,
+            ),
+        )
+        val r = monthReport(rows, here)
+        assertEquals(200_000_000L, r.incomeRial)
+        assertEquals(0L, r.spentRial)
+        assertEquals(0L, r.passedRial)
+        assertEquals("", r.passedFa)
+        // And counting the pass-through money does not bring it back either.
+        assertEquals(0L, monthReport(rows, here, countPassThrough = true).spentRial)
+    }
+
+    @Test
+    fun `a month of nothing but قرض is still a month she can open`() {
+        // The list of months is about whether anything happened, never about whether it counted.
+        val rows = listOf(loan(first, -500_000_000))
+        assertEquals(listOf(here), availableReportMonths(rows, today = first))
+        assertEquals(1, monthReport(rows, here).transactions)
+    }
+
+    @Test
+    fun `the chart's bars leave it out on the same terms as the card above them`() {
+        val rows = listOf(
+            entry(first, 200_000_000, category = "حقوق"),
+            loan(first + 2, -500_000_000),
+        )
+        val apart = buildCashFlow(rows, liquidRial = 0, today = first + 5, selected = here)
+        assertEquals(apart.period.spentRial, apart.series.first { it.month == here }.spentRial)
+        assertEquals(0L, apart.series.first { it.month == here }.spentRial)
+
+        val folded = buildCashFlow(
+            rows, liquidRial = 0, today = first + 5, selected = here, countPassThrough = true,
+        )
+        assertEquals(folded.period.spentRial, folded.series.first { it.month == here }.spentRial)
+        assertEquals(500_000_000L, folded.series.first { it.month == here }.spentRial)
+    }
+
+    @Test
+    fun `lending does not shorten the runway`() {
+        // Twenty ordinary days and one large قرض. «خرج معمولی» is what the sentence built on
+        // this says, and handing money over is not a habit that eats a balance.
+        val rows = (0 until 20).map { entry(first + it, -1_000_000) } +
+            loan(first + 20, -500_000_000)
+        assertEquals(100, bufferDays(rows, liquidRial = 100_000_000, today = first + 25))
     }
 
     @Test

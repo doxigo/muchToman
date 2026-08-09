@@ -65,6 +65,8 @@ const val CAT_OTHER = "cat_income_other"
 const val CAT_FEES = "cat_fees"
 const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
+const val CAT_LOAN = "cat_loan"
+const val CAT_LOAN_BACK = "cat_loan_back"
 
 /**
  * The categories the app ships with, in the order a household generally reaches for them.
@@ -122,7 +124,7 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // The two halves of a قرض, which only balance out over time: neither is really spending or
     // really income, but EXPENSE and INCOME are the only kinds that stay visible — TRANSFER
     // means «not her decision, do not count», and money lent is very much a decision.
-    Category("cat_loan", nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 180, builtin = true),
+    Category(CAT_LOAN, nameFa = "قرض", kind = CategoryKind.EXPENSE, sort = 180, builtin = true),
     // A trip is every other category at once — the fare, the hotel, the meals, the presents
     // brought home — and filed under each of those it stops existing: a نوروز that cost a month's
     // salary reads afterwards as a busy fortnight of خواربار and حمل و نقل, and the one question
@@ -158,7 +160,7 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category("cat_invest_income", nameFa = "سود سرمایه‌گذاری", kind = CategoryKind.INCOME, sort = 250, builtin = true),
     // «پس‌گرفتن», not «پس‌دادن»: the ledger is hers, and on money coming in she is the one
     // getting it back — the other side is who gave it.
-    Category("cat_loan_back", nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 260, builtin = true),
+    Category(CAT_LOAN_BACK, nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 260, builtin = true),
 
     // ── the three both grids end with ──
     // Money between the two of them, and it runs both ways: what she pays for him is spending,
@@ -179,6 +181,32 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // it here however often it is used, or the picker would teach her to file everything as it.
     Category(CAT_OTHER, nameFa = "سایر", kind = CategoryKind.INCOME, sort = 280, builtin = true),
     Category(CAT_TRANSFER, nameFa = "انتقال بین حساب‌ها", kind = CategoryKind.TRANSFER, sort = 290, builtin = true),
+)
+
+/**
+ * The categories whose money is neither earned nor spent, and the word the report calls each by.
+ *
+ * A قرض out and the same قرض back are one movement told in two halves months apart, and money to
+ * a husband is money the household still has. Counted as ordinary خرج, each lies twice: the month
+ * it leaves says she spent it, and the month it returns says she earned it. Fifty million lent in
+ * تیر and repaid in مرداد printed «۱۹۰٪ بیشتر از درآمدت خرج کردی» in the first month and
+ * congratulated her in the second, for a transaction that netted nothing.
+ *
+ * Not [CategoryKind.TRANSFER] — the answer that was already available and already turned down
+ * three rows above. A transfer is not her decision and is not shown at all; a قرض is very much
+ * her decision, so the report's job is to hold it *apart* from خرج rather than to hide it. That
+ * is the whole difference, and it is why this is a table here and not a fourth kind: [kind] also
+ * decides which grid a category is offered in, and قرض has to stay in the spending one while
+ * پس‌گرفتن قرض stays in the income one.
+ *
+ * The value is the word the summary card sets over the figure. Both halves of a قرض share one,
+ * because «قرض و پس‌گرفتن قرض» is one thing named twice. Declaration order is reading order, so
+ * the label comes out «قرض و همسر» whichever of them the window happened to hold first.
+ */
+val PASS_THROUGH_CATEGORIES: Map<String, String> = linkedMapOf(
+    CAT_LOAN to "قرض",
+    CAT_LOAN_BACK to "قرض",
+    CAT_SPOUSE to "همسر",
 )
 
 /**

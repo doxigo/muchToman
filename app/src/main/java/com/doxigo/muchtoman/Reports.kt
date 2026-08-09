@@ -10,10 +10,14 @@ import kotlin.math.roundToLong
  * from. No model computes money, and the narrative below is a template over these numbers
  * rather than prose that has been asked to be true.
  *
- * Three rules run through all of it:
+ * Four rules run through all of it:
  *
  *  - **A transfer is neither income nor spending.** Moving fifty million between her own
  *    accounts must not read as fifty million earned and fifty million spent.
+ *  - **Money that only passes through is held apart, never hidden.** A قرض and the same قرض back
+ *    are one movement in two halves — see [PASS_THROUGH_CATEGORIES] — so they are kept out of
+ *    both sides by default and stated in Toman on the same card, because a summary that leaves
+ *    fifty million out without saying so is the friendlier kind of lie.
  *  - **Never celebrate spending fewer Toman.** Iranian inflation makes a nominal fall meaningless
  *    and often a lie. Everything compared here is a rate, a share, or a number of days.
  *  - **A month only ever speaks for itself.** Every range is closed-open on the Jalali month, so
@@ -213,6 +217,19 @@ data class PeriodReport(
     val incomeByCategory: List<Pair<String, Long>>,
     val transactions: Int,
     val handledAutomatically: Int,
+    /**
+     * What only passed through — قرض, پس‌گرفتن قرض, همسر — as one magnitude with both directions
+     * in it, exactly as [incomeRial] and [spentRial] are each one direction of the same window.
+     *
+     * Always the real figure, whether or not this window is counting it. That is what lets the
+     * card offer to fold it in: a report that only knew about this money while it was excluded
+     * could never say there was anything to include.
+     */
+    val passedRial: Long,
+    /** «قرض», «همسر», «قرض و همسر» — only the ones this window actually holds. Empty for none. */
+    val passedFa: String,
+    /** Whether [passedRial] is inside the two figures above, or is being held apart from them. */
+    val countedPassThrough: Boolean,
 ) {
     /** The month it covers, for the report that covers exactly one — the chart's bars, and home. */
     val month: ReportMonth get() = range.last
@@ -246,16 +263,36 @@ fun spendable(entries: List<LedgerEntry>): List<LedgerEntry> =
  * changed: no figure here is a mean of monthly figures, so a three-month «خواربار» share is that
  * quarter's real share and not the average of three shares computed against three different
  * incomes.
+ *
+ * [countPassThrough] folds قرض and همسر back into the two sides — see [PASS_THROUGH_CATEGORIES].
+ * It is a way of reading a window and not a fact about the ledger, so it is a parameter here
+ * rather than a filter inside [spendable]: the goals, the «می‌ارزید؟» queue and the list of months
+ * she can open all run through that gate too, and none of them asked this question.
  */
-fun periodReport(entries: List<LedgerEntry>, range: ReportRange): PeriodReport {
+fun periodReport(
+    entries: List<LedgerEntry>,
+    range: ReportRange,
+    countPassThrough: Boolean = false,
+): PeriodReport {
     val inRange = spendable(entries).filter { it.txn.day in range }
 
     var income = 0L
     var spent = 0L
+    var passed = 0L
+    val passedNames = mutableSetOf<String>()
     val spending = mutableMapOf<String, Long>()
     val earning = mutableMapOf<String, Long>()
     for (entry in inRange) {
         val signed = entry.txn.signedRial ?: continue
+        val passes = PASS_THROUGH_CATEGORIES[entry.categoryId]
+        if (passes != null) {
+            passed += abs(signed)
+            passedNames += passes
+            // Measured either way, counted only when she has asked for it. Skipping the rest of
+            // the body is the whole of what the switch does: turning it on puts the قرض back
+            // into خرج, back into the savings rate, and back into the دسته‌ها list below.
+            if (!countPassThrough) continue
+        }
         if (signed > 0) {
             income += signed
             earning[entry.categoryFa] = (earning[entry.categoryFa] ?: 0L) + signed
@@ -272,12 +309,22 @@ fun periodReport(entries: List<LedgerEntry>, range: ReportRange): PeriodReport {
         incomeByCategory = earning.toList().sortedByDescending { it.second },
         transactions = inRange.size,
         handledAutomatically = inRange.count { !it.needsReview },
+        passedRial = passed,
+        // Named in the table's order rather than the ledger's, so the label is «قرض و همسر» in
+        // every window that holds both and never «همسر و قرض» because a transfer landed first.
+        passedFa = PASS_THROUGH_CATEGORIES.values.distinct()
+            .filter { it in passedNames }
+            .joinToString(" و "),
+        countedPassThrough = countPassThrough,
     )
 }
 
 /** One month of it, which is what the chart's bars and the home screen are made of. */
-fun monthReport(entries: List<LedgerEntry>, month: ReportMonth): PeriodReport =
-    periodReport(entries, ReportRange(month, month))
+fun monthReport(
+    entries: List<LedgerEntry>,
+    month: ReportMonth,
+    countPassThrough: Boolean = false,
+): PeriodReport = periodReport(entries, ReportRange(month, month), countPassThrough)
 
 fun monthReport(entries: List<LedgerEntry>, year: Int, month: Int): PeriodReport =
     monthReport(entries, ReportMonth(year, month))
@@ -292,11 +339,25 @@ fun currentMonthReport(entries: List<LedgerEntry>, today: Long): PeriodReport =
  * The median daily outflow, not the mean: one car repair should not tell her she has three
  * weeks less runway than she does. Null when there is not enough history to say — and saying
  * nothing is the right answer then, rather than a number she might plan around.
+ *
+ * «خرج معمولی» is what the sentence this feeds actually says, so money that only passed through
+ * is left out on the same terms as everywhere else: lending is not a habit that eats a balance.
+ * The median already shrugs off a single large day, but the figure would still be wrong for a
+ * household that lends most weeks, and the word in the sentence would be wrong for any of them.
  */
-fun bufferDays(entries: List<LedgerEntry>, liquidRial: Long, today: Long, over: Int = 90): Int? {
+fun bufferDays(
+    entries: List<LedgerEntry>,
+    liquidRial: Long,
+    today: Long,
+    over: Int = 90,
+    countPassThrough: Boolean = false,
+): Int? {
     val from = today - over
     val daily = spendable(entries)
-        .filter { it.txn.day in from..today && (it.txn.signedRial ?: 0) < 0 }
+        .filter {
+            it.txn.day in from..today && (it.txn.signedRial ?: 0) < 0 &&
+                (countPassThrough || it.categoryId !in PASS_THROUGH_CATEGORIES)
+        }
         .groupBy { it.txn.day }
         .map { (_, rows) -> rows.sumOf { -(it.txn.signedRial ?: 0L) } }
     if (daily.size < 14) return null
@@ -374,7 +435,12 @@ fun narrate(
             text = text,
             // A rate, never a Toman figure: with this inflation a smaller number of Toman is
             // not a smaller amount of money, and calling it progress would be a lie.
-            why = "این عدد از درآمد و خرج $named به‌دست اومده؛ پولی که بین حساب‌های خودت جابه‌جا کردی، حساب نشده.",
+            //
+            // «چرا این را می‌بینم؟» has to name everything the figure left out, not just the
+            // transfers. A savings rate computed without a fifty-million قرض in it owes her that
+            // sentence more than it owes her the one about her own accounts.
+            why = "این عدد از درآمد و خرج $named به‌دست اومده؛ پولی که بین حساب‌های خودت جابه‌جا کردی، حساب نشده." +
+                if (now.passedRial > 0 && !now.countedPassThrough) " ${now.passedFa} هم حساب نشده." else "",
             refs = monthRefs,
             tone = when {
                 beforeRate == null -> Insight.Tone.NEUTRAL
@@ -547,6 +613,8 @@ fun buildCashFlow(
     today: Long,
     selected: ReportMonth,
     span: ReportSpan = ReportSpan.MONTH,
+    /** Whether قرض and همسر are being counted as ordinary خرج و درآمد. Off is the honest default. */
+    countPassThrough: Boolean = false,
 ): CashFlowReport {
     val available = availableReportMonths(entries, today)
     val here = reportMonthOf(today)
@@ -564,12 +632,18 @@ fun buildCashFlow(
     val use = if (span in spans) span else spans.last()
     val range = ReportRange(month.back(use.months - 1), month)
     val current = month == here
-    val report = periodReport(entries, range)
+    // One setting through every figure on the screen, or the card and the chart under it would
+    // be answering the same question two ways — see [CashFlowReport].
+    val report = periodReport(entries, range, countPassThrough)
     val before = range.before()
-    val previous = periodReport(entries, before)
+    val previous = periodReport(entries, before, countPassThrough)
     // Refused outright for a past window: the runway is today's cash against today's habits, and
     // pairing it with تیر's spending would state a balance تیر never had.
-    val buffer = if (current) bufferDays(entries, liquidRial, today) else null
+    val buffer = if (current) {
+        bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough)
+    } else {
+        null
+    }
     // The comparison has to be a whole window the ledger actually watched. Half a quarter of
     // history against a full one is a savings rate compared with an artefact of when she
     // installed the app.
@@ -583,7 +657,8 @@ fun buildCashFlow(
         previous = previous,
         // Six bars where the window is shorter than six months, so a single month is still read
         // against the ones around it; the window's own length once it is longer than that.
-        series = chartWindow(available, month, maxOf(use.months, 6)).map { monthReport(entries, it) },
+        series = chartWindow(available, month, maxOf(use.months, 6))
+            .map { monthReport(entries, it, countPassThrough) },
         insights = narrate(report, had, entries, buffer, current),
         wins = quietWins(report, had, buffer, current),
         bufferDays = buffer,
@@ -603,6 +678,15 @@ data class HomeStory(
     val insights: List<Insight>,
     val wins: List<Insight>,
     val bufferDays: Int?,
+    /**
+     * The budget behind [attention], when a budget is what is asking for her.
+     *
+     * Here rather than as a field on [Insight] because it is the *destination* that differs, not the
+     * sentence: the attention card is the one card on home with a button on it, and a button that
+     * says «دفتر رو باز کن» under a line about a budget is a button that lies. An [Insight] is a
+     * statement and a piece of evidence; where to go about it is the screen's business.
+     */
+    val attentionBudget: BudgetProgress? = null,
 ) {
     /** The one line worth leading with, and never more than one. */
     val headline: Insight? get() = wins.firstOrNull() ?: insights.firstOrNull { it.tone != Insight.Tone.ATTENTION }
@@ -618,17 +702,37 @@ data class HomeStory(
  * the chart, and this is built once for every state the app produces, so it does not pay for
  * five month-scans the field will not draw.
  */
-fun buildStory(entries: List<LedgerEntry>, liquidRial: Long, today: Long): HomeStory {
+fun buildStory(
+    entries: List<LedgerEntry>,
+    liquidRial: Long,
+    today: Long,
+    /**
+     * The caps she keeps, so home can carry the one that has run past itself. Empty is the ordinary
+     * case — most households keep none — and then nothing about this screen changes.
+     */
+    budgets: List<BudgetProgress> = emptyList(),
+    /**
+     * Home has no switch of its own, and should not grow one: this card is the glance, and the
+     * report is where a figure is taken apart. It reads at the default, so what it shows is what
+     * دخل و خرج opens on.
+     */
+    countPassThrough: Boolean = false,
+): HomeStory {
     val here = reportMonthOf(today)
-    val month = monthReport(entries, here)
-    val previous = monthReport(entries, here.previous())
-    val buffer = bufferDays(entries, liquidRial, today)
+    val month = monthReport(entries, here, countPassThrough)
+    val previous = monthReport(entries, here.previous(), countPassThrough)
+    val buffer = bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough)
     val had = previous.takeIf { it.transactions > 0 }
+    val pressing = pressingBudget(budgets)
     return HomeStory(
         month = month,
         previous = previous,
-        insights = narrate(month, had, entries, buffer, current = true),
+        // First, so that [HomeStory.attention] — which takes the first ATTENTION line there is —
+        // prefers a cap she has run past over a review queue. See [pressingBudget].
+        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries) }) +
+            narrate(month, had, entries, buffer, current = true),
         wins = quietWins(month, had, buffer, current = true),
         bufferDays = buffer,
+        attentionBudget = pressing,
     )
 }
