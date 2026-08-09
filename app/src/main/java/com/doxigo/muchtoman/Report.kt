@@ -1065,13 +1065,11 @@ private const val BAR_FLOOR = 0.03f
 private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) -> Unit) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
     val top = cash.series.maxOf { maxOf(it.incomeRial, it.spentRial) }.coerceAtLeast(1L)
-    // A year of months is twice what this row was built for. Thinner bars keep twelve of them on
-    // a narrow phone, and the month names — which do not shrink — are printed on every other one
-    // rather than clipped on all twelve. The unlabelled months keep their tap target and their
-    // spoken description, so nothing is lost but ink.
+    // A year of months is twice what this row was built for, so the bars thin out to keep twelve
+    // of them on a narrow phone. Only the bars: the numerals below them fit a twelfth of a screen
+    // at any count, which is the whole reason they are numerals.
     val crowded = cash.series.size > 8
     val barWidth = if (crowded) 7.dp else 12.dp
-    val labelEvery = if (crowded) 2 else 1
     // Only worth marking where there is something outside the window to tell it apart from.
     val markWindow = cash.series.size > cash.range.count
 
@@ -1100,16 +1098,13 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                     .selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
-                cash.series.forEachIndexed { i, report ->
+                cash.series.forEach { report ->
                     // Read as one month, or read as part of a longer window. Only the first is a
                     // selection — at «۶ ماه» nothing here is selected, six months are simply
                     // being counted together, and telling a screen reader otherwise would make
                     // six bars announce themselves as six chosen tabs.
                     val only = cash.range.count == 1 && report.month == cash.selected
                     val inWindow = report.month in cash.range
-                    // Counted from the newest end, so the month the window ends at is always the
-                    // one that keeps its name.
-                    val labelled = (cash.series.size - 1 - i) % labelEvery == 0
                     Column(
                         Modifier
                             .weight(1f)
@@ -1148,24 +1143,38 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                             Bar(report.spentRial, top, spend, barWidth)
                         }
                         Spacer(Modifier.height(Space.s))
+                        // The month's number, not its name. «فروردین» and «اردیبهشت» are wider
+                        // than a sixth of a phone, let alone a twelfth, so every window longer
+                        // than a couple of months printed «فرورد…» — a label that has lost the
+                        // one syllable telling it apart from «فروردین» of the year before, and
+                        // that at twelve bars was only printed on every other month anyway.
+                        // «۱» fits any column at any count, so every bar can be labelled again.
+                        //
+                        // Nothing is lost by it: the window's full name is set above the card,
+                        // tapping a bar puts that month's name up there, and the spoken
+                        // description on this very column has said «مرداد ۱۴۰۵» all along.
+                        //
+                        // Tabular figures, so «۱۰» and «۱۱» are the same width as each other and
+                        // the row of numerals sits on one baseline grid rather than drifting.
                         Text(
-                            if (labelled) MONTHS[report.month.month - 1] else "",
+                            faNumber(report.month.month.toDouble()),
+                            style = figureStyle(
+                                // Weight and a container, not a colour: the selected month has to
+                                // be findable without seeing one.
+                                color = if (only) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                weight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
+                            ),
                             fontSize = 11.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            // Weight and a container, not a colour: the selected month has to be
-                            // findable without seeing one.
-                            fontWeight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
-                            color = if (only) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            // «شهریور» is wider than a twelfth of a phone. It is allowed to spill
-                            // over its own column, which is exactly the room the unlabelled month
-                            // beside it is not using — the alternative is six clipped names.
-                            modifier = if (crowded) {
-                                Modifier.wrapContentWidth(unbounded = true)
-                            } else {
-                                Modifier
-                            },
+                            // Measured outside its own column, because a twelfth of a 320dp phone
+                            // is not reliably wide enough for two digits: at that width «۱۰»,
+                            // «۱۱» and «۱۲» each lost their second digit and drew as a bare «۱»,
+                            // which is not a clipped label but a wrong one — three months of the
+                            // year silently claiming to be فروردین. A numeral overspills by a
+                            // hair rather than by two thirds, so unlike the month names this
+                            // never reaches the label beside it.
+                            modifier = Modifier.wrapContentWidth(unbounded = true),
                         )
                     }
                 }
