@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1302,16 +1303,30 @@ private fun CategoryShare(name: String, rial: Long, total: Long, tint: Color?) {
             // one character over the line on a narrow phone, and a clipped category name is the
             // one thing in the row she cannot reconstruct from the rest of it.
             Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
-            Text(
-                "${faNumber(round(share * 100.0))}٪",
-                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
-                fontSize = 12.sp,
-            )
+            // A long category name fills its weight and would otherwise butt straight against the
+            // figure, which is the one pair on the row that must never read as a single string.
             Spacer(Modifier.width(Space.s))
+            // The amount before the share, and the share in a box wide enough for «۱۰۰٪».
+            //
+            // With the amount last, its own width — «۴۰۲٫۱ میلیون» against «۲٫۶ میلیون» — moved
+            // the share sideways on every row, so the percentages ran down the column on no edge
+            // at all. Putting the fixed-width thing at the end pins both: the shares line up on
+            // the box, and the amounts line up on where the box begins. It also reads in the
+            // right order now, the figure first and the comparison after it, which is the order
+            // the bar underneath states them in.
             Text(
                 bidi(faCompact(tomanOf(rial))),
                 style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
                 fontSize = 14.sp,
+            )
+            Spacer(Modifier.width(Space.s))
+            Text(
+                "${faNumber(round(share * 100.0))}٪",
+                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                fontSize = 12.sp,
+                textAlign = TextAlign.End,
+                // A floor rather than a width: at a large system font size the box has to give.
+                modifier = Modifier.widthIn(min = 36.dp),
             )
         }
         Spacer(Modifier.height(Space.xs))
