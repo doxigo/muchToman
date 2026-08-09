@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
@@ -640,10 +641,24 @@ private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = S
 /**
  * Which window she is reading, and the two steps either side of it.
  *
- * The arrows are auto-mirrored, so in this RTL app «ماه قبل» is the one on the right — the
- * direction the page itself reads backwards in. Neither is ever hidden: an arrow that vanishes
- * at the end of the ledger takes the answer «there is nothing before this» with it, so it is
- * dimmed and stays disabled to anyone listening as well as anyone looking.
+ * The name leads and the stepper trails, rather than a centred caption held between two arrows at
+ * the far edges of the glass. Three things came out of that arrangement, and all three were
+ * wrong. The name is the heading of everything below it and sat on an edge nothing else on the
+ * screen shares, so the one line that says *what you are reading* was the only line not aligned
+ * with what you are reading. It had a phone's width of empty air either side of it and still had
+ * to shrink to 13sp, because the space it was actually given was what two 48dp buttons left over.
+ * And the arrows themselves were bare glyphs pressed against the layout margin — the only
+ * controls in the app with nothing under them, in a screen whose every other control sits on a
+ * shaped ground.
+ *
+ * So: the name takes the leading edge at the weight a heading deserves, and the two arrows become
+ * one stepper at the trailing end, each on the same [surfaceContainer] well the picker above them
+ * is cut from. The pair reads as a single object that moves the window, which is what it is.
+ *
+ * The arrows are auto-mirrored, so in this RTL app «ماه قبل» is still the one nearer the start of
+ * the line — the direction the page itself reads backwards in. Neither is ever hidden: an arrow
+ * that vanishes at the end of the ledger takes the answer «there is nothing before this» with it,
+ * so it is dimmed and stays disabled to anyone listening as well as anyone looking.
  *
  * A step is one month even when the window is twelve. Stepping by the whole window would make
  * «قبل» jump a year at a time and put every month she wanted to look at in the middle of a
@@ -655,26 +670,21 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, Report
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(
-            onClick = { onWindow(cash.selected.previous(), cash.span) },
-            enabled = cash.canGoBack,
-        ) {
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "ماه قبل")
-        }
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.weight(1f)) {
             BasicText(
                 // The window's own name, never the span's: «خرداد تا مرداد ۱۴۰۵» is the thing
                 // every figure below is about, and «۳ ماه» is already said by the picker above.
                 //
                 // Auto-shrinking for the reason the hero figures do: «شهریور ۱۴۰۴ تا مرداد ۱۴۰۵»
-                // is three times the width of «مرداد ۱۴۰۵» between the same two arrows, and a
-                // title that ends in «…» is a window she cannot read the far end of.
+                // is three times the width of «مرداد ۱۴۰۵», and a title that ends in «…» is a
+                // window she cannot read the far end of. The floor is 16 rather than 13 now that
+                // the line has the width of the screen less one stepper to say itself in.
                 text = cash.range.fa,
-                // Two lines where there are two months to name: between two arrows on a 320dp
-                // phone, «شهریور ۱۴۰۴ تا مرداد ۱۴۰۵» does not fit on one at any size worth
-                // reading, and it breaks at «تا» — which is where it would be read aloud.
+                // Two lines where there are two months to name: on a 320dp phone «شهریور ۱۴۰۴ تا
+                // مرداد ۱۴۰۵» does not fit on one at any size worth reading, and it breaks at
+                // «تا» — which is where it would be read aloud.
                 maxLines = if (cash.range.count == 1) 1 else 2,
-                autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 20.sp),
+                autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 26.sp),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
                 modifier = Modifier.semantics { heading() },
             )
@@ -689,11 +699,54 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, Report
                 )
             }
         }
-        IconButton(
-            onClick = { onWindow(cash.selected.next(), cash.span) },
+        // Clear of the longest month name before the stepper starts, so a two-line range and the
+        // buttons never look like one run-on object.
+        Spacer(Modifier.width(Space.m))
+        StepButton(
+            icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+            label = "ماه قبل",
+            enabled = cash.canGoBack,
+            onClick = { onWindow(cash.selected.previous(), cash.span) },
+        )
+        // The 48dp targets would otherwise touch, which is the one gap Android names a number for.
+        Spacer(Modifier.width(Space.s))
+        StepButton(
+            icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            label = "ماه بعد",
             enabled = cash.canGoForward,
+            onClick = { onWindow(cash.selected.next(), cash.span) },
+        )
+    }
+}
+
+/**
+ * One step of the window: a 40dp well inside a 48dp target.
+ *
+ * The well is what the picker's track, the chart's selected column and the empty report's disc are
+ * all drawn on, so the stepper is made of the screen's own material rather than of a new one. It
+ * dims with the button, because an arrow that has nowhere left to go has to look spent as well as
+ * refuse the tap — at the end of the ledger the icon alone went grey against a ground that stayed
+ * bright, and read as a control that had simply lost its label.
+ */
+@Composable
+private fun StepButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(
+                    MaterialTheme.colorScheme.surfaceContainer
+                        .copy(alpha = if (enabled) 1f else 0.4f),
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "ماه بعد")
+            Icon(icon, contentDescription = label)
         }
     }
 }
