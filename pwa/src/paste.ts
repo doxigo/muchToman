@@ -53,6 +53,37 @@ const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹
 const PRINTED_AT =
   /(?<![0-9۰-۹٠-٩.\/\-_])[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?(?![0-9۰-۹٠-٩])/;
 
+/** A clock time, hours to optional seconds, in either set of digits. */
+const CLOCK = '[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?';
+
+/**
+ * The same time, on a line of its own rather than glued to the date — سامان and خاورمیانه write
+ * it under the date, بلو above it, and [PRINTED_AT] alone sees none of those.
+ *
+ * Anchored to the date on both sides, so only whitespace may stand between the two and a stamp is
+ * never a colon picked up from two lines away.
+ */
+const CLOCK_AFTER = new RegExp(`^\\s*(${CLOCK})(?![0-9۰-۹٠-٩:])`);
+const CLOCK_BEFORE = new RegExp(`(?<![0-9۰-۹٠-٩:])(${CLOCK})\\s*$`);
+
+/**
+ * The stamp the bank printed, read off the raw body so the Android side and this one answer
+ * «زمان ثبت» with the same string.
+ *
+ * A time with no date beside it is not a stamp and is left alone: half the corpus carries no date
+ * at all, and a bare hour would claim the bank said when this happened when it did not.
+ */
+function printedStampIn(rawBody: string): string {
+  const date = PRINTED_AT.exec(rawBody);
+  if (!date) return '';
+  const stamp = date[0].trim();
+  if (stamp.includes(':')) return stamp;
+  const after = date.index + date[0].length;
+  const time =
+    CLOCK_AFTER.exec(rawBody.slice(after))?.[1] ?? CLOCK_BEFORE.exec(rawBody.slice(0, date.index))?.[1];
+  return time === undefined ? stamp : `${stamp} ${time}`;
+}
+
 function isDigit(c: string | undefined): boolean {
   if (!c) return false;
   const code = c.codePointAt(0)!;
@@ -88,7 +119,7 @@ function fallbackDivisor(text: string): number {
 function figureAfter(
   text: string,
   labels: string[],
-  opts: { allowZero?: boolean; veto?: string[]; window?: number } = {},
+  opts: { allowZero?: boolean; veto?: string[]; window?: number; stopAt?: string[] } = {},
 ): { value: number; divisor: number | null } | null {
   const window = opts.window ?? 48;
   for (const label of labels) {
@@ -100,12 +131,20 @@ function figureAfter(
       from = start;
       const ahead = text.slice(start, start + 16);
       if (opts.veto?.some((v) => ahead.includes(v))) continue;
+      // Where this search must give up rather than keep walking. A figure on the far side of
+      // «موجودی» is that balance being stated, and returning it as the amount reports everything
+      // she has as the sum that just moved.
+      const limit = (opts.stopAt ?? [])
+        .map((w) => text.indexOf(w, start))
+        .filter((i) => i >= 0)
+        .reduce((a, b) => Math.min(a, b), text.length);
 
       NUMBER.lastIndex = 0;
       for (const m of text.matchAll(NUMBER)) {
         const index = m.index!;
         if (index < start) continue;
         if (index - start > window) break;
+        if (index >= limit) break;
         if (isIdentifierPart(text, index, index + m[0].length)) continue;
         const digits = digitsOf(m[0]);
         if (!digits) continue;
@@ -113,6 +152,43 @@ function figureAfter(
         if (value === 0 && !opts.allowZero) continue;
         return { value, divisor: unitAfter(text, index + m[0].length) };
       }
+    }
+  }
+  return null;
+}
+
+/**
+ * The last money figure *before* any of [labels], never crossing a line break.
+ *
+ * Most banks name the amount and then say what became of it — "واریز مبلغ ۵۰۰٬۰۰۰" — which is what
+ * {@link figureAfter} reads. Blu says it the other way round: "۱٬۰۰۰٬۰۰۰٬۰۰۰ ریال به حساب شما
+ * نشست", with the only word that gives the money a direction trailing the figure it belongs to.
+ *
+ * Bounded to the one line because that is how these messages are written: an amount and the phrase
+ * directing it are a sentence, while the موجودی, the time and the date each get a line of their
+ * own. Without the bound the nearest thing behind «نشست» on the previous line is the balance,
+ * which is the bug this exists to fix, arriving from the other side.
+ */
+function figureBefore(text: string, labels: string[]): { value: number; divisor: number | null } | null {
+  for (const label of labels) {
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(label, from);
+      if (at < 0) break;
+      from = at + label.length;
+      const lineStart = text.lastIndexOf('\n', at - 1) + 1;
+
+      let found: { value: number; divisor: number | null } | null = null;
+      NUMBER.lastIndex = 0;
+      for (const m of text.slice(lineStart, at).matchAll(NUMBER)) {
+        const index = lineStart + m.index!;
+        const end = index + m[0].length;
+        if (isIdentifierPart(text, index, end)) continue;
+        const value = Number(digitsOf(m[0]));
+        if (!value) continue;
+        found = { value, divisor: unitAfter(text, end) };
+      }
+      if (found) return found;
     }
   }
   return null;
@@ -130,10 +206,17 @@ export function parsePasted(body: string): Pasted {
   const balance = figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: NOT_A_BALANCE });
   const deposit = IN_WORDS.some((w) => text.includes(w));
   const withdrawal = OUT_WORDS.some((w) => text.includes(w));
+  const inWords = deposit ? IN_WORDS : [];
+  const outWords = withdrawal ? OUT_WORDS : [];
   const amount =
     figureAfter(text, AMOUNT_WORDS) ??
-    (deposit ? figureAfter(text, IN_WORDS) : null) ??
-    (withdrawal ? figureAfter(text, OUT_WORDS) : null);
+    figureAfter(text, inWords, { stopAt: BALANCE_WORDS }) ??
+    figureAfter(text, outWords, { stopAt: BALANCE_WORDS }) ??
+    // Nothing after the direction word, so the figure it refers to is the one in front of it: Blu
+    // heads a deposit «دریافت پل», which names no direction at all, leaving «نشست» at the end of
+    // the sentence as the only word that says which way the money went.
+    figureBefore(text, inWords) ??
+    figureBefore(text, outWords);
 
   // Both or neither means the message did not say which way the money went, and guessing is how
   // a deposit becomes a withdrawal.
@@ -143,6 +226,6 @@ export function parsePasted(body: string): Pasted {
     amountRial: amount ? rialOf(amount, fallback) : null,
     direction,
     balanceRial: balance ? rialOf(balance, fallback) : null,
-    printedAt: body.match(PRINTED_AT)?.[0]?.trim() ?? '',
+    printedAt: printedStampIn(body),
   };
 }
