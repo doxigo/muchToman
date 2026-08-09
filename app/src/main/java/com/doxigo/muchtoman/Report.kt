@@ -174,6 +174,13 @@ fun ReportScreen(
                 )
             }
 
+            // Outside the scroll, unlike every other gap on this screen. A pinned control has to
+            // keep its air once the report is scrolled, and this was the one place where content
+            // slid up until it touched the thing that governs it. Wider where there is no segment
+            // to sit under, because then what is above is the 28sp heading, and a heading owns
+            // more room beneath it than a control does.
+            Spacer(Modifier.height(if (modes.size > 1) Space.m else Space.l))
+
             when (shown) {
                 ReportMode.CASH_FLOW -> CashFlowReportContent(
                     cash = cash,
@@ -241,15 +248,20 @@ private fun AssetReportContent(
     } ?: emptyList()
 
     Column(modifier) {
-        Spacer(Modifier.height(Space.l))
         WindowPicker(selected, ::available) { selected = it }
 
+        // One rhythm across both reports: [Space.m] inside a group, [Space.xxl] between them.
+        // Every gap on this screen used to be [Space.l] or [Space.xl], which is the same distance
+        // either side of a heading — so nothing was grouped and the eye had to read the words to
+        // find out where one section stopped.
         Spacer(Modifier.height(Space.xxl))
         if (change == null || points.size < 2) {
             EmptyReport()
         } else {
+            // The figure is the chart's headline, so it sits inside the group with it rather than
+            // a section apart from the shape it describes.
             ChangeFigure(change, selected, now)
-            Spacer(Modifier.height(Space.xl))
+            Spacer(Modifier.height(Space.m))
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -280,7 +292,9 @@ private fun AssetReportContent(
                 fontSize = 12.sp,
                 lineHeight = 19.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+                // No inset of its own. A 4dp indent nothing else on the screen shares is a
+                // fourth leading edge in a column that already has enough of them.
+                modifier = Modifier.padding(top = Space.m),
             )
         }
         // One kind is the hero total said twice — same rule the list's section heads use.
@@ -288,7 +302,7 @@ private fun AssetReportContent(
             Spacer(Modifier.height(Space.xxl))
             CompositionBar(composition)
         }
-        Spacer(Modifier.height(bottomInset + Space.xl))
+        Spacer(Modifier.height(bottomInset + Space.xxl))
     }
 }
 
@@ -579,11 +593,18 @@ private fun CashFlowReportContent(
 ) {
     val period = cash.period
     Column(modifier) {
-        Spacer(Modifier.height(Space.l))
+        // How long a window, directly under which report — one control group, and the picker is
+        // the quieter half of it at 14sp against the mode segment's 15.
         SpanPicker(cash) { onWindow(cash.selected, it) }
+
+        // The window's name is the heading every figure below is filed under, so it takes the
+        // section gap above it and the group gap below — the same rhythm as [AssetReportContent].
+        // It used to be wedged against the picker with no gap at all, which read as a third row
+        // of the same control.
+        Spacer(Modifier.height(Space.xxl))
         WindowNavigator(cash, onWindow)
 
-        Spacer(Modifier.height(Space.l))
+        Spacer(Modifier.height(Space.m))
         if (period.transactions == 0) {
             // A window with nothing in it is two different facts. This month with nothing in it
             // yet is a thing to do; a past one with nothing in it may simply be older than the
@@ -600,12 +621,12 @@ private fun CashFlowReportContent(
         // Two months is the least a comparison can be made of. One month drawn alone is a chart
         // that answers «is this month unusual» with the month itself.
         if (cash.series.size > 1 && cash.series.any { it.incomeRial > 0 || it.spentRial > 0 }) {
-            Spacer(Modifier.height(Space.xl))
+            Spacer(Modifier.height(Space.xxl))
             MonthBars(cash, onWindow)
         }
 
         if (period.transactions > 0) {
-            Spacer(Modifier.height(Space.xl))
+            Spacer(Modifier.height(Space.xxl))
             CategoryDetail(period)
         }
 
@@ -613,10 +634,10 @@ private fun CashFlowReportContent(
         // on a lone card and leave a hole mid-page.
         val cards = cash.insights + cash.wins
         if (cards.isNotEmpty()) {
-            Spacer(Modifier.height(Space.xl))
+            Spacer(Modifier.height(Space.xxl))
             InsightGrid(cards)
         }
-        Spacer(Modifier.height(bottomInset + Space.xl))
+        Spacer(Modifier.height(bottomInset + Space.xxl))
     }
 }
 
@@ -1250,6 +1271,18 @@ private fun CategoryDetail(period: PeriodReport) {
     val named = period.range.fa
 
     Column {
+        // The one section on this screen that opened with a bare segment. «ماه به ماه» and
+        // «ترکیب دارایی» both name themselves first and put their control beside or beneath the
+        // name; without that this pill was the third full-width segment in a column of them, and
+        // nothing said whether it chose the report, the window, or something in this section.
+        // The heading is what makes it obviously the last of those.
+        Text(
+            "دسته‌ها",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.m))
         SegmentedChoice(
             options = listOf(LedgerLens.EXPENSE, LedgerLens.INCOME),
             selected = side,
