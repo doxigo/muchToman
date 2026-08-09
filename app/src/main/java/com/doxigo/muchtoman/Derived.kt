@@ -430,6 +430,11 @@ data class LedgerView(
     val entries: List<LedgerEntry> = emptyList(),
     val categories: List<Category> = emptyList(),
     val goals: List<GoalProgress> = emptyList(),
+    /**
+     * The same table as [goals], read the other way — see `Budget.kt`. Ordered by how much of each
+     * cap is gone, so the one she needs is the one at the top of the screen.
+     */
+    val budgets: List<BudgetProgress> = emptyList(),
     /** ref → yes | no | needed, for the ones she has answered. */
     val worthIt: Map<String, String> = emptyMap(),
     /**
@@ -546,8 +551,21 @@ suspend fun ledgerView(
         .mapNotNull { d -> d.value?.let { d.ref to it } }
         .toMap()
     val today = tehranDay(System.currentTimeMillis())
-    val goals = durable.goals().active().map { goalProgress(it, ledger.entries, today) }
-    return LedgerView(ledger.entries, ledger.categories, goals, answers, ledger.marks, ready = true)
+    // One read of the table, split by shape. A budget is a cap goal — see `Budget.kt` — and the
+    // live category name is looked up here rather than trusted from the row, so a build that
+    // renames a shipped category renames the budget kept against it.
+    val active = durable.goals().active()
+    val names = ledger.categories.associate { it.id to it.nameFa }
+    return LedgerView(
+        entries = ledger.entries,
+        categories = ledger.categories,
+        goals = active.filterNot { it.kind == GoalKind.CAP }
+            .map { goalProgress(it, ledger.entries, today) },
+        budgets = budgetsOf(active, ledger.entries, today, names),
+        worthIt = answers,
+        marks = ledger.marks,
+        ready = true,
+    )
 }
 
 /**

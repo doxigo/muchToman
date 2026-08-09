@@ -742,6 +742,42 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A cap on one category, per week, month or فصل — see `Budget.kt`.
+     *
+     * `startsOn` is the day she set it and is not what the figure is measured from: the window is
+     * the whole week, month or فصل, because a budget that ignored the days before she decided would
+     * disagree with «دسته‌ها» in دخل و خرج about what «رستوران و کافه» cost this month. What
+     * `startsOn` buys is [BudgetProgress.partWindow] — the card's own sentence saying exactly that.
+     *
+     * `nameFa` is the category's name at this moment, snapshotted for the same reason a filed
+     * transaction keeps the name it was filed under: the row must still be readable when the
+     * category behind it is archived.
+     */
+    fun addBudget(category: Category, period: BudgetPeriod, capRial: Long) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                durable.goals().put(
+                    Goal(
+                        id = uuid7(now),
+                        nameFa = category.nameFa.take(40),
+                        targetRial = capRial,
+                        kind = GoalKind.CAP,
+                        categoryId = category.id,
+                        period = period.id,
+                        startsOn = tehranDay(now),
+                        createdAt = now,
+                        updatedAt = now,
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addBudget failed: $it") }
+        }
+    }
+
+    /**
      * A savings goal, with a deadline that makes it something she can pace.
      *
      * `startsOn` is the first of the current Jalali month rather than today, which is deliberate and
@@ -775,6 +811,34 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Changes the ceiling or the rhythm of a cap she already keeps. The category stays: a cap on
+     * a different category is a different budget, made by deleting this one.
+     *
+     * What was already said about the old cap is forgotten on purpose. Crossing 80% of a figure
+     * she chose five minutes ago is news about that figure, and the high-water mark for the old
+     * one would silence it — so the marks are dropped and [publishLedger]'s own announce treats
+     * the edited budget exactly as it would one created at this spend: each threshold speaks
+     * once, against the cap she actually keeps now.
+     */
+    fun editBudget(id: String, period: BudgetPeriod, capRial: Long) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val goal = durable.goals().byId(id) ?: return@runCatching
+                // Saved untouched is not an edit: a re-put would only churn updatedAt, and the
+                // dropped marks would say the same warning a second time about nothing new.
+                if (goal.targetRial == capRial && goal.period == period.id) return@runCatching
+                durable.goals().put(goal.copy(targetRial = capRial, period = period.id, updatedAt = now))
+                store.budgetMarks = store.budgetMarks.filterNot { it.goalId == id }
+                clearBudgetNote(app, id)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "editBudget failed: $it") }
+        }
+    }
+
+    /**
      * Renames, resizes or re-deadlines a savings goal, without moving the day it counts from —
      * what she has kept since she set it stays counted, which is the whole reason to edit
      * rather than start over.
@@ -802,6 +866,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Deletes either shape — a budget and a goal are one table, and this is one tombstone. */
     fun deleteGoal(id: String) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
@@ -1155,7 +1220,12 @@ data class UiState(
      * behind the runway are not free, and the summary reads them several times over.
      */
     val story: HomeStory by lazy {
-        buildStory(ledger.entries, Math.round(bankToman * 10.0), tehranDay(System.currentTimeMillis()))
+        buildStory(
+            ledger.entries,
+            Math.round(bankToman * 10.0),
+            tehranDay(System.currentTimeMillis()),
+            ledger.budgets,
+        )
     }
     val stocks: List<Stock> get() = tse.stocks
 

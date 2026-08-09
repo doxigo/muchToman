@@ -50,7 +50,12 @@ import androidx.compose.ui.unit.sp
  * with a «بستن» in the corner, and overlays over overlays meant she could get somewhere she
  * could not get out of. A bar that is always there is not only tidier, it is the fix.
  *
- * Goals is a root because it holds things she manages. The report is here because "بیشتر شده یا
+ * آینده is a root because it holds the things she manages ahead of time: the caps she keeps per
+ * category, the savings goals under them, and her own verdict on her own spending. It was «هدف‌ها»
+ * while a goal was all it held, and «بودجه» once the caps outgrew the goals — and each of those
+ * names claimed one section of a screen that holds three, so a tab named after any of them is a
+ * tab she does not open looking for the other two. What the sections share is the only word that
+ * covers them: every one is about money she has not spent yet. The report is here because "بیشتر شده یا
  * کمتر؟" is a question she asks as often as "چقدر دارم؟", and as an overlay every door into it
  * was on خانه — a screen she has to be standing on to remember the report exists at all.
  *
@@ -79,7 +84,7 @@ import androidx.compose.ui.unit.sp
 enum class Tab(val fa: String) {
     HOME("خانه"),
     LEDGER("دفتر"),
-    GOALS("هدف‌ها"),
+    BUDGET("آینده"),
     ASSETS("دارایی"),
     REPORT("گزارش"),
 }
@@ -222,7 +227,7 @@ private fun DrawScope.drawTabIcon(tab: Tab, tint: Color) {
         when (tab) {
             Tab.HOME -> drawHome(tint)
             Tab.LEDGER -> drawLedger(tint)
-            Tab.GOALS -> drawGoals(tint)
+            Tab.BUDGET -> drawBudget(tint)
             Tab.ASSETS -> drawAssets(tint)
             Tab.REPORT -> drawReport(tint)
         }
@@ -321,7 +326,16 @@ private fun DrawScope.drawLedger(tint: Color) {
     }
 }
 
-private fun DrawScope.drawGoals(tint: Color) {
+/**
+ * A target, and it kept its drawing when the tab changed its name.
+ *
+ * A budget and a goal are the same shape seen from either side — a figure you mean to land on, one
+ * from below and one from under — and concentric rings say "a limit you are aiming at" without
+ * committing to which direction you are coming from. The alternative was a gauge, which is a needle
+ * and an arc and two more line weights inside an 18dp box, for a mark that would then only read as
+ * the budget half of what this screen holds.
+ */
+private fun DrawScope.drawBudget(tint: Color) {
     val centre = Offset(size.width / 2f, size.height / 2f)
     val r = size.minDimension / 2f
     drawCircle(tint, radius = r * 0.88f, center = centre, style = pen())

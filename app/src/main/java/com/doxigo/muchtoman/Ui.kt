@@ -319,7 +319,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     // The tabs that start at the paper rather than at the field, plus every pushed screen.
     val paperUnderStatusBar = !state.locked && (
         settings || companion || deck || transactionRef != null ||
-            tab == Tab.LEDGER || tab == Tab.GOALS || tab == Tab.REPORT ||
+            tab == Tab.LEDGER || tab == Tab.BUDGET || tab == Tab.REPORT ||
             !heroUnderStatusBar
         )
     val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -483,14 +483,19 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         )
         return@Scaffold
       }
-      if (tab == Tab.GOALS) {
+      if (tab == Tab.BUDGET) {
         val summary = remember(state.ledger) {
             worthItSummary(state.ledger.entries, state.ledger.worthIt)
         }
-        GoalsScreen(
+        BudgetScreen(
+            budgets = state.ledger.budgets,
             goals = state.ledger.goals,
+            categories = state.ledger.categories,
             summary = summary,
-            onAdd = vm::addGoal,
+            onAddBudget = vm::addBudget,
+            onEditBudget = vm::editBudget,
+            onAddGoal = vm::addGoal,
+            onEditGoal = vm::editGoal,
             onDelete = vm::deleteGoal,
             bottomInset = pad.calculateBottomPadding(),
         )
@@ -633,12 +638,15 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                                 InsightCard(it, Modifier.weight(1f).fillMaxHeight())
                             }
                             story.attention?.let {
-                                // This one leaves the screen, so it says where it goes.
+                                // This one leaves the screen, so it says where it goes — and where
+                                // it goes depends on what is asking. A button reading «دفتر رو باز
+                                // کن» under a line about a budget is a button that lies.
+                                val budget = story.attentionBudget != null
                                 InsightCard(
                                     it,
                                     Modifier.weight(1f).fillMaxHeight(),
-                                    action = "دفتر رو باز کن",
-                                    onAction = { tab = Tab.LEDGER },
+                                    action = if (budget) "بودجه رو باز کن" else "دفتر رو باز کن",
+                                    onAction = { tab = if (budget) Tab.BUDGET else Tab.LEDGER },
                                 )
                             }
                         }
@@ -2687,7 +2695,7 @@ private enum class AmountSource { WALLET, MANUAL }
  * More space above than below, because a heading belongs to what follows it.
  */
 @Composable
-private fun SheetLabel(text: String, modifier: Modifier = Modifier) {
+internal fun SheetLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         fontSize = 14.sp,

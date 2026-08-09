@@ -17,8 +17,15 @@ import androidx.room.Query
  * congratulating her on a number it made up.
  *
  * Two shapes, and no more:
- *  - `save` — put this much aside by then.
- *  - `cap`  — keep this category under this much, this month.
+ *  - `save` — put this much aside by then. This file.
+ *  - `cap`  — keep this category under this much, per week, month or فصل. That is a budget, and
+ *    it lives in `Budget.kt`, which is one row of this same table read a different way.
+ *
+ * They share a table because they share everything that matters — a target in Rial, a period, a
+ * start, an end, and progress that is never written down — and they are two files because the
+ * arithmetic runs in opposite directions: a goal is met by reaching its figure and a budget by
+ * not reaching its own. Keeping both in one `when` is how the sign of that comparison gets
+ * flipped by somebody who is reading the other half.
  */
 
 object GoalKind {
@@ -26,8 +33,21 @@ object GoalKind {
     const val CAP = "cap"
 }
 
+/**
+ * The `period` column's vocabulary. Values, not an enum, because these strings are on disk —
+ * [BudgetPeriod] is the enum that carries the behaviour, and it names these as its ids.
+ */
 object GoalPeriod {
+    /** A budget kept Saturday to Friday. */
+    const val WEEK = "week"
+
+    /** A Jalali month, which is what her salary, her rent and her bills already run on. */
     const val MONTH = "jmonth"
+
+    /** A فصل — three Jalali months, which in Iran is exactly a season. */
+    const val QUARTER = "jquarter"
+
+    /** A savings goal, which has no period at all: it runs from its start to its deadline. */
     const val ONCE = "once"
 }
 
