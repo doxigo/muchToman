@@ -1,9 +1,14 @@
 package com.doxigo.muchtoman
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -281,6 +286,56 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         tab = Tab.REPORT
     }
 
+    // Whether a budget note posted right now would actually reach her. Local state rather than
+    // something in UiState, because the answer changes *outside* the app — in Android's own
+    // settings — and a value re-read on every ON_START is one that cannot be stale on screen.
+    val context = LocalContext.current
+    var canNote by remember { mutableStateOf(canNotify(context)) }
+    val askNote = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        canNote = granted
+        // Denied twice is denied for good: Android stops showing the dialog and hands back a
+        // refusal immediately, so the only remaining fix is the page that has the switch on it.
+        if (!granted) openNotificationSettings(context)
+    }
+    val askNotify = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            askNote.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // Below 33 there is nothing to ask for — notifications are on unless she switched them
+            // off, and only the system's own page can switch them back.
+            openNotificationSettings(context)
+        }
+    }
+
+    // A tapped budget note lands here. Every overlay is closed on the way, or the tab underneath
+    // changes behind a sheet and the notification reads as having done nothing.
+    LaunchedEffect(state.openTab) {
+        state.openTab?.let { wanted ->
+            settings = false
+            companion = false
+            deck = false
+            transactionRef = null
+            tab = wanted
+            vm.consumeOpenTab()
+        }
+    }
+
+    // And a tapped filing note here, which wants the deck rather than a tab. The tab underneath is
+    // set as well as the deck: closing the deck has to leave her on دفتر — the room the deck
+    // belongs to — and not back on whatever she was looking at last week.
+    LaunchedEffect(state.openDeck) {
+        if (state.openDeck) {
+            settings = false
+            companion = false
+            transactionRef = null
+            tab = Tab.LEDGER
+            deck = true
+            vm.consumeOpenDeck()
+        }
+    }
+
     LaunchedEffect(state.family.pendingPairing) {
         // Scanning the invite must still land on the join card, and that card is two taps deep
         // now. A pairing link can also arrive at the lite build — the intent filter is in the
@@ -298,7 +353,12 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> vm.relock()
-                Lifecycle.Event.ON_START -> vm.refreshIfStale()
+                Lifecycle.Event.ON_START -> {
+                    vm.refreshIfStale()
+                    // She may have come back from Android's own notification settings, which is
+                    // the one way this answer changes without the app being told.
+                    canNote = canNotify(context)
+                }
                 else -> Unit
             }
         }
@@ -478,7 +538,11 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         TimelineScreen(
             ledger = state.ledger,
             bottomInset = pad.calculateBottomPadding(),
+            // Only where there is something to be quiet about, exactly as on آینده: a ledger that
+            // fills itself is the only one that can have a transaction land while she is away.
+            notifyBlocked = state.smsEnabled && !canNote,
             onReview = { deck = true },
+            onAskNotify = askNotify,
             onOpen = { transactionRef = it.txn.ref },
         )
         return@Scaffold
@@ -492,11 +556,16 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             goals = state.ledger.goals,
             categories = state.ledger.categories,
             summary = summary,
+            // Only ever raised where there is something to be quiet about: a phone with no budget
+            // has nothing to notify her of, and asking for the permission then would be the launch
+            // -time prompt this app deliberately does not do.
+            notifyBlocked = state.ledger.budgets.isNotEmpty() && !canNote,
             onAddBudget = vm::addBudget,
             onEditBudget = vm::editBudget,
             onAddGoal = vm::addGoal,
             onEditGoal = vm::editGoal,
             onDelete = vm::deleteGoal,
+            onAskNotify = askNotify,
             bottomInset = pad.calculateBottomPadding(),
         )
         return@Scaffold
@@ -1456,6 +1525,27 @@ internal fun TrendCaret(up: Boolean, tint: Color, box: Dp = 9.dp) {
  * Three rising bars for the report button — drawn, because the icon set material3 already
  * ships has no chart glyph, and one emoji in a row of monochrome icons reads as a sticker.
  */
+/**
+ * Android's own notification page for this app — the only place the switch actually lives.
+ *
+ * Needed on two paths that look unrelated and are the same dead end: below API 33 there is no
+ * runtime permission to ask for, and above it a second refusal makes the dialog stop appearing.
+ * Either way the app cannot turn its own notifications on, and pointing at the page that can is
+ * the whole of what it may do about it. Failure is silent on purpose — an OEM build with no such
+ * activity is a phone where the card simply stays on screen.
+ */
+private fun openNotificationSettings(context: Context) {
+    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    } else {
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.fromParts("package", context.packageName, null))
+    }
+    runCatching { context.startActivity(intent) }
+        .onFailure { android.util.Log.w("muchtoman", "notification settings unavailable: $it") }
+}
+
 private fun openUrl(context: Context, url: String): Boolean =
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 

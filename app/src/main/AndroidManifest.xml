@@ -11,6 +11,19 @@
     <uses-permission android:name="android.permission.READ_SMS" />
 
     <!--
+        Asked for when she saves her first بودجه, or from دفتر once transactions are waiting to be
+        filed — never at launch, which is the same rule READ_SMS follows. There are exactly two
+        things the app will ever post, on two channels she can silence separately: a budget she set
+        has crossed a line she asked to be told about, and a transaction has landed that nobody has
+        said what it was. See Notify.kt.
+
+        Denying it costs her nothing but the interruption: every budget still measures itself, the
+        card on the آینده tab says the same thing that notification would have, and the badge on
+        دفتر says the same thing the other one would have.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
         READ_SMS is taken to mean "this app needs a radio", which would hide it from every
         tablet and Chromebook that has none. It does not: it reads the message store, and on a
         device with nothing in it the feature simply has nothing to show.

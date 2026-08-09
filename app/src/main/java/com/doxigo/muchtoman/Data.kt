@@ -603,6 +603,32 @@ class Store(context: Context) {
         get() = read("dismissedSenders", emptySet())
         set(v) = write("dismissedSenders", v)
 
+    /**
+     * What this phone has already told her about each budget, and for which window.
+     *
+     * Here rather than in `durable.db` on purpose: it is neither a message nor a decision of hers,
+     * it is a note about a notification *this device* posted. Her husband's phone keeps its own and
+     * neither owes the other one. Pruned on every write by [budgetNews], which only ever returns a
+     * mark for a live budget in its current window — so a deleted budget and a finished month both
+     * fall off without anything having to remember to sweep them.
+     */
+    var budgetMarks: List<BudgetMark>
+        get() = read("budgetMarks", emptyList())
+        set(v) = write("budgetMarks", v)
+
+    /**
+     * How far this phone has accounted for the review backlog: the newest transaction it has either
+     * shown her or told her about. Beside [budgetMarks] and for the same reason — a note about what
+     * *this* device has said, which is neither a message nor a decision of hers.
+     *
+     * Zero means it has never looked, and [filingNews] reads that as «seed, do not speak»: the first
+     * pass after an install or an upgrade learns where the ledger is instead of announcing a backlog
+     * she has been living with.
+     */
+    var filingMark: Long
+        get() = prefs.getLong("filingMark", 0L)
+        set(v) { prefs.edit().putLong("filingMark", v).apply() }
+
     /** How far the inbox has been read, so each scan only looks at what arrived since. */
     var smsScannedTo: Long
         get() = prefs.getLong("smsScannedTo", 0L)

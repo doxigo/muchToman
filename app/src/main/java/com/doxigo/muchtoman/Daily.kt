@@ -64,3 +64,115 @@ fun scheduleDailySnapshot(context: Context) {
             .build(),
     )
 }
+
+/**
+ * How often the ledger is looked at while the app is closed.
+ *
+ * Six hours, which is the compromise the architecture forces and it is worth being plain about it.
+ * There is no SMS broadcast receiver — see [readSmsInbox] — so a purchase becomes visible to this
+ * app only when something reads the inbox, and this is the only thing that reads it unattended.
+ * Four wakeups a day is close enough that «۸۰٪ رفته» still arrives while the month has something
+ * left in it, and that «این چی بود؟» still arrives on the day she could answer it, and far enough
+ * apart to be free.
+ *
+ * ponytail: the ceiling on how fresh either notification can be. A `RECEIVE_SMS` receiver would
+ * make them instant and would also mean this app asks for the permission that reads messages as
+ * they arrive, which is a different app.
+ */
+private const val LEDGER_WATCH_HOURS = 6L
+
+private const val LEDGER_WATCH_WORK = "ledger-watch"
+
+/**
+ * What this work was called when it only watched budgets, cancelled on the way past.
+ *
+ * The unique name is the platform's identity for a schedule, and the enqueued spec names the worker
+ * class that is going to run — so a rename of the class alone would leave every phone that already
+ * keeps a budget scheduled against a class that no longer exists. Cancelling the old name and
+ * enqueueing the new one is the arrangement with no way to get it half right, and it costs one
+ * no-op call on every phone that never had the old work.
+ *
+ * ponytail: droppable once no install can still be carrying a v1.1.x schedule.
+ */
+private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
+
+/**
+ * The unattended half of the app: the only thing that reads the inbox while she is not looking, and
+ * the only thing that speaks while the app is closed.
+ *
+ * It runs the same pipeline the app runs on every foreground — ingest, derive, then read the
+ * ledger — because both things it might say are figures over her transactions and there is no
+ * shortcut to either that is not a second, disagreeing definition. Every step of that pipeline is
+ * already total and idempotent, which is the property that makes running it from here safe: a scan
+ * that lands at the same moment as an app open produces the same rows.
+ *
+ * Nothing is written that she can see except a notification. No balance, no snapshot, no widget —
+ * this worker's whole output is «a budget of yours crossed a line» and «something landed that
+ * nobody has filed», and [announceBudgets] and [announceFiling] are what decide whether either is
+ * worth saying.
+ */
+class LedgerWatchWorker(context: Context, params: WorkerParameters) :
+    CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val app = applicationContext
+        val store = Store(app)
+        val durable = DurableDb.get(app)
+        // Every check before anything expensive. A phone with nothing to watch, or one where she
+        // has turned the notifications off, must pay for this wakeup with a SQLite read and a
+        // preference lookup — not with a rebuild of the ledger it was never going to say anything
+        // about.
+        val budgets = durable.goals().active().any { it.kind == GoalKind.CAP }
+        if (!budgets && !store.smsEnabled) return Result.success()
+        if (!canNotify(app)) return Result.success()
+
+        return runCatching {
+            val derived = DerivedDb.get(app)
+            val extra = extraLookup(store.extraBankNumbers)
+            val added = ingestBankSms(app, durable, extra)
+            if (added > 0 || needsDerive(derived)) derive(durable, derived, extra)
+            // One read of the ledger for both. Two would be two walks over four thousand rows and,
+            // worse, two answers to «what is in the ledger right now».
+            val view = ledgerView(derived, durable)
+            announceBudgets(app, store, view.budgets)
+            announceFiling(app, store, view.review)
+            Result.success()
+        }.getOrElse {
+            // Retry rather than success: a failed read here is an alert that did not happen, and
+            // WorkManager's backoff is a better answer than waiting six hours for the next one.
+            android.util.Log.w("muchtoman", "ledger watch failed: $it")
+            Result.retry()
+        }
+    }
+}
+
+/**
+ * Watch the ledger, or stop watching once there is nothing to watch.
+ *
+ * Scheduled by whether there is anything to say rather than KEEP-on-every-start, which is the one
+ * place this differs from [scheduleDailySnapshot] and the reason is the asymmetry: the snapshot has
+ * something to do on every phone, and this has something to do only on a phone that keeps a budget
+ * or reads bank messages. Cancelling when the last of both goes is what keeps a feature she is not
+ * using from waking her phone four times a day for ever.
+ *
+ * [wanted] is that question already answered by the caller, because the two halves of it live in
+ * two different places — the goals table and her SMS switch — and the callers have both to hand.
+ */
+fun scheduleLedgerWatch(context: Context, wanted: Boolean) {
+    val work = WorkManager.getInstance(context)
+    work.cancelUniqueWork(LEGACY_BUDGET_WATCH_WORK)
+    if (!wanted) {
+        work.cancelUniqueWork(LEDGER_WATCH_WORK)
+        return
+    }
+    work.enqueueUniquePeriodicWork(
+        LEDGER_WATCH_WORK,
+        // KEEP, so the schedule is not reset every time the app is opened — which would push the
+        // next run six hours out on a phone she opens every morning, i.e. never run it at all.
+        ExistingPeriodicWorkPolicy.KEEP,
+        PeriodicWorkRequestBuilder<LedgerWatchWorker>(LEDGER_WATCH_HOURS, TimeUnit.HOURS)
+            // No network constraint on purpose: everything this needs is the inbox and two local
+            // databases, and neither alert must wait for Wi-Fi.
+            .build(),
+    )
+}

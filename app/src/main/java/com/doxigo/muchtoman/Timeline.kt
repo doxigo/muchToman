@@ -154,7 +154,10 @@ internal enum class LedgerLens(val fa: String, val emptyFa: String) {
 fun TimelineScreen(
     ledger: LedgerView,
     bottomInset: androidx.compose.ui.unit.Dp,
+    /** True when messages are being read and this phone could not tell her one had landed. */
+    notifyBlocked: Boolean,
     onReview: () -> Unit,
+    onAskNotify: () -> Unit,
     onOpen: (LedgerEntry) -> Unit,
 ) {
     val today = remember { tehranDay(System.currentTimeMillis()) }
@@ -196,6 +199,20 @@ fun TimelineScreen(
             if (everything.isEmpty()) {
                 EmptyLedger()
                 return@Column
+            }
+
+            // Between the pill and the list, and only while something is actually waiting: this is
+            // an offer to be told about a backlog, and on a ledger with none of one it would be the
+            // app asking for a permission it has no use for — which is the launch-time prompt this
+            // app deliberately does not do, moved down a screen.
+            if (notifyBlocked && waiting > 0) {
+                Box(Modifier.padding(horizontal = Space.xl, vertical = Space.s)) {
+                    NotifyBlockedCard(
+                        "تراکنش‌ها همین‌جا جمع می‌شن، ولی تا اعلان روشن نباشه خبری از تراکنش " +
+                            "تازه بهت نمی‌رسه — و دسته‌بندی همون روز خیلی راحت‌تره.",
+                        onAskNotify,
+                    )
+                }
             }
 
             // Pinned above the list rather than scrolled with it. A filter she cannot see is a
@@ -389,9 +406,7 @@ private fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                txn.merchant.ifBlank {
-                    if (txn.sourceKind == "manual") "مورد دستی" else bankNameOf(txn.bank)
-                },
+                txnTitleFa(txn),
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
@@ -482,6 +497,18 @@ private fun EmptyLedger() {
 
 internal fun bankNameOf(bank: String): String =
     runCatching { Bank.valueOf(bank) }.getOrDefault(Bank.OTHER).fa
+
+/**
+ * What one transaction is called wherever it is named on its own: the merchant, or the bank that
+ * reported it when the message named nobody.
+ *
+ * One function because the row, the hero at the top of a card and the notification that asks her to
+ * file it are all naming the same thing, and three copies of the fallback would be three chances for
+ * one of them to call it «بانک» while the others call it «بانک سامان».
+ */
+internal fun txnTitleFa(txn: Txn): String = txn.merchant.ifBlank {
+    if (txn.sourceKind == "manual") "مورد دستی" else bankNameOf(txn.bank)
+}
 
 @Composable
 fun TransactionScreen(
@@ -809,9 +836,7 @@ private fun TransactionHero(
 
             Spacer(Modifier.height(Space.s))
             Text(
-                txn.merchant.ifBlank {
-                    if (txn.sourceKind == "manual") "مورد دستی" else bankNameOf(txn.bank)
-                },
+                txnTitleFa(txn),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = Hero.strong,
@@ -884,7 +909,7 @@ private const val CATEGORY_COLUMNS = 4
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CategoryGrid(
+internal fun CategoryGrid(
     choices: List<Category>,
     selectedId: String?,
     onPick: (Category) -> Unit,

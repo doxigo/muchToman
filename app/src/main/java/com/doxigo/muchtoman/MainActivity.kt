@@ -88,6 +88,34 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Every path that changes the ledger ends here, and this is the only place that publishes it.
+     *
+     * It exists for the second line. A budget is a figure over these entries, so *anything* that
+     * moves them can be the thing that crosses a cap — a message arriving, a receipt refiled, a
+     * transfer link rejected, a budget created against a month that is already spent. Eight callers
+     * each remembering to check would be eight chances to miss one, and the one it missed would be
+     * the alert that never came.
+     *
+     * [announceBudgets] is idempotent and says nothing when there is nothing new, so calling it on
+     * every publish costs a walk over a handful of budgets and buys the guarantee.
+     */
+    private suspend fun publishLedger(durable: DurableDb, derived: DerivedDb) {
+        val app = getApplication<Application>()
+        val view = ledgerView(derived, durable)
+        _state.update { it.copy(ledger = view) }
+        // Watching is scheduled by whether there is anything left to watch, so deleting the last
+        // budget on a phone that does not read messages stops the worker rather than leaving it to
+        // wake up and find nothing four times a day.
+        scheduleLedgerWatch(app, view.budgets.isNotEmpty() || store.smsEnabled)
+        announceBudgets(app, store, view.budgets)
+        // The other half is deliberately not announced here: this line runs with the app in front
+        // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
+        // is being told, so the note comes down and the mark moves past everything on screen —
+        // see [markFilingSeen].
+        markFilingSeen(app, store, view.review)
+    }
+
+    /**
      * The ledger, deliberately **not** behind the SMS permission.
      *
      * Ingest needs `READ_SMS`; deriving does not, and wiring the two together broke the one
@@ -390,7 +418,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.categories().putAll(
                     listOf(customCategory(nameFa, kind, glyph, System.currentTimeMillis()))
                 )
-                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+                publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "addCategory failed: $it") }
         }
     }
@@ -407,7 +435,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.categories().putAll(
                     listOf(category.copy(archived = true, updatedAt = System.currentTimeMillis()))
                 )
-                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+                publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "archiveCategory failed: $it") }
         }
     }
@@ -475,7 +503,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             android.util.Log.i("muchtoman", "ledger: +$added messages, $rows transactions")
         }
 
-        _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+        publishLedger(durable, derived)
 
         // Only a disagreement about the *same* evidence is worth a line, and anchored balances
         // are the only ones that qualify: a stated مانده is an absolute figure both sides must
@@ -554,7 +582,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
                 }
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
-                _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+                publishLedger(durable, derived)
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
         }
@@ -724,7 +752,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             runCatching { syncNow(durable, derived, session) }
                 .onSuccess { result ->
                     if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
-                    _state.update { it.copy(ledger = ledgerView(derived, durable)) }
+                    publishLedger(durable, derived)
                     refreshFamily(
                         session,
                         // faNumber, not the Int: interpolated straight in, these were the only
@@ -805,7 +833,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         updatedAt = now,
                     )
                 )
-                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+                publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
         }
     }
@@ -873,10 +901,43 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val durable = DurableDb.get(app)
             runCatching {
                 durable.goals().delete(id, System.currentTimeMillis())
-                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+                // Before the publish, not after: [announceBudgets] can only retract a note for a
+                // budget it can still see, and this one is about to stop existing. A warning about
+                // a budget she has deleted is the app talking about nothing.
+                clearBudgetNote(app, id)
+                publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "deleteGoal failed: $it") }
         }
     }
+
+    /**
+     * Which screen a tapped notification was about, held until the UI has moved there.
+     *
+     * The same one-shot shape [FamilyState.pendingPairing] uses: the intent's extra becomes a piece
+     * of state, the composition acts on it and then clears it — so a rotation does not send her back
+     * to the budget tab, and neither does the activity being recreated at sunset when the theme
+     * follows the system.
+     */
+    fun openTab(name: String?) {
+        val tab = name?.let { value -> tabs.firstOrNull { it.name == value } } ?: return
+        _state.update { it.copy(openTab = tab) }
+    }
+
+    fun consumeOpenTab() = _state.update { it.copy(openTab = null) }
+
+    /**
+     * The same one-shot, for the note that asks rather than reports — see [EXTRA_OPEN_DECK].
+     *
+     * Guarded on the edition as [openTab] is guarded by [tabs]: the lite build has no دفتر and no
+     * deck, and while nothing there can post the note, an intent can be sent to any exported
+     * activity by anyone.
+     */
+    fun openDeck(wanted: Boolean) {
+        if (!wanted || Tab.LEDGER !in tabs) return
+        _state.update { it.copy(openDeck = true) }
+    }
+
+    fun consumeOpenDeck() = _state.update { it.copy(openDeck = false) }
 
     /**
      * Fill the dev build with a household's year, or take it back out again.
@@ -919,13 +980,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     if (on) demoHoldings() else emptyList()
                 store.bankAccounts = banks
                 store.holdings = holdings
-                _state.update {
-                    it.copy(
-                        bankAccounts = store.bankAccounts,
-                        holdings = holdings,
-                        ledger = ledgerView(derived, durable),
-                    )
-                }
+                _state.update { it.copy(bankAccounts = store.bankAccounts, holdings = holdings) }
+                publishLedger(durable, derived)
                 // A year of daily totals, ending at what the holdings just written are actually
                 // worth — so گزارش دارایی has its «۶ ماه» and «۱ سال» too, and its newest point is
                 // the one the app would have recorded on its own. Cleared outright when the demo
@@ -948,7 +1004,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.decisions().put(
                     TxnDecision(uuid7(now), entry.txn.ref, DecisionKind.WORTH_IT, answer, now, now)
                 )
-                _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
+                publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "worthIt failed: $it") }
         }
     }
@@ -1117,6 +1173,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setSmsEnabled(on: Boolean) {
         store.smsEnabled = on
         _state.update { it.copy(smsEnabled = on) }
+        // The switch is one of the two things the watch is scheduled by, and turning it off is the
+        // only path that can take the last reason to watch away without touching a budget.
+        scheduleLedgerWatch(
+            getApplication<Application>(),
+            on || _state.value.ledger.budgets.isNotEmpty(),
+        )
         if (on) scanSms()
     }
 
@@ -1210,6 +1272,10 @@ data class UiState(
     val tse: TseSnapshot = TseSnapshot(),
     val ledger: LedgerView = LedgerView(),
     val family: FamilyState = FamilyState(),
+    /** Where a tapped notification wants her, until the composition has taken her there. */
+    val openTab: Tab? = null,
+    /** Whether that notification wanted the review deck in particular. Same one-shot life. */
+    val openDeck: Boolean = false,
 ) {
     val coins: List<Coin> get() = rates.coins
 
@@ -1276,6 +1342,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         appVm = ViewModelProvider(this)[AppVm::class.java]
         appVm.acceptPairing(intent?.dataString)
+        appVm.openTab(intent?.getStringExtra(EXTRA_OPEN_TAB))
+        appVm.openDeck(intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true)
         enableEdgeToEdge()
         setContent {
             val state by appVm.state.collectAsStateWithLifecycle()
@@ -1311,5 +1379,10 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         appVm.acceptPairing(intent.dataString)
+        // The usual case for either note: the app is already running, so the tap arrives here
+        // rather than through onCreate. Missing this is the note that opens the app on whatever
+        // tab she left it on, which reads as the notification having done nothing.
+        appVm.openTab(intent.getStringExtra(EXTRA_OPEN_TAB))
+        appVm.openDeck(intent.getBooleanExtra(EXTRA_OPEN_DECK, false))
     }
 }
