@@ -55,16 +55,47 @@ interface GoalDao {
     @Query("SELECT * FROM goal WHERE deleted = 0 ORDER BY created_at")
     suspend fun active(): List<Goal>
 
+    /** One live row by its id — the edit sheet can only be open on one that still exists. */
+    @Query("SELECT * FROM goal WHERE id = :id AND deleted = 0")
+    suspend fun byId(id: String): Goal?
+
     @Query("UPDATE goal SET deleted = 1, updated_at = :now WHERE id = :id")
     suspend fun delete(id: String, now: Long)
 }
 
-/** Where a goal stands, worked out from the transactions and nothing else. */
+/**
+ * How long a savings goal may run for, offered instead of a date picker.
+ *
+ * A deadline is what makes a goal something she can pace — [GoalProgress.perMonthRial] cannot
+ * exist without one — and it was the field that made the difference between the goal card being
+ * a progress bar and being a plan. A picker was the obvious way to ask for it and the wrong one:
+ * four pills are one tap, and a Jalali date picker is a screen, a keyboard, and four ways to
+ * choose a date in the past.
+ *
+ * Each lands on the **last day** of its own month, so «۶ ماه» chosen on the 28th is six whole
+ * months and not five and two days — see [jalaliMonthsAheadEnd].
+ */
+enum class GoalHorizon(val months: Int?, val fa: String) {
+    QUARTER(3, "۳ ماه"),
+    HALF(6, "۶ ماه"),
+    YEAR(12, "۱ سال"),
+
+    /** No deadline at all, which is a real answer: «هر وقت شد». */
+    OPEN(null, "بی‌مهلت"),
+    ;
+
+    /** The Tehran day this horizon ends on, or null for [OPEN]. */
+    fun endsOn(today: Long): Long? = months?.let { jalaliMonthsAheadEnd(today, it) }
+}
+
+/** Where a savings goal stands, worked out from the transactions and nothing else. */
 data class GoalProgress(
     val goal: Goal,
     val currentRial: Long,
     val targetRial: Long,
-    /** 0..1, clamped. A cap counts down: 1.0 means the cap is used up, not met. */
+    /** What is still to be put aside. Zero once the goal is met. */
+    val remainingRial: Long,
+    /** 0..1, clamped. */
     val share: Float,
     /**
      * True when a savings goal is under water — she has spent more than came in since it
@@ -76,42 +107,77 @@ data class GoalProgress(
      */
     val underWater: Boolean,
     val done: Boolean,
-    /** Null for a goal with no end. */
+    /** Days until the deadline, today counting as one. Null for a goal with no deadline. */
     val daysLeft: Int?,
-) {
-    val cap: Boolean get() = goal.kind == GoalKind.CAP
+    /**
+     * What she would have to keep each month from here to land on the target on time.
+     *
+     * The one figure that makes a goal actionable rather than decorative: «۵۰ میلیون تا اسفند» is
+     * an aspiration, «ماهی ۸ میلیون» is a decision about this month. Null when there is no
+     * deadline, nothing left to save, or under a month to do it in — a per-month rate over eleven
+     * days is a number with no month to spend it in, and the card says the days instead.
+     */
+    val perMonthRial: Long?,
+    /** True when the deadline has passed with the target unmet. Never true for a met goal. */
+    val expired: Boolean,
+)
+
+/**
+ * A savings goal counts what was kept: income minus spending since it started, with transfers and
+ * duplicates left out of both sides.
+ *
+ * Net cash flow is a proxy and it is the honest one available — the app has no notion of a
+ * separate savings pot, and inventing one would mean asking her to file every transaction twice.
+ * What it costs is that two goals running at once read the same net and so advance together;
+ * `startsOn` is what keeps that from being wrong as well as coarse, since each counts only from
+ * the month it was set in.
+ *
+ * ponytail: one net for every goal. Allocating savings between goals needs a way for her to say
+ * which pot a deposit went to, which is a whole screen and a decision nobody has asked for yet.
+ */
+fun goalProgress(goal: Goal, entries: List<LedgerEntry>, today: Long): GoalProgress {
+    val net = spendable(entries)
+        .filter { it.txn.day >= goal.startsOn }
+        .sumOf { it.txn.signedRial ?: 0L }
+    val current = net.coerceAtLeast(0L)
+    val remaining = (goal.targetRial - current).coerceAtLeast(0L)
+    // Today counts as a day she can still save in, for the reason [BudgetWindow.daysLeft] counts
+    // it: a zero on the deadline itself would read as "the time is up" on a day it is not.
+    val daysLeft = goal.endsOn?.let { (it - today + 1).toInt() }
+    val done = current >= goal.targetRial
+    return GoalProgress(
+        goal = goal,
+        currentRial = current,
+        targetRial = goal.targetRial,
+        remainingRial = remaining,
+        share = if (goal.targetRial > 0) {
+            (current.toDouble() / goal.targetRial).coerceIn(0.0, 1.0).toFloat()
+        } else {
+            0f
+        },
+        underWater = net < 0,
+        done = done,
+        daysLeft = daysLeft,
+        // Ceiling division on the months, so the rate is one she can actually finish on: floor
+        // would hand her a figure that lands short in the final month, which is the one month
+        // where being short is the whole outcome.
+        perMonthRial = daysLeft
+            ?.takeIf { !done && it >= JALALI_MONTH_DAYS && remaining > 0L }
+            ?.let { days ->
+                val months = days / JALALI_MONTH_DAYS
+                (remaining + months - 1) / months
+            },
+        expired = daysLeft != null && daysLeft <= 0 && !done,
+    )
 }
 
 /**
- * A savings goal counts what was kept — income minus spending since it started, transfers left
- * out of both. A cap counts what has been spent in its category this Jalali month.
+ * Days in an average Jalali month, as an integer, for turning a deadline into a monthly rate.
+ *
+ * Thirty rather than 30.44: the rate is rounded up anyway, so the shorter month is the one that
+ * cannot leave her short, and integer division is what keeps this out of Double arithmetic.
  */
-fun goalProgress(goal: Goal, entries: List<LedgerEntry>, today: Long): GoalProgress {
-    val rows = spendable(entries)
-    val current = when (goal.kind) {
-        GoalKind.CAP -> {
-            val from = jalaliMonthStart(today)
-            rows.filter { it.txn.day >= from && it.categoryId == goal.categoryId }
-                .sumOf { -(it.txn.signedRial ?: 0L).coerceAtMost(0L) }
-        }
-        else -> rows.filter { it.txn.day >= goal.startsOn }.sumOf { it.txn.signedRial ?: 0L }
-    }
-    val share = if (goal.targetRial > 0) {
-        (current.toDouble() / goal.targetRial).coerceIn(0.0, 1.0).toFloat()
-    } else {
-        0f
-    }
-    return GoalProgress(
-        goal = goal,
-        currentRial = if (goal.kind == GoalKind.CAP) current else current.coerceAtLeast(0L),
-        targetRial = goal.targetRial,
-        underWater = goal.kind != GoalKind.CAP && current < 0,
-        share = share,
-        // A cap is met by NOT reaching it, which is the opposite test and easy to get backwards.
-        done = if (goal.kind == GoalKind.CAP) current <= goal.targetRial else current >= goal.targetRial,
-        daysLeft = goal.endsOn?.let { (it - today).toInt() },
-    )
-}
+private const val JALALI_MONTH_DAYS = 30
 
 // ─────────────────────── «آیا ارزشش را داشت؟» ───────────────────────
 

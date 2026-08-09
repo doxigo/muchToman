@@ -1,10 +1,16 @@
 package com.doxigo.muchtoman
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Goals and «آیا ارزشش را داشت؟» — the entire reward system, and all of it arithmetic. */
+/**
+ * Savings goals and «آیا ارزشش را داشت؟».
+ *
+ * The other half of the reward system — the caps — is `BudgetTest`, which is where the cap
+ * arithmetic went when it stopped sharing a function with this.
+ */
 class GoalsTest {
 
     private var n = 0
@@ -37,9 +43,9 @@ class GoalsTest {
         )
     }
 
-    private fun goal(target: Long, kind: String = GoalKind.SAVE, category: String? = null) = Goal(
-        id = "g1", nameFa = "سفر", targetRial = target, kind = kind, categoryId = category,
-        period = GoalPeriod.ONCE, startsOn = first, createdAt = 0, updatedAt = 0,
+    private fun goal(target: Long, endsOn: Long? = null) = Goal(
+        id = "g1", nameFa = "سفر", targetRial = target, kind = GoalKind.SAVE,
+        period = GoalPeriod.ONCE, startsOn = first, endsOn = endsOn, createdAt = 0, updatedAt = 0,
     )
 
     @Test
@@ -61,18 +67,6 @@ class GoalsTest {
     }
 
     @Test
-    fun `a cap is met by not reaching it`() {
-        // Easy to get backwards, and getting it backwards congratulates her for overspending.
-        val rows = listOf(entry(first, -30_000_000, categoryId = "cat_dining"))
-        val under = goalProgress(goal(50_000_000, GoalKind.CAP, "cat_dining"), rows, first + 5)
-        assertEquals(30_000_000L, under.currentRial)
-        assertTrue("under the cap is met", under.done)
-
-        val over = goalProgress(goal(20_000_000, GoalKind.CAP, "cat_dining"), rows, first + 5)
-        assertTrue("over the cap is not", !over.done)
-    }
-
-    @Test
     fun `a goal under water shows nothing set aside, never a negative figure`() {
         // "−45 million of 50 million" is arithmetic read aloud, and it lands as a scolding.
         // Nothing was set aside; that is what the screen has to say.
@@ -88,6 +82,72 @@ class GoalsTest {
     fun `progress never runs past its own bar`() {
         val rows = listOf(entry(first, 900_000_000))
         assertEquals(1f, goalProgress(goal(10_000_000), rows, first + 5).share, 0.001f)
+    }
+
+    // ─────────────────────── the deadline, and the rate it implies ───────────────────────
+
+    @Test
+    fun `a goal with no deadline says nothing about days or a monthly rate`() {
+        val p = goalProgress(goal(50_000_000), listOf(entry(first, 10_000_000)), first + 5)
+        assertNull(p.daysLeft)
+        assertNull(p.perMonthRial)
+        assertTrue(!p.expired)
+    }
+
+    @Test
+    fun `the deadline day still counts as a day she can save in`() {
+        // A zero on the deadline itself would read as "the time is up" on a day it is not.
+        val ends = first + 30
+        assertEquals(1, goalProgress(goal(50_000_000, ends), emptyList(), ends).daysLeft)
+        assertEquals(0, goalProgress(goal(50_000_000, ends), emptyList(), ends + 1).daysLeft)
+    }
+
+    @Test
+    fun `the monthly rate is what lands on the target, rounded up`() {
+        // 40 million over three months is 13.34 a month, and flooring it lands short in the one
+        // month where landing short is the whole outcome.
+        val rows = listOf(entry(first, 10_000_000))
+        val p = goalProgress(goal(50_000_000, first + 89), rows, first)
+        assertEquals(40_000_000L, p.remainingRial)
+        assertEquals(3, p.daysLeft!! / 30)
+        assertEquals(13_333_334L, p.perMonthRial)
+        assertTrue(p.perMonthRial!! * 3 >= p.remainingRial)
+    }
+
+    @Test
+    fun `under a month left, there is no monthly rate to quote`() {
+        // A per-month figure over eleven days is a number with no month to spend it in.
+        val p = goalProgress(goal(50_000_000, first + 10), listOf(entry(first, 10_000_000)), first)
+        assertEquals(11, p.daysLeft)
+        assertNull(p.perMonthRial)
+    }
+
+    @Test
+    fun `a met goal is never asked to keep saving, and never expires`() {
+        val rows = listOf(entry(first, 60_000_000))
+        val p = goalProgress(goal(50_000_000, first + 1), rows, first + 40)
+        assertTrue(p.done)
+        assertEquals(0L, p.remainingRial)
+        assertNull(p.perMonthRial)
+        assertTrue("a goal she reached did not expire", !p.expired)
+    }
+
+    @Test
+    fun `a deadline that passed unmet says so, and says what was left`() {
+        val rows = listOf(entry(first, 10_000_000))
+        val p = goalProgress(goal(50_000_000, first + 10), rows, first + 40)
+        assertTrue(p.expired)
+        assertEquals(40_000_000L, p.remainingRial)
+    }
+
+    @Test
+    fun `a horizon lands on the last day of its own month`() {
+        // «۳ ماه» from مرداد is the end of آبان — the whole of the third month, not three days of it.
+        val late = jalaliDay(1405, 5, 28)
+        val end = GoalHorizon.QUARTER.endsOn(late)!!
+        assertEquals(JalaliDate(1405, 8, 30), jalaliOf(end))
+        assertEquals(JalaliDate(1405, 9, 1), jalaliOf(end + 1))
+        assertNull(GoalHorizon.OPEN.endsOn(late))
     }
 
     @Test

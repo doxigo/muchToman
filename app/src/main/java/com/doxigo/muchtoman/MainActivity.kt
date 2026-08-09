@@ -741,11 +741,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addGoal(name: String, targetRial: Long) {
+    /**
+     * A savings goal, with a deadline that makes it something she can pace.
+     *
+     * `startsOn` is the first of the current Jalali month rather than today, which is deliberate and
+     * is the one thing about a goal that could look invented: what she has already kept this month
+     * counts towards it. The card states the date it counts from, so the figure can be checked
+     * rather than taken on faith.
+     */
+    fun addGoal(name: String, targetRial: Long, horizon: GoalHorizon) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val now = System.currentTimeMillis()
+            val today = tehranDay(now)
             runCatching {
                 durable.goals().put(
                     Goal(
@@ -754,13 +763,42 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         targetRial = targetRial,
                         kind = GoalKind.SAVE,
                         period = GoalPeriod.ONCE,
-                        startsOn = jalaliMonthStart(tehranDay(now)),
+                        startsOn = jalaliMonthStart(today),
+                        endsOn = horizon.endsOn(today),
                         createdAt = now,
                         updatedAt = now,
                     )
                 )
                 _state.update { it.copy(ledger = ledgerView(DerivedDb.get(app), durable)) }
             }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
+        }
+    }
+
+    /**
+     * Renames, resizes or re-deadlines a savings goal, without moving the day it counts from —
+     * what she has kept since she set it stays counted, which is the whole reason to edit
+     * rather than start over.
+     *
+     * [horizon] is null when she left «تا کِی؟» alone and the deadline she already has stands.
+     * When she picks one it is measured from today, exactly as on a new goal: the pill says
+     * «۶ ماه», and six months from some day she cannot see would be the sheet lying.
+     */
+    fun editGoal(id: String, name: String, targetRial: Long, horizon: GoalHorizon?) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val goal = durable.goals().byId(id) ?: return@runCatching
+                val next = goal.copy(
+                    nameFa = name.take(40),
+                    targetRial = targetRial,
+                    endsOn = if (horizon != null) horizon.endsOn(tehranDay(now)) else goal.endsOn,
+                )
+                if (next == goal) return@runCatching
+                durable.goals().put(next.copy(updatedAt = now))
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "editGoal failed: $it") }
         }
     }
 
