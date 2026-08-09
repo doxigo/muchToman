@@ -860,12 +860,22 @@ private fun MonthSummary(month: PeriodReport, current: Boolean, onCount: (Boolea
                 if (short) "مانده$named" else "کسری$named",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
+                maxLines = 1,
             )
-            Text(
-                bidi(faCompact(tomanOf(abs(month.netRial)))),
-                style = figureStyle(tone, FontWeight.ExtraBold),
-                fontSize = 22.sp,
+            Spacer(Modifier.width(Space.m))
+            // The weight is on the figure, not on the label, and that is the whole fix. A Row
+            // measures its unweighted children first, so whichever of the two carries the weight
+            // is the one that yields: with it on the label, a nine-figure «مانده» took the width
+            // it wanted and «مانده این ماه» broke after «این». The label is a short fixed string
+            // and the figure is the thing that grows by orders of magnitude, so the figure is
+            // what shrinks — exactly as the two figures above it do.
+            BasicText(
+                text = bidi(faCompact(tomanOf(abs(month.netRial)))),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 15.sp, maxFontSize = 22.sp),
+                // Trailing, on the same edge as the exact figure printed under it.
+                style = figureStyle(tone, FontWeight.ExtraBold).copy(textAlign = TextAlign.End),
+                modifier = Modifier.weight(1f),
             )
         }
         Text(
