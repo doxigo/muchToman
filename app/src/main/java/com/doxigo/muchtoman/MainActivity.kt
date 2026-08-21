@@ -68,6 +68,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             disabledBanks = store.disabledBanks,
             strangeSenders = store.strangeSenders,
             dismissedUpdate = store.dismissedUpdate,
+            reportExcluded = store.reportExcluded,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -756,6 +757,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
         }
+    }
+
+    /** Which categories دخل و خرج leaves out. A way of reading the report, never a fact about money. */
+    fun setReportExcluded(ids: Set<String>) {
+        store.reportExcluded = ids
+        _state.update { it.copy(reportExcluded = ids) }
     }
 
     /**
@@ -1466,6 +1473,8 @@ data class UiState(
     val refreshingWallets: Set<String> = emptySet(),
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",
+    /** Category ids دخل و خرج leaves out — her reading preference, mirrored from [Store]. */
+    val reportExcluded: Set<String> = emptySet(),
     val tse: TseSnapshot = TseSnapshot(),
     val ledger: LedgerView = LedgerView(),
     val family: FamilyState = FamilyState(),
@@ -1488,6 +1497,10 @@ data class UiState(
             Math.round(bankToman * 10.0),
             tehranDay(System.currentTimeMillis()),
             ledger.budgets,
+            // The same single gate دخل و خرج reads: the exclusion set governs, and قرض و همسر
+            // are its shipped default rather than a mechanism of their own.
+            countPassThrough = true,
+            excluded = reportExcluded,
         )
     }
     val stocks: List<Stock> get() = tse.stocks

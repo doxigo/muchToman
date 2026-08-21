@@ -634,6 +634,20 @@ class Store(context: Context) {
         get() = prefs.getLong("smsScannedTo", 0L)
         set(v) { prefs.edit().putLong("smsScannedTo", v).apply() }
 
+    /**
+     * Category ids she has told دخل و خرج to leave out. A way of reading the report and not a
+     * fact about the ledger, which is why it lives here beside [budgetMarks] rather than in
+     * either database — nothing about her money changes when this does.
+     *
+     * The default is [PASS_THROUGH_CATEGORIES]: a قرض out and back is one movement told in two
+     * halves months apart, and counting it printed «۱۹۰٪ بیشتر از درآمدت خرج کردی» about money
+     * that netted nothing. That used to be a separate switch on the month card; it is a seed
+     * here instead, so there is one mechanism and it is hers.
+     */
+    var reportExcluded: Set<String>
+        get() = read("reportExcluded", PASS_THROUGH_CATEGORIES.keys)
+        set(v) = write("reportExcluded", v)
+
     private inline fun <reified T> read(key: String, fallback: T): T =
         prefs.getString(key, null)?.let {
             runCatching { JSON.decodeFromString<T>(it) }.getOrNull()

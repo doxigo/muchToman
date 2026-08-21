@@ -273,8 +273,17 @@ fun periodReport(
     entries: List<LedgerEntry>,
     range: ReportRange,
     countPassThrough: Boolean = false,
+    /**
+     * Categories she has asked the report to leave out — hers to choose, unlike
+     * [PASS_THROUGH_CATEGORIES], which is the app's own honesty about money that only passes
+     * through. Rows under these count in nothing here: not the sides, not the shares, not the
+     * savings rate, not the transaction count. The screen that reads this names what was left
+     * out, for the same reason the pass-through card does.
+     */
+    excluded: Set<String> = emptySet(),
 ): PeriodReport {
-    val inRange = spendable(entries).filter { it.txn.day in range }
+    val inRange = spendable(entries)
+        .filter { it.txn.day in range && it.categoryId !in excluded }
 
     var income = 0L
     var spent = 0L
@@ -324,7 +333,8 @@ fun monthReport(
     entries: List<LedgerEntry>,
     month: ReportMonth,
     countPassThrough: Boolean = false,
-): PeriodReport = periodReport(entries, ReportRange(month, month), countPassThrough)
+    excluded: Set<String> = emptySet(),
+): PeriodReport = periodReport(entries, ReportRange(month, month), countPassThrough, excluded)
 
 fun monthReport(entries: List<LedgerEntry>, year: Int, month: Int): PeriodReport =
     monthReport(entries, ReportMonth(year, month))
@@ -351,11 +361,13 @@ fun bufferDays(
     today: Long,
     over: Int = 90,
     countPassThrough: Boolean = false,
+    excluded: Set<String> = emptySet(),
 ): Int? {
     val from = today - over
     val daily = spendable(entries)
         .filter {
             it.txn.day in from..today && (it.txn.signedRial ?: 0) < 0 &&
+                it.categoryId !in excluded &&
                 (countPassThrough || it.categoryId !in PASS_THROUGH_CATEGORIES)
         }
         .groupBy { it.txn.day }
@@ -672,6 +684,8 @@ fun buildCashFlow(
     span: ReportSpan = ReportSpan.MONTH,
     /** Whether قرض and همسر are being counted as ordinary خرج و درآمد. Off is the honest default. */
     countPassThrough: Boolean = false,
+    /** Categories she has told the report to leave out — see [periodReport]. */
+    excluded: Set<String> = emptySet(),
 ): CashFlowReport {
     val available = availableReportMonths(entries, today)
     val here = reportMonthOf(today)
@@ -691,13 +705,13 @@ fun buildCashFlow(
     val current = month == here
     // One setting through every figure on the screen, or the card and the chart under it would
     // be answering the same question two ways — see [CashFlowReport].
-    val report = periodReport(entries, range, countPassThrough)
+    val report = periodReport(entries, range, countPassThrough, excluded)
     val before = range.before()
-    val previous = periodReport(entries, before, countPassThrough)
+    val previous = periodReport(entries, before, countPassThrough, excluded)
     // Refused outright for a past window: the runway is today's cash against today's habits, and
     // pairing it with تیر's spending would state a balance تیر never had.
     val buffer = if (current) {
-        bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough)
+        bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough, excluded = excluded)
     } else {
         null
     }
@@ -715,7 +729,7 @@ fun buildCashFlow(
         // Six bars where the window is shorter than six months, so a single month is still read
         // against the ones around it; the window's own length once it is longer than that.
         series = chartWindow(available, month, maxOf(use.months, 6))
-            .map { monthReport(entries, it, countPassThrough) },
+            .map { monthReport(entries, it, countPassThrough, excluded) },
         insights = narrate(report, had, entries, buffer, current),
         wins = quietWins(report, had, buffer, current),
         bufferDays = buffer,
@@ -770,15 +784,17 @@ fun buildStory(
     budgets: List<BudgetProgress> = emptyList(),
     /**
      * Home has no switch of its own, and should not grow one: this card is the glance, and the
-     * report is where a figure is taken apart. It reads at the default, so what it shows is what
-     * دخل و خرج opens on.
+     * report is where a figure is taken apart. It reads the same gate دخل و خرج reads, so the
+     * two screens can never state two different months.
      */
     countPassThrough: Boolean = false,
+    /** The categories she has told the reports to leave out — home is a report in miniature. */
+    excluded: Set<String> = emptySet(),
 ): HomeStory {
     val here = reportMonthOf(today)
-    val month = monthReport(entries, here, countPassThrough)
-    val previous = monthReport(entries, here.previous(), countPassThrough)
-    val buffer = bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough)
+    val month = monthReport(entries, here, countPassThrough, excluded)
+    val previous = monthReport(entries, here.previous(), countPassThrough, excluded)
+    val buffer = bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough, excluded = excluded)
     val had = previous.takeIf { it.transactions > 0 }
     val pressing = pressingBudget(budgets)
     return HomeStory(

@@ -276,14 +276,6 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     // so it resets with the month: arriving from the field's month band and finding a year's
     // figures because that is where she left the picker last week is the door having lied.
     var reportSpan by rememberSaveable { mutableStateOf(ReportSpan.MONTH) }
-    // Whether قرض and همسر count as ordinary خرج و درآمد. A way of reading the report rather than
-    // a fact about the ledger, so it lives up here with the window and never in the database.
-    //
-    // Unlike the month and the span it does *not* reset when a door opens the report: those two
-    // are what a door is a door to, and this is a standing answer to «is a قرض spending?» — a
-    // household that has said no once should not have to say it again every time it arrives from
-    // the field. It survives a process death for the same reason.
-    var countPassThrough by rememberSaveable { mutableStateOf(false) }
     fun openReport(mode: ReportMode) {
         reportMode = mode
         reportMonth = null
@@ -624,7 +616,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             state.bankToman,
             reportMonth,
             reportSpan,
-            countPassThrough,
+            state.reportExcluded,
         ) {
             val today = tehranDay(System.currentTimeMillis())
             buildCashFlow(
@@ -633,7 +625,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 today = today,
                 selected = reportMonth?.let { reportMonthOf(it) } ?: reportMonthOf(today),
                 span = reportSpan,
-                countPassThrough = countPassThrough,
+                // The exclusion set is the one gate now: قرض و همسر ride it as the shipped
+                // default rather than through a second mechanism of their own.
+                countPassThrough = true,
+                excluded = state.reportExcluded,
             )
         }
         ReportScreen(
@@ -645,8 +640,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             mode = reportMode,
             onMode = { reportMode = it },
             onWindow = { month, span -> reportMonth = month.startDay; reportSpan = span },
-            onCountPassThrough = { countPassThrough = it },
             bottomInset = pad.calculateBottomPadding(),
+            categories = state.ledger.categories,
+            excluded = state.reportExcluded,
+            onExcluded = vm::setReportExcluded,
             entries = state.ledger.entries,
             // The drill-down's rows open the transaction's own page; closing it lands back on
             // this report, because the tab underneath never moved.

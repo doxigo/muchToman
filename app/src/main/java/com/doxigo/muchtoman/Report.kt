@@ -12,6 +12,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -130,10 +131,14 @@ fun ReportScreen(
     onMode: (ReportMode) -> Unit,
     /** The window دخل و خرج should read: the month it ends at, and how far back it reaches. */
     onWindow: (ReportMonth, ReportSpan) -> Unit,
-    /** Whether قرض and همسر should count as ordinary خرج و درآمد — see [PassThroughNote]. */
-    onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
     onBack: (() -> Unit)? = null,
+    /** The live categories, for naming and choosing what دخل و خرج leaves out. */
+    categories: List<Category> = emptyList(),
+    /** Category ids she has told this report to leave out. */
+    excluded: Set<String> = emptySet(),
+    onExcluded: (Set<String>) -> Unit = {},
+    /** Her «می‌ارزید؟» answers, summed over this report's own window. */
     /** The ledger itself, for the category drill-down — the rows behind every share bar. */
     entries: List<LedgerEntry> = emptyList(),
     /** Opens one transaction's own page, from the drill-down's list. */
@@ -199,8 +204,10 @@ fun ReportScreen(
                     cash = cash,
                     smsEnabled = smsEnabled,
                     onWindow = onWindow,
-                    onCountPassThrough = onCountPassThrough,
                     bottomInset = bottomInset,
+                    categories = categories,
+                    excluded = excluded,
+                    onExcluded = onExcluded,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
                     modifier = Modifier
@@ -602,8 +609,10 @@ private fun CashFlowReportContent(
     cash: CashFlowReport,
     smsEnabled: Boolean,
     onWindow: (ReportMonth, ReportSpan) -> Unit,
-    onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
+    categories: List<Category> = emptyList(),
+    excluded: Set<String> = emptySet(),
+    onExcluded: (Set<String>) -> Unit = {},
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -632,7 +641,7 @@ private fun CashFlowReportContent(
                 EmptyMonth(cash.range)
             }
         } else {
-            MonthSummary(period, cash.current, onCountPassThrough)
+            MonthSummary(period, cash.current)
         }
 
         // Two months is the least a comparison can be made of. One month drawn alone is a chart
@@ -647,6 +656,13 @@ private fun CashFlowReportContent(
             CategoryDetail(period, entries, onOpenEntry)
         }
 
+        // Under the categories it governs, and present even when the window is empty while an
+        // exclusion stands — a report quietly missing a category with no way to see why is the
+        // friendlier kind of lie this screen refuses everywhere else.
+        if (categories.isNotEmpty()) {
+            Spacer(Modifier.height(Space.l))
+            ReportExclusions(categories, excluded, onExcluded)
+        }
         // Findings and wins in one grid, not two runs of one: paired by kind, each run could end
         // on a lone card and leave a hole mid-page.
         val cards = cash.insights + cash.wins
@@ -819,33 +835,19 @@ private fun EmptyMonth(range: ReportRange) {
  * different question: not «which was bigger» but «what is left», and a deficit is never printed
  * as a negative amount under the word «مانده».
  *
- * A third figure joins them in any window holding money that only passed through, and it is a
- * peer of the other two rather than a footnote to them: fifty million lent is the largest thing
- * that happened to her account that month, and the card that reports the month cannot state it
- * in a smaller voice than the eight million she spent on food. It is only drawn while the money
- * is being *held apart* — once she folds it in it is inside درآمد and خرج, and a column
- * repeating it would count the same Toman twice on one card.
+ * What this card no longer carries is the pass-through machinery — the third قرض column and the
+ * «حسابش کن» switch. Which categories the report counts is one question with one answer now,
+ * the exclusion sheet under دسته‌ها, and قرض و همسر ride it as its shipped default rather than
+ * as a second mechanism beside it.
  */
 @Composable
-private fun MonthSummary(month: PeriodReport, current: Boolean, onCount: (Boolean) -> Unit) {
+private fun MonthSummary(month: PeriodReport, current: Boolean) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
-    // Gold in both themes, which is the whole reason it is `secondary` and not `primary`: the
-    // scheme's primary is deep green on paper and gold in the dark — see [LightColors] — so a
-    // third quantity wearing it would be a second green beside درآمد for half the country and
-    // the colour of every button on screen for the other half. `tertiary` is spoken for too; it
-    // means gain, and this money is neither gain nor loss.
-    val passed = MaterialTheme.colorScheme.secondary
-    val apart = month.passedRial > 0 && !month.countedPassThrough
     // «درآمد این ماه» on the month she is standing in, because a half-written month has to say
     // so where the figure is. On a longer window it is «درآمد» and nothing else: «۶ ماه گذشته»
     // does not fit in half a phone's width beside the word, the title two lines up already names
     // the months, and «تا امروز» under it already says the last of them is not over.
-    //
-    // And it goes again the moment a third figure joins the pair, for the same reason it was
-    // never on a longer window: at three columns on a 320dp phone «درآمد این ماه» measured as
-    // «درآمد این …». The card names the month in its own heading, says «تا امروز» beneath it and
-    // prints «مانده این ماه» below, so the words lost here are the third and fourth copy of them.
-    val named = if (current && month.range.count == 1 && !apart) " ${month.range.recentFa}" else ""
+    val named = if (current && month.range.count == 1) " ${month.range.recentFa}" else ""
     Panel {
         Row(Modifier.fillMaxWidth()) {
             FlowSide(
@@ -861,28 +863,13 @@ private fun MonthSummary(month: PeriodReport, current: Boolean, onCount: (Boolea
                 MaterialTheme.colorScheme.onSurface,
                 Modifier.weight(1f),
             )
-            if (apart) {
-                Spacer(Modifier.width(Space.m))
-                FlowSide(
-                    // The window's name is not repeated here. The other two carry it because
-                    // they are the month's headline pair; a third copy of «این ماه» on the
-                    // narrowest column of the card is the same words three times, and the figure
-                    // shrinks to pay for them. The label is «قرض», «همسر» or «قرض و همسر» — only
-                    // what this window actually holds, so the common case is one short word.
-                    month.passedFa,
-                    month.passedRial,
-                    passed,
-                    Modifier.weight(1f),
-                )
-            }
         }
-        if (month.incomeRial > 0 || month.spentRial > 0 || apart) {
+        if (month.incomeRial > 0 || month.spentRial > 0) {
             Spacer(Modifier.height(Space.l))
             FlowSplit(
-                listOfNotNull(
+                listOf(
                     month.incomeRial to INCOME_TINT,
                     month.spentRial to spend,
-                    (month.passedRial to passed).takeIf { apart },
                 ),
             )
         }
@@ -930,83 +917,6 @@ private fun MonthSummary(month: PeriodReport, current: Boolean, onCount: (Boolea
                 .padding(top = Space.xs),
             textAlign = TextAlign.End,
         )
-        // Attached to مانده rather than set off by a second divider: this line is what «مانده»
-        // means in a month money passed through, so it belongs to that figure and not to a
-        // section of its own. Drawn whenever there is any such money, counted or not — the way
-        // back has to be as visible as the way out.
-        if (month.passedRial > 0) {
-            Spacer(Modifier.height(Space.m))
-            PassThroughNote(month, onCount)
-        }
-    }
-}
-
-/**
- * The line that keeps the card honest, and the switch that changes what it counts.
- *
- * A summary reading «خرج: ۸ م» in a month when fifty million left the account is the friendly
- * kind of lie, and refusing it is the only reason the figures above are allowed to leave a قرض
- * out at all: the money is named, in Toman, on the same card, one line under the مانده whose
- * meaning it changes. That is also why the switch lives here and not up beside the span picker.
- * The screen already carries three control rows, and a fourth naming a rule she cannot see the
- * effect of is a setting; here it sits on the evidence, and the sentence is its own label.
- *
- * Sentence and pill are one target, because there is one thing to do and the sentence says what
- * doing it would change. `Role.Switch` so it announces a state rather than a journey — she is
- * turning counting on, not being taken somewhere.
- */
-@Composable
-private fun PassThroughNote(month: PeriodReport, onCount: (Boolean) -> Unit) {
-    val counting = month.countedPassThrough
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.field))
-            .toggleable(value = counting, role = Role.Switch, onValueChange = onCount)
-            .heightIn(min = 48.dp)
-            .semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            // Says where the money stands, never how much it is. The figure is already on this
-            // card twice over — the column above prints it while it is held apart, and the
-            // دسته‌ها list below prints it once it is counted — and a third copy here ran the
-            // sentence to three lines on a 320dp phone and made the row taller than the مانده
-            // it belongs to.
-            //
-            // The verb is the button's. «حساب نشده» answered by «حسابش کن» is one word used
-            // twice, so the state and the action cannot be read as two different subjects — and
-            // at fourteen Persian characters to a line here, it is also what makes «قرض» sit on
-            // one line and «قرض و همسر حساب نشده» break in the middle instead of leaving «نیست.»
-            // alone on a line of its own.
-            "${month.passedFa} " + if (counting) "حساب شده." else "حساب نشده.",
-            fontSize = 12.sp,
-            lineHeight = 19.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(Space.s))
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(Radius.pill))
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-                .padding(horizontal = Space.m, vertical = Space.s),
-        ) {
-            Text(
-                // Names the action, never the state. «حساب نشده» beside a sentence that already
-                // says so is the same fact twice with no verb anywhere on the row.
-                //
-                // On the screen's own well — the material the stepper, the picker's track and the
-                // chart's selected column are all cut from — rather than in coloured text. In the
-                // dark theme the interactive colour is the gold this card just spent on its third
-                // figure, and a gold word under a gold figure is one of them too many.
-                if (counting) "جداش کن" else "حسابش کن",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-        }
     }
 }
 
@@ -1602,3 +1512,145 @@ private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
  * and three rows of which two are dots is exactly the card that read as broken.
  */
 @Composable
+
+/**
+ * What this report is deliberately not counting, and the door to changing that.
+ *
+ * The note is the honesty half and it is not optional: every figure above — the sides, the
+ * shares, the savings rate, the bars — is computed without these categories, and a report that
+ * hid money without saying so would be lying in exactly the way the pass-through card exists to
+ * prevent. The door stays quiet when nothing is excluded, because then there is nothing to
+ * confess — only an offer.
+ */
+@Composable
+private fun ReportExclusions(
+    categories: List<Category>,
+    excluded: Set<String>,
+    onExcluded: (Set<String>) -> Unit,
+) {
+    var choosing by rememberSaveable { mutableStateOf(false) }
+    val names = remember(categories, excluded) {
+        categories.filter { it.id in excluded }.map { it.nameFa }
+    }
+
+    Column {
+        if (names.isNotEmpty()) {
+            Text(
+                "دسته‌های ${names.joinToString("، ")} به خواست خودت توی هیچ‌کدوم از " +
+                    "عددهای این گزارش حساب نشدن.",
+                fontSize = 13.sp,
+                lineHeight = 21.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = Space.m),
+            )
+        }
+        PillButton(
+            if (excluded.isEmpty()) "کنار گذاشتن دسته‌ها از گزارش" else "ویرایش دسته‌های کنارگذاشته",
+            { choosing = true },
+        )
+    }
+
+    if (choosing) {
+        ExcludeSheet(
+            categories = categories,
+            excluded = excluded,
+            onExcluded = onExcluded,
+            onDismiss = { choosing = false },
+        )
+    }
+}
+
+/**
+ * Which categories the report leaves out, chosen live: every tap recomputes the figures behind
+ * the scrim, so what she is doing is visible as she does it and the sheet needs no apply button.
+ *
+ * Every category is offered, قرض و همسر included — they used to be governed by their own switch
+ * on the month card, and two doors to the same money let the two disagree. They arrive here
+ * pre-excluded on a fresh install instead, so the honest default survives with one mechanism.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExcludeSheet(
+    categories: List<Category>,
+    excluded: Set<String>,
+    onExcluded: (Set<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+
+    val offered = remember(categories) {
+        categories.filter {
+            !it.archived && it.kind != CategoryKind.TRANSFER && it.id != CAT_UNCATEGORISED
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            Text(
+                "کدوم‌ها حساب نشن؟",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                "هر دسته‌ای که بزنی از همهٔ عددهای دخل و خرج کنار گذاشته می‌شه — " +
+                    "توی دفتر سر جاش می‌مونه.",
+                fontSize = 13.sp,
+                lineHeight = 21.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s),
+            )
+
+            Spacer(Modifier.height(Space.l))
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+                verticalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                offered.forEach { category ->
+                    FilterCategoryChip(
+                        name = category.nameFa,
+                        chosen = category.id in excluded,
+                        onToggle = {
+                            onExcluded(
+                                if (category.id in excluded) excluded - category.id
+                                else excluded + category.id,
+                            )
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                "بستن",
+                { close(onDismiss) },
+                voice = ButtonVoice.PRIMARY,
+                modifier = Modifier.fillMaxWidth(),
+                minHeight = 52.dp,
+            )
+            if (excluded.isNotEmpty()) {
+                Spacer(Modifier.height(Space.s))
+                PillButton(
+                    "هیچ‌کدوم حذف نشه",
+                    { onExcluded(emptySet()); close(onDismiss) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}

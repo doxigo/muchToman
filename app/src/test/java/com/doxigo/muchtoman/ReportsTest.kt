@@ -549,6 +549,88 @@ class ReportsTest {
     // ─────────────────────────── the report, assembled ───────────────────────────
 
     /** خرداد, تیر and مرداد, with a transfer and a duplicate that must not reach any figure. */
+    // ─────────────────────────── categories she excludes ───────────────────────────
+
+    @Test
+    fun `an excluded category is in none of the figures`() {
+        val entries = listOf(
+            entry(first, -1_000_000L, category = "خواربار", categoryId = "cat_groceries"),
+            entry(first + 1, -2_000_000L, category = "کافیس", categoryId = "cat_cafes"),
+            entry(first + 2, 5_000_000L, category = "درآمد", categoryId = CAT_INCOME),
+        )
+        val report = periodReport(entries, ReportRange(here, here), excluded = setOf("cat_cafes"))
+        assertEquals(1_000_000L, report.spentRial)
+        assertEquals(5_000_000L, report.incomeRial)
+        // Out of the count too: an excluded row is not a transaction this report saw.
+        assertEquals(2, report.transactions)
+        assertTrue(report.spendingByCategory.none { it.first == "کافیس" })
+    }
+
+    @Test
+    fun `an excluded income category comes off that side the same way`() {
+        val entries = listOf(
+            entry(first, 5_000_000L, category = "حقوق", categoryId = "cat_salary"),
+            entry(first + 1, 2_000_000L, category = "مامان", categoryId = "cat_mom"),
+        )
+        val report = periodReport(entries, ReportRange(here, here), excluded = setOf("cat_mom"))
+        assertEquals(5_000_000L, report.incomeRial)
+        assertTrue(report.incomeByCategory.none { it.first == "مامان" })
+    }
+
+    @Test
+    fun `exclusion reaches the runway too`() {
+        val today = first + 20
+        val entries = (0 until 20L).flatMap { i ->
+            listOf(
+                entry(first + i, -2_000_000L, categoryId = "cat_a"),
+                entry(first + i, -1_000_000L, category = "قهوه", categoryId = "cat_b"),
+            )
+        }
+        assertEquals(6, bufferDays(entries, 20_000_000L, today))
+        assertEquals(10, bufferDays(entries, 20_000_000L, today, excluded = setOf("cat_b")))
+    }
+
+    @Test
+    fun `nothing excluded is the report unchanged`() {
+        val entries = listOf(
+            entry(first, -1_000_000L),
+            entry(first + 1, 5_000_000L, category = "درآمد", categoryId = CAT_INCOME),
+        )
+        assertEquals(
+            periodReport(entries, ReportRange(here, here)),
+            periodReport(entries, ReportRange(here, here), excluded = emptySet()),
+        )
+    }
+
+    // ─────────────────────────── one category, taken apart ───────────────────────────
+
+    @Test
+    fun `a category window holds its own rows, its share, and its months`() {
+        val entries = listOf(
+            entry(first, -3_000_000L, category = "خوراک", categoryId = "cat_food"),
+            entry(first + 1, -1_000_000L, category = "خوراک", categoryId = "cat_food"),
+            entry(first + 2, -6_000_000L, category = "خرید", categoryId = "cat_x"),
+            // Same name, other side: an income row must not leak into a spending window.
+            entry(first + 3, 2_000_000L, category = "خوراک", categoryId = "cat_food"),
+            // Last month's خوراک: out of the window's rows, inside the trend.
+            entry(first - 5, -5_000_000L, category = "خوراک", categoryId = "cat_food"),
+        )
+        val period = periodReport(entries, ReportRange(here, here))
+        val window = categoryWindow(entries, "خوراک", income = false, ReportRange(here, here), period.spentRial)
+
+        assertEquals(4_000_000L, window.totalRial)
+        assertEquals(10_000_000L, window.sideRial)
+        assertEquals(0.4, window.share!!, 1e-9)
+        assertEquals(2, window.rows.size)
+        // Newest first, and only this window's.
+        assertEquals(first + 1, window.rows.first().txn.day)
+        // Six months ending at the window's own, oldest first; last month's five million is there.
+        assertEquals(6, window.trend.size)
+        assertEquals(here, window.trend.last().first)
+        assertEquals(4_000_000L, window.trend.last().second)
+        assertEquals(5_000_000L, window.trend[4].second)
+    }
+
     private fun threeMonths(): List<LedgerEntry> = listOf(
         entry(jalaliDay(1405, 3, 5), 60_000_000, category = "حقوق"),
         entry(jalaliDay(1405, 3, 8), -20_000_000, category = "خوراکی"),
