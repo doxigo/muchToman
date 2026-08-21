@@ -423,6 +423,8 @@ data class LedgerEntry(
     val ownerMemberId: String = "",
     val ownerName: String = "",
     val categoryEditorName: String = "",
+    /** Her own words about this transaction, or blank. A [DecisionKind.NOTE] decision. */
+    val note: String = "",
 )
 
 /** Everything the ledger screens need, read in one pass. */
@@ -514,6 +516,9 @@ suspend fun ledgerEntries(
     val members = durable.familyMembers().all().associateBy { it.id }
     val currentMemberId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
     val categoryDecisions = durable.decisions().ofKind(DecisionKind.CATEGORY).associateBy { it.ref }
+    val notes = durable.decisions().ofKind(DecisionKind.NOTE)
+        .mapNotNull { d -> d.value?.takeIf { it.isNotBlank() }?.let { d.ref to it } }
+        .toMap()
     val links = derived.links().all()
     val classes = derived.classes().all().associateBy { it.ref }
     val hidden = hiddenRefs(links)
@@ -536,6 +541,7 @@ suspend fun ledgerEntries(
             ownerMemberId = ownerMemberId,
             ownerName = members[ownerMemberId]?.name.orEmpty(),
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),
+            note = notes[txn.ref].orEmpty(),
         )
     }
     return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory))

@@ -633,6 +633,41 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Her note on one transaction — the one field that is words rather than an answer. Blank
+     * takes it back. A [DecisionKind.NOTE] decision like any other, so it survives a re-derive
+     * and replays onto a rebuilt ledger the way a category does.
+     */
+    fun setNote(entry: LedgerEntry, text: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                val clean = text.trim().take(200)
+                val previous = durable.decisions().forRef(entry.txn.ref)
+                    .firstOrNull { it.kind == DecisionKind.NOTE }
+                if (previous == null && clean.isEmpty()) return@runCatching
+                if (previous != null && previous.value.orEmpty() == clean) return@runCatching
+                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                val session = loadSession(durable)
+                durable.decisions().put(
+                    TxnDecision(
+                        id = previous?.id ?: uuid7(now),
+                        ref = entry.txn.ref,
+                        kind = DecisionKind.NOTE,
+                        value = clean,
+                        createdAt = previous?.createdAt ?: now,
+                        updatedAt = now,
+                        deleted = clean.isEmpty(),
+                        memberId = session?.member.orEmpty(),
+                        familyRef = entry.txn.familyRef,
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setNote failed: $it") }
+        }
+    }
+
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 

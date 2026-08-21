@@ -476,6 +476,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 onLoadSource = vm::sourceOf,
                 onBack = { transactionRef = null },
                 categoryUse = state.ledger.categoryUse,
+                onNote = vm::setNote,
             )
             return
         }
@@ -492,6 +493,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onLoadSource = vm::sourceOf,
             onDone = { deck = false },
             onAutoFile = vm::categoriseAll,
+            onNote = vm::setNote,
         )
         return
     }

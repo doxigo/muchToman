@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -518,6 +519,8 @@ fun TransactionScreen(
     onBack: () -> Unit,
     /** What she files things under, which decides the order of the grid. */
     categoryUse: Map<String, Double> = emptyMap(),
+    /** Her note on this transaction. Null hides the section — the deck has no room for prose. */
+    onNote: ((LedgerEntry, String) -> Unit)? = null,
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
@@ -599,6 +602,17 @@ fun TransactionScreen(
                 )
             }
 
+            if (onNote != null) {
+                item(key = "note") {
+                    Column(gutter) {
+                        Spacer(Modifier.height(Space.xxl))
+                        SectionHeading("یادداشت")
+                        Spacer(Modifier.height(Space.m))
+                        NoteField(entry, onNote)
+                    }
+                }
+            }
+
             item(key = "details") {
                 Column(gutter) {
                     Spacer(Modifier.height(Space.xxl))
@@ -670,6 +684,29 @@ private fun LearnSimilarToggle(txn: Txn, checked: Boolean, onChange: (Boolean) -
         Switch(checked = checked, onCheckedChange = null)
     }
 }
+/**
+ * Her own words about the row, saved when she says so rather than on every keystroke.
+ *
+ * The save pill only exists while the draft and the stored note disagree, and its disappearance
+ * after the tap is the receipt: what is on screen is what the ledger holds.
+ */
+@Composable
+private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit) {
+    var draft by rememberSaveable(entry.txn.ref) { mutableStateOf(entry.note) }
+    Column {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(200) },
+            placeholder = { Text("مثلاً کادوی تولد مامان") },
+            shape = RoundedCornerShape(Radius.field),
+            minLines = 2,
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "یادداشت تراکنش" },
+        )
+        if (draft.trim() != entry.note) {
+            Spacer(Modifier.height(Space.s))
+            PillButton("ذخیره یادداشت", { onNote(entry, draft) }, voice = ButtonVoice.PRIMARY)
         }
     }
 }
@@ -1083,6 +1120,8 @@ fun ReviewDeck(
     onDone: () -> Unit,
     /** The whole backlog at once — see [autoFilePlan]. Null hides the offer. */
     onAutoFile: ((List<Pair<LedgerEntry, String>>) -> Unit)? = null,
+    /** Her note on the card, so the deck and the transaction page stay one screen. */
+    onNote: ((LedgerEntry, String) -> Unit)? = null,
 ) {
     var index by remember { mutableStateOf(0) }
     var skipped by remember { mutableStateOf(setOf<String>()) }
@@ -1209,6 +1248,13 @@ fun ReviewDeck(
                     },
                     selectedLabel = "انتخاب‌شده",
                 )
+
+                if (onNote != null) {
+                    Spacer(Modifier.height(Space.xxl))
+                    SectionHeading("یادداشت")
+                    Spacer(Modifier.height(Space.m))
+                    NoteField(entry, onNote)
+                }
 
                 Spacer(Modifier.height(Space.xxl))
                 SectionHeading("جزئیات")
