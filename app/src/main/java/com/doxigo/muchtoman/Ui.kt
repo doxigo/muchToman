@@ -97,7 +97,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -120,6 +119,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -196,6 +196,36 @@ internal fun Panel(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier.panel(), content = content)
+}
+
+/**
+ * The screen's name, in one display voice for every root page. Black, not ExtraBold: the
+ * heading is the one line on a page allowed to be heavy the way the hero figure is, and six
+ * screens each picking their own 28sp was six slightly different apps.
+ */
+@Composable
+internal fun ScreenTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        fontSize = 30.sp,
+        fontWeight = FontWeight.Black,
+        color = MaterialTheme.colorScheme.onBackground,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.semantics { heading() },
+    )
+}
+
+/** A sheet's question, in the same voice — ten sheets had drifted to three sizes of it. */
+@Composable
+internal fun SheetTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        fontSize = 26.sp,
+        fontWeight = FontWeight.Black,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.semantics { heading() },
+    )
 }
 
 /**
@@ -371,26 +401,15 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // What is behind the status bar decides the colour of the clock and the signal icons, and
-    // on this screen that changes as she scrolls: the field is dark in both themes, the paper
-    // under it is not. Forcing light icons for the whole list put a white clock on cream once
-    // the field scrolled away; following the theme put a black one on the field. So follow
-    // whichever is actually up there. The report and settings pages start at the background
-    // and simply follow the theme, as does the navigation bar, which never leaves it.
+    // The clock and the signal icons simply follow the theme now: the hero is a card floating
+    // on the background rather than a field running under the glass, so every screen starts at
+    // the paper. The one full-bleed forest surface left is the lock screen, which wants light
+    // icons in both themes.
     val listState = rememberLazyListState()
-    val heroUnderStatusBar by remember {
-        derivedStateOf { listState.firstVisibleItemIndex == 0 }
-    }
-    // The tabs that start at the paper rather than at the field, plus every pushed screen.
-    val paperUnderStatusBar = !state.locked && (
-        settings || companion || categoriesPage || deck || transactionRef != null ||
-            tab == Tab.LEDGER || tab == Tab.BUDGET || tab == Tab.REPORT ||
-            !heroUnderStatusBar
-        )
     val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    LaunchedEffect(paperUnderStatusBar, lightScheme) {
+    LaunchedEffect(state.locked, lightScheme) {
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
-            isAppearanceLightStatusBars = paperUnderStatusBar && lightScheme
+            isAppearanceLightStatusBars = !state.locked && lightScheme
             isAppearanceLightNavigationBars = lightScheme
         }
     }
@@ -536,7 +555,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         bottomBar = {
             // A full-width «اضافه کردن دارایی» used to sit above this, and the + in the field
             // already opens the same picker on this tab. Two buttons for one action, one of
-            // them a gold slab against a gold slug, and the bar is where she looks anyway.
+            // them a green slab against a green slug, and the bar is where she looks anyway.
             if (tabs.size > 1) {
                 TabBar(
                     selected = tab,
@@ -568,17 +587,6 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onOpen = { transactionRef = it.txn.ref },
             onAddTxn = { addingTxn = true },
         )
-        if (addingTxn) {
-            ManualTxnSheet(
-                categories = state.ledger.categories,
-                categoryUse = state.ledger.categoryUse,
-                onSave = { rial, categoryId, merchant, note, at ->
-                    vm.addManualTxn(rial, categoryId, merchant, note, at)
-                    addingTxn = false
-                },
-                onDismiss = { addingTxn = false },
-            )
-        }
         return@Scaffold
       }
       if (tab == Tab.BUDGET) {
@@ -682,7 +690,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                     state = pullState,
                     isRefreshing = state.refreshing && pulled,
                     containerColor = Hero.top,
-                    color = Hero.gold,
+                    color = Hero.accent,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding(),
@@ -702,16 +710,74 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + Space.l),
         ) {
-            item(key = "hero") {
-                HeroField(
-                    state = state,
-                    usdRate = effective["usd"],
-                    onRefresh = vm::refreshAll,
-                    onReport = { openReport(it) },
+            // Her, above the money, on the paper — the greeting is the door to تنظیمات, the way
+            // every phone on the planet gets you to your own account.
+            item(key = "top") {
+                HomeTopBar(
+                    name = state.name,
                     onSettings = { settings = true },
-                    onAdd = { adding = true; vm.refreshStocksForPicker() },
-                    portfolio = portfolio,
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(edge)
+                        .padding(top = Space.s),
                 )
+            }
+
+            // The answer, as the one deep-green object on the page: a card, not a field. The
+            // paper around it is what makes it read as *the* thing rather than as wallpaper.
+            item(key = "hero") {
+                Box(Modifier.padding(edge).padding(top = Space.s)) {
+                    HeroCard(
+                        state = state,
+                        usdRate = effective["usd"],
+                        onReport = { openReport(it) },
+                        portfolio = portfolio,
+                    )
+                }
+            }
+
+            // What she might do next, directly under the number that prompts it — real verbs
+            // only, each a circle with its name under it.
+            item(key = "actions") {
+                // Fixed cells clustered to the centre, not thirds of the screen: two circles
+                // spread to three slots' positions read as a row with a button missing, and
+                // the sibling heroes have to share one rhythm whatever their count.
+                Row(
+                    Modifier.padding(edge).padding(top = Space.l).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.CenterHorizontally),
+                ) {
+                    val cell = Modifier.width(108.dp)
+                    ActionCircle(
+                        label = "اضافه کردن",
+                        icon = Icons.Rounded.Add,
+                        onClick = { adding = true; vm.refreshStocksForPicker() },
+                        modifier = cell,
+                    )
+                    if (!portfolio) {
+                        // Money no message will report, written down where she is standing.
+                        ActionCircle(
+                            label = "تراکنش دستی",
+                            onClick = { addingTxn = true },
+                            modifier = cell,
+                        ) { tint -> Canvas(Modifier.size(24.dp)) { inset(3.dp.toPx()) { drawLedger(tint) } } }
+                    }
+                    if (tabs.size == 1) {
+                        // The lite edition has no bar, so this is the report's only door.
+                        ActionCircle(
+                            label = "گزارش",
+                            onClick = { openReport(ReportMode.ASSETS) },
+                            modifier = cell,
+                        ) { tint -> BarsIcon(tint) }
+                    }
+                    ActionCircle(
+                        label = "تازه کردن",
+                        icon = Icons.Rounded.Refresh,
+                        spinning = state.refreshing,
+                        enabled = !state.refreshing,
+                        onClick = vm::refreshAll,
+                        modifier = cell,
+                    )
+                }
             }
 
             // Under the total, not above it: the money is what she opened the app for, and an
@@ -730,12 +796,18 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 // row at the bottom, because what she opened the app for is how things are
                 // going, not a list of what she owns.
                 val story = state.story
-                // The month itself is on the field now. What is left down here is the one case
-                // the field cannot carry: nothing recorded yet, which is not a status but a
-                // thing to do — switch the messages on — and a task does not belong on the hero.
-                if (story.month.transactions == 0) {
+                // The month as its own card — the cash-flow report's opening paragraph, and the
+                // door to the rest of it. Nothing recorded yet is not a status but a thing to
+                // do, so that case gets the quiet-start card instead.
+                if (story.month.transactions > 0) {
+                    item(key = "month") {
+                        Box(Modifier.padding(edge).padding(top = Space.xl)) {
+                            MonthFlow(story, onOpen = { openReport(ReportMode.CASH_FLOW) })
+                        }
+                    }
+                } else {
                     item(key = "flow") {
-                        Box(Modifier.padding(edge).padding(top = Space.l)) {
+                        Box(Modifier.padding(edge).padding(top = Space.xl)) {
                             QuietStart(state.smsEnabled)
                         }
                     }
@@ -839,23 +911,32 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         }
         }
 
-        // Once the field has scrolled off, it is paper up there and the list's own headings
-        // were sliding under the clock. A strip in the background colour, arriving exactly
-        // when the status-bar icons flip, gives them something to sit on. It cannot simply
-        // always be there: while the field is up top, this would be a pale band across it.
-        val strip by animateFloatAsState(
-            if (paperUnderStatusBar) 1f else 0f,
-            animationSpec = tween(Motion.fast),
-            label = "statusStrip",
-        )
+        // The list scrolls under a transparent status bar, and its headings need ground to
+        // slide beneath rather than colliding with the clock. The strip is the background's
+        // own colour, so at rest it is invisible and mid-scroll it is simply the paper
+        // continuing behind the glass.
         Box(
             Modifier
                 .fillMaxWidth()
                 .windowInsetsTopHeight(WindowInsets.statusBars)
-                .alpha(strip)
                 .background(MaterialTheme.colorScheme.background),
         )
       }
+    }
+
+    // At this level rather than inside دفتر: the sheet opens from the ledger's own header and
+    // from the action row on خانه — paying cash at the till is not a moment she is standing in
+    // any particular tab for — and either way its row lands in the same book.
+    if (addingTxn) {
+        ManualTxnSheet(
+            categories = state.ledger.categories,
+            categoryUse = state.ledger.categoryUse,
+            onSave = { rial, categoryId, merchant, note, at ->
+                vm.addManualTxn(rial, categoryId, merchant, note, at)
+                addingTxn = false
+            },
+            onDismiss = { addingTxn = false },
+        )
     }
 
     if (banks) {
@@ -914,9 +995,9 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
 }
 
 /**
- * The reason the app exists, and now the ground the app stands on rather than a card floating
- * on it: a deep green field that runs to both edges and off the top of the screen, with the
- * total set in gold across it. Everything below defers to it.
+ * The reason the app exists: the one deep-green object in the app, with the total set in
+ * bright green across it. A card floating on the paper, all four corners round — the ground
+ * around it is what gives it its weight, and everything below defers to it.
  */
 @Composable
 internal fun HeroPanel(
@@ -926,41 +1007,94 @@ internal fun HeroPanel(
     Box(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = Radius.hero, bottomEnd = Radius.hero))
+            .clip(RoundedCornerShape(Radius.hero))
             .background(Brush.verticalGradient(listOf(Hero.top, Hero.bottom))),
     ) {
         Canvas(Modifier.matchParentSize()) {
             drawRect(
                 Brush.radialGradient(
-                    colors = listOf(Hero.gold.copy(alpha = 0.13f), Color.Transparent),
+                    colors = listOf(Hero.accent.copy(alpha = 0.13f), Color.Transparent),
                     center = Offset(size.width * 0.88f, size.height * -0.05f),
                     radius = size.width * 0.95f,
                 ),
             )
         }
         Column(
-            Modifier
-                .statusBarsPadding()
-                .padding(start = Space.xl, end = Space.xl, top = Space.s, bottom = Space.xl),
+            Modifier.padding(horizontal = Space.xl, vertical = Space.xl),
             content = content,
         )
     }
 }
 
+/**
+ * Her, and the door to تنظیمات — one object at the top of the page instead of two.
+ *
+ * تنظیمات is not on the tab bar and should not be: [Tab] is five money questions she asks daily,
+ * تنظیمات is a room she visits twice a year, and a slot on that bar is rent paid every day. The
+ * greeting is the door — the disc, the name and the chevron are one target, the way every phone
+ * on the planet gets you to your own account.
+ *
+ * In the disc, a drawn mark and not her initial: [CompanionGlyph] is the app's one drawing of a
+ * person, in the same pen every category mark is drawn with. Only the label carries the state —
+ * with a name it greets her; without one it reads «تنظیمات», because on a first run the app's
+ * own name at the top of its own screen tells her nothing, while the empty state below is at
+ * that very moment telling her to go «از تنظیمات» and turn the پیامک‌ها on.
+ */
 @Composable
-internal fun HeroField(
+private fun HomeTopBar(name: String, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+    val her = name.trim()
+    Row(
+        modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(role = Role.Button, onClick = onSettings)
+            .heightIn(min = 48.dp)
+            .padding(end = Space.s)
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (her.isNotBlank()) "$her، تنظیمات" else "تنظیمات"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompanionGlyph(MaterialTheme.colorScheme.onSurface, size = 24.dp)
+        }
+        Spacer(Modifier.width(Space.m))
+        Text(
+            if (her.isNotBlank()) "سلام، $her" else "تنظیمات",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            // `fill = false` so a short name keeps the chevron against the word rather than
+            // pushed to the far edge: the arrow belongs to the door, not to the page.
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+internal fun HeroCard(
     state: UiState,
     usdRate: Double?,
-    onRefresh: () -> Unit,
     /**
-     * Which report, not just «the report». Every affordance on this field is a door to one of
+     * Which report, not just «the report». Every affordance on this card is a door to one of
      * the two, and the one it names is the one it has to open: a change pill that lands on
-     * دخل و خرج is the field asking a question and the report answering a different one.
+     * دخل و خرج is the card asking a question and the report answering a different one.
      */
     onReport: (ReportMode) -> Unit,
-    onSettings: () -> Unit,
-    onAdd: () -> Unit,
-    /** Which screen this field is heading — the one thing that changes below the total. */
+    /** Which screen this card is heading — it decides the door shown when there is no pill. */
     portfolio: Boolean,
 ) {
     val total = state.totals.toman
@@ -992,11 +1126,8 @@ internal fun HeroField(
     }
 
     HeroPanel {
-            HeroAccount(state.name, onSettings)
-
-            Spacer(Modifier.height(Space.m))
-            // Label and dollar figure share a line, so the top of the field reads as one
-            // sentence — "مجموع دارایی شما ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather
+            // Label and dollar figure share a line, so the top of the card reads as one
+            // sentence — "جمع دارایی‌هات ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather
             // than a second headline.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1050,10 +1181,10 @@ internal fun HeroField(
                 label = "total",
             ) { figure ->
                 BasicText(
-                    text = heroFigure(figure, Hero.gold),
+                    text = heroFigure(figure, Hero.accent),
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 60.sp),
-                    style = figureStyle(Hero.gold, FontWeight.Black),
+                    style = figureStyle(Hero.accent, FontWeight.Black),
                 )
             }
 
@@ -1076,9 +1207,6 @@ internal fun HeroField(
                 modifier = Modifier.padding(top = Space.xs),
             )
 
-            // The month band is خانه's door to the report, so the field only needs a standalone
-            // link when there is no band — a first month with nothing recorded in it yet.
-            val band = !portfolio && state.story.month.transactions > 0
             when {
                 change != null -> {
                     Spacer(Modifier.height(Space.m))
@@ -1089,79 +1217,28 @@ internal fun HeroField(
                 // Before there are thirty days to compare against, the pill has nothing it can
                 // honestly state. A door that only appears in the second month is a door nobody
                 // finds, so the slot keeps its target and drops the figure.
-                // No spacer: the link's own 48dp target already carries more air than the pill
-                // needs, and stacked they left a hole under the total.
                 // It says «گزارش دارایی» on it, so that is where it goes.
-                !portfolio && !band -> ReportLink(onClick = { onReport(ReportMode.ASSETS) })
+                !portfolio -> ReportLink(onClick = { onReport(ReportMode.ASSETS) })
             }
 
-            if (portfolio) {
-                // Only real verbs here: اضافه کردن adds and تازه کردن refetches. On خانه every
-                // one of these was navigation wearing a verb's icon — «اضافه کردن» went to this
-                // very screen, and the tab bar was already going there — so there the band
-                // carries the month instead. گزارش went the same way the moment the report took
-                // a slot on the bar: a door two inches above another door to the same room.
-                Spacer(Modifier.height(Space.xl))
-                Row(Modifier.fillMaxWidth()) {
-                    HeroAction(
-                        label = "اضافه کردن",
-                        icon = Icons.Rounded.Add,
-                        onClick = onAdd,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // …except in the lite edition, which has no bar. There this is the report's
-                    // only door, and [tabs] is what says so.
-                    if (tabs.size == 1) {
-                        HeroAction(
-                            label = "گزارش",
-                            // The lite edition's only report is the asset one — see [reportModes].
-                            onClick = { onReport(ReportMode.ASSETS) },
-                            modifier = Modifier.weight(1f),
-                        ) { BarsIcon(Hero.strong) }
-                    }
-                    HeroAction(
-                        label = "تازه کردن",
-                        icon = Icons.Rounded.Refresh,
-                        spinning = state.refreshing,
-                        enabled = !state.refreshing,
-                        onClick = onRefresh,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            } else if (band) {
-                // What she has, and how the month is going, in one screen without scrolling.
-                // This used to sit in a card below the fold, which meant the answer the home
-                // screen exists to give arrived only if she thought to scroll for it.
-                Spacer(Modifier.height(Space.l))
-                HorizontalDivider(color = Hero.hairline)
-                Spacer(Modifier.height(Space.l))
-                // The band *is* the cash-flow report in short, so it opens the long form of
-                // itself rather than the asset chart it used to land on.
-                HeroMonth(state.story, onOpen = { onReport(ReportMode.CASH_FLOW) })
-            }
-
-            Spacer(Modifier.height(if (portfolio) Space.xl else Space.l))
+            Spacer(Modifier.height(Space.l))
             HorizontalDivider(color = Hero.hairline)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                // The control carries its own optical space, so the strip does not need the
-                // full step above it when one is there.
-                modifier = Modifier.padding(top = if (portfolio) Space.m else Space.xs),
+                modifier = Modifier.padding(top = Space.m),
             ) {
                 val failed = state.error != null && state.rates.updatedAt == 0L
+                // Anything worth a caution sentence on this card dims the dot too — cached
+                // rates under a failed fetch are usable, but a bright green all-clear beside
+                // «اتصال نشد» is the colour contradicting the words.
+                val trouble = failed || stale || state.error != null
                 // Colour confirms; the words carry it. A dot on its own would be the one
                 // thing in this app that says "something is wrong" in hue alone.
                 Box(
                     Modifier
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(
-                            when {
-                                failed -> Hero.warn
-                                stale -> Hero.warn
-                                else -> Hero.mint
-                            },
-                        ),
+                        .background(if (trouble) Hero.warn else Hero.mint),
                 )
                 Spacer(Modifier.width(Space.s))
                 Text(
@@ -1171,22 +1248,11 @@ internal fun HeroField(
                         else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
                     },
                     fontSize = 13.sp,
-                    // Not gold: inside this field gold is the answer and the action, and a
-                    // warning wearing it read as a second call to act.
+                    // Not the accent: on this card green is the answer, and a warning wearing
+                    // it read as a second call to act.
                     color = if (stale || failed) Hero.warn else Hero.muted,
                     modifier = Modifier.weight(1f),
                 )
-                // The circle that used to carry this is gone from خانه, and the strip is where
-                // it belonged all along: this line is about how fresh the numbers are, and the
-                // control that changes that answer now sits at the end of the sentence stating
-                // it. Labelled, not a bare glyph — a control you can be told about over the
-                // phone has to have a name.
-                if (!portfolio) {
-                    HeroRefresh(
-                        spinning = state.refreshing,
-                        onClick = onRefresh,
-                    )
-                }
             }
             if (state.error != null && state.rates.updatedAt > 0L) {
                 Text(
@@ -1197,149 +1263,6 @@ internal fun HeroField(
                     modifier = Modifier.padding(top = Space.xs),
                 )
             }
-    }
-}
-
-/**
- * Her, and the door to تنظیمات — one object at the top of the field instead of two.
- *
- * تنظیمات is not on the tab bar and should not be: [Tab] is five money questions she asks daily,
- * تنظیمات is a room she visits twice a year, and a slot on that bar is rent paid every day —
- * the same argument that already moved the household off it. What was wrong was not the missing
- * slot, it was the door. A bare 24dp gear in `Hero.muted` was the only control on this field
- * with no container under it: the action circles, the change pill, the refresh chip all sit on
- * `Hero.well`, so the one thing she had to *find* was the one thing drawn as decoration.
- *
- * So the greeting becomes the door — the disc, the name and the chevron are one target, the way
- * every phone on the planet gets you to your own account. Built like the field's three other
- * quiet doors ([ChangePill], [ReportLink], [HeroRefresh]): pill-clipped, a 48dp target around a
- * shorter visible object, muted ink. It is louder than the gear was and still quieter than the
- * total, which is the only thing up here allowed to shout.
- *
- * In the disc, a drawn mark and not her initial. A monogram is a label for a row in a list of
- * people — which is exactly the job it does in خانواده and should keep doing there — and one
- * letter alone on a green field is a letter, not a picture of anybody. [CompanionGlyph] is the
- * app's one drawing of a person, and it is drawn with [pen], the same nib every category mark in
- * the ledger is drawn with: 2dp in 24 here against [CategoryIcon]'s 1.6 in 18 is the same ratio
- * to two figures, which is what makes it read as one hand rather than as an icon fetched in.
- *
- * 24dp in a 38dp disc, and not the 20 the gear sat at. The glyph insets an eighth of its own box
- * and its widest stroke spans 0.84 of what is left, so 20dp of box was 13dp of ink — a mark
- * floating in a circle. The box is bigger so the drawing lands where the gear's did.
- *
- * It is the same mark تنظیمات puts on the خانواده row one tap below, and that is the point
- * rather than a collision. It says *a person* in both places; the word beside it says which —
- * her name here, «خانواده» there. Two drawings of a head and shoulders that far apart is the
- * near-duplicate this app spends its icon comments refusing.
- *
- * Only the label carries the state. With a name it greets her; without one it reads «تنظیمات»,
- * because on a first run the app's own name at the top of its own screen tells her nothing,
- * while the empty state two inches below is at that very moment telling her to go «از تنظیمات»
- * and turn the پیامک‌ها on.
- */
-@Composable
-private fun HeroAccount(name: String, onClick: () -> Unit) {
-    val her = name.trim()
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .clickable(role = Role.Button, onClick = onClick)
-            // The disc is 38dp so it does not out-weigh the 54dp actions below it; the row
-            // around it carries the target, exactly as the pills further down do.
-            .heightIn(min = 48.dp)
-            .padding(end = Space.s)
-            .semantics(mergeDescendants = true) {
-                contentDescription = if (her.isNotBlank()) "$her، تنظیمات" else "تنظیمات"
-            },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(38.dp).clip(CircleShape).background(Hero.well),
-            contentAlignment = Alignment.Center,
-        ) {
-            CompanionGlyph(Hero.strong, size = 24.dp)
-        }
-        Spacer(Modifier.width(Space.m))
-        Text(
-            if (her.isNotBlank()) "سلام، $her" else "تنظیمات",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = Hero.muted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            // `fill = false` so a short name keeps the chevron against the word rather than
-            // pushed to the far edge: the arrow belongs to the door, not to the field.
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        Icon(
-            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = Hero.muted,
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
-
-/**
- * Refresh, at the end of the line that says how old the numbers are.
- *
- * Pull-to-refresh does the same thing and is the gesture most people will use. This is the one
- * that can be named down a telephone, which is why it survives the circle it used to live in.
- */
-@Composable
-private fun HeroRefresh(spinning: Boolean, onClick: () -> Unit) {
-    val angle = if (spinning) {
-        val spin = rememberInfiniteTransition(label = "strip-spin")
-        spin.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                tween(900, easing = LinearEasing), RepeatMode.Restart,
-            ),
-            label = "strip-angle",
-        ).value
-    } else {
-        0f
-    }
-
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .clickable(role = Role.Button, enabled = !spinning, onClick = onClick)
-            // The visible pill is 32dp; the row around it takes the press, so the target
-            // clears the floor without a control that looks like it wants the whole line.
-            .heightIn(min = 48.dp)
-            .padding(start = Space.s),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(Radius.pill))
-                .background(Hero.well)
-                .padding(horizontal = Space.m, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Muted, not `strong`: this annotates the sentence beside it, and at full contrast
-            // it became the brightest thing in the band — a second call to act, sitting
-            // directly above the tab bar's gold one.
-            Icon(
-                Icons.Rounded.Refresh,
-                contentDescription = null,
-                tint = Hero.muted,
-                modifier = Modifier
-                    .size(15.dp)
-                    // Counter-clockwise, like every other spinner in this app: the icon is
-                    // drawn with its arrowhead leading anticlockwise.
-                    .graphicsLayer { rotationZ = -angle },
-            )
-            Spacer(Modifier.width(Space.xs))
-            Text(
-                "تازه کردن",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = Hero.muted,
-            )
-        }
     }
 }
 
@@ -1372,21 +1295,19 @@ private fun ReportLink(onClick: () -> Unit) {
 }
 
 /**
- * One circular action on the field. Revolut's device, and the reason it works: the things she
- * might do next sit directly under the number that prompts them, all the same size, so none of
- * them is the app arguing for itself.
+ * One circular action under the hero card. Wise's device, and the reason it works: the things
+ * she might do next sit directly under the number that prompts them, all the same size and all
+ * on the paper, so none of them is the app arguing for itself.
  */
 @Composable
-private fun HeroAction(
+private fun ActionCircle(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     spinning: Boolean = false,
     enabled: Boolean = true,
-    /** How many things are waiting. Zero shows nothing at all. */
-    badge: Int = 0,
-    content: @Composable () -> Unit = {},
+    content: @Composable (Color) -> Unit = {},
 ) {
     // Only while it actually spins: an infinite transition left running costs a frame
     // callback for ever, on the one screen that is open all day.
@@ -1404,16 +1325,17 @@ private fun HeroAction(
         0f
     }
 
-    // The circle takes the press. A ripple inside a 54dp disc is most of the disc, so the
+    // The circle takes the press. A ripple inside a 56dp disc is most of the disc, so the
     // action reads as flashing rather than as being pushed; the give is what makes it feel
     // like a button under the thumb.
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
     val give by animateFloatAsState(
-        if (pressed) 0.96f else 1f,
-        tween(Motion.fast, easing = Motion.enter),
+        if (pressed) 0.94f else 1f,
+        Motion.press(),
         label = "press",
     )
+    val ink = MaterialTheme.colorScheme.onPrimaryContainer
 
     Column(
         modifier = modifier
@@ -1430,55 +1352,35 @@ private fun HeroAction(
             .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(contentAlignment = Alignment.TopEnd) {
-            Box(
-                Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .background(Hero.well),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (icon != null) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = Hero.strong,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .graphicsLayer { rotationZ = -angle },
-                    )
-                } else {
-                    content()
-                }
-            }
-            // A count, and only when there is one. Nothing here is overdue and nothing is
-            // wrong, so it wears the field's own gold rather than a red alarm — the app is
-            // reporting, not nagging.
-            //
-            // Gold on `bottom`, not on Hero.well: `well` is a 10%-white raised surface, and a
-            // number drawn in it lands translucent-white on near-white and simply is not there.
-            if (badge > 0) {
-                Box(
-                    Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(Hero.gold),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        faNumber(badge.coerceAtMost(99).toDouble()),
-                        style = figureStyle(Hero.bottom, FontWeight.ExtraBold),
-                        fontSize = 11.sp,
-                    )
-                }
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .alpha(if (enabled) 1f else 0.6f),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = ink,
+                    modifier = Modifier
+                        .size(24.dp)
+                        // Counter-clockwise, like every other spinner in this app: the icon
+                        // is drawn with its arrowhead leading anticlockwise.
+                        .graphicsLayer { rotationZ = -angle },
+                )
+            } else {
+                content(ink)
             }
         }
         Spacer(Modifier.height(Space.s))
         Text(
             label,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = Hero.muted,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1681,12 +1583,7 @@ private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Un
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "نسخه ${bidi(release.name)} اومد",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("نسخه ${bidi(release.name)} اومد")
             Text(
                 // A release cut without a note is not an error worth showing her as one.
                 if (release.notes.isEmpty()) "توضیحی همراهش نیومده، ولی از این که داری تازه‌تره."
@@ -1721,6 +1618,7 @@ private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Un
             Button(
                 onClick = { close { onClose(); openUrl(context, release.downloadUrl) } },
                 shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 60.dp),
@@ -1754,30 +1652,6 @@ private fun BarsIcon(tint: Color) {
             drawRoundRect(tint, Offset(0f, size.height * 0.45f), Size(w, size.height * 0.55f), r)
             drawRoundRect(tint, Offset((size.width - w) / 2f, size.height * 0.2f), Size(w, size.height * 0.8f), r)
             drawRoundRect(tint, Offset(size.width - w, 0f), Size(w, size.height), r)
-        }
-    }
-}
-
-/**
- * Three ruled lines: a page of the ledger, drawn rather than imported.
- *
- * The icons artifact this project pins is the core set, and it has no receipt or list glyph.
- * Three rounded rects cost less than a second dependency and match [BarsIcon] beside them,
- * which is the point — the two live in the same row and must read as one family.
- */
-@Composable
-private fun LedgerIcon(tint: Color) {
-    Canvas(
-        Modifier
-            .size(24.dp)
-            .semantics { contentDescription = "دفتر تراکنش‌ها" },
-    ) {
-        inset(2.dp.toPx()) {
-            val h = size.height * 0.14f
-            val r = CornerRadius(h / 2f)
-            drawRoundRect(tint, Offset(0f, size.height * 0.10f), Size(size.width, h), r)
-            drawRoundRect(tint, Offset(0f, size.height * 0.43f), Size(size.width * 0.78f, h), r)
-            drawRoundRect(tint, Offset(0f, size.height * 0.76f), Size(size.width * 0.52f, h), r)
         }
     }
 }
@@ -1971,12 +1845,7 @@ private fun BankSheet(
                 .imePadding()
                 .padding(horizontal = Space.xl),
         ) {
-            Text(
-                "حساب‌های بانکی",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("حساب‌های بانکی")
             Text(
                 "موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.",
                 fontSize = 13.sp,
@@ -2591,13 +2460,23 @@ private fun EmptyHint() {
             .padding(top = Space.huge, bottom = Space.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // The tab set's own two coins, not an emoji: a sticker in the one empty moment the
+        // screen has would be the app changing hands exactly where it introduces itself.
+        val ink = MaterialTheme.colorScheme.onPrimaryContainer
         Box(
             Modifier
                 .size(84.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
-        ) { Text("👛", fontSize = 40.sp) }
+        ) {
+            Canvas(
+                Modifier
+                    .size(40.dp)
+                    // The near coin knocks its hole out of the glyph, not the disc under it.
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+            ) { inset(3.dp.toPx()) { drawAssets(ink) } }
+        }
         Spacer(Modifier.height(Space.xl))
         Text(
             "هنوز چیزی اضافه نکردی",
@@ -2697,12 +2576,7 @@ private fun PickTypeSheet(
                 .imePadding()
                 .padding(horizontal = Space.xl)
         ) {
-            Text(
-                "چی می‌خوای اضافه کنی؟",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("چی می‌خوای اضافه کنی؟")
 
             OutlinedTextField(
                 value = query,
@@ -2879,20 +2753,31 @@ internal fun PillButton(
     minHeight: Dp = 44.dp,
 ) {
     val fill = when (voice) {
-        ButtonVoice.PRIMARY -> MaterialTheme.colorScheme.primary
+        ButtonVoice.PRIMARY -> Cta.fill
         ButtonVoice.TONAL -> MaterialTheme.colorScheme.surfaceVariant
         ButtonVoice.HERO -> Hero.well
     }
     val ink = when (voice) {
-        ButtonVoice.PRIMARY -> MaterialTheme.colorScheme.onPrimary
+        ButtonVoice.PRIMARY -> Cta.ink
         ButtonVoice.TONAL -> MaterialTheme.colorScheme.onSurface
         ButtonVoice.HERO -> Hero.strong
     }
+    // The give under the thumb, from the frame the finger lands — response is the whole of
+    // what makes a flat pill feel like a button rather than a printed one.
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val give by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.press(), label = "give")
     Box(
         modifier
+            .scale(give)
             .clip(RoundedCornerShape(Radius.pill))
             .background(fill)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(
+                role = Role.Button,
+                interactionSource = press,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .heightIn(min = minHeight)
             .padding(horizontal = Space.l),
         contentAlignment = Alignment.Center,
@@ -3309,7 +3194,7 @@ private fun EditSheet(
                     Text(
                         holding?.nameOr(type.fa) ?: type.fa,
                         fontSize = 26.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Black,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -3831,6 +3716,7 @@ private fun EditSheet(
                 },
                 enabled = source == AmountSource.MANUAL || (!walletBusy && selectedWallet != null),
                 shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 60.dp),
@@ -3839,7 +3725,7 @@ private fun EditSheet(
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = Cta.ink,
                     )
                     Spacer(Modifier.width(Space.s))
                 }

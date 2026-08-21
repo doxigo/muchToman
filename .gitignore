@@ -19,3 +19,6 @@ pwa/dist/
 keystore.properties
 *.jks
 *.keystore
+
+# impeccable transient review artifacts
+.impeccable/

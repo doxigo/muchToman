@@ -230,17 +230,7 @@ fun TimelineScreen(
                 // act on, and a truncated number is worse than no pill at all.
                 val labelled = waiting == 0 || maxWidth >= 300.dp
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "دفتر",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        // The backstop under the rule above, for a system font scale no dp
-                        // threshold can see coming. It should never be reached on a real phone.
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).semantics { heading() },
-                    )
+                    ScreenTitle("دفتر", modifier = Modifier.weight(1f))
                     if (onAddTxn != null) {
                         AddTxnButton(onAddTxn, labelled)
                         Spacer(Modifier.width(Space.s))
@@ -343,7 +333,7 @@ fun TimelineScreen(
  * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and the one
  * action on this screen that writes money is not the place to make her guess; «تراکنش» after the
  * mark costs a few millimetres and answers it outright. The pill is the neutral well the chips
- * below wear rather than the review pill's filled gold — two solid golds on one line would both
+ * below wear rather than the review pill's filled green — two solid fills on one line would both
  * be claiming «this one» — and the mark alone carries the interactive colour, which is what keeps
  * it from reading as a third filter.
  *
@@ -475,13 +465,7 @@ private fun CategoryFilterSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "کدوم دسته‌ها؟",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("کدوم دسته‌ها؟")
             Text(
                 "هر چندتا که می‌خوای بزن؛ دفتر فقط همون‌ها رو نشون می‌ده.",
                 fontSize = 13.sp,
@@ -562,17 +546,16 @@ internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> U
 }
 
 /**
- * A day, as one object.
+ * A day: a quiet heading, then its transactions as plain rows on the paper.
  *
- * The rows used to float on the background as a single undifferentiated stack, and the day they
- * belonged to was a 13sp grey line easy to scroll straight past. Banding them is what `group` is
- * for — "the container a band of rows sits in, as one object rather than a stack of cards" — and
- * it lets the heading carry the day's net, which is the one figure the ledger owns and no other
- * screen shows.
+ * The rows used to sit inside a grouped band. Containers are for money that *is* somewhere — an
+ * account, a budget, a cap — and activity is not a container, it is a stream: Wise's own split,
+ * and the reason the asset list keeps its bands while this list breathes. The heading still
+ * carries the day's net, the one figure the ledger owns and no other screen shows.
  *
- * The figure is the sum of the rows actually in the band, so under a [LedgerLens] it is that day's
- * income or that day's spending rather than its net — which is what the heading of a filtered day
- * should say, and why the picker stays on screen to name which of the three she is reading.
+ * The figure is the sum of the rows actually under it, so under a [LedgerLens] it is that day's
+ * income or that day's spending rather than its net — which is what the heading of a filtered
+ * day should say, and why the picker stays on screen to name which of the three she is reading.
  */
 @Composable
 private fun DayBand(
@@ -589,42 +572,35 @@ private fun DayBand(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = Space.xl, bottom = Space.s, start = Space.s, end = Space.s),
+            .padding(top = Space.xl, bottom = Space.xs, start = Space.xs, end = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             faDay(day, today),
-            fontSize = 15.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f).semantics { heading() },
         )
         // Only when it is actually summarising. A day holding one movement already prints this
         // exact figure two lines down, and under a [LedgerLens] most days hold exactly one — so
-        // the filter turned a rare bit of redundancy into the dominant pattern on the screen. A
-        // heading that repeats the row beneath it is noise wearing the costume of a summary.
+        // the filter turned a rare bit of redundancy into the dominant pattern on the screen.
         if (net != 0L && moved.size > 1) {
             Text(
                 faSignedCompact(tomanOf(net), net > 0),
                 // A step under the rows it summarises: the day's figure is context for them,
                 // not another entry competing with them.
                 style = figureStyle(
-                    if (net > 0) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (net > 0) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     FontWeight.Bold,
                 ),
                 fontSize = 13.sp,
             )
         }
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.group))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        rows.forEach { entry ->
-            TimelineRow(entry, onClick = { onOpen(entry) })
-        }
+    rows.forEach { entry ->
+        TimelineRow(entry) { onOpen(entry) }
     }
 }
 
@@ -634,7 +610,7 @@ private fun DayBand(
  * It was a full-width card, and a card is what the app uses for something to read — so the only
  * control on the screen was wearing the costume of content, taking a whole band of the scroll to
  * say what the tab bar already says with a badge. A pill in the empty half of the title line
- * says it in the app's own «this one» gold, names its action instead of describing a state, and
+ * says it in the app's own «this one» green, names its action instead of describing a state, and
  * gives the day bands the top of the list back.
  */
 @Composable
@@ -642,7 +618,7 @@ private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(Radius.pill))
-            .background(MaterialTheme.colorScheme.primary)
+            .background(Cta.fill)
             .clickable(role = Role.Button, onClick = onReview)
             .heightIn(min = 48.dp)
             .padding(horizontal = Space.l),
@@ -652,7 +628,7 @@ private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
             "مرور ${faNumber(waiting.toDouble())} مورد",
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimary,
+            color = Cta.ink,
         )
     }
 }
@@ -703,75 +679,87 @@ private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
 }
 
 @Composable
-internal fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
+internal fun TimelineRow(
+    entry: LedgerEntry,
+    /** The category sheet lists one category, so the repeated mark would be noise there. */
+    showIcon: Boolean = true,
+    onClick: () -> Unit,
+) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
     val tone = when {
         entry.transfer -> MaterialTheme.colorScheme.onSurfaceVariant
-        incoming -> Color(0xFF2E9E5B)
+        incoming -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onBackground
     }
+    val categoryFa = if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
+    // Same mark *and* same colour as the grid she chose it in: a hundred rows are read by the
+    // disc at the start of the line long before the word is. «دسته‌بندی نشده» has no mark of
+    // its own, falls to DOTS, and DOTS is the one entry in [categoryHue] that returns muted
+    // text rather than a hue — a row still waiting for her stays grey while every filed row
+    // beside it carries colour, which is the distinction the disc is for.
+    val hue = categoryHue(categoryFa)
     Row(
         Modifier
             .fillMaxWidth()
-            // No clip of its own: the band above owns the corners, and a row that rounded its
-            // own would cut a notch out of the object it sits inside.
+            .clip(RoundedCornerShape(Radius.field))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = Space.m, horizontal = Space.l),
+            .padding(vertical = 10.dp, horizontal = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (showIcon) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(hue.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) { CategoryIcon(categoryFa, hue, size = 22.dp, stroke = 1.8.dp) }
+            Spacer(Modifier.width(Space.m))
+        }
         Column(Modifier.weight(1f)) {
             Text(
                 txnTitleFa(txn),
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val categoryFa = if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
-                // Same mark *and* same colour as the grid she chose it in. A hundred rows of grey
-                // 12sp are read by the shape at the start of the line long before the word is,
-                // and in colour they are read before the shape.
-                //
-                // Nothing had to be special-cased for «دسته‌بندی نشده»: it has no mark of its own,
-                // so it falls to DOTS, and DOTS is the one entry in [categoryHue] that returns
-                // muted text rather than a hue. A row still waiting for her stays grey while every
-                // filed row beside it carries colour — which is the distinction this line is for.
-                CategoryIcon(
-                    categoryFa,
-                    categoryHue(categoryFa),
-                    size = 14.dp,
-                    stroke = 1.4.dp,
-                )
-                Spacer(Modifier.width(Space.xs))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                 Text(
                     categoryFa,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (entry.ownerName.isNotBlank()) {
                     Spacer(Modifier.width(Space.xs))
                     Text(
                         "از ${entry.ownerName}",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
                     )
                 }
                 if (entry.needsReview && !entry.transfer) {
                     Spacer(Modifier.width(Space.xs))
-                    // A dot, not a warning. Nothing here is wrong; something is merely unconfirmed.
+                    // A dot, not a warning. Nothing here is wrong; something is merely
+                    // unconfirmed — and it wears the caution amber, because both greens on
+                    // this screen already mean money.
                     Box(
                         Modifier
                             .size(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            // Not `tertiary`: in dark theme that is the same green income is
-                            // already speaking in, so every unconfirmed row read as a deposit.
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(MaterialTheme.colorScheme.secondary),
                     )
                 }
             }
         }
+        Spacer(Modifier.width(Space.s))
         val rial = txn.signedRial ?: txn.amountRial
         if (rial != null) {
             Text(
@@ -1216,7 +1204,14 @@ private fun TransactionHero(
 ) {
     val txn = entry.txn
     val tone = if (incoming) Hero.mint else Hero.strong
-    HeroPanel {
+    // A card floating on the paper, like the hero it echoes — it takes the glass inset and the
+    // page gutter itself, because the lists it heads are edge-to-edge scrollers.
+    HeroPanel(
+        Modifier
+            .statusBarsPadding()
+            .padding(horizontal = Space.xl)
+            .padding(top = Space.s),
+    ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     faDayMoment(txn.at, txn.day),
@@ -1287,7 +1282,7 @@ private fun TransactionHero(
                 "مبلغ در پیامک مشخص نشده",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                // The field's one caution colour: gold up here already means «the answer».
+                // The field's one caution colour: green up here already means «the answer».
                 color = Hero.warn,
                 modifier = Modifier.padding(top = Space.s),
             )
@@ -1593,13 +1588,7 @@ fun ReviewDeck(
                     DeckDone(ledger, onDone)
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "مرور هفتگی",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.semantics { heading() },
-                        )
+                        ScreenTitle("مرور هفتگی")
                         Spacer(Modifier.weight(1f))
                         PillButton("بستن", onDone)
                     }
@@ -1741,7 +1730,7 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
     val month = remember(ledger.entries) {
         currentMonthReport(ledger.entries, tehranDay(System.currentTimeMillis()))
     }
-    val met = Color(0xFF2E9E5B)
+    val met = MaterialTheme.colorScheme.tertiary
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth(),
@@ -1759,7 +1748,7 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
             Text(
                 "همه‌چی بررسی شد",
                 fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Black,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.semantics { heading() },
             )
@@ -1858,13 +1847,7 @@ private fun AutoFileSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "دسته‌بندی خودکار",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("دسته‌بندی خودکار")
             Text(
                 "${faNumber(plan.total.toDouble())} تراکنش منتظر، در یک حرکت:",
                 fontSize = 14.sp,
@@ -1978,7 +1961,7 @@ private fun DeckAnswer(
             .clip(RoundedCornerShape(Radius.pill))
             .background(
                 when (weight) {
-                    AnswerWeight.PRIMARY -> MaterialTheme.colorScheme.primary
+                    AnswerWeight.PRIMARY -> Cta.fill
                     AnswerWeight.SECONDARY -> MaterialTheme.colorScheme.surfaceVariant
                     // Not a surface of its own: it is the answer that changes nothing, and a
                     // filled shape would promise it does.
@@ -1995,7 +1978,7 @@ private fun DeckAnswer(
             fontSize = 15.sp,
             fontWeight = if (weight == AnswerWeight.QUIET) FontWeight.Medium else FontWeight.Bold,
             color = when (weight) {
-                AnswerWeight.PRIMARY -> MaterialTheme.colorScheme.onPrimary
+                AnswerWeight.PRIMARY -> Cta.ink
                 AnswerWeight.SECONDARY -> MaterialTheme.colorScheme.onSurface
                 AnswerWeight.QUIET -> MaterialTheme.colorScheme.onSurfaceVariant
             },

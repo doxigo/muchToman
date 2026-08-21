@@ -32,10 +32,10 @@ import kotlin.math.roundToInt
 
 // The hero's own colours (Theme.kt Hero) — RemoteViews cannot read Compose values, so the
 // ARGB ints live here and must not drift from that object.
-private const val GOLD = 0xFFF7C948.toInt()
-private const val MINT = 0xFF3BE0A8.toInt()
-private const val WARN = 0xFFFFB4A6.toInt()
-private const val MUTED = 0xFF93B7B0.toInt()
+private const val GOLD = 0xFF9FE870.toInt()
+private const val MINT = 0xFF9FE870.toInt()
+private const val WARN = 0xFFFFB59F.toInt()
+private const val MUTED = 0xFFA9C295.toInt()
 
 private fun spToPx(context: Context, sp: Float): Float =
     TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, context.resources.displayMetrics)

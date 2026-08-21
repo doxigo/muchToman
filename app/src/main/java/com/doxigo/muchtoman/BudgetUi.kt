@@ -105,9 +105,9 @@ private fun budgetTone(level: Int): Color = when (level) {
     // reading of her month but a fact about it, and the app already has exactly one colour for
     // "this needs looking at".
     BudgetLevel.OVER -> MaterialTheme.colorScheme.error
-    // Gold in the dark, deep gold on paper — the app's caution, and the one colour it owns that
-    // is neither "the answer" nor "a fault". Both thresholds share it: the difference between 80
-    // and 95 is what the sentence says, never a third hue nobody can rank at a glance.
+    // Amber — the app's caution, and the one colour it owns that is neither "the answer" nor
+    // "a fault". Both thresholds share it: the difference between 80 and 95 is what the
+    // sentence says, never a third hue nobody can rank at a glance.
     BudgetLevel.NEAR, BudgetLevel.CLOSE -> MaterialTheme.colorScheme.secondary
     else -> MaterialTheme.colorScheme.primary
 }
@@ -145,15 +145,11 @@ fun BudgetScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = bottomInset + Space.l),
         ) {
-            Text(
+            ScreenTitle(
                 "آینده",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = Space.m)
-                    .semantics { heading() },
+                    .padding(vertical = Space.m),
             )
 
             SectionLabel("بودجه‌ها", top = Space.s)
@@ -421,7 +417,7 @@ internal fun NotifyBlockedCard(what: String, onAsk: () -> Unit) {
         Box(
             Modifier
                 .clip(RoundedCornerShape(Radius.pill))
-                .background(MaterialTheme.colorScheme.primary)
+                .background(Cta.fill)
                 .clickable(role = Role.Button, onClick = onAsk)
                 .heightIn(min = 48.dp)
                 .padding(horizontal = Space.l),
@@ -431,7 +427,7 @@ internal fun NotifyBlockedCard(what: String, onAsk: () -> Unit) {
                 "روشن کردن اعلان",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = Cta.ink,
             )
         }
     }
@@ -458,8 +454,9 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
     // The one authored moment on the card: a receipt she has just refiled moves the bar rather
     // than replacing it, which is what makes the two screens read as one ledger. Both channels
     // animate together and everything tinted reads the animated value — a percentage that snaps
-    // while the bar under it slides is two clocks on one card.
-    val share by animateFloatAsState(budget.share, tween(Motion.medium, easing = Motion.enter), label = "cap")
+    // while the bar under it slides is two clocks on one card. A spring, so a second refile
+    // landing mid-slide redirects the bar from wherever it is instead of restarting it.
+    val share by animateFloatAsState(budget.share, Motion.settle(), label = "cap")
     val tone by animateColorAsState(
         budgetTone(budget.level),
         tween(Motion.medium, easing = Motion.enter),
@@ -583,7 +580,7 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
 
 @Composable
 private fun GoalCard(progress: GoalProgress, shape: Shape, divided: Boolean, onOpen: () -> Unit) {
-    val met = Color(0xFF2E9E5B)
+    val met = MaterialTheme.colorScheme.tertiary
     val tone = if (progress.done) met else MaterialTheme.colorScheme.primary
     BandCard(shape = shape, divided = divided, onOpen = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -747,13 +744,7 @@ private fun BudgetSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                if (editing != null) "ویرایش بودجه" else "بودجهٔ تازه",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle(if (editing != null) "ویرایش بودجه" else "بودجهٔ تازه")
 
             if (editing == null && choices.isEmpty()) {
                 // Every category already has one, which is a real state and not an error.
@@ -856,6 +847,7 @@ private fun BudgetSheet(
                 },
                 enabled = (editing != null || picked != null) && capRial != null,
                 shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             ) {
                 Text(
@@ -944,13 +936,7 @@ private fun GoalSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                if (editing != null) "ویرایش هدف" else "هدف تازه",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle(if (editing != null) "ویرایش هدف" else "هدف تازه")
 
             SheetLabel("هدفت چیه؟")
             OutlinedTextField(
@@ -1021,6 +1007,7 @@ private fun GoalSheet(
                 },
                 enabled = name.isNotBlank() && targetRial != null,
                 shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             ) {
                 Text(

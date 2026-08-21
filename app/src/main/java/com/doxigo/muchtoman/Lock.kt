@@ -10,6 +10,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -145,7 +147,7 @@ fun LockScreen(onUnlock: () -> Unit) {
                 Icon(
                     Icons.Rounded.Lock,
                     contentDescription = null,
-                    tint = Hero.gold,
+                    tint = Hero.accent,
                     modifier = Modifier.size(40.dp),
                 )
             }
@@ -153,7 +155,7 @@ fun LockScreen(onUnlock: () -> Unit) {
             Text(
                 "چقدر تومن قفل شده",
                 fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Black,
                 color = Hero.strong,
             )
             Spacer(Modifier.height(Space.m))
@@ -169,8 +171,8 @@ fun LockScreen(onUnlock: () -> Unit) {
                 onClick = onUnlock,
                 shape = RoundedCornerShape(Radius.pill),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Hero.gold,
-                    contentColor = Hero.bottom,
+                    containerColor = Cta.fill,
+                    contentColor = Cta.ink,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -240,14 +242,7 @@ fun SettingsScreen(
                 .padding(horizontal = Space.xl),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "تنظیمات",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() },
-                )
+                ScreenTitle("تنظیمات", modifier = Modifier.weight(1f))
                 PillButton(
                     "ذخیره",
                     { onNameChange(draft); onBack() },
@@ -291,7 +286,7 @@ fun SettingsScreen(
 
             SectionLabel("پیامک‌های بانک")
             SettingCard(
-                emoji = "✉️",
+                mark = { GlyphIcon(CategoryGlyph.ENVELOPE, MaterialTheme.colorScheme.onSurface, size = 22.dp) },
                 title = "خواندن پیامک‌های بانک",
                 subtitle = "با این گزینه، موجودی حساب‌ها از روی پیامک بانک به‌روز می‌شه.",
                 checked = smsEnabled && granted,
@@ -362,9 +357,6 @@ fun SettingsScreen(
                     banks.forEachIndexed { i, bank ->
                         val accounts = bankAccounts.filter { it.bank == bank }
                         SettingCard(
-                            // VS16 pinned: bare U+1F3DB defaults to the monochrome text
-                            // glyph on spec-following renderers, unlike the ✉️ card above.
-                            emoji = "🏛️",
                             title = accounts.first().bankFa,
                             subtitle = "${faCompact(accounts.sumOf { it.balance })} تومان" +
                                 if (accounts.any { !it.trusted }) "  •  نیاز به بررسی" else "",
@@ -391,7 +383,14 @@ fun SettingsScreen(
             // siblings, not the same switch — she may want the app guarded but the number
             // glanceable on the home screen, or the other way round.
             SettingCard(
-                emoji = "🔒",
+                mark = {
+                    Icon(
+                        Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(22.dp),
+                    )
+                },
                 title = "قفل برنامه",
                 // Always what the setting does. When it is unavailable, the helper text below
                 // the band already carries the fix — and says where, which this line never did.
@@ -403,7 +402,8 @@ fun SettingsScreen(
                 divided = true,
             )
             SettingCard(
-                emoji = "🙈",
+                // The mask itself: the three ٭ the widget will actually show, drawn as dots.
+                mark = { MaskDots(MaterialTheme.colorScheme.onSurface) },
                 title = "قفل ویجت",
                 subtitle = "مبلغ صفحهٔ اصلی رو با ٭٭٭ پنهان می‌کنه",
                 checked = widgetLock,
@@ -545,6 +545,18 @@ private fun CategoriesRow(mine: Int, onClick: () -> Unit) {
     }
 }
 
+/** The widget's own mask — the three ٭ it will actually draw — as three dots in the pen's ink. */
+@Composable
+private fun MaskDots(tint: Color) {
+    Canvas(Modifier.size(22.dp)) {
+        val r = 2.4.dp.toPx()
+        val y = size.height / 2f
+        for (i in 0..2) {
+            drawCircle(tint, r, Offset(size.width * (0.18f + 0.32f * i), y))
+        }
+    }
+}
+
 /** "1.0" -> "۱٫۰" so the one latin run on an otherwise Persian page disappears. */
 private fun faVersion(v: String): String =
     v.map { c -> if (c in '0'..'9') '۰' + (c - '0') else if (c == '.') '٫' else c }
@@ -636,10 +648,9 @@ private fun ThemePicker(current: ThemeMode, onChange: (ThemeMode) -> Unit) = Seg
     fontSize = 16.sp,
 )
 
-/** One switched setting: emoji, what it does, what it currently means, and the switch. */
+/** One switched setting: its mark, what it does, what it currently means, and the switch. */
 @Composable
 fun SettingCard(
-    emoji: String,
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -648,8 +659,10 @@ fun SettingCard(
     enabled: Boolean = true,
     shape: Shape = RoundedCornerShape(Radius.group),
     divided: Boolean = false,
-    /** Replaces the emoji plate where the row has a real mark of its own. */
+    /** Replaces the disc entirely, for a row with a full mark of its own (a bank's logo). */
     badge: (@Composable () -> Unit)? = null,
+    /** The mark inside the standard disc — drawn with the app's own pen, never an emoji. */
+    mark: @Composable () -> Unit = {},
 ) {
     Box(modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)) {
         // toggleable on the row, not onCheckedChange on the switch: the whole card becomes
@@ -677,7 +690,7 @@ fun SettingCard(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                     contentAlignment = Alignment.Center,
-                ) { Text(emoji, fontSize = 20.sp) }
+                ) { mark() }
             }
             Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
                 Text(

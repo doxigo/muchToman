@@ -56,15 +56,49 @@ import androidx.compose.ui.unit.sp
  * number is read. Nothing new is computed for it; it is the two figures already above it.
  */
 @Composable
-fun MonthFlow(story: HomeStory, modifier: Modifier = Modifier) {
+fun MonthFlow(story: HomeStory, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val month = story.month
-    val gain = Color(0xFF2E9E5B)
+    val gain = MaterialTheme.colorScheme.tertiary
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
-    Panel(modifier) {
+    val income = tomanOf(month.incomeRial)
+    val spent = tomanOf(month.spentRial)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.card))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // The card is the cash-flow report's own opening paragraph, so the card is the
+            // door to the rest of it — tapping the summary for the long form is the one
+            // gesture on this screen that needs no explaining.
+            .clickable(role = Role.Button, onClick = onOpen)
+            .padding(Space.l)
+            // One accessibility node, not five: read out separately these are four loose
+            // numbers and two labels; together they are the sentence the eye gets in a glance.
+            .semantics(mergeDescendants = true) {
+                contentDescription = "این ماه: درآمد ${faCompact(income)} تومان، " +
+                    "خرج ${faCompact(spent)} تومان. برای گزارش کامل باز کن"
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "این ماه",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.height(Space.m))
         Row(Modifier.fillMaxWidth()) {
-            FlowHalf("درآمد این ماه", month.incomeRial, gain, Modifier.weight(1f))
+            FlowHalf("درآمد", month.incomeRial, gain, Modifier.weight(1f))
             Spacer(Modifier.width(Space.m))
-            FlowHalf("خرج این ماه", month.spentRial, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
+            FlowHalf("خرج", month.spentRial, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
         }
         if (month.incomeRial > 0 || month.spentRial > 0) {
             Spacer(Modifier.height(Space.l))
@@ -122,82 +156,6 @@ private fun FlowBar(incomeRial: Long, spentRial: Long, income: Color, spend: Col
 /** The shortest a segment may be drawn while still reading as a bar rather than a dot. */
 private const val FLOW_FLOOR = 0.06f
 
-/**
- * The same month, on the hero field, where it is now the second half of the first screen.
- *
- * Not [MonthFlow] with a different parent: its greens are surface greens, and one of them —
- * `0xFF2E9E5B` — is a green sitting on a green up here. [InsightCard] refused that same swap for
- * the same reason. Income speaks in `Hero.mint`, which is what every bank app in the country
- * uses for it and what the field already uses on the change pill; spend speaks in the field's
- * plain foreground. So the pair reads as one amount weighed against another rather than as good
- * against bad, and the bar underneath does the comparing, exactly as it does on the card.
- *
- * One accessibility node, not five. Read out separately these are four loose numbers and two
- * labels; read out together they are the sentence the sighted eye gets in one glance.
- */
-@Composable
-fun HeroMonth(story: HomeStory, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val month = story.month
-    val income = tomanOf(month.incomeRial)
-    val spent = tomanOf(month.spentRial)
-    Column(
-        modifier
-            .fillMaxWidth()
-            // No corner clip. The band runs the full width with the label flush to one corner
-            // and the bar flush to the opposite edge, so any radius at all eats them: a 24dp
-            // one sliced the alef off «این ماه» and took a diagonal bite out of both ends of
-            // the bar. A rectangular ripple across a full-width band is the correct shape here
-            // anyway — this is a band, not a card sitting on one.
-            .clickable(role = Role.Button, onClick = onOpen)
-            .semantics(mergeDescendants = true) {
-                contentDescription = "این ماه: درآمد ${faCompact(income)} تومان، " +
-                    "خرج ${faCompact(spent)} تومان. برای گزارش کامل باز کن"
-            },
-    ) {
-        // The band is the report's own opening paragraph — گزارش دارایی leads with these two
-        // figures and this bar — so the band is the door to the rest of it. Tapping the summary
-        // to get the long form is the one gesture on this screen that needs no explaining, and
-        // it is why the report does not need a tab: it is already on the front page, in short.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("این ماه", fontSize = 12.sp, color = Hero.muted)
-            Icon(
-                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Hero.muted,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-        Spacer(Modifier.height(Space.s))
-        Row(Modifier.fillMaxWidth()) {
-            HeroFlowHalf("درآمد", income, Hero.mint, Modifier.weight(1f))
-            Spacer(Modifier.width(Space.m))
-            HeroFlowHalf("خرج", spent, Hero.strong, Modifier.weight(1f))
-        }
-        if (month.incomeRial > 0 || month.spentRial > 0) {
-            Spacer(Modifier.height(Space.l))
-            // Not `Hero.muted` for the spend leg: against mint at this height it has to hold
-            // its own, and muted is the colour of things that recede.
-            FlowBar(month.incomeRial, month.spentRial, Hero.mint, Hero.strong.copy(alpha = 0.55f))
-        }
-    }
-}
-
-@Composable
-private fun HeroFlowHalf(label: String, toman: Double, tone: Color, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(label, fontSize = 12.sp, color = Hero.muted)
-        Spacer(Modifier.height(Space.xs))
-        // The same ceiling and floor as the card's, so the two halves step down together and a
-        // milliard beside a thousand does not knock the pair out of alignment.
-        BasicText(
-            text = bidi(faCompact(toman)),
-            maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 26.sp),
-            style = figureStyle(tone, FontWeight.ExtraBold),
-        )
-    }
-}
-
 @Composable
 private fun FlowHalf(label: String, rial: Long, tone: Color, modifier: Modifier = Modifier) {
     Column(modifier) {
@@ -221,7 +179,7 @@ private fun FlowHalf(label: String, rial: Long, tone: Color, modifier: Modifier 
  * faith. But every card asking «این عدد از کجا اومده؟» was the wrong way to answer it — on the
  * report the question did nothing at all, and on the home screen it made her tap for a sentence
  * we could simply say. [why] says it, unasked. The pill is left to the one card that actually
- * leaves the screen, filled in the same gold the ledger and the tab bar use for exactly that;
+ * leaves the screen, filled in the same brand green the ledger and the tab bar use for that;
  * [action] names where it goes.
  */
 @Composable
@@ -233,7 +191,7 @@ fun InsightCard(
     onAction: () -> Unit = {},
 ) {
     val accent = when (insight.tone) {
-        Insight.Tone.GOOD -> Color(0xFF2E9E5B)
+        Insight.Tone.GOOD -> MaterialTheme.colorScheme.tertiary
         // Not `tertiary`: in dark theme that is the same green income speaks in, so the one
         // thing asking for her read as a deposit.
         Insight.Tone.ATTENTION -> MaterialTheme.colorScheme.primary
@@ -269,7 +227,7 @@ fun InsightCard(
             Box(
                 Modifier
                     .clip(RoundedCornerShape(Radius.pill))
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(Cta.fill)
                     .clickable(role = Role.Button, onClick = onAction)
                     // The label sets its own height: at 12sp with 4dp of padding the target was
                     // half the floor, on the only control these cards have.
@@ -281,7 +239,7 @@ fun InsightCard(
                     it,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = Cta.ink,
                 )
             }
         }

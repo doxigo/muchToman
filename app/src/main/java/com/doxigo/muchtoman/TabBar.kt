@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -24,7 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
@@ -65,21 +66,14 @@ import androidx.compose.ui.unit.sp
  *
  * ## Why it looks like this
  *
- * An island, not a floor — clear of both edges, the page running underneath. And translucent,
- * which is Telegram's move: enough of the list ghosts through the slab to read "resting on
- * the page" rather than "end of the page", and the shadow holds the edge the alpha gives up.
- * A green-field version of this bar existed for a day; it made the bar a second hero, and an
- * app gets one face. The bar is furniture.
+ * A floor, not an island: full width, opaque, and held to the page by a hairline rather than a
+ * shadow — Wise's own move, and Material's. An island floating clear of the edges read as a
+ * second hero, and an app gets one face. The bar is furniture.
  *
- * Compact on purpose, which is why it is drawn by hand. Material's bars are 80 and 64dp tall
- * and will not be talked below it; Telegram's is ~56, a glyph and a word with no shelf under
- * them, and five words she reads every day do not need more. The pill still measures exactly
- * what M3's indicator measures (56×32), so the one loud mark keeps its licensed proportions.
- *
- * There is exactly one loud thing on it: the pill under the tab she is on — gold in the dark,
- * the deep green in the light. Everything else — the slab, the labels, the glyphs — is held
- * quiet so that one shape is unmissable across the room, which is the only job this bar has.
- * That colour is already the app's colour for "this is the answer"; here it answers *where am I*.
+ * Still drawn by hand, because 64dp is the most five words she reads every day have earned,
+ * and the glyphs are the app's own pen. The pill under the tab she is on measures exactly what
+ * M3's indicator measures (56×32) and wears the soft green container rather than the full
+ * brand fill: it answers *where am I*, and the loud fill is reserved for *press this*.
  */
 enum class Tab(val fa: String) {
     HOME("خانه"),
@@ -110,101 +104,93 @@ fun TabBar(
     onSelect: (Tab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(Radius.group)
-    Row(
-        modifier
-            .navigationBarsPadding()
-            .padding(horizontal = Space.m, vertical = Space.s)
-            // Lifted, not outlined. A hairline would put a fifth line weight on a bar that
-            // already carries four; a real shadow says "on top of" without adding one — and
-            // over a moving list it is the shadow, not the outline, that reads as height.
-            .shadow(12.dp, shape)
-            // 0.92, not lower: translucency here is a hint, not a window. Any thinner and the
-            // labels start competing with whatever row happens to be passing underneath.
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f), shape)
-            .height(56.dp)
-            .selectableGroup(),
-    ) {
-        for (tab in tabs) {
-            val here = tab == selected
-            // Not on the tab she is standing on: there the same count is already on screen,
-            // in the «مرور ۱۲ مورد» pill at the top of the ledger. A 56dp bar has no room
-            // to hang a numbered chip clear of a 32dp pill, and the version that tried put
-            // it *inside* the pill — a hole punched in the one mark that must stay whole.
-            val badge = if (tab == Tab.LEDGER && !here) ledgerBadge else 0
-            // One animator per channel, so a tab change is a crossfade rather than a jump —
-            // the whole of what NavigationBarItem was being paid for.
-            val pill by animateColorAsState(
-                if (here) MaterialTheme.colorScheme.primary else Color.Transparent,
-                label = "pill",
-            )
-            val glyph by animateColorAsState(
-                if (here) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "glyph",
-            )
-            val ink by animateColorAsState(
-                if (here) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "ink",
-            )
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .selectable(selected = here, role = Role.Tab) { onSelect(tab) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                BadgedBox(
-                    badge = {
-                        if (badge > 0) {
-                            // The pill's own colour, deliberately: the pill says where she is,
-                            // the chip says where she is wanted next. Two sizes of one idea
-                            // reads as a system. Red would read as a fault, and twelve
-                            // receipts to sort is not one.
-                            Badge(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ) {
-                                Text(
-                                    faNumber(badge.coerceAtMost(99).toDouble()),
-                                    style = figureStyle(MaterialTheme.colorScheme.onPrimary),
-                                    fontSize = 10.sp,
-                                )
-                            }
-                        }
-                    },
-                ) {
-                    Box(
-                        // M3's exact indicator: 24dp glyph + 16dp beside, 4dp above = 56×32.
-                        Modifier
-                            .background(pill, RoundedCornerShape(Radius.pill))
-                            .padding(horizontal = Space.l, vertical = Space.xs),
-                    ) {
-                        Canvas(
-                            Modifier
-                                .size(24.dp)
-                                // Its own layer, so the two glyphs that cut a hole in
-                                // themselves cut it in the glyph and not in the pill
-                                // underneath. See [knockOut].
-                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-                        ) { drawTabIcon(tab, glyph) }
-                    }
-                }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    tab.fa,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    // The chosen one is the only bold one, which is the rule every other
-                    // "pick exactly one" in the app already follows (SegmentedChoice).
-                    // Colour alone would leave the mark to a single channel.
-                    fontWeight = if (here) FontWeight.ExtraBold else FontWeight.Medium,
-                    color = ink,
+    // A floor, not an island: full width, opaque, held to the page by a hairline instead of a
+    // shadow. The island read as a second hero floating over the list; a floor is furniture,
+    // and furniture is the only thing this bar should be.
+    Column(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            Modifier
+                .navigationBarsPadding()
+                .height(64.dp)
+                .selectableGroup(),
+        ) {
+            for (tab in tabs) {
+                val here = tab == selected
+                // Not on the tab she is standing on: there the same count is already on screen,
+                // in the «مرور ۱۲ مورد» pill at the top of the ledger.
+                val badge = if (tab == Tab.LEDGER && !here) ledgerBadge else 0
+                // One animator per channel, so a tab change is a crossfade rather than a jump.
+                val pill by animateColorAsState(
+                    if (here) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    label = "pill",
                 )
+                val glyph by animateColorAsState(
+                    if (here) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "glyph",
+                )
+                val ink by animateColorAsState(
+                    if (here) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "ink",
+                )
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(selected = here, role = Role.Tab) { onSelect(tab) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    BadgedBox(
+                        badge = {
+                            if (badge > 0) {
+                                // Where she is wanted next, in the brand's own pair — a count,
+                                // never a red fault: twelve receipts to sort is not an error.
+                                Badge(
+                                    containerColor = Cta.fill,
+                                    contentColor = Cta.ink,
+                                ) {
+                                    Text(
+                                        faNumber(badge.coerceAtMost(99).toDouble()),
+                                        style = figureStyle(Cta.ink),
+                                        fontSize = 10.sp,
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        Box(
+                            // M3's exact indicator: 24dp glyph + 16dp beside, 4dp above = 56×32.
+                            Modifier
+                                .background(pill, RoundedCornerShape(Radius.pill))
+                                .padding(horizontal = Space.l, vertical = Space.xs),
+                        ) {
+                            Canvas(
+                                Modifier
+                                    .size(24.dp)
+                                    // Its own layer, so the two glyphs that cut a hole in
+                                    // themselves cut it in the glyph and not in the pill
+                                    // underneath. See [knockOut].
+                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+                            ) { drawTabIcon(tab, glyph) }
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        tab.fa,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // The chosen one is the only bold one, which is the rule every other
+                        // "pick exactly one" in the app already follows (SegmentedChoice).
+                        // Colour alone would leave the mark to a single channel.
+                        fontWeight = if (here) FontWeight.ExtraBold else FontWeight.Medium,
+                        color = ink,
+                    )
+                }
             }
         }
     }
@@ -290,7 +276,7 @@ private fun DrawScope.drawHome(tint: Color) {
  * cover it and this is a document; show it and it is a receipt — and the badge now sits over a
  * corner, the way a badge sits over every other icon ever drawn.
  */
-private fun DrawScope.drawLedger(tint: Color) {
+internal fun DrawScope.drawLedger(tint: Color) {
     val w = size.width
     val h = size.height
     // Nearly the full box. Narrower, it read as a ruler: a tall thin outline with rungs in it.
@@ -352,7 +338,7 @@ private fun DrawScope.drawBudget(tint: Color) {
  * the other is money in every icon set there is — and it borrows the same occlusion the
  * companion cards use, which is what makes those two read as one hand.
  */
-private fun DrawScope.drawAssets(tint: Color) {
+internal fun DrawScope.drawAssets(tint: Color) {
     // The radius and the separation are load-bearing, and the first pairing had them wrong.
     // The near coin clears a hole of r + knockOut around itself; at r = 0.30 and centres 0.28
     // apart that hole was 7.8dp against a 7.1dp separation, so it reached past the far coin's
@@ -378,7 +364,7 @@ private fun DrawScope.drawAssets(tint: Color) {
  * Rising to the right, matching the report's own chart, where time runs left to right and the
  * newest point is the right-hand end regardless of the page's direction.
  */
-private fun DrawScope.drawReport(tint: Color) {
+internal fun DrawScope.drawReport(tint: Color) {
     val w = size.width
     val h = size.height
     val stroke = pen()

@@ -123,13 +123,7 @@ fun ManualTxnSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "تراکنش دستی",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("تراکنش دستی")
 
             SheetLabel("خرج بود یا دخل؟")
             SegmentedChoice(

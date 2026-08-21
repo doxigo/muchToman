@@ -148,15 +148,11 @@ fun CompanionScreen(
             // This was a tab, and the bar was its way out. Pushed from تنظیمات it needs one of
             // its own, in the same corner every other pushed page in the app puts it.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
+                ScreenTitle(
                     "خانواده",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(vertical = Space.m)
-                        .semantics { heading() },
+                        .padding(vertical = Space.m),
                 )
                 PillButton("برگشت", onBack)
             }
@@ -251,6 +247,10 @@ fun CompanionScreen(
                         onClick = onInvite,
                         enabled = !state.working,
                         shape = RoundedCornerShape(Radius.pill),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Cta.fill,
+                            contentColor = Cta.ink,
+                        ),
                         // Material's own default is 40dp, under the floor for a touch target.
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     ) {
@@ -365,8 +365,8 @@ private fun JoinCard(
  * and a family of four does not need four downloads to tell itself apart.
  *
  * Every disc is the same colour, including mine. Gold in this app means the action or the
- * answer, and a gold disc the size of a thumb sat next to the gold «من» chip, the gold switch
- * and the gold invite button — four golds down one column, none of which was the one thing she
+ * answer, and an accent disc the size of a thumb sat next to the accent «من» chip, the accent
+ * switch and the accent invite button — four of them down one column, none of which was what she
  * had come to press. Identity is not an action; the chip says which row is mine in a word.
  */
 @Composable

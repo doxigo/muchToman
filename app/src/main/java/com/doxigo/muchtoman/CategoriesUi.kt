@@ -91,13 +91,7 @@ fun CategoriesScreen(
                 Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.m),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "دسته‌بندی‌ها",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f).semantics { heading() },
-                )
+                ScreenTitle("دسته‌بندی‌ها", modifier = Modifier.weight(1f))
                 PillButton("برگشت", onBack)
             }
 
@@ -286,13 +280,7 @@ fun AddCategorySheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "دستهٔ تازه",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("دستهٔ تازه")
 
             SheetLabel("اسمش چی باشه؟")
             OutlinedTextField(

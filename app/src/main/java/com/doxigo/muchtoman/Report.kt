@@ -164,15 +164,11 @@ fun ReportScreen(
                 .padding(horizontal = Space.xl),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    // Neutral where there are two of them: naming the screen after one of its
-                    // two halves is what hid the other one for a year.
+                // Neutral where there are two of them: naming the screen after one of its
+                // two halves is what hid the other one for a year.
+                ScreenTitle(
                     if (modes.size > 1) "گزارش‌ها" else "گزارش دارایی",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() },
+                    modifier = Modifier.weight(1f),
                 )
                 onBack?.let { back ->
                     PillButton("برگشت", back)
@@ -337,13 +333,13 @@ private fun AssetReportContent(
  * they hold on both themes; gold stays reserved for the gold kinds.
  */
 private fun barTint(kind: Kind): Color = when (kind) {
-    Kind.CASH -> Color(0xFF2E7D6B)
-    Kind.FIAT -> Color(0xFF6FAF9F)
-    Kind.CRYPTO -> Color(0xFF93B7B0)
+    Kind.CASH -> Color(0xFF2F7D3F)
+    Kind.FIAT -> Color(0xFF79B989)
+    Kind.CRYPTO -> Color(0xFFA3BBA6)
     Kind.GOLD -> Color(0xFFF7C948)
     Kind.SILVER -> Color(0xFFAEB6BD)
     Kind.COIN -> Color(0xFFC99B2C)
-    Kind.STOCK -> Color(0xFF4E8A7B)
+    Kind.STOCK -> Color(0xFF4C8A5E)
     Kind.PROPERTY -> Color(0xFF8C7B6B)
 }
 
@@ -410,8 +406,8 @@ private fun CompositionBar(composition: List<Pair<Kind, Double>>) {
 @Composable
 private fun changeTone(change: Change): Color = when {
     abs(change.delta) < 1 -> MaterialTheme.colorScheme.onSurfaceVariant
-    // tertiary is the gain role: borrowing primary made "بیشتر" green in light mode but
-    // gold — the colour of every button — in dark.
+    // tertiary is the gain role: borrowing primary would set "بیشتر" in the colour of every
+    // button on screen, and a verdict must not look like a control.
     change.delta > 0 -> MaterialTheme.colorScheme.tertiary
     else -> MaterialTheme.colorScheme.error
 }
@@ -518,15 +514,18 @@ private fun EmptyReport() {
             .padding(vertical = 52.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // The tab bar's own three bars, not an emoji — the empty state introduces the chart,
+        // and it should speak in the pen the chart's own door is drawn with.
+        val ink = MaterialTheme.colorScheme.onPrimaryContainer
         Box(
             Modifier
                 .size(84.dp)
                 .clip(RoundedCornerShape(Radius.pill))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
-        ) { Text("📈", fontSize = 40.sp) }
+        ) { Canvas(Modifier.size(36.dp)) { drawReport(ink) } }
         Spacer(Modifier.height(Space.xl))
-        Text("هنوز نموداری نیست", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+        Text("هنوز نموداری نیست", fontSize = 22.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(Space.s))
         Text(
             "از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.",
@@ -595,8 +594,9 @@ private fun HistoryChart(
 
 // ─────────────────────────── دخل و خرج ───────────────────────────
 
-/** Growth, in the colour every bank app in the country uses for it. */
-private val INCOME_TINT = Color(0xFF2E9E5B)
+/** Growth, in the colour every bank app in the country uses for it — the scheme's gain role. */
+private val INCOME_TINT: Color
+    @Composable get() = MaterialTheme.colorScheme.tertiary
 
 /**
  * The month she picked: what came in, what went out, what remained, how it sits against the
@@ -1305,8 +1305,16 @@ private fun CategoryShare(
             // The mark says which category this is and the bar says how much of the side it
             // took — colouring both would have the same row answering one question twice, and
             // the bars stop being comparable the moment they stop being the same colour.
-            CategoryIcon(name, categoryHue(name), size = 16.dp, stroke = 1.5.dp)
-            Spacer(Modifier.width(Space.s))
+            // On its disc, as everywhere a category leads a row now.
+            val hue = categoryHue(name)
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(hue.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) { CategoryIcon(name, hue, size = 17.dp, stroke = 1.5.dp) }
+            Spacer(Modifier.width(Space.m))
             // Wraps rather than truncates: «دسته‌بندی نشده» beside a percentage and a figure is
             // one character over the line on a narrow phone, and a clipped category name is the
             // one thing in the row she cannot reconstruct from the rest of it.
@@ -1460,7 +1468,9 @@ private fun CategorySheet(
                             .clip(bandShape(i, window.rows.size))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
-                        TimelineRow(e) {
+                        // Every row here is the same category, so the repeated disc would be
+                        // noise — the sheet's own header already wears the mark once.
+                        TimelineRow(e, showIcon = false) {
                             if (onOpenEntry != null) close { onDismiss(); onOpenEntry(e) }
                         }
                     }
@@ -1545,13 +1555,15 @@ private fun WorthItDetail(summary: WorthItSummary, range: ReportRange) {
                 .padding(horizontal = Space.l, vertical = Space.s),
         ) {
             if (summary.worth > 0) {
-                WorthItLine("ارزش داشت", summary.worth, Color(0xFF2E9E5B))
+                WorthItLine("ارزش داشت", summary.worth, MaterialTheme.colorScheme.tertiary)
             }
             if (summary.needed > 0) {
                 WorthItLine("لازم بود", summary.needed, MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (summary.regretted > 0) {
-                WorthItLine("ارزش نداشت", summary.regretted, MaterialTheme.colorScheme.primary)
+                // The caution amber, not the brand green: her own «نه» is the one figure here
+                // that asks to be acted on, and the action colour would read as approval.
+                WorthItLine("ارزش نداشت", summary.regretted, MaterialTheme.colorScheme.secondary)
             }
         }
         if (summary.regretted > 0) {
@@ -1674,13 +1686,7 @@ private fun ExcludeSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Text(
-                "کدوم‌ها حساب نشن؟",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
+            SheetTitle("کدوم‌ها حساب نشن؟")
             Text(
                 "هر دسته‌ای که بزنی از همهٔ عددهای دخل و خرج کنار گذاشته می‌شه — " +
                     "توی دفتر سر جاش می‌مونه.",
