@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -53,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -1129,20 +1131,6 @@ fun ReviewDeck(
                     .padding(horizontal = Space.xl),
             ) {
             if (entry == null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "مرور هفتگی",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDone) { Text("بستن") }
-                }
-            }
-
-            if (entry == null) {
                 // The exceptions are done, so the one optional question gets asked — at most
                 // two a week, and only about something large she chose to buy. Asked here
                 // rather than mixed into the deck because it is not a correction: nothing is
@@ -1155,30 +1143,26 @@ fun ReviewDeck(
                         largeSpendThreshold(ledger.entries),
                     )
                 }
-                Spacer(Modifier.height(Space.l))
                 if (asking.isEmpty()) {
-                    Column(
-                        Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
+                    DeckDone(ledger, onDone)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "همه‌چی بررسی شد",
-                            fontSize = 22.sp,
+                            "مرور هفتگی",
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.semantics { heading() },
                         )
-                        Spacer(Modifier.height(Space.s))
-                        Text(
-                            "دیگه چیزی نمونده.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Spacer(Modifier.weight(1f))
+                        PillButton("بستن", onDone)
                     }
-                } else {
+                    Spacer(Modifier.height(Space.l))
                     for (candidate in asking) {
                         WorthItCard(candidate, onAnswer = { onWorthIt(candidate, it) })
                         Spacer(Modifier.height(Space.m))
                     }
-                    TextButton(onClick = onDone) { Text("بعداً") }
+                    PillButton("بعداً", onDone)
                 }
                 return@Column
             }
@@ -1256,19 +1240,106 @@ fun ReviewDeck(
 }
 
 /**
- * The two answers that commit, in the drawer the app opens for every other decision.
+ * The deck with nothing left in it — the state the whole screen exists to reach, so it earns a
+ * real moment rather than a line floating on an empty page.
  *
- * They used to expand into the page underneath the grid, which is the one place they could not be
- * read: the grid scrolls, so a tap in its lower half pushed the answer to the question off the
- * bottom of the screen, and a block that grows out of the middle of a scrolling column is a popup
- * wearing a page's clothes. A sheet arrives with the scrim, the drag handle, the back gesture and
- * the navigation-bar inset already correct, and it is the shape she has already met in
- * «حساب‌های بانکی» and everywhere else the app needs an answer before anything else happens.
- *
- * The card behind it keeps her pick lit under the scrim, so the sheet never has to read the choice
- * back to her — it names it once, at the top, and spends the rest of its room on the only thing
- * the two buttons differ in. Dismissing un-picks: a highlighted tile with nothing left to press is
- * a dead end she would have to guess her way off.
+ * Calm on purpose: no confetti and no score, because finishing the homework is meant to be
+ * ordinary here. What it does earn is the figure the app is judged on — how much of the month
+ * never needed her at all — and the check is drawn in the ledger's own green, the colour a
+ * settled figure already speaks in. One number, one sentence, one way back.
+ */
+@Composable
+private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
+    val month = remember(ledger.entries) {
+        currentMonthReport(ledger.entries, tehranDay(System.currentTimeMillis()))
+    }
+    val met = Color(0xFF2E9E5B)
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.weight(1f).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(96.dp)
+                    .clip(CircleShape)
+                    .background(met.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) { CheckMark(met, size = 46.dp) }
+            Spacer(Modifier.height(Space.xl))
+            Text(
+                "همه‌چی بررسی شد",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.semantics { heading() },
+            )
+            Spacer(Modifier.height(Space.s))
+            Text(
+                "هر رقمی که توی گزارش‌هاست، حالا تأییدشده‌ست.",
+                fontSize = 14.sp,
+                lineHeight = 23.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // The receipt for all that tapping, and only when the month has enough rows for a
+            // share to mean anything — the same floor the report's own automation line keeps.
+            month.automaticShare?.takeIf { month.transactions >= 5 }?.let { share ->
+                Spacer(Modifier.height(Space.xxl))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.group))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(Space.xl),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "${faNumber(Math.round(share * 100.0).toDouble())}٪",
+                        style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Black),
+                        fontSize = 36.sp,
+                    )
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        "از ${faNumber(month.transactions.toDouble())} تراکنش این ماه " +
+                            "بدون پرسیدن ازت دسته‌بندی شد",
+                        fontSize = 13.sp,
+                        lineHeight = 21.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        PillButton(
+            "برگشت به دفتر",
+            onDone,
+            voice = ButtonVoice.PRIMARY,
+            modifier = Modifier.fillMaxWidth().padding(bottom = Space.m),
+            fontSize = 16.sp,
+            minHeight = 56.dp,
+        )
+    }
+}
+
+/** The one check mark in the app, drawn with the same pen every other glyph is. */
+@Composable
+private fun CheckMark(tint: Color, size: androidx.compose.ui.unit.Dp = 40.dp) {
+    Canvas(Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        drawPath(
+            Path().apply {
+                moveTo(w * 0.22f, h * 0.56f)
+                lineTo(w * 0.42f, h * 0.74f)
+                lineTo(w * 0.78f, h * 0.30f)
+            },
+            tint,
+            style = pen(3.dp),
+        )
+    }
+}
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
