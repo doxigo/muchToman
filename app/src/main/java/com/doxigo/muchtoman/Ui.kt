@@ -647,6 +647,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onWindow = { month, span -> reportMonth = month.startDay; reportSpan = span },
             onCountPassThrough = { countPassThrough = it },
             bottomInset = pad.calculateBottomPadding(),
+            entries = state.ledger.entries,
+            // The drill-down's rows open the transaction's own page; closing it lands back on
+            // this report, because the tab underneath never moved.
+            onOpenEntry = { transactionRef = it.txn.ref },
             // The bar is the way out wherever there is one. The lite edition has no bar and
             // still opens this from the گزارش button on its field, so there it keeps the
             // «برگشت» it had as an overlay — see [tabs].

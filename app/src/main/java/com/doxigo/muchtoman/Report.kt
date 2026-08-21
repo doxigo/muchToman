@@ -12,18 +12,22 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -31,19 +35,23 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.round
+import kotlinx.coroutines.launch
 
 /**
  * The report answers one follow-up question: "بیشتر شده یا کمتر؟" — over a window she picks.
@@ -125,6 +134,10 @@ fun ReportScreen(
     onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
     onBack: (() -> Unit)? = null,
+    /** The ledger itself, for the category drill-down — the rows behind every share bar. */
+    entries: List<LedgerEntry> = emptyList(),
+    /** Opens one transaction's own page, from the drill-down's list. */
+    onOpenEntry: ((LedgerEntry) -> Unit)? = null,
 ) {
     val modes = reportModes
     // The lite edition is handed CASH_FLOW by any caller that does not know which build it is
@@ -188,6 +201,8 @@ fun ReportScreen(
                     onWindow = onWindow,
                     onCountPassThrough = onCountPassThrough,
                     bottomInset = bottomInset,
+                    entries = entries,
+                    onOpenEntry = onOpenEntry,
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(cashScroll),
@@ -589,6 +604,8 @@ private fun CashFlowReportContent(
     onWindow: (ReportMonth, ReportSpan) -> Unit,
     onCountPassThrough: (Boolean) -> Unit,
     bottomInset: Dp,
+    entries: List<LedgerEntry> = emptyList(),
+    onOpenEntry: ((LedgerEntry) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val period = cash.period
@@ -627,7 +644,7 @@ private fun CashFlowReportContent(
 
         if (period.transactions > 0) {
             Spacer(Modifier.height(Space.xxl))
-            CategoryDetail(period)
+            CategoryDetail(period, entries, onOpenEntry)
         }
 
         // Findings and wins in one grid, not two runs of one: paired by kind, each run could end
@@ -1255,7 +1272,11 @@ private fun BarKey(label: String, tone: Color) {
  * she came to for the detail, so the sixth-largest category is not the app's to withhold.
  */
 @Composable
-private fun CategoryDetail(period: PeriodReport) {
+private fun CategoryDetail(
+    period: PeriodReport,
+    entries: List<LedgerEntry>,
+    onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+) {
     // خرج unless there is nothing on that side to show, which is the only case where opening on
     // it would be an empty screen with a full one one tap away.
     var side by rememberSaveable {
@@ -1270,13 +1291,11 @@ private fun CategoryDetail(period: PeriodReport) {
     // The window written out, never «این ماه»: this line states which months were looked in and
     // found empty, and that is a fact about named months rather than about where she is standing.
     val named = period.range.fa
+    // The category she has opened up, or null. Name and side together, because «خوراک» can in
+    // principle exist on both sides of the ledger and the sheet must know which one she tapped.
+    var opened by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column {
-        // The one section on this screen that opened with a bare segment. «ماه به ماه» and
-        // «ترکیب دارایی» both name themselves first and put their control beside or beneath the
-        // name; without that this pill was the third full-width segment in a column of them, and
-        // nothing said whether it chose the report, the window, or something in this section.
-        // The heading is what makes it obviously the last of those.
         // Heading and lens on one line: the heading names the section and the chips slice it,
         // which is the whole two-tier rule — the screen's one full-width track is the mode
         // switcher at the top, and everything below it wears the small pill.
@@ -1304,9 +1323,26 @@ private fun CategoryDetail(period: PeriodReport) {
             )
         } else {
             for ((name, rial) in rows) {
-                CategoryShare(name, rial, total, if (income) INCOME_TINT else null)
+                CategoryShare(
+                    name,
+                    rial,
+                    total,
+                    if (income) INCOME_TINT else null,
+                    onOpen = { opened = name },
+                )
             }
         }
+    }
+
+    opened?.let { name ->
+        val window = remember(name, income, entries, period) {
+            categoryWindow(entries, name, income, period.range, total)
+        }
+        CategorySheet(
+            window = window,
+            onOpenEntry = onOpenEntry,
+            onDismiss = { opened = null },
+        )
     }
 }
 
@@ -1319,11 +1355,27 @@ private fun CategoryDetail(period: PeriodReport) {
  * comparable with each other and with nothing else.
  */
 @Composable
-private fun CategoryShare(name: String, rial: Long, total: Long, tint: Color?) {
+private fun CategoryShare(
+    name: String,
+    rial: Long,
+    total: Long,
+    tint: Color?,
+    onOpen: (() -> Unit)? = null,
+) {
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
     Column(
         Modifier
             .fillMaxWidth()
+            // Clipped before the click so the ripple wears the row's own rounding, and padded
+            // inside it so the target reaches the full row height.
+            .clip(RoundedCornerShape(Radius.field))
+            .then(
+                if (onOpen != null) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
+                } else {
+                    Modifier
+                },
+            )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
                 contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، " +
@@ -1365,6 +1417,16 @@ private fun CategoryShare(name: String, rial: Long, total: Long, tint: Color?) {
                 // A floor rather than a width: at a large system font size the box has to give.
                 modifier = Modifier.widthIn(min = 36.dp),
             )
+            if (onOpen != null) {
+                // The one mark that says the row opens. Auto-mirrored, so it points the way a
+                // Persian page reads forward.
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
         Spacer(Modifier.height(Space.xs))
         Box(
@@ -1384,3 +1446,159 @@ private fun CategoryShare(name: String, rial: Long, total: Long, tint: Color?) {
         }
     }
 }
+
+/**
+ * One category, opened up: the figure, its share of its side, six months of it side by side,
+ * and the transactions the figure is made of — each one a door to its own page, because a share
+ * bar is as accountable to «چرا این را می‌بینم؟» as any other number in this app.
+ *
+ * A sheet rather than a page: she is mid-read on the report, and the question «خرید روزانه چرا
+ * این‌قدر شد؟» is a glance down and back, not a journey.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategorySheet(
+    window: CategoryWindow,
+    onOpenEntry: ((LedgerEntry) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    val hue = categoryHue(window.name)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        LazyColumn(
+            Modifier.navigationBarsPadding(),
+            contentPadding = PaddingValues(start = Space.xl, end = Space.xl, bottom = Space.l),
+        ) {
+            item(key = "head") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(hue.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center,
+                    ) { CategoryIcon(window.name, hue, size = 24.dp) }
+                    Spacer(Modifier.width(Space.m))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            window.name,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        Text(
+                            window.range.fa,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Space.l))
+                BasicText(
+                    text = bidi("${faCompact(tomanOf(window.totalRial))} تومان"),
+                    maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 34.sp),
+                    style = figureStyle(
+                        if (window.income) INCOME_TINT else MaterialTheme.colorScheme.onSurface,
+                        FontWeight.Black,
+                    ),
+                )
+                window.share?.let { share ->
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        "${faNumber(round(share * 100.0))}٪ از " +
+                            "${if (window.income) "درآمد" else "خرج"} این بازه",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (window.trend.any { it.second > 0 }) {
+                item(key = "trend") {
+                    SheetLabel("ماه به ماه")
+                    CategoryTrend(window.trend, hue)
+                }
+            }
+
+            if (window.rows.isNotEmpty()) {
+                item(key = "rows_head") { SheetLabel("تراکنش‌های این بازه") }
+                itemsIndexed(window.rows, key = { _, e -> e.txn.ref }) { i, e ->
+                    // The timeline's own row, in the timeline's own band — a transaction looks
+                    // the same wherever it is met, and tapping it goes where it always goes.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(bandShape(i, window.rows.size))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        TimelineRow(e) {
+                            if (onOpenEntry != null) close { onDismiss(); onOpenEntry(e) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Six months of one category on one scale, in the category's own hue — the answer to «همیشه
+ * این‌قدر بود؟» before the question is asked. Only the two end months are named: six Persian
+ * month names across a sheet is a caption war, and the two ends are the axis.
+ */
+@Composable
+private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
+    val top = trend.maxOf { it.second }.coerceAtLeast(1L)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        trend.forEachIndexed { index, (month, rial) ->
+            Column(
+                Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(maxOf(4f, 80f * rial.toFloat() / top.toFloat()).dp)
+                        .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                        .background(
+                            if (rial > 0) hue
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                )
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    if (index == 0 || index == trend.lastIndex) MONTHS[month.month - 1] else "",
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * «به نظر خودت» — what she answered when the deck asked «ارزش داشت؟», summed over this window.
+ *
+ * It lived under آینده, where it was a stray card speaking for all time: a verdict on spending
+ * belongs where spending is taken apart, and windowed to the same months as every figure above
+ * it, or it would be the one section on the screen describing a different stretch of time.
+ *
+ * Zero rows are skipped outright — a Persian zero at this size is a floating dot, not a figure,
+ * and three rows of which two are dots is exactly the card that read as broken.
+ */
+@Composable

@@ -690,6 +690,7 @@ private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
 
 @Composable
 private fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
+internal fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
     val tone = when {
@@ -976,6 +977,7 @@ fun TransactionScreen(
         )
     }
 }
+
 /**
  * «برای موارد مشابه هم همین دسته» — the one switch both filing surfaces share.
  *

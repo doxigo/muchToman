@@ -366,6 +366,63 @@ fun bufferDays(
     return (liquidRial.toDouble() / median).toInt().coerceAtMost(3650)
 }
 
+// ─────────────────────────── one category, taken apart ───────────────────────────
+
+/**
+ * One category out of the window's list, opened up: its total, its share of its own side, six
+ * months of it side by side, and the transactions the figure is made of — because «every number
+ * can be traced back to a transaction» applies to a share bar exactly as much as to the total.
+ */
+data class CategoryWindow(
+    val name: String,
+    val income: Boolean,
+    val range: ReportRange,
+    /** What this category moved inside [range]. */
+    val totalRial: Long,
+    /** That side's whole figure for the window, which is what the share is a share of. */
+    val sideRial: Long,
+    /** The trailing months ending at the window's last, oldest first. Months with nothing are zero. */
+    val trend: List<Pair<ReportMonth, Long>>,
+    /** The rows behind [totalRial], newest first. */
+    val rows: List<LedgerEntry>,
+) {
+    val share: Double? get() = if (sideRial > 0) totalRial.toDouble() / sideRial else null
+}
+
+/**
+ * [name] rather than an id, because the window's list is aggregated by name — a category she
+ * archived and remade under the same word is one line there, so it is one sheet here.
+ */
+fun categoryWindow(
+    entries: List<LedgerEntry>,
+    name: String,
+    income: Boolean,
+    range: ReportRange,
+    sideRial: Long,
+    trendMonths: Int = 6,
+): CategoryWindow {
+    val side = spendable(entries).filter {
+        val signed = it.txn.signedRial ?: return@filter false
+        it.categoryFa == name && (if (income) signed > 0 else signed < 0)
+    }
+    val inRange = side.filter { it.txn.day in range }
+    val months = (trendMonths - 1 downTo 0).map { back -> range.last.back(back) }
+    val trend = months.map { month ->
+        month to side
+            .filter { it.txn.day in month.startDay until month.endDay }
+            .sumOf { abs(it.txn.signedRial ?: 0L) }
+    }
+    return CategoryWindow(
+        name = name,
+        income = income,
+        range = range,
+        totalRial = inRange.sumOf { abs(it.txn.signedRial ?: 0L) },
+        sideRial = sideRial,
+        trend = trend,
+        rows = inRange.sortedByDescending { it.txn.at },
+    )
+}
+
 // ─────────────────────────── the narrative ───────────────────────────
 
 /**
