@@ -668,6 +668,95 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * A transaction she typed in herself, in the same shape the iPhone writes one.
+     *
+     * The row and its answers land together: the category is an ordinary pinned decision on
+     * `m:<id>` — the same mechanism a filed message uses, which is what lets her refile it later
+     * — and the note rides the same rail as a note on any other row.
+     */
+    fun addManualTxn(signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long) {
+        if (signedRial == 0L) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                val id = uuid7(now)
+                val session = loadSession(durable)
+                durable.withTransaction {
+                    durable.manual().put(
+                        ManualTxn(
+                            id = id,
+                            at = at,
+                            day = tehranDay(at),
+                            amountRial = signedRial,
+                            categoryId = categoryId,
+                            merchant = merchant.trim().take(60),
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    )
+                    if (categoryId != null) {
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now + 1),
+                                ref = manualRef(id),
+                                kind = DecisionKind.CATEGORY,
+                                value = categoryId,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                                familyRef = session?.let { familyTxnId(it.member, manualRef(id)) }.orEmpty(),
+                            )
+                        )
+                    }
+                    val cleanNote = note.trim().take(200)
+                    if (cleanNote.isNotEmpty()) {
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now + 2),
+                                ref = manualRef(id),
+                                kind = DecisionKind.NOTE,
+                                value = cleanNote,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                            )
+                        )
+                    }
+                }
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "addManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Takes back a row she typed in — tombstoned, never erased, so the other phones in the
+     * household learn it is gone. Only ever offered on manual rows: a message is evidence, and
+     * evidence is not deletable.
+     */
+    fun deleteManualTxn(entry: LedgerEntry) {
+        if (entry.txn.sourceKind != "manual" || !entry.txn.ref.startsWith("m:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val id = entry.txn.ref.removePrefix("m:")
+                val row = durable.manual().all().firstOrNull { it.id == id } ?: return@runCatching
+                durable.manual().put(
+                    row.copy(deleted = true, updatedAt = maxOf(System.currentTimeMillis(), row.updatedAt + 1))
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
+        }
+    }
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 

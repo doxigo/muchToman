@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -162,6 +163,8 @@ fun TimelineScreen(
     onReview: () -> Unit,
     onAskNotify: () -> Unit,
     onOpen: (LedgerEntry) -> Unit,
+    /** A transaction no message will ever report, typed in by hand. */
+    onAddTxn: (() -> Unit)? = null,
 ) {
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
@@ -184,19 +187,33 @@ fun TimelineScreen(
         // statusBars only: the tab bar below owns the bottom, and taking systemBars here
         // would leave a gap the width of the navigation bar above it.
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(
+            BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.m),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "دفتر",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Spacer(Modifier.weight(1f))
-                if (waiting > 0) ReviewPill(waiting, onReview)
+                // Three things want this line and a narrow phone has room for two and a half, so
+                // the order they yield in is decided here rather than by whichever measured last.
+                // The word on the add pill goes first — its mark still says «افزودن» without it.
+                // The count never goes: «مرور ۵۳ مورد» is the one control on the line she has to
+                // act on, and a truncated number is worse than no pill at all.
+                val labelled = waiting == 0 || maxWidth >= 300.dp
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "دفتر",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        // The backstop under the rule above, for a system font scale no dp
+                        // threshold can see coming. It should never be reached on a real phone.
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                    )
+                    if (onAddTxn != null) {
+                        AddTxnButton(onAddTxn, labelled)
+                        Spacer(Modifier.width(Space.s))
+                    }
+                    if (waiting > 0) ReviewPill(waiting, onReview)
+                }
             }
 
             if (everything.isEmpty()) {
@@ -243,6 +260,64 @@ fun TimelineScreen(
             }
         }
     }
+ * because the moment she paid cash for something is not a moment she is standing in تنظیمات.
+ *
+ * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and the one
+ * action on this screen that writes money is not the place to make her guess; «تراکنش» after the
+ * mark costs a few millimetres and answers it outright. The pill is the neutral well the chips
+ * below wear rather than the review pill's filled gold — two solid golds on one line would both
+ * be claiming «this one» — and the mark alone carries the interactive colour, which is what keeps
+ * it from reading as a third filter.
+ *
+ * [labelled] is false only where the line genuinely cannot hold the word — see the header.
+ */
+@Composable
+private fun AddTxnButton(onClick: () -> Unit, labelled: Boolean) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(role = Role.Button, onClickLabel = "تراکنش دستی", onClick = onClick)
+            // Square when the word is gone, so it reads as the mark's own disc rather than as a
+            // pill that lost its label.
+            .then(
+                if (labelled) Modifier.heightIn(min = 48.dp).padding(horizontal = Space.l)
+                else Modifier.size(48.dp),
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        PlusMark(MaterialTheme.colorScheme.primary, size = 20.dp)
+        if (labelled) {
+            Spacer(Modifier.width(Space.xs))
+            Text(
+                "تراکنش",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * The plus, drawn with the pen every other mark in this app is drawn with. A typed «+» is text
+ * doing an icon's job: it sits on a baseline, inherits a weight axis, and lands off-centre in
+ * any disc that holds it.
+ */
+@Composable
+internal fun PlusMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
+    Canvas(Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val ink = pen(2.2.dp)
+        drawPath(Path().apply { moveTo(w * 0.5f, h * 0.14f); lineTo(w * 0.5f, h * 0.86f) }, tint, style = ink)
+        drawPath(Path().apply { moveTo(w * 0.14f, h * 0.5f); lineTo(w * 0.86f, h * 0.5f) }, tint, style = ink)
+    }
+}
+
+/**
 }
 
 /**
@@ -521,6 +596,8 @@ fun TransactionScreen(
     categoryUse: Map<String, Double> = emptyMap(),
     /** Her note on this transaction. Null hides the section — the deck has no room for prose. */
     onNote: ((LedgerEntry, String) -> Unit)? = null,
+    /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
+    onDelete: ((LedgerEntry) -> Unit)? = null,
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
@@ -638,6 +715,21 @@ fun TransactionScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.panel(),
                         )
+                    }
+                }
+            }
+
+            // Only on a row she typed in: a message is evidence, and evidence is not deletable.
+            // The two-tap confirm is the budget sheet's own, because one stray touch down here
+            // must not erase a transaction.
+            if (onDelete != null && txn.sourceKind == "manual") {
+                item(key = "delete") {
+                    Column(gutter) {
+                        Spacer(Modifier.height(Space.xl))
+                        SheetDelete("حذف این تراکنش") {
+                            onDelete(entry)
+                            onBack()
+                        }
                     }
                 }
             }

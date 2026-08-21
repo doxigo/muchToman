@@ -248,6 +248,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     var companion by remember { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
     var deck by remember { mutableStateOf(false) }
+    // The hand-entered transaction sheet, over دفتر — the room where its row will land.
+    var addingTxn by remember { mutableStateOf(false) }
     var transactionRef by rememberSaveable { mutableStateOf<String?>(null) }
 
     // One tab, not three booleans. Three could be true at once, and were: every screen was an
@@ -477,6 +479,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 onBack = { transactionRef = null },
                 categoryUse = state.ledger.categoryUse,
                 onNote = vm::setNote,
+                onDelete = vm::deleteManualTxn,
             )
             return
         }
@@ -553,7 +556,19 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onReview = { deck = true },
             onAskNotify = askNotify,
             onOpen = { transactionRef = it.txn.ref },
+            onAddTxn = { addingTxn = true },
         )
+        if (addingTxn) {
+            ManualTxnSheet(
+                categories = state.ledger.categories,
+                categoryUse = state.ledger.categoryUse,
+                onSave = { rial, categoryId, merchant, note, at ->
+                    vm.addManualTxn(rial, categoryId, merchant, note, at)
+                    addingTxn = false
+                },
+                onDismiss = { addingTxn = false },
+            )
+        }
         return@Scaffold
       }
       if (tab == Tab.BUDGET) {

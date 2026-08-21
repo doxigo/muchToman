@@ -879,7 +879,7 @@ private fun BudgetSheet(
  * tap must not erase a decision, so the first tap only changes the label to a question.
  */
 @Composable
-private fun SheetDelete(label: String, onConfirmed: () -> Unit) {
+internal fun SheetDelete(label: String, onConfirmed: () -> Unit) {
     var confirm by remember { mutableStateOf(false) }
     TextButton(
         onClick = { if (confirm) onConfirmed() else confirm = true },
@@ -1046,7 +1046,7 @@ private fun GoalSheet(
  * multiplied by ten saturates `Long` on the way in; [MAX_PLAUSIBLE_RIAL] is the same bound the
  * parser applies to a bank message, and a cap or a target beyond it is a typo rather than money.
  */
-private fun tomanFieldToRial(text: String): Long? =
+internal fun tomanFieldToRial(text: String): Long? =
     parseAmount(text)
         ?.takeIf { it > 0.0 && it <= MAX_PLAUSIBLE_RIAL / 10.0 }
         ?.let { (it * 10.0).roundToLong() }
