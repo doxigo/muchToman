@@ -55,6 +55,9 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // one digit apart from it — so it is listed whole, and senderKey folds the +98…/98…/0…
     // forms of it onto one key without either bank reaching the other's.
     MELLI("بانک ملی ایران", listOf("6037", "09830009417")),
+    // Dey sends from a lettered header. Listed with and without the space for the reason
+    // Refah's is: "Day Bank" and "DayBank" are one sender to a human and two keys to senderKey.
+    DEY("بانک دی", listOf("Day Bank", "DayBank")),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build

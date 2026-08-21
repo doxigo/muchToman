@@ -2905,6 +2905,7 @@ internal fun <T> ChipChoice(
         }
     }
 }
+
 /**
  * One track, one filled pill — the app's only shape for "pick exactly one of a few". The
  * report's window picker, the theme picker and the two ways of recording a balance were three
@@ -3062,6 +3063,7 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
         Bank.PARSIAN -> R.drawable.ic_bank_parsian
         Bank.MELLAT -> R.drawable.ic_bank_mellat
         Bank.MELLI -> R.drawable.ic_bank_melli
+        Bank.DEY -> R.drawable.ic_bank_dey
         Bank.OTHER -> null
     }
 
