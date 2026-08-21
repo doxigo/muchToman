@@ -757,6 +757,34 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
         }
     }
+
+    /**
+     * Everything rebuildable, dropped and rebuilt: the cached rate and بورس snapshots, the coin
+     * -icon cache, and `derived.db` — which is a cache by design, so «clear» for it simply means
+     * the same total re-derive a parser fix runs. Nothing of hers is touched: messages,
+     * decisions, holdings, history and every setting stay exactly put, and fresh fetches start
+     * on the spot so the screens refill rather than sit empty.
+     */
+    fun clearCaches() {
+        val app = getApplication<Application>()
+        store.cachedRates = Rates()
+        store.cachedStocks = TseSnapshot()
+        _state.update { it.copy(rates = Rates(), tse = TseSnapshot()) }
+        viewModelScope.launch(Dispatchers.Default) {
+            runCatching {
+                coil3.SingletonImageLoader.get(app).apply {
+                    diskCache?.clear()
+                    memoryCache?.clear()
+                }
+                val durable = DurableDb.get(app)
+                val derived = DerivedDb.get(app)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onFailure { android.util.Log.w("muchtoman", "clearCaches failed: $it") }
+        }
+        refreshAll()
+    }
+
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 

@@ -477,8 +477,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 else vm.setLockEnabled(false)
             },
             onWidgetLockChange = vm::setWidgetLock,
-            onDemoData = vm::setDemoData,
             onCategories = { categoriesPage = true },
+            onClearCache = vm::clearCaches,
             onBack = { settings = false },
         )
         return

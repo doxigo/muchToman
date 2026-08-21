@@ -203,10 +203,10 @@ fun SettingsScreen(
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
     onWidgetLockChange: (Boolean) -> Unit,
-    /** Only ever called from the dev build's own section at the bottom of this page. */
-    onDemoData: (Boolean) -> Unit,
     /** The door to «دسته‌بندی‌ها», which is a room of its own now rather than a strip here. */
     onCategories: () -> Unit,
+    /** Drops and rebuilds everything rebuildable — see [AppVm.clearCaches]. */
+    onClearCache: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -421,13 +421,10 @@ fun SettingsScreen(
                 )
             }
 
-            // Only ever on the dev build — see [AppVm.setDemoData]. Last on the page, under the
-            // real settings and above the version line, because it is a bench tool and not a
-            // thing about her money.
-            if (BuildConfig.DEMO) {
-                SectionLabel("داده‌های نمایشی")
-                DemoDataRow(onDemoData)
-            }
+            // Last of the real settings, above the version line: a repair tool, not a thing
+            // about her money.
+            SectionLabel("حافظهٔ موقت")
+            CacheRow(onClearCache)
 
             // The answer to "which version do you have?" over the phone, without her having
             // to find the system app-info page. A fixed gap, not weight(1f): inside a scrolling
@@ -458,18 +455,14 @@ fun SettingsScreen(
 }
 
 /**
- * The bench tool: fourteen months of invented household, in and out again.
- *
- * Two buttons rather than a switch, and the second one is a confirm, because «پاک کردن» is the
- * only control on this page that deletes transactions — and on a dev build the ledger it is
- * pointed at is usually the one somebody is halfway through testing against.
- *
- * It says what it writes. A demo generator whose output is a mystery is a thing you end up
- * debugging instead of the feature you built it for.
+ * The way back from a stale cache, and the sentence that makes it safe to press: everything it
+ * drops is rebuilt — rates refetched, the ledger re-derived from the stored messages — and
+ * nothing she typed, filed or received is touched. One tap, no confirm: a control that only
+ * deletes the rebuildable has nothing to warn about.
  */
 @Composable
-private fun DemoDataRow(onDemoData: (Boolean) -> Unit) {
-    var confirming by remember { mutableStateOf(false) }
+private fun CacheRow(onClear: () -> Unit) {
+    var cleared by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -478,42 +471,22 @@ private fun DemoDataRow(onDemoData: (Boolean) -> Unit) {
             .padding(Space.l),
     ) {
         Text(
-            "${faNumber(DEMO_MONTHS.toDouble())} ماه تراکنش ساختگی، با حقوق و اجاره و قسط و خرید " +
-                "روزانه — برای اینکه بازه‌های «۳ ماه» و «۶ ماه» و «۱ سال» گزارش‌ها را بشود دید. " +
-                "همهٔ ردیف‌ها نشان‌دار هستند و «پاک کردن» دقیقاً همان‌ها را برمی‌دارد.",
+            "نرخ‌های ذخیره‌شده، نشان کوین‌ها و جدول‌هایی که از روی پیامک‌ها ساخته شدن پاک و از " +
+                "نو ساخته می‌شن. پیامک‌ها، دسته‌بندی‌ها و هر چیزی که خودت وارد کردی دست نمی‌خوره.",
             fontSize = 13.sp,
             lineHeight = 22.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(Space.s))
-        // Asking replaces the row rather than growing it: three buttons and a question do not
-        // fit across a 320dp phone, and «مطمئنم» broken over two lines is a control that looks
-        // like a bug at the exact moment it is asking permission to delete something.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (confirming) {
-                Text(
-                    "پاک بشه؟",
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = { confirming = false }) {
-                    Text("بی‌خیال", fontSize = 15.sp, maxLines = 1)
+        Spacer(Modifier.height(Space.m))
+        PillButton(
+            if (cleared) "پاک شد — در حال ساختن دوباره" else "پاک کردن حافظهٔ موقت",
+            {
+                if (!cleared) {
+                    cleared = true
+                    onClear()
                 }
-                TextButton(onClick = { confirming = false; onDemoData(false) }) {
-                    Text("آره", fontSize = 15.sp, maxLines = 1, color = MaterialTheme.colorScheme.error)
-                }
-            } else {
-                TextButton(onClick = { onDemoData(true) }) {
-                    Text("ساختن", fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { confirming = true }) {
-                    Text("پاک کردن", fontSize = 15.sp, maxLines = 1)
-                }
-            }
-        }
+            },
+        )
     }
 }
 
