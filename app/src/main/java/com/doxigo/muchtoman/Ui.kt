@@ -1734,9 +1734,9 @@ private fun LedgerIcon(tint: Color) {
 }
 
 /**
- * A real logo where one exists, an emoji for the fixed assets, and the ticker as a last
- * resort. The letters sit underneath and are covered once the logo loads, so a slow network
- * shows an identifiable badge rather than a hole.
+ * A real logo where one exists, a drawn mark ([assetGlyph]) for the fixed assets, and the
+ * ticker as a last resort. The letters sit underneath and are covered once the logo loads, so
+ * a slow network shows an identifiable badge rather than a hole.
  *
  * [network] marks which chain the coin actually sits on. Tether on Tron and Tether on Ethereum
  * are the same logo and the same row, and until this the only thing telling them apart was a
@@ -1755,6 +1755,15 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
         Kind.CRYPTO, Kind.STOCK -> scheme.surfaceVariant
         Kind.PROPERTY -> scheme.tertiaryContainer
     }
+    // The disc's own «on» role, so the mark keeps contrast in both themes without a rule of
+    // its own — the same pairing every container in the app already is.
+    val ink = when (type.kind) {
+        Kind.CASH -> scheme.onPrimaryContainer
+        Kind.FIAT, Kind.PROPERTY -> scheme.onTertiaryContainer
+        Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.onSecondaryContainer
+        Kind.CRYPTO, Kind.STOCK -> scheme.onSurfaceVariant
+    }
+    val glyph = assetGlyph(type)
     Box(contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
@@ -1819,6 +1828,9 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
                         }
                     }
                 }
+                glyph != null -> AssetGlyphIcon(glyph, ink, size = size * 0.55f)
+                // Still reachable: an asset synced from a build that knows a kind this one
+                // does not draw yet keeps its emoji rather than falling to bare letters.
                 type.emoji != null -> Text(type.emoji, fontSize = (size.value * 0.52f).sp)
                 else -> letters()
             }
