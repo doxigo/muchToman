@@ -107,8 +107,20 @@ class FilingTest {
     }
 
     @Test
-    fun `the first pass is silent about filed rows too`() {
-        assertNull(filingNews(listOf(filed(at = 900L)), emptyList(), said = 0L).alert)
+    fun `a fresh install speaks for the very first thing that lands`() {
+        // Ingest seeds its watermark at now, so a ledger holding one row on the first pass is
+        // holding the spend that just happened — there is no backlog here to be ambushed by.
+        val alert = filingNews(listOf(filed(at = 900L)), emptyList(), said = 0L).alert!!
+        assertEquals(1, alert.filed)
+        assertEquals(0, alert.fresh)
+    }
+
+    @Test
+    fun `a first pass over a ledger that was already full stays silent`() {
+        // A rewind through the inbox, or the first sync onto a household's second phone. Both
+        // arrive all at once and neither is news.
+        val many = (1..8L).map { waiting(at = 100L * it) }
+        assertNull(filingNews(many, many, said = 0L).alert)
     }
 
     // ─────────────────────────── filing the whole backlog ───────────────────────────

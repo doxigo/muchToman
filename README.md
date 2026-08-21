@@ -22,10 +22,15 @@ coin, so a ۱۰۰ سوت piece goes for about a quarter more than the gold in it
 
 Sample data, live rates.
 
-| | | |
+| خانه | دارایی | دفتر |
 | --- | --- | --- |
-| ![](docs/screenshots/home.png) | ![](docs/screenshots/assets.png) | ![](docs/screenshots/report.png) |
-| ![](docs/screenshots/home-dark.png) | ![](docs/screenshots/assets-dark.png) | ![](docs/screenshots/report-dark.png) |
+| ![](docs/screenshots/home.png) | ![](docs/screenshots/assets.png) | ![](docs/screenshots/ledger.png) |
+| ![](docs/screenshots/home-dark.png) | ![](docs/screenshots/assets-dark.png) | ![](docs/screenshots/ledger-dark.png) |
+
+| گزارش | آینده | حساب‌های بانکی |
+| --- | --- | --- |
+| ![](docs/screenshots/report.png) | ![](docs/screenshots/budget.png) | ![](docs/screenshots/banks.png) |
+| ![](docs/screenshots/report-dark.png) | ![](docs/screenshots/budget-dark.png) | ![](docs/screenshots/banks-dark.png) |
 
 ## What it does
 
@@ -102,9 +107,10 @@ Two of them are published side by side:
 | `muchtoman-vX.Y.Z.apk` | everything below — the household ledger, goals, the companion phone |
 | `muchtoman-lite-vX.Y.Z.apk` | دارایی only: what you own and what it is worth today |
 
-Take the lite one if you want a portfolio and not a budget. It installs under its own name, so
-you can have both on one phone and try the full app without giving up the simple one. Both read
-the same bank پیامک and get the same detection fixes — they are one codebase, built twice.
+Take the lite one if you want a portfolio and not a budget. It installs as «چقدر تومن دارم»
+beside «چقدر تومن», under its own package, so you can have both on one phone and try the full
+app without giving up the simple one. Both read the same bank پیامک and get the same detection
+fixes — they are one codebase, built twice.
 
 If you are already running an earlier version, the plain `muchtoman-` file is your update: it
 keeps its package, so the balances you typed in and every category you confirmed carry over.

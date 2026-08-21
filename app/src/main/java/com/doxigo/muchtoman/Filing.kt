@@ -78,6 +78,21 @@ data class FilingAlert(
 data class FilingNews(val alert: FilingAlert?, val mark: Long)
 
 /**
+ * How many rows a phone that has never spoken may speak for.
+ *
+ * The first-pass silence exists so a ledger she has been living with cannot be announced at her in
+ * one go — a rewind through a year of the inbox, or a second phone in the household receiving the
+ * first sync. Neither of those is small. A fresh install is: [ingestBankSms] seeds its watermark at
+ * `now` and reads nothing that was already in the inbox, so the first thing a new phone ever holds
+ * is the spend that just happened, and staying silent for it made the app look like it had missed
+ * the message it had in fact just read.
+ *
+ * Three rather than one because a single message can produce more than one transaction, and two
+ * can land between one wakeup and the next.
+ */
+private const val FIRST_PASS_LIMIT = 3
+
+/**
  * What has landed since [said], and how far the mark moves.
  *
  * [entries] is the whole ledger and [review] the unfiled slice of it — passed separately rather
@@ -85,10 +100,11 @@ data class FilingNews(val alert: FilingAlert?, val mark: Long)
  * The filed slice is taken from [entries] with review's own exclusions: a duplicate's second leg
  * and a settled transfer are not spends, and a note about either would report bookkeeping as news.
  *
- * [said] of zero means this phone has never looked, and that case is deliberately **silent**: it is
- * a fresh install part-way through its first import, or an upgrade onto a build that had no mark to
- * keep, and neither is a moment to hand her a backlog she has been living with. The first pass only
- * learns where the ledger is.
+ * [said] of zero means this phone has never looked, and it stays **silent** there unless the whole
+ * ledger is [FIRST_PASS_LIMIT] rows or fewer: a rewind through the inbox or a first sync is a
+ * backlog she has been living with and must not be announced at her in one go, while a ledger
+ * holding nothing but what just arrived is a new phone's first spend and is exactly what she
+ * installed this for.
  */
 fun filingNews(entries: List<LedgerEntry>, review: List<LedgerEntry>, said: Long): FilingNews {
     // Over everything, not just review: a filed row must move the mark too, or it would be news
@@ -98,7 +114,11 @@ fun filingNews(entries: List<LedgerEntry>, review: List<LedgerEntry>, said: Long
     val filed = entries.filter {
         !it.needsReview && !it.duplicate && !it.transfer && it.txn.at > said
     }
-    val alert = if (said <= 0L || (fresh.isEmpty() && filed.isEmpty())) {
+    // A first pass over a ledger that already holds more than a handful is the rewind-or-sync
+    // case: learn where it is and say nothing. Over a ledger holding only what just arrived, it
+    // is a new phone's first spend, and that is worth saying.
+    val seeding = said <= 0L && entries.size > FIRST_PASS_LIMIT
+    val alert = if (seeding || (fresh.isEmpty() && filed.isEmpty())) {
         null
     } else {
         FilingAlert(

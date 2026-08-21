@@ -9,6 +9,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.SpanStyle
@@ -117,21 +118,32 @@ internal fun heroFigure(figure: AnnotatedString, tone: Color): AnnotatedString =
 }
 
 /**
- * The hero is the same object in both themes — a forest-green field, the answer in bright
- * green. Wise's own pairing, fixed here rather than derived from the scheme so dark mode
- * cannot quietly invert it into a lime slab.
+ * The hero card's own palette. In the light it is Wise's forest with the answer in bright
+ * green; in the dark it is what Wise's dark cards actually are — a neutral elevated room the
+ * green visits — because a forest slab on a near-black page reads as olive mud, and the
+ * first two cuts (gradient, then flat forest) both proved it. The answer itself stays bright
+ * green in both worlds; the lock screen and the widget keep the fixed forest, where it sits
+ * on its own with nothing dark behind it.
  */
 object Hero {
-    /** Top and bottom of the field's gradient. Light hits the top corner, as on a card. */
-    val top = Color(0xFF1E4808)
-    val bottom = Color(0xFF112B03)
+    /** Wise's forest, flat. The light theme's card, the lock screen, the widget. */
+    val forest = Color(0xFF163300)
+
+    private val dark: Boolean
+        @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    /** The card's ground. */
+    val field: Color
+        @Composable get() = if (dark) MaterialTheme.colorScheme.surfaceContainerHigh else forest
 
     /** The answer, and the one thing allowed to be bright green inside the field. */
     val accent = Color(0xFF9FE870)
 
-    /** Green-tinted secondary text, never flat grey. 7.9:1 on `bottom`. */
-    val muted = Color(0xFFA9C295)
-    val strong = Color(0xFFF0F6E9)
+    /** Secondary text on the field: green-tinted on forest, the scheme's neutral in the dark. */
+    val muted: Color
+        @Composable get() = if (dark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFA9C295)
+    val strong: Color
+        @Composable get() = if (dark) MaterialTheme.colorScheme.onSurface else Color(0xFFF0F6E9)
 
     /**
      * Growth. The same convention every Iranian bank app shares — and here it is the brand
@@ -145,7 +157,7 @@ object Hero {
      */
     val warn = Color(0xFFFFB59F)
 
-    /** Raised surfaces inside the field: action circles, pills, the freshness strip. */
+    /** Raised surfaces inside the field: pills, wells. Translucent, so they sit on either ground. */
     val well = Color(0x17FFFFFF)
     val hairline = Color(0x24FFFFFF)
 }
@@ -262,39 +274,48 @@ private val LightColors = lightColorScheme(
     scrim = Color(0xFF0A0F08),
 )
 
+/**
+ * Wise's dark: near-neutral darks with a breath of green, white-ish text, neutral grey for
+ * the muted voice, and the bright green spent only where it means something. The first cut
+ * tinted every surface toward forest and the whole theme read as olive mud — dark mode is
+ * not the light theme dimmed, it is its own neutral room the green visits.
+ */
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF9FE870),
     onPrimary = Color(0xFF163300),
-    primaryContainer = Color(0xFF234E0B),
-    onPrimaryContainer = Color(0xFFD3F2B4),
+    // A quiet dark chip with the bright green as its content — Wise's dark action circles —
+    // rather than a green slab. Visible on the bar and the page alike.
+    primaryContainer = Color(0xFF2A3A1D),
+    onPrimaryContainer = Color(0xFF9FE870),
 
     secondary = Color(0xFFEDCB5A),
     onSecondary = Color(0xFF362A00),
     secondaryContainer = Color(0xFF4C3F0E),
     onSecondaryContainer = Color(0xFFF8ECC1),
 
-    // Gain stays green in the dark too — minted a step away from the bright primary.
-    tertiary = Color(0xFF52DB94),
-    onTertiary = Color(0xFF00391D),
-    tertiaryContainer = Color(0xFF0A4A2C),
-    onTertiaryContainer = Color(0xFFBDF2D4),
+    // Gain speaks in the brand green itself in the dark — Wise's own rule. What keeps it
+    // distinct from «press this» is shape and context, not a second green.
+    tertiary = Color(0xFF9FE870),
+    onTertiary = Color(0xFF163300),
+    tertiaryContainer = Color(0xFF21361B),
+    onTertiaryContainer = Color(0xFFC2EFAE),
 
-    background = Color(0xFF10140D),         // forest-black, not neutral black
-    onBackground = Color(0xFFEAEFE3),
+    background = Color(0xFF121511),         // Wise's dark screen: near-black, barely green
+    onBackground = Color(0xFFF2F3EF),
 
-    surface = Color(0xFF1A2015),
-    onSurface = Color(0xFFEAEFE3),
-    surfaceVariant = Color(0xFF252C1E),
-    onSurfaceVariant = Color(0xFFA9B49B),
+    surface = Color(0xFF1C1F1A),
+    onSurface = Color(0xFFF2F3EF),
+    surfaceVariant = Color(0xFF262923),
+    onSurfaceVariant = Color(0xFFA8AAA6),   // Wise's neutral grey, not a green tint
 
-    surfaceContainerLowest = Color(0xFF0B0F09),
-    surfaceContainerLow = Color(0xFF151A10),
-    surfaceContainer = Color(0xFF1D2417),
-    surfaceContainerHigh = Color(0xFF232B1B),
-    surfaceContainerHighest = Color(0xFF2B3421),
+    surfaceContainerLowest = Color(0xFF0D0F0C),
+    surfaceContainerLow = Color(0xFF181B16),
+    surfaceContainer = Color(0xFF22251F),
+    surfaceContainerHigh = Color(0xFF272A24),
+    surfaceContainerHighest = Color(0xFF30332C),
 
-    outline = Color(0xFF87927B),
-    outlineVariant = Color(0xFF37402C),
+    outline = Color(0xFF7F827C),
+    outlineVariant = Color(0xFF383B35),
 
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF5F1410),

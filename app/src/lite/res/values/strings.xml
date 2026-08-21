@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Latin, and deliberately not «چقدر تومن»: the lite package installs beside the full one, and the
-  two have to be tellable apart at a glance on a launcher full of Persian names. Same reasoning as
-  src/dev/res, and the same reason it says which edition it is rather than something cleverer.
+  «چقدر تومن دارم» — the question this edition answers, where the full app answers «چقدر تومن».
+  The lite package installs beside the full one, so the two labels have to be tellable apart on a
+  launcher; these differ by a whole word and read as what each app is for, which src/dev/res still
+  cannot do (that one is a debug twin of the same app, and only Latin sets it apart).
 -->
 <resources>
-    <string name="app_name">muchToman lite</string>
+    <string name="app_name">چقدر تومن دارم</string>
 </resources>

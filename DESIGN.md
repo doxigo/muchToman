@@ -14,12 +14,15 @@ One pair carries the brand, fixed across both themes:
 - **Bright green** `#9FE870` — the answer and the action. The hero total, every loud button,
   the dark theme's primary.
 
-Two fixed objects in Theme.kt sit outside the Material scheme on purpose:
+Two objects in Theme.kt sit outside the Material scheme on purpose:
 
-- **`Hero`** — the deep-green card (gradient `#1E4808 → #112B03`), its `accent` (#9FE870,
-  the total), `strong`/`muted` green-tinted text, `mint` (growth — same green as the accent,
-  Wise's own rule), `warn` (#FFB59F, the card's only caution), translucent `well`/`hairline`.
-  Dark mode cannot invert it; the lock screen is the only other full-bleed use of it.
+- **`Hero`** — the answer's card, **flat, never a gradient**. Light theme: Wise's forest
+  `#163300`. Dark theme: the scheme's neutral elevated surface with a hairline border —
+  Wise's dark cards are neutral rooms the green visits, and a forest slab on near-black
+  reads as olive mud (two earlier cuts proved it). The `accent` (#9FE870, the total),
+  `mint` (growth — the same green, Wise's own rule) and `warn` (#FFB59F, the card's only
+  caution) are fixed; `strong`/`muted` are green-tinted on forest and the scheme's neutrals
+  in the dark. The lock screen and the widget keep the fixed forest full-bleed.
 - **`Cta`** — `fill #9FE870` / `ink #163300` in *both* themes. Every "press this" pill:
   PillButton PRIMARY, save Buttons, the review pill, the deck's primary answer, the tab badge.
 
@@ -33,12 +36,17 @@ context) use the scheme's `primary` — forest in light, bright in dark — so *
 - `primaryContainer` — soft green tint; action circles, tab indicator, empty-state discs.
 - `secondary` — **amber caution** (light `#7A5900`, dark `#EDCB5A`): budget NEAR/CLOSE, the
   unconfirmed-row dot, «ارزش نداشت». Never green, never error red.
-- `tertiary` — **gain, and only gain** (light `#1F7A40`, dark `#52DB94`): income figures,
-  day nets, deposits, "بیشتر شده", goal met. The one Iranian-bank convention never traded.
+- `tertiary` — **gain, and only gain** (light `#1F7A40`, dark the brand green `#9FE870`):
+  income figures, day nets, deposits, "بیشتر شده", goal met. The one Iranian-bank
+  convention never traded.
 - `error` — Wise-toned red `#A8200D` (light). Facts that need looking at, two-tap deletes.
 - Light ground: **real white** background; cards `#F3F5EE` / panels `#EAEEE0` (gray with a
   green whisper); text `#131711`; muted `#59614F` — green-tinted, never flat grey.
-- Dark ground: forest-black `#10140D`; surfaces `#1A2015` / `#252C1E`.
+- Dark ground: **near-neutral, not forest-tinted** — Wise's dark screen `#121511`, surfaces
+  `#1C1F1A` / `#262923`, muted text `#A8AAA6` (Wise's neutral grey). Dark mode is its own
+  neutral room the green visits; tinting every surface green is how the theme turns olive.
+- Dark `primaryContainer` `#2A3A1D` with the bright green as its content — quiet dark chips
+  (action circles, tab pill), never green slabs.
 - Category hues are their own two fixed sets in CategoryIcon.kt, keyed by glyph, chosen by
   background luminance — they ride above the scheme and survive theming.
 

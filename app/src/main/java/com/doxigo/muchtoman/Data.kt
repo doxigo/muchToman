@@ -552,6 +552,25 @@ class Store(context: Context) {
         get() = read("history", emptyMap())
         set(v) = write("history", v)
 
+    /**
+     * Whether the first-run sheet has had its one turn.
+     *
+     * Written when she answers it *or* skips it, because the sheet's promise is that it appears
+     * once. Everything it asks for stays reachable afterwards from تنظیمات, which is where a mind
+     * changed a week later goes — a sheet that came back until it got the answer it wanted would
+     * be a nag with a permission dialog attached.
+     */
+    var onboarded: Boolean
+        // The second half is what keeps the sheet away from a phone that has been running this app
+        // for a year. The flag did not exist before the sheet did, so every install that predates
+        // it reads false — and any of these three keys being present means she has already made
+        // the choices the sheet asks about, in the rooms the app used to ask them in. Deliberately
+        // not cachedRates or history, which the app writes for itself on first launch and which
+        // would mark a genuinely new phone as done before the sheet ever drew.
+        get() = prefs.getBoolean("onboarded", false) ||
+            prefs.contains("smsEnabled") || prefs.contains("name") || prefs.contains("holdings")
+        set(v) { prefs.edit().putBoolean("onboarded", v).apply() }
+
     /** Whether she has asked the app to read her bank messages at all. */
     var smsEnabled: Boolean
         get() = prefs.getBoolean("smsEnabled", false)

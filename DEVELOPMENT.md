@@ -30,7 +30,7 @@ Two flavours, `full` and `lite`, so every task name carries one: `installFullDev
 
 `lite` is دارایی and nothing else — the app as it shipped through v1.0.4, for someone who wants
 to know what their gold is worth and has no household to run. It installs as
-`com.doxigo.muchtoman.lite` under the name `muchToman lite`, so both can sit on one phone. `full`
+`com.doxigo.muchtoman.lite` under the name «چقدر تومن دارم», so both can sit on one phone. `full`
 keeps the released `com.doxigo.muchtoman`, which is why a v1.0.4 install upgrades into it in place
 with its balances and categories intact.
 

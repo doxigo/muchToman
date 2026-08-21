@@ -63,6 +63,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             name = store.name,
             themeMode = store.themeMode,
             history = store.history,
+            onboarded = store.onboarded,
             smsEnabled = store.smsEnabled,
             bankAccounts = store.bankAccounts,
             disabledBanks = store.disabledBanks,
@@ -1374,6 +1375,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /** Turning it off leaves the balances where they are; it stops them moving on their own. */
+    /**
+     * The first-run sheet has had its turn — answered or skipped, which are the same thing to it.
+     *
+     * Also the moment the watch is first scheduled: she may have just granted the messages, and
+     * without this the schedule would wait for the next thing that happens to call [publishLedger].
+     */
+    fun finishOnboarding() {
+        store.onboarded = true
+        _state.update { it.copy(onboarded = true) }
+        scheduleLedgerWatch(getApplication(), store.smsEnabled)
+        // Whatever she granted takes effect against the inbox now rather than at the next open.
+        scanSms()
+        runLedger()
+    }
+
     fun setSmsEnabled(on: Boolean) {
         store.smsEnabled = on
         _state.update { it.copy(smsEnabled = on) }
@@ -1466,6 +1482,8 @@ data class UiState(
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val history: Map<Long, Double> = emptyMap(),
+    /** False only on a phone that has never been past the first-run sheet. See [Store.onboarded]. */
+    val onboarded: Boolean = true,
     val smsEnabled: Boolean = false,
     val bankAccounts: List<BankAccount> = emptyList(),
     val disabledBanks: Set<String> = emptySet(),

@@ -59,6 +59,28 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // Refah's is: "Day Bank" and "DayBank" are one sender to a human and two keys to senderKey.
     DEY("بانک دی", listOf("Day Bank", "DayBank")),
 
+    // ── Known by name only ──────────────────────────────────────────────────────────────────
+    //
+    // No numbers, and that is deliberate rather than unfinished. Every number above was read off
+    // a real phone; the web has only each bank's *service* shortcode — the number you text to ask
+    // for a balance — which is not what its notifications arrive from. Pasargad settles it: its
+    // published service line is 1000900 and the header its messages actually carry is
+    // "B.Pasargad". Guessing here would not merely fail to match, it would be unsafe: ingest
+    // stores the body of every message from a matched sender before anything parses it, so a
+    // shortcode that also carries رمز پویا would put one-time passwords in the table that the
+    // privacy note in [ingestBankSms] promises never holds them.
+    //
+    // Listed anyway, because a named bank is what [guessBank] needs: her own message says
+    // «بانک تجارت» in its body, the sheet offers to add the number it came from, and her tap is
+    // what teaches this phone the real one. Nothing is read from these until she does that.
+    TEJARAT("بانک تجارت", emptyList()),
+    SEPAH("بانک سپه", emptyList()),
+    AYANDEH("بانک آینده", emptyList()),
+    KESHAVARZI("بانک کشاورزی", emptyList()),
+    SHAHR("بانک شهر", emptyList()),
+    SINA("بانک سینا", emptyList()),
+    POST_BANK("پست بانک", emptyList()),
+
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build
      * falls back to, so a bank that has since left this list still renders and can be deleted
@@ -655,11 +677,30 @@ fun looksLikeBankSms(body: String): Boolean {
  * her to confirm with a tap, never a reason to move money — matching on wording is exactly
  * what was removed when the sender numbers became the gate, and it stays removed.
  */
+/**
+ * The word that names this bank and nothing else — «تجارت» out of «بانک تجارت».
+ *
+ * Null for [Bank.OTHER] alone, whose name is «بانک» and so has no distinguishing word. That null
+ * is what keeps it out of [guessBank]: it is a fallback for balances an older build saved, never
+ * something a message can be read as.
+ */
+private val Bank.keyword: String? get() = fa.split(' ').firstOrNull { it != "بانک" }
+
+/**
+ * Which bank a message *says* it is from, for a sender this phone does not know yet.
+ *
+ * Deliberately not filtered to banks that have numbers: a bank listed by name only has no number
+ * precisely because nobody has told us one, and this is the function that asks. Reached only for a
+ * message that already passed [looksLikeBankSms] — a balance word and a figure over a hundred
+ * thousand — so a keyword as ordinary as «شهر» or «آینده» costs at worst one suggestion she
+ * dismisses, and a dismissal is remembered per sender.
+ */
 fun guessBank(body: String): Bank? {
     if (isIgnoredBankSms("", body)) return null
     val text = normalise(body)
-    return Bank.entries.filter { it.numbers.isNotEmpty() }
-        .firstOrNull { b -> containsWord(text, b.fa.split(' ').first { it != "بانک" }) }
+    return Bank.entries.firstOrNull { b ->
+        b.keyword?.let { containsWord(text, it) } == true
+    }
 }
 
 /**

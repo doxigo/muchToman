@@ -49,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +77,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 /**
  * Combining BIOMETRIC_STRONG with DEVICE_CREDENTIAL is not supported below API 30, so the
@@ -127,7 +130,9 @@ fun LockScreen(onUnlock: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Hero.top, Hero.bottom))),
+            // The fixed forest, not the theme-aware field: full-bleed with nothing behind
+            // it, this screen is the brand moment and reads right in both themes.
+            .background(Hero.forest),
     ) {
         Column(
             Modifier
@@ -220,6 +225,21 @@ fun SettingsScreen(
     // RECEIVE_SMS alone being denied just means notifications ride the six-hour sweep instead of
     // arriving with the message — see [SmsReceiver] — so it gets no say in [granted].
     var granted by remember { mutableStateOf(canReadSms(context)) }
+    // Whether this phone suspends the app hard enough to delay a bank message. Re-read when she
+    // comes back rather than answered once: the button below leaves for Android's own settings,
+    // and a warning still standing after she has just fixed it reads as the fix having failed.
+    // The same arrangement, for the same reason, as `canNote` on the home screen.
+    var unrestricted by remember { mutableStateOf(backgroundUnrestricted(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                unrestricted = backgroundUnrestricted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val askSms = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
@@ -315,6 +335,27 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
             )
+            // The other way this can be set up wrong and still look like it is working — and the
+            // one she has no way of guessing, because nothing on screen is missing. Every figure
+            // is right; they just arrive hours after the spend, on a phone whose OEM suspended the
+            // app that was going to read them. Only drawn when the phone is actually restricted
+            // *and* she reads messages, so a stock phone never sees a warning about a problem it
+            // does not have.
+            if (smsEnabled && granted && !unrestricted) {
+                Spacer(Modifier.height(Space.m))
+                Text(
+                    "این گوشی چقدر تومن رو می‌خوابونه، برای همین ممکنه پیامک بانک با چند ساعت " +
+                        "تأخیر خونده بشه. برای این‌که همون لحظه خونده بشه، اجازه بده بیدار بمونه.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
+                )
+                TextButton(onClick = { askBackgroundExemption(context) }) {
+                    Text("اجازه بده بیدار بمونه", fontSize = 15.sp)
+                }
+            }
+
             // The one way this can be set up wrong and still look like it is working. A bank
             // whose alerts arrive as its own app's notifications sends no message at all, so
             // there is nothing to read and nothing to report — the balance simply stops where

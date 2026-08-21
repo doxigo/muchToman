@@ -1,8 +1,12 @@
 package com.doxigo.muchtoman
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.provider.Telephony
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -234,4 +238,44 @@ class SmsReceiver : BroadcastReceiver() {
                 .build(),
         )
     }
+}
+
+/**
+ * Whether the phone will let this app's background work run when it is due.
+ *
+ * Doze and App Standby are the stock behaviour and are not the problem: the system delivers
+ * SMS_RECEIVED to a manifest receiver either way. The problem is what every OEM layers over them —
+ * MIUI, EMUI, One UI, ColorOS all suspend backgrounded apps far harder than AOSP does, and on those
+ * phones a spend can go quiet until the six-hour sweep. Exemption is the one lever the platform
+ * offers to ask for that to stop.
+ *
+ * True is not a promise. An OEM's own «autostart» switch lives outside this API and cannot be read
+ * or asked for at all, so a phone can report itself unrestricted here and still throttle the
+ * receiver. It is the difference between the app knowing it has a problem and knowing it does not
+ * have *this* problem.
+ */
+fun backgroundUnrestricted(context: Context): Boolean {
+    val power = context.getSystemService(PowerManager::class.java) ?: return true
+    return runCatching { power.isIgnoringBatteryOptimizations(context.packageName) }
+        .getOrDefault(true)
+}
+
+/**
+ * Ask to be exempted, and fall back to the list she can do it from by hand.
+ *
+ * The direct request is one dialog with one Yes in it, which is the whole reason to prefer it. It
+ * is also the one an OEM is most likely to have removed — hence the settings-list fallback, which
+ * is a longer road to the same switch but exists on every build. Returns false when neither opens,
+ * which is a phone this app cannot help and must not pretend it has.
+ */
+@SuppressLint("BatteryLife")
+fun askBackgroundExemption(context: Context): Boolean {
+    val direct = Intent(
+        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+        Uri.fromParts("package", context.packageName, null),
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (runCatching { context.startActivity(direct) }.isSuccess) return true
+    val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching { context.startActivity(list) }.isSuccess
 }

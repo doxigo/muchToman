@@ -29,6 +29,20 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+        Not a permission to run in the background — Android has no such thing — but the permission
+        to *ask* to be left alone by Doze and App Standby, which is the nearest thing there is.
+        SmsReceiver is woken by the system and needs no exemption on a stock phone; what needs it
+        is every OEM layer on top (MIUI, EMUI, One UI, ColorOS) that stops the broadcast reaching a
+        backgrounded app at all. Asked once, in the first-run sheet, and never again — see
+        Onboarding.kt. Denying it costs freshness, not correctness: the six-hour sweep still runs.
+
+        Note for Google Play, should this ever go there: Play restricts this permission to a short
+        list of app types and a finance app is not on it. It is harmless on Bazaar and on a
+        sideloaded APK, which is where this app actually ships — see README.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
         READ_SMS is taken to mean "this app needs a radio", which would hide it from every
         tablet and Chromebook that has none. It does not: it reads the message store, and on a
         device with nothing in it the feature simply has nothing to show.

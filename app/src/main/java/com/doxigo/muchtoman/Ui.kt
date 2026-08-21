@@ -114,7 +114,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -423,6 +422,19 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         return
     }
 
+    // Before anything else this app has to show, and exactly once in its life. Below the lock
+    // rather than above it only for tidiness — a phone that has a lock on it has been used, and a
+    // phone that has been used is already past this. No BackHandler: the way out is «الان نه»,
+    // which is on the screen, and a back gesture that dropped her into an app with no permissions
+    // and no explanation is the state this screen exists to prevent.
+    if (!state.onboarded) {
+        OnboardingScreen(
+            onSmsGranted = vm::setSmsEnabled,
+            onDone = vm::finishOnboarding,
+        )
+        return
+    }
+
     if (categoriesPage) {
         // Back steps to تنظیمات, the page it was opened from — same one-level rule as companion.
         BackHandler { categoriesPage = false }
@@ -689,7 +701,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 PullToRefreshDefaults.Indicator(
                     state = pullState,
                     isRefreshing = state.refreshing && pulled,
-                    containerColor = Hero.top,
+                    containerColor = Hero.field,
                     color = Hero.accent,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -1004,21 +1016,20 @@ internal fun HeroPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // On the dark theme the card is a neutral elevated surface a shade off the page, so the
+    // hairline is what holds its edge — the forest card on white needs none.
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val shape = RoundedCornerShape(Radius.hero)
     Box(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.hero))
-            .background(Brush.verticalGradient(listOf(Hero.top, Hero.bottom))),
+            .clip(shape)
+            .background(Hero.field)
+            .then(
+                if (dark) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                else Modifier,
+            ),
     ) {
-        Canvas(Modifier.matchParentSize()) {
-            drawRect(
-                Brush.radialGradient(
-                    colors = listOf(Hero.accent.copy(alpha = 0.13f), Color.Transparent),
-                    center = Offset(size.width * 0.88f, size.height * -0.05f),
-                    radius = size.width * 0.95f,
-                ),
-            )
-        }
         Column(
             Modifier.padding(horizontal = Space.xl, vertical = Space.xl),
             content = content,
@@ -2998,6 +3009,13 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
         Bank.MELLAT -> R.drawable.ic_bank_mellat
         Bank.MELLI -> R.drawable.ic_bank_melli
         Bank.DEY -> R.drawable.ic_bank_dey
+        Bank.TEJARAT -> R.drawable.ic_bank_tejarat
+        Bank.SEPAH -> R.drawable.ic_bank_sepah
+        Bank.AYANDEH -> R.drawable.ic_bank_ayandeh
+        Bank.KESHAVARZI -> R.drawable.ic_bank_keshavarzi
+        Bank.SHAHR -> R.drawable.ic_bank_shahr
+        Bank.SINA -> R.drawable.ic_bank_sina
+        Bank.POST_BANK -> R.drawable.ic_bank_post
         Bank.OTHER -> null
     }
 
