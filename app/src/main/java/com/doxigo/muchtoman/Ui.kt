@@ -325,13 +325,19 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     // And a tapped filing note here, which wants the deck rather than a tab. The tab underneath is
     // set as well as the deck: closing the deck has to leave her on دفتر — the room the deck
     // belongs to — and not back on whatever she was looking at last week.
-    LaunchedEffect(state.openDeck) {
-        if (state.openDeck) {
+    //
+    // Waited on `ready`, and the deck only opens when something actually asks for her. A note can
+    // be about a transaction the rules already filed — that is the note reporting an answer, not
+    // asking a question — and opening the deck on it landed her on an empty room announcing that
+    // nothing needs her. The transaction the note was about is at the top of دفتر, so دفتر is
+    // where its tap goes.
+    LaunchedEffect(state.openDeck, state.ledger.ready) {
+        if (state.openDeck && state.ledger.ready) {
             settings = false
             companion = false
             transactionRef = null
             tab = Tab.LEDGER
-            deck = true
+            deck = state.ledger.review.isNotEmpty()
             vm.consumeOpenDeck()
         }
     }

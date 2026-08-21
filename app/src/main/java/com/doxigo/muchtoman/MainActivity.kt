@@ -113,7 +113,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
         // is being told, so the note comes down and the mark moves past everything on screen —
         // see [markFilingSeen].
-        markFilingSeen(app, store, view.review)
+        markFilingSeen(app, store, view)
     }
 
     /**

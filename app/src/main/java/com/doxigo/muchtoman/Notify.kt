@@ -17,9 +17,10 @@ import androidx.core.content.ContextCompat
  * The only thing in this app that speaks while it is closed.
  *
  * There are exactly two channels and two reasons to use them: a budget she set has crossed a line
- * she asked to be told about, and a transaction has landed that nobody has said what it was.
- * Nothing here fires because the app was opened, because a price moved, or because a week went by —
- * the rule the reward system already runs on, applied to the one surface that can interrupt her.
+ * she asked to be told about, and a transaction has landed — filed by a rule, or waiting for her
+ * to say what it was. Nothing here fires because the app was opened, because a price moved, or
+ * because a week went by — the rule the reward system already runs on, applied to the one surface
+ * that can interrupt her.
  *
  * ## Why any of this exists
  *
@@ -30,14 +31,14 @@ import androidx.core.content.ContextCompat
  * therefore a permission, and the permission is asked for at the moment one of the two becomes
  * possible — never at launch, exactly as `READ_SMS` is asked for when she switches the messages on.
  *
- * ## The two are not equal, and the channels say so
+ * ## Two channels, so either can be silenced without the other
  *
- * A budget is money and a decision she can still make, so «بودجه» is IMPORTANCE_DEFAULT and makes a
- * sound. Filing is homework, so «دسته‌بندی» is IMPORTANCE_LOW: it lands in the shade, it never
- * takes over the screen, and it never makes a noise. The same ranking [pressingBudget] already
- * makes when the two compete for the one line on the home screen. Two channels rather than one so
- * that either can be silenced without the other — a household that wants budget alerts and no
- * homework is one switch in Android's own settings, not an uninstall.
+ * Both are IMPORTANCE_DEFAULT now that `SmsReceiver` makes them prompt: a budget crossing is a
+ * decision she can still make, and a transaction note that arrives while the purchase is still in
+ * her hand is the moment worth a sound — six hours later it was only homework, which is what it
+ * used to be and why this channel used to be IMPORTANCE_LOW. The split remains so a household that
+ * wants budget alerts and no transaction notes — or the reverse — is one switch in Android's own
+ * settings, not an uninstall, and either can be turned back down there too.
  *
  * ## What it will not do
  *
@@ -121,17 +122,15 @@ private fun ensureChannel(context: Context) {
 }
 
 /**
- * The quiet channel, created the same way and for the same reasons — with one difference.
+ * The transaction channel, created the same way and for the same reasons.
  *
- * IMPORTANCE_LOW: it appears in the shade and on the lock screen, it badges the launcher icon, and
- * it does not make a sound or take over the screen. That is the correct weight for what it says.
- * The backlog is at worst four notes a day — the watch runs every six hours — and each one replaces
- * the last, so a household that spends on a Thursday would be buzzed at four times for homework
- * that will keep. It is also the honest reading of what the note is: nothing here has to be done
- * now, only *remembered* now, and remembering is what the shade is for.
- *
- * She can raise it in Android's own settings if she would rather be told out loud, which is a
- * better arrangement than the app deciding on her behalf that filing receipts is urgent.
+ * IMPORTANCE_DEFAULT, like «بودجه» — but it was IMPORTANCE_LOW until `SmsReceiver` existed, and the
+ * old reasoning is worth keeping: a note that trailed the spend by up to six hours was homework,
+ * and homework belongs in the shade. Now the note lands while the purchase is still in her hand,
+ * and a sound at that moment is the difference between filing it in one tap and the small
+ * archaeology `Filing.kt` describes. She can turn it back down per channel in Android's settings —
+ * and a phone whose channel already exists keeps whatever weight it has, because the platform lets
+ * an app lower an existing channel but never raise one.
  */
 private fun ensureFilingChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -141,9 +140,9 @@ private fun ensureFilingChannel(context: Context) {
         NotificationChannel(
             FILING_CHANNEL,
             "دسته‌بندی",
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "وقتی تراکنش تازه‌ای رسیده و هنوز دسته‌ای نداره."
+            description = "وقتی تراکنش تازه‌ای می‌رسه — چه منتظر دسته‌بندی، چه خودکار ثبت‌شده."
             setShowBadge(true)
         },
     )
@@ -171,6 +170,16 @@ private fun openBudgets(context: Context): PendingIntent = destination(context, 
  */
 private fun openDeck(context: Context): PendingIntent = destination(context, 1) {
     it.putExtra(EXTRA_OPEN_DECK, true)
+}
+
+/**
+ * Where a filed-only note goes: the دفتر tab, where the row it reported is the newest thing on
+ * screen. Not the deck — a note that says «ثبت شد» has nothing for the deck to ask, and landing her
+ * in the weekly summary would answer a question she did not tap to ask. Refiling from the timeline
+ * is one tap on the row, which is exactly the veto the note offered.
+ */
+private fun openLedgerTab(context: Context): PendingIntent = destination(context, 2) {
+    it.putExtra(EXTRA_OPEN_TAB, Tab.LEDGER.name)
 }
 
 /**
@@ -263,12 +272,16 @@ fun notifyFiling(context: Context, alert: FilingAlert) {
         // Not CATEGORY_REMINDER, which the platform reserves for something *she* asked to be
         // reminded of at a time she chose. This is the app noticing something.
         .setCategory(NotificationCompat.CATEGORY_STATUS)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
+        // The pre-O mirror of the channel importance, kept in step with [ensureFilingChannel].
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         // The whole backlog, not the new ones: launchers that draw a number draw this one, and a
         // badge that disagrees with the badge on the دفتر tab is two apps' worth of counting.
+        // Zero — everything filed — draws no number, which is the platform's own convention.
         .setNumber(alert.waiting)
         .setAutoCancel(true)
-        .setContentIntent(openDeck(context))
+        // A note with anything left to file opens the deck that files it; a note that only
+        // reported the rules' work opens the timeline the work is sitting in.
+        .setContentIntent(if (alert.waiting > 0) openDeck(context) else openLedgerTab(context))
         .setTicker("$title. $body")
         .build()
     runCatching { NotificationManagerCompat.from(context).notify(FILING_NOTE_ID, note) }
@@ -331,13 +344,17 @@ fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress
  *
  * Idempotent, like its sibling: the mark it writes is what stops the next call repeating itself.
  */
-fun announceFiling(context: Context, store: Store, review: List<LedgerEntry>) {
-    if (review.isNotEmpty()) ensureFilingChannel(context)
-    val news = filingNews(review, store.filingMark)
+fun announceFiling(context: Context, store: Store, view: LedgerView) {
+    // Any ledger at all means this channel can speak — the note covers filed landings too, so
+    // waiting for a backlog would create the channel after its first reason to exist.
+    if (view.entries.isNotEmpty()) ensureFilingChannel(context)
+    val news = filingNews(view.entries, view.review, store.filingMark)
     store.filingMark = news.mark
-    // Nothing left to file — she cleared it on the other phone, or a parser fix filed the last of
-    // it — so a note still standing is describing a backlog that is gone.
-    if (review.isEmpty()) clearFilingNote(context)
+    // Nothing left to file and nothing new to say — she cleared the backlog on the other phone,
+    // or a parser fix filed the last of it — so a standing *ask* is describing work that is gone.
+    // This also retires an unread filed-only note at the next sweep, deliberately: what it
+    // reported is on the timeline either way, and a report is not worth keeping stale.
+    if (view.review.isEmpty() && news.alert == null) clearFilingNote(context)
     news.alert?.let { notifyFiling(context, it) }
 }
 
@@ -349,12 +366,12 @@ fun announceFiling(context: Context, store: Store, review: List<LedgerEntry>) {
  * the app filing nine of twelve receipts would be followed at 3am by a note about the three she
  * decided to leave — which she did not decide by accident.
  */
-fun markFilingSeen(context: Context, store: Store, review: List<LedgerEntry>) {
-    // As soon as there is a backlog, not when the first note is posted — the same rule
+fun markFilingSeen(context: Context, store: Store, view: LedgerView) {
+    // As soon as there is a ledger, not when the first note is posted — the same rule
     // [announceBudgets] follows, and for the same reason: a channel created lazily on the first
     // post is missing from Android's own settings at exactly the moment she goes looking for the
     // switch that silences it.
-    if (review.isNotEmpty()) ensureFilingChannel(context)
-    store.filingMark = filingNews(review, store.filingMark).mark
+    if (view.entries.isNotEmpty()) ensureFilingChannel(context)
+    store.filingMark = filingNews(view.entries, view.review, store.filingMark).mark
     clearFilingNote(context)
 }

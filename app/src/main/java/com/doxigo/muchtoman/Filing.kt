@@ -23,14 +23,17 @@ package com.doxigo.muchtoman
  *  - **Opening the app counts as having been told.** Nothing here is ever posted by the app itself
  *    — see [markFilingSeen]. A notification about rows she is looking at is the app talking over
  *    itself, and the badge, the pill and the deck have already said it better.
- *  - **It says what landed, never what it was.** «۴۵۰ هزار تومان رفت» is a fact about a direction.
- *    Calling it خرج would be the app answering the question it is asking her — and an unfiled
- *    movement is exactly as likely to be a transfer between her own accounts.
+ *  - **It never answers its own question.** «۴۵۰ هزار تومان رفت» is a fact about a direction, and
+ *    calling an *unfiled* movement خرج would be the app answering what it is asking her — it is
+ *    exactly as likely to be a transfer between her own accounts. A row the rules filed is the one
+ *    exception, and there the note reports the rules' answer as an answer — «تو «خوراک» ثبت شد» —
+ *    so she can veto it, which is a different thing from guessing on her behalf.
  *
- * And one it inherits: this is homework, not money. A budget that has crossed its cap interrupts,
- * because there is a decision left to make; this waits quietly in the shade for the next time she
- * looks at her phone. Same ranking [pressingBudget] already makes for the home screen — see the
- * channel importances in `Notify.kt`.
+ * Every transaction that lands gets said, filed or not. The rules filing a spend used to be the end
+ * of it, and that silence read as the app having missed the message; now that the note arrives
+ * seconds after the پیامک — see `SmsReceiver` — landing is the event, and what the rules did with
+ * it is the news. The unfiled ones ask, the filed ones report, and both exist for the same reason:
+ * a ledger she has seen every row of is the one the reports can be trusted against.
  */
 
 /**
@@ -41,16 +44,22 @@ package com.doxigo.muchtoman
  * lands rather than leaving a stored figure to drift.
  */
 data class FilingAlert(
-    /** How many landed since she was last told or last looked. Never zero — that is no news. */
+    /** How many landed *unfiled* since she was last told or last looked. */
     val fresh: Int,
     /** How many are waiting in all, the fresh ones included. Never fewer than [fresh]. */
     val waiting: Int,
     /**
-     * The newest of the fresh ones, which is the one she is most likely to still be able to place.
-     * Only ever spoken aloud when it is the *only* one, since naming one of four is picking a
-     * favourite out of a list she has to work through anyway.
+     * The newest of everything that landed, filed or not, which is the one she is most likely to
+     * still be able to place. Only ever spoken aloud when it is the *only* one, since naming one
+     * of four is picking a favourite out of a list she has to work through anyway. When it is the
+     * only one and the rules filed it, its [LedgerEntry.categoryFa] is the answer the body reports.
      */
     val newest: LedgerEntry,
+    /**
+     * How many landed already filed by a rule — the ones that used to pass in silence. Zero and
+     * [fresh] zero together are no news, and [filingNews] returns no alert rather than this.
+     */
+    val filed: Int = 0,
 )
 
 /**
@@ -71,18 +80,33 @@ data class FilingNews(val alert: FilingAlert?, val mark: Long)
 /**
  * What has landed since [said], and how far the mark moves.
  *
+ * [entries] is the whole ledger and [review] the unfiled slice of it — passed separately rather
+ * than re-filtered here, so «what needs review» keeps exactly one definition, [LedgerView.review].
+ * The filed slice is taken from [entries] with review's own exclusions: a duplicate's second leg
+ * and a settled transfer are not spends, and a note about either would report bookkeeping as news.
+ *
  * [said] of zero means this phone has never looked, and that case is deliberately **silent**: it is
  * a fresh install part-way through its first import, or an upgrade onto a build that had no mark to
  * keep, and neither is a moment to hand her a backlog she has been living with. The first pass only
  * learns where the ledger is.
  */
-fun filingNews(review: List<LedgerEntry>, said: Long): FilingNews {
-    val mark = maxOf(said, review.maxOfOrNull { it.txn.at } ?: 0L)
+fun filingNews(entries: List<LedgerEntry>, review: List<LedgerEntry>, said: Long): FilingNews {
+    // Over everything, not just review: a filed row must move the mark too, or it would be news
+    // again on every wakeup for ever.
+    val mark = maxOf(said, entries.maxOfOrNull { it.txn.at } ?: 0L)
     val fresh = review.filter { it.txn.at > said }
-    val alert = if (said <= 0L || fresh.isEmpty()) {
+    val filed = entries.filter {
+        !it.needsReview && !it.duplicate && !it.transfer && it.txn.at > said
+    }
+    val alert = if (said <= 0L || (fresh.isEmpty() && filed.isEmpty())) {
         null
     } else {
-        FilingAlert(fresh = fresh.size, waiting = review.size, newest = fresh.maxBy { it.txn.at })
+        FilingAlert(
+            fresh = fresh.size,
+            waiting = review.size,
+            newest = (fresh + filed).maxBy { it.txn.at },
+            filed = filed.size,
+        )
     }
     return FilingNews(alert, mark)
 }
@@ -101,7 +125,8 @@ fun filingNews(review: List<LedgerEntry>, said: Long): FilingNews {
  * money went gets neither verb rather than a guess.
  */
 fun filingAlertTitle(alert: FilingAlert): String {
-    if (alert.fresh > 1) return "${faNumber(alert.fresh.toDouble())} تراکنش تازه رسید"
+    val landed = alert.fresh + alert.filed
+    if (landed > 1) return "${faNumber(landed.toDouble())} تراکنش تازه رسید"
     val txn = alert.newest.txn
     val who = txnTitleFa(txn)
     val rial = txn.amountRial ?: return "یک تراکنش تازه از $who"
@@ -114,17 +139,39 @@ fun filingAlertTitle(alert: FilingAlert): String {
 }
 
 /**
- * The line under it: why now, and how much is actually waiting.
+ * The line under it: what the rules did, why now, and how much is actually waiting.
  *
  * «تا یادته» is the whole argument for interrupting her at all, and it is an argument rather than an
  * instruction — the app has no claim on her afternoon, it just knows the answer is easier today.
+ *
+ * A filed row is reported in the same spirit: the rules' answer with an invitation to veto it —
+ * «اگه جاش نیست، عوضش کن» — never a verdict. Only a lone filed transaction gets its category named,
+ * for the reason only a lone one is named in the title: naming one of four is picking a favourite.
+ * When both kinds landed, the ask leads — it is the half she can act on — and the filed ones are a
+ * count after it.
  *
  * The total is only added when there is something older behind the new ones, and it is phrased as a
  * state rather than as an addition: «۹ تراکنش دسته‌بندی نشده داری» cannot be read as nine *more* on
  * top of the three in the title. The words are the ones the ledger already uses for an unfiled row.
  */
 fun filingAlertBody(alert: FilingAlert): String {
+    // Nothing to ask, only to report: the rules filed everything that landed.
+    if (alert.fresh == 0) {
+        val head = if (alert.filed == 1) {
+            "تو «${alert.newest.categoryFa}» ثبت شد • اگه جاش نیست، عوضش کن"
+        } else {
+            "خودکار دسته‌بندی شدن • یه نگاه بنداز که سر جاشون نشسته باشن"
+        }
+        if (alert.waiting == 0) return head
+        return "$head • روی هم ${faNumber(alert.waiting.toDouble())} تراکنش دسته‌بندی نشده داری"
+    }
     val head = if (alert.fresh == 1) "تا یادته، بگو چی بود" else "تا یادته، بگو چی بودن"
-    if (alert.waiting <= alert.fresh) return head
-    return "$head • روی هم ${faNumber(alert.waiting.toDouble())} تراکنش دسته‌بندی نشده داری"
+    val filed = when {
+        alert.filed == 0 -> ""
+        alert.filed == 1 -> " • یکی هم خودکار ثبت شد"
+        else -> " • ${faNumber(alert.filed.toDouble())} تای دیگه خودکار ثبت شدن"
+    }
+    if (alert.waiting <= alert.fresh) return "$head$filed"
+    return "$head$filed • روی هم ${faNumber(alert.waiting.toDouble())} تراکنش دسته‌بندی نشده داری"
+}
 }

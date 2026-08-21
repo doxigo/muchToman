@@ -139,7 +139,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
             // worse, two answers to «what is in the ledger right now».
             val view = ledgerView(derived, durable)
             announceBudgets(app, store, view.budgets)
-            announceFiling(app, store, view.review)
+            announceFiling(app, store, view)
             Result.success()
         }.getOrElse {
             // Retry rather than success: a failed read here is an alert that did not happen, and
