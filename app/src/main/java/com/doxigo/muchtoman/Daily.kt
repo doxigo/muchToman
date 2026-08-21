@@ -1,10 +1,15 @@
 package com.doxigo.muchtoman
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.provider.Telephony
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -66,18 +71,13 @@ fun scheduleDailySnapshot(context: Context) {
 }
 
 /**
- * How often the ledger is looked at while the app is closed.
+ * How often the ledger is looked at while the app is closed *without being asked to*.
  *
- * Six hours, which is the compromise the architecture forces and it is worth being plain about it.
- * There is no SMS broadcast receiver — see [readSmsInbox] — so a purchase becomes visible to this
- * app only when something reads the inbox, and this is the only thing that reads it unattended.
- * Four wakeups a day is close enough that «۸۰٪ رفته» still arrives while the month has something
- * left in it, and that «این چی بود؟» still arrives on the day she could answer it, and far enough
- * apart to be free.
- *
- * ponytail: the ceiling on how fresh either notification can be. A `RECEIVE_SMS` receiver would
- * make them instant and would also mean this app asks for the permission that reads messages as
- * they arrive, which is a different app.
+ * Six hours is no longer the freshness of anything: [SmsReceiver] runs the watch within seconds of
+ * a bank message landing, and this schedule is the net under it. What falls through is real —
+ * `RECEIVE_SMS` denied on its own, an OEM that quietly stops delivering the broadcast, a message
+ * that arrived before the permission did — and in every one of those cases four sweeps a day is
+ * what keeps «۸۰٪ رفته» arriving the same day rather than never.
  */
 private const val LEDGER_WATCH_HOURS = 6L
 
@@ -99,6 +99,10 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
 /**
  * The unattended half of the app: the only thing that reads the inbox while she is not looking, and
  * the only thing that speaks while the app is closed.
+ *
+ * Reached two ways — by [SmsReceiver] seconds after a bank message lands, and by
+ * [scheduleLedgerWatch]'s six-hour sweep for whatever the broadcast path missed. The same worker on
+ * both on purpose: one definition of what a wakeup does, however the wakeup came about.
  *
  * It runs the same pipeline the app runs on every foreground — ingest, derive, then read the
  * ledger — because both things it might say are figures over her transactions and there is no
@@ -175,4 +179,59 @@ fun scheduleLedgerWatch(context: Context, wanted: Boolean) {
             // databases, and neither alert must wait for Wi-Fi.
             .build(),
     )
+}
+
+/** The receiver's one-shot runs of the watch, named apart from the schedule so neither owns the other. */
+private const val LEDGER_WATCH_NOW_WORK = "ledger-watch-now"
+
+/**
+ * How long after the broadcast the watch runs. SMS_RECEIVED reaches us and the default SMS app in
+ * parallel, and only that app writes the message into the store [readSmsInbox] reads — run at once
+ * and the message this is about is the one message not there yet. A few seconds is comfortably past
+ * that write, and «the second it arrives» to a person.
+ */
+private const val LEDGER_WATCH_NOW_DELAY_SECONDS = 5L
+
+/**
+ * The real-time half of what [scheduleLedgerWatch] does four times a day: a bank message has just
+ * landed, so run [LedgerWatchWorker] now rather than at the next tick.
+ *
+ * The receiver deliberately knows nothing the worker does not. It ingests nothing, parses no body,
+ * and posts no notification — it answers one question, «was that a bank?», with the same [bankOf]
+ * the ingest gate uses, and enqueues the exact worker the schedule runs. Anything the broadcast
+ * path misses — permission denied, an OEM that drops the broadcast — is therefore not a second
+ * code path half-covered, it is the same code path on the six-hour net.
+ *
+ * The sender check is not an optimisation. The alternative is this app's process waking for every
+ * verification code and family message a phone receives, which is a battery cost paid to banks'
+ * spam competitors — and the check is one map lookup against the same numbers ingest would refuse
+ * anyway.
+ */
+class SmsReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        val store = Store(context)
+        if (!store.smsEnabled) return
+        // getMessagesFromIntent reassembles a long message's parts, but the sender is on every
+        // part, so any() is asking one question however the message was split. Wrapped because a
+        // malformed PDU from a broken SMSC throws inside the platform's parser, and a message this
+        // app cannot even look at must not crash it.
+        val extra = extraLookup(store.extraBankNumbers)
+        val fromBank = runCatching {
+            Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                .any { bankOf(it?.originatingAddress.orEmpty(), extra) != null }
+        }.getOrDefault(false)
+        if (!fromBank) return
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            LEDGER_WATCH_NOW_WORK,
+            // APPEND_OR_REPLACE, never REPLACE: a purchase and its balance line arrive as two
+            // messages seconds apart, and REPLACE would cancel a run already past its marks but
+            // not yet past its notify — an alert written down as said and never posted. Appending
+            // runs again after, and a run with nothing new says nothing.
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            OneTimeWorkRequestBuilder<LedgerWatchWorker>()
+                .setInitialDelay(LEDGER_WATCH_NOW_DELAY_SECONDS, TimeUnit.SECONDS)
+                .build(),
+        )
+    }
 }

@@ -1,5 +1,6 @@
 package com.doxigo.muchtoman
 
+import android.Manifest
 import android.app.Application
 import android.content.Intent
 import android.os.Build
@@ -1344,6 +1345,17 @@ class MainActivity : FragmentActivity() {
         appVm.acceptPairing(intent?.dataString)
         appVm.openTab(intent?.getStringExtra(EXTRA_OPEN_TAB))
         appVm.openDeck(intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true)
+        // A phone that granted READ_SMS before RECEIVE_SMS existed: she already said yes to the
+        // messages conversation, this completes it so [SmsReceiver] can hear them land. Both
+        // permissions share the SMS group, so the platform grants this without showing anything.
+        // Asking "at launch" is exactly what the settings screen's rule forbids — for a *new*
+        // conversation; this guard makes it unreachable except mid-upgrade, and asked at most
+        // once: denied is a state the guard cannot tell from never-asked, but the system stops
+        // re-showing a denied dialog on its own. The result is deliberately ignored — a denial
+        // just leaves the six-hour sweep, which is what the phone was doing yesterday.
+        if (Store(this).smsEnabled && canReadSms(this) && !canReceiveSms(this)) {
+            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 0)
+        }
         enableEdgeToEdge()
         setContent {
             val state by appVm.state.collectAsStateWithLifecycle()

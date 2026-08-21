@@ -212,12 +212,19 @@ fun SettingsScreen(
     val context = LocalContext.current
     val available = remember { canLock(context) }
 
-    // Switching it on is the moment to ask for the permission — not at launch, where she has
+    // Switching it on is the moment to ask for the permissions — not at launch, where she has
     // no idea what an app about money wants with her messages. Denied leaves it switched off.
+    // Asked as a pair, but only READ_SMS is load-bearing: it is what every balance is read from.
+    // RECEIVE_SMS alone being denied just means notifications ride the six-hour sweep instead of
+    // arriving with the message — see [SmsReceiver] — so it gets no say in [granted].
     var granted by remember { mutableStateOf(canReadSms(context)) }
     val askSms = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { ok -> granted = ok; onSmsChange(ok) }
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val ok = grants[Manifest.permission.READ_SMS] == true
+        granted = ok
+        onSmsChange(ok)
+    }
     // Held locally while typing so each keystroke is not a disk write; committed on leaving.
     var draft by remember { mutableStateOf(name) }
 
@@ -289,8 +296,13 @@ fun SettingsScreen(
                 subtitle = "با این گزینه، موجودی حساب‌ها از روی پیامک بانک به‌روز می‌شه.",
                 checked = smsEnabled && granted,
                 onChange = { on ->
-                    if (on && !granted) askSms.launch(Manifest.permission.READ_SMS)
-                    else onSmsChange(on)
+                    if (on && !granted) {
+                        askSms.launch(
+                            arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS),
+                        )
+                    } else {
+                        onSmsChange(on)
+                    }
                 },
             )
             // Naming the banks is not decoration: only messages from their own numbers are read

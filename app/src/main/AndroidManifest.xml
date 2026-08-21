@@ -4,11 +4,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-        Read-only, and asked for only when she switches bank messages on in settings. There is
-        deliberately no RECEIVE_SMS and no receiver: the inbox is read when the app opens, which
-        is the only time a balance is on screen anyway.
+        Both asked for together, and only when she switches bank messages on in settings. READ_SMS
+        is the one that matters: everything the app knows comes from reading the message store.
+        RECEIVE_SMS buys exactly one thing — SmsReceiver hears a message land and runs the ledger
+        watch now instead of at the next six-hour tick, which is what makes «۸۰٪ رفته» arrive at
+        the till rather than after dinner. The receiver stores nothing and parses nothing; it
+        checks the sender and enqueues the same worker the schedule runs. Denied on its own, the
+        six-hour sweep still covers everything, just later.
     -->
     <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
     <!--
         Asked for when she saves her first بودجه, or from دفتر once transactions are waiting to be
@@ -88,6 +93,21 @@
                     android:pathPrefix="/join" />
             </intent-filter>
         </activity>
+
+        <!--
+            SMS_RECEIVED is one of the implicit broadcasts the platform still delivers to a
+            manifest receiver, app killed or not — which is the entire reason this is a receiver
+            and not a longer-lived anything. Exported because the system must reach it;
+            BROADCAST_SMS so *only* the system can — no other app can spoof a bank message at it.
+        -->
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".TotalWidget"

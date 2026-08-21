@@ -17,6 +17,15 @@ fun canReadSms(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
         PackageManager.PERMISSION_GRANTED
 
+/**
+ * Whether [SmsReceiver] will be woken at all — the system checks this grant before delivering,
+ * so this exists for the callers that have to know *in advance*: the settings screen that asks
+ * for the pair, and the one-time repair in [MainActivity.onCreate].
+ */
+fun canReceiveSms(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
+        PackageManager.PERMISSION_GRANTED
+
 fun openSmsThread(context: Context, sender: String): Boolean {
     if (sender.isBlank()) return false
     val intent = Intent(Intent.ACTION_VIEW, Uri.fromParts("smsto", sender, null))
@@ -30,10 +39,11 @@ fun openSmsThread(context: Context, sender: String): Boolean {
  * Everything in the inbox newer than [since], oldest first — the order [applyBankSms] needs,
  * so a stated balance is never overwritten by a transaction that came before it.
  *
- * There is deliberately no broadcast receiver behind this. Nothing displays a balance while the
- * app is closed, so a message that arrives then can just as well be read the next time she
- * opens it: the inbox is already the record, and a background write path is a whole class of
- * bugs bought for no visible benefit.
+ * This is the only way a message ever enters the app, including the real-time path: [SmsReceiver]
+ * does not read its broadcast's payload, it schedules the worker that comes back here. One reader
+ * means one identity per message — the broadcast stamps a message with the SMSC's clock and this
+ * provider stamps it with the phone's, so a receiver that ingested what it heard would store
+ * every message twice under two [srcHash]es.
  */
 suspend fun readSmsInbox(context: Context, since: Long): List<RawSms> = withContext(Dispatchers.IO) {
     if (!canReadSms(context)) return@withContext emptyList()
