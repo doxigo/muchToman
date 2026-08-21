@@ -431,7 +431,7 @@ val BUILTIN_RULES: List<Rule> = listOf(
 )
 
 private const val CAT_BILLS_ID = "cat_bills"
-private const val CAT_SHOPPING_ID = "cat_shopping"
+const val CAT_SHOPPING_ID = "cat_shopping"
 
 /** How a transaction was filed, and whether she still has to look at it. */
 @Entity(tableName = "txn_class", indices = [Index("needs_review", "ref")])

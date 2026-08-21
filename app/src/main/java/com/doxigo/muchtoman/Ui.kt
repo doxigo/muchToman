@@ -491,6 +491,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onWorthIt = vm::answerWorthIt,
             onLoadSource = vm::sourceOf,
             onDone = { deck = false },
+            onAutoFile = vm::categoriseAll,
         )
         return
     }

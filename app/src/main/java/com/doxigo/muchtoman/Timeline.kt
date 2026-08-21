@@ -1081,9 +1081,12 @@ fun ReviewDeck(
     onWorthIt: (LedgerEntry, String) -> Unit,
     onLoadSource: suspend (LedgerEntry) -> String,
     onDone: () -> Unit,
+    /** The whole backlog at once — see [autoFilePlan]. Null hides the offer. */
+    onAutoFile: ((List<Pair<LedgerEntry, String>>) -> Unit)? = null,
 ) {
     var index by remember { mutableStateOf(0) }
     var skipped by remember { mutableStateOf(setOf<String>()) }
+    var autoFiling by remember { mutableStateOf(false) }
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
     val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
 
@@ -1219,23 +1222,57 @@ fun ReviewDeck(
                 Spacer(Modifier.height(Space.l))
             }
 
-            // What is left at the foot is the answer that needs no category: «فعلاً نه» writes
-            // nothing at all, and it stays a tap away on the page rather than behind the sheet,
-            // because skipping must cost her nothing — including the cost of first choosing
-            // something she is not sure of just to reach the way out.
-            Column(Modifier.fillMaxWidth().padding(bottom = Space.m).navigationBarsPadding()) {
+            // What stands at the foot needs no category: «فعلاً نه» writes nothing at all, and
+            // skipping must cost her nothing. Beside it, only while the backlog is real, is the
+            // way out of the whole chore — behind its own sheet, because fifty-three filings in
+            // one tap deserve one look at what will happen first.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Space.m)
+                    .navigationBarsPadding(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
                 DeckAnswer(
                     // Named by what it does — it sets this card aside unanswered and moves on,
                     // which «نه» alone read as a verdict on the question above the grid.
                     label = "بمونه برای بعد",
                     weight = AnswerWeight.QUIET,
                     onClick = { skipped = skipped + entry.txn.ref },
+                    modifier = Modifier.weight(1f),
                 )
-            }
-
+                if (onAutoFile != null && pending.size >= 5) {
+                    DeckAnswer(
+                        label = "خودکار برای همه",
+                        weight = AnswerWeight.SECONDARY,
+                        onClick = { autoFiling = true },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             }
         }
+    }
+
+    if (autoFiling) {
+        AutoFileSheet(
+            plan = remember(pending) { autoFilePlan(pending) },
+            onConfirm = { assignments ->
+                onAutoFile?.invoke(assignments)
+                autoFiling = false
+                index = 0
+            },
+            onDismiss = { autoFiling = false },
+        )
+    }
+
+    if (makingCategory && onCreateCategory != null) {
+        AddCategorySheet(
+            taken = ledger.categories.map { it.nameFa },
+            initialKind = if (entry?.txn?.direction == "in") CategoryKind.INCOME else CategoryKind.EXPENSE,
+            onAdd = onCreateCategory,
+            onDismiss = { makingCategory = false },
+        )
     }
 }
 
@@ -1340,20 +1377,23 @@ private fun CheckMark(tint: Color, size: androidx.compose.ui.unit.Dp = 40.dp) {
         )
     }
 }
+
+/**
+ * The plan spelled out before anything is written: how many keep the app's own suggestion, how
+ * many fall back to «خرید روزانه», how many to «سایر». Nothing here is a rule — every filing is
+ * an ordinary answer she can undo one row at a time from دفتر, and the sheet says so, because
+ * that sentence is what makes one tap over fifty-three transactions a relief instead of a risk.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DecisionSheet(
-    entry: LedgerEntry,
-    category: Category,
-    onDecide: (Boolean) -> Unit,
+private fun AutoFileSheet(
+    plan: AutoFilePlan,
+    onConfirm: (List<Pair<LedgerEntry, String>>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    // Play the sheet out before acting on it, or the answer just blinks.
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
-    val hue = categoryHue(category.nameFa)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1367,30 +1407,40 @@ private fun DecisionSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The same mark on the same disc she just tapped, at the size the tile drew it.
-                // The tile is two hundred pixels below and behind a scrim; this is what says the
-                // sheet is about that tap and not about the card in general.
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(hue.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CategoryIcon(category.nameFa, hue, size = 24.dp)
+            Text(
+                "دسته‌بندی خودکار",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                "${faNumber(plan.total.toDouble())} تراکنش منتظر، در یک حرکت:",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s),
+            )
+
+            Spacer(Modifier.height(Space.l))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.field))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = Space.l, vertical = Space.s),
+            ) {
+                if (plan.suggested > 0) {
+                    AutoFileLine(plan.suggested, "با همون پیشنهاد خود برنامه تأیید می‌شن")
                 }
-                Spacer(Modifier.width(Space.m))
-                Text(
-                    category.nameFa,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.semantics { heading() },
-                )
+                if (plan.shopping > 0) {
+                    AutoFileLine(plan.shopping, "برداشتِ بی‌نشونه می‌رن توی «خرید روزانه»")
+                }
+                if (plan.other > 0) {
+                    AutoFileLine(plan.other, "مورد نامشخص می‌رن توی «سایر»")
+                }
             }
             Text(
-                learnedRule(entry.txn),
+                "هیچ قانونی ساخته نمی‌شه — هر کدوم رو بعداً می‌تونی از دفتر باز کنی و عوض کنی.",
                 fontSize = 13.sp,
                 lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1399,28 +1449,38 @@ private fun DecisionSheet(
 
             Spacer(Modifier.height(Space.xl))
             DeckAnswer(
-                label = "از این به بعد هم همین دسته",
+                label = "دسته‌بندی کن",
                 weight = AnswerWeight.PRIMARY,
-                onClick = { close { onDecide(true) } },
+                onClick = { close { onConfirm(plan.assignments) } },
             )
             Spacer(Modifier.height(Space.s))
-            DeckAnswer(
-                label = "فقط همین یکی",
-                weight = AnswerWeight.SECONDARY,
-                onClick = { close { onDecide(false) } },
-            )
-            // Space.s throughout, never tighter: 8dp between touch targets is the floor, and
-            // «انصراف» sitting closer to «فقط همین یکی» than that is a mis-tap that files money.
-            Spacer(Modifier.height(Space.s))
-            // The scrim and the swipe already close it; this is for the finger that is nowhere
-            // near either, and for TalkBack, where "dismiss the sheet" is a gesture and this is
-            // a button.
             DeckAnswer(
                 label = "انصراف",
                 weight = AnswerWeight.QUIET,
                 onClick = { close(onDismiss) },
             )
         }
+    }
+}
+
+@Composable
+private fun AutoFileLine(count: Int, what: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            faNumber(count.toDouble()),
+            style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+            fontSize = 17.sp,
+        )
+        Spacer(Modifier.width(Space.m))
+        Text(
+            what,
+            fontSize = 14.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -1455,9 +1515,14 @@ private enum class AnswerWeight { PRIMARY, SECONDARY, QUIET }
 
 /** One of the answers, whether it stands at the foot of the deck or inside the sheet. */
 @Composable
-private fun DeckAnswer(label: String, weight: AnswerWeight, onClick: () -> Unit) {
+private fun DeckAnswer(
+    label: String,
+    weight: AnswerWeight,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.pill))
             .background(

@@ -111,6 +111,35 @@ class FilingTest {
         assertNull(filingNews(listOf(filed(at = 900L)), emptyList(), said = 0L).alert)
     }
 
+    // ─────────────────────────── filing the whole backlog ───────────────────────────
+
+    @Test
+    fun `a suggested category is kept, and the fallbacks split by direction`() {
+        val suggested = waiting(at = 100L)
+            .copy(categoryId = CAT_SHOPPING_ID, categoryFa = "خرید روزانه")
+        val out = waiting(at = 200L)
+        val inflow = waiting(at = 300L, signed = 4_000_000L)
+        val unknown = waiting(at = 400L, signed = null)
+
+        val plan = autoFilePlan(listOf(suggested, out, inflow, unknown))
+        assertEquals(4, plan.total)
+        assertEquals(1, plan.suggested)
+        assertEquals(1, plan.shopping)
+        assertEquals(2, plan.other)
+
+        val byRef = plan.assignments.associate { it.first.txn.ref to it.second }
+        assertEquals(CAT_SHOPPING_ID, byRef[suggested.txn.ref])
+        assertEquals(CAT_SHOPPING_ID, byRef[out.txn.ref])
+        // Money in with no rule, and a message with no direction: «سایر» is the honest word.
+        assertEquals(CAT_OTHER, byRef[inflow.txn.ref])
+        assertEquals(CAT_OTHER, byRef[unknown.txn.ref])
+    }
+
+    @Test
+    fun `an empty backlog is an empty plan`() {
+        val plan = autoFilePlan(emptyList())
+        assertEquals(0, plan.total)
+        assertTrue(plan.assignments.isEmpty())
     }
 
     @Test

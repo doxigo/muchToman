@@ -589,6 +589,50 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * File the whole backlog at once — see [autoFilePlan].
+     *
+     * Every row gets an ordinary pinned decision, so any one of them can be refiled by hand
+     * later exactly as if she had answered its card herself. One derive at the end applies them
+     * together: fifty-three decisions and one rebuild, not fifty-three rebuilds.
+     */
+    fun categoriseAll(assignments: List<Pair<LedgerEntry, String>>) {
+        if (assignments.isEmpty()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val session = loadSession(durable)
+                durable.withTransaction {
+                    val existing = durable.decisions().ofKind(DecisionKind.CATEGORY)
+                        .associateBy { it.ref }
+                    var stamp = System.currentTimeMillis()
+                    val rows = assignments.map { (entry, categoryId) ->
+                        val previous = existing[entry.txn.ref]
+                        stamp = maxOf(stamp + 1, (previous?.updatedAt ?: 0L) + 1)
+                        TxnDecision(
+                            id = previous?.id ?: uuid7(stamp),
+                            ref = entry.txn.ref,
+                            kind = DecisionKind.CATEGORY,
+                            value = categoryId,
+                            createdAt = previous?.createdAt ?: stamp,
+                            updatedAt = stamp,
+                            memberId = session?.member.orEmpty(),
+                            familyRef = entry.txn.familyRef.ifBlank {
+                                session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                            },
+                        )
+                    }
+                    durable.decisions().putAll(rows)
+                }
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "categoriseAll failed: $it") }
+        }
+    }
+
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 
