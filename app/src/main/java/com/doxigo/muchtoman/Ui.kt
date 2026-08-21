@@ -246,6 +246,9 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     // true, so closing it lands back on the settings page she opened it from rather than on
     // whatever tab is underneath both.
     var companion by remember { mutableStateOf(false) }
+    // Another page of تنظیمات, same one-level rule: closing دسته‌بندی‌ها lands on the settings
+    // page that opened it.
+    var categoriesPage by remember { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
     var deck by remember { mutableStateOf(false) }
     // The hand-entered transaction sheet, over دفتر — the room where its row will land.
@@ -317,6 +320,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         state.openTab?.let { wanted ->
             settings = false
             companion = false
+            categoriesPage = false
             deck = false
             transactionRef = null
             tab = wanted
@@ -337,6 +341,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         if (state.openDeck && state.ledger.ready) {
             settings = false
             companion = false
+            categoriesPage = false
             transactionRef = null
             tab = Tab.LEDGER
             deck = state.ledger.review.isNotEmpty()
@@ -386,7 +391,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
     }
     // The tabs that start at the paper rather than at the field, plus every pushed screen.
     val paperUnderStatusBar = !state.locked && (
-        settings || companion || deck || transactionRef != null ||
+        settings || companion || categoriesPage || deck || transactionRef != null ||
             tab == Tab.LEDGER || tab == Tab.BUDGET || tab == Tab.REPORT ||
             !heroUnderStatusBar
         )
@@ -404,6 +409,18 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         Surface(color = MaterialTheme.colorScheme.background) {
             LockScreen(onUnlock = { promptUnlock(activity) { vm.unlock() } })
         }
+        return
+    }
+
+    if (categoriesPage) {
+        // Back steps to تنظیمات, the page it was opened from — same one-level rule as companion.
+        BackHandler { categoriesPage = false }
+        CategoriesScreen(
+            categories = state.ledger.categories,
+            onAdd = vm::addCategory,
+            onArchive = vm::archiveCategory,
+            onBack = { categoriesPage = false },
+        )
         return
     }
 
@@ -460,9 +477,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 else vm.setLockEnabled(false)
             },
             onWidgetLockChange = vm::setWidgetLock,
-            onAddCategory = vm::addCategory,
-            onRemoveCategory = vm::archiveCategory,
             onDemoData = vm::setDemoData,
+            onCategories = { categoriesPage = true },
             onBack = { settings = false },
         )
         return
@@ -480,6 +496,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 categoryUse = state.ledger.categoryUse,
                 onNote = vm::setNote,
                 onDelete = vm::deleteManualTxn,
+                onCreateCategory = vm::addCategory,
             )
             return
         }
@@ -496,6 +513,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onLoadSource = vm::sourceOf,
             onDone = { deck = false },
             onAutoFile = vm::categoriseAll,
+            onCreateCategory = vm::addCategory,
             onNote = vm::setNote,
         )
         return

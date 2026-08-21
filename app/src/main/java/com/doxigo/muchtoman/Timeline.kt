@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -824,12 +825,15 @@ fun TransactionScreen(
     onNote: ((LedgerEntry, String) -> Unit)? = null,
     /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
     onDelete: ((LedgerEntry) -> Unit)? = null,
+    /** A category of her own, made right here where its absence was discovered. */
+    onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
     var learnSimilar by rememberSaveable(txn.ref) { mutableStateOf(false) }
     var chosen by remember(txn.ref) { mutableStateOf(entry.categoryId) }
     var source by remember(txn.ref) { mutableStateOf<String?>(null) }
+    var makingCategory by rememberSaveable(txn.ref) { mutableStateOf(false) }
 
     LaunchedEffect(txn.ref) { source = onLoadSource(entry) }
     LaunchedEffect(entry.categoryId) { chosen = entry.categoryId }
@@ -902,6 +906,7 @@ fun TransactionScreen(
                         onCategorise(entry, category.id, learnSimilar)
                     },
                     modifier = gutter,
+                    onAdd = onCreateCategory?.let { { makingCategory = true } },
                 )
             }
 
@@ -959,6 +964,18 @@ fun TransactionScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (makingCategory && onCreateCategory != null) {
+        AddCategorySheet(
+            taken = categories.map { it.nameFa },
+            initialKind = if (incoming) CategoryKind.INCOME else CategoryKind.EXPENSE,
+            onAdd = onCreateCategory,
+            onDismiss = { makingCategory = false },
+        )
+    }
+}
 /**
  * «برای موارد مشابه هم همین دسته» — the one switch both filing surfaces share.
  *
@@ -1286,6 +1303,12 @@ internal fun CategoryGrid(
     // What «selected» means differs by screen: on a transaction it is what the entry is filed
     // as; in the deck it is what she has just picked and not yet confirmed.
     selectedLabel: String = "دسته فعلی",
+    /**
+     * The way to a category that is not here yet, as the grid's own last cell. The moment she
+     * discovers a category is missing is the moment she is looking at this grid — sending her
+     * to تنظیمات for it was asking her to remember the errand through two screens.
+     */
+    onAdd: (() -> Unit)? = null,
 ) {
     FlowRow(
         modifier.fillMaxWidth(),
@@ -1304,9 +1327,54 @@ internal fun CategoryGrid(
                 modifier = Modifier.weight(1f).fillMaxRowHeight(),
             )
         }
-        repeat((CATEGORY_COLUMNS - choices.size % CATEGORY_COLUMNS) % CATEGORY_COLUMNS) {
+        if (onAdd != null) {
+            AddCategoryTile(onAdd, Modifier.weight(1f).fillMaxRowHeight())
+        }
+        val cells = choices.size + if (onAdd != null) 1 else 0
+        repeat((CATEGORY_COLUMNS - cells % CATEGORY_COLUMNS) % CATEGORY_COLUMNS) {
             Spacer(Modifier.weight(1f))
         }
+    }
+}
+
+/**
+ * A ghost cell, deliberately not a seventeenth filled tile: the categories are answers and this
+ * is a door, and drawing the door in the answers' own surface made it read as one of them. The
+ * outline is the app's hairline and the ink is `primary`, which is how every other door speaks.
+ */
+@Composable
+private fun AddCategoryTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(Radius.field)
+    Column(
+        modifier
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 92.dp)
+            .padding(horizontal = Space.xs, vertical = Space.m),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            PlusMark(MaterialTheme.colorScheme.primary, size = 18.dp)
+        }
+        Spacer(Modifier.height(Space.s))
+        Text(
+            "دستهٔ تازه",
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1438,12 +1506,14 @@ fun ReviewDeck(
     onDone: () -> Unit,
     /** The whole backlog at once — see [autoFilePlan]. Null hides the offer. */
     onAutoFile: ((List<Pair<LedgerEntry, String>>) -> Unit)? = null,
+    onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
     /** Her note on the card, so the deck and the transaction page stay one screen. */
     onNote: ((LedgerEntry, String) -> Unit)? = null,
 ) {
     var index by remember { mutableStateOf(0) }
     var skipped by remember { mutableStateOf(setOf<String>()) }
     var autoFiling by remember { mutableStateOf(false) }
+    var makingCategory by rememberSaveable { mutableStateOf(false) }
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
     val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
 
@@ -1565,6 +1635,7 @@ fun ReviewDeck(
                         index = 0
                     },
                     selectedLabel = "انتخاب‌شده",
+                    onAdd = onCreateCategory?.let { { makingCategory = true } },
                 )
 
                 if (onNote != null) {
