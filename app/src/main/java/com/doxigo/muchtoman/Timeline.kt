@@ -577,34 +577,7 @@ fun TransactionScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(Space.m))
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.field))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .toggleable(
-                                value = learnSimilar,
-                                role = Role.Switch,
-                                onValueChange = { learnSimilar = it },
-                            )
-                            .padding(Space.m),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "برای موارد مشابه هم همین دسته",
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                "موارد قبلی و بعدی مشابه هم اصلاح می‌شن",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.width(Space.m))
-                        Switch(checked = learnSimilar, onCheckedChange = null)
-                    }
+                    LearnSimilarToggle(txn, learnSimilar) { learnSimilar = it }
                     Spacer(Modifier.height(Space.l))
                 }
             }
@@ -652,6 +625,49 @@ fun TransactionScreen(
                     }
                 }
             }
+/**
+ * «برای موارد مشابه هم همین دسته» — the one switch both filing surfaces share.
+ *
+ * The deck used to ask this as a two-button sheet after every pick, which was this switch wearing
+ * a heavier costume — and «فقط همین یکی» is the answer nine times out of ten, so the sheet was a
+ * tax on the common case. One control, one default, both screens: off, because a standing rule is
+ * the exception she opts into, never the price of filing one receipt.
+ *
+ * Switched on, the caption becomes [learnedRule]'s exact promise for this transaction — «همیشه»
+ * must never be a surprise afterwards, and what it keys on differs card by card.
+ */
+@Composable
+private fun LearnSimilarToggle(txn: Txn, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onChange,
+            )
+            .padding(Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "برای موارد مشابه هم همین دسته",
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                if (checked) learnedRule(txn) else "موارد قبلی و بعدی مشابه هم اصلاح می‌شن",
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(Space.m))
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
         }
     }
 }
@@ -1047,10 +1063,14 @@ private fun DetailRow(label: String, value: String) {
 /**
  * The exception deck.
  *
- * One card at a time, three answers, and «همیشه» is the one that matters — it is the difference
- * between an app that asks the same question every month and one that learns. «حالا نه» writes
- * nothing at all, on purpose: skipping must cost her nothing and must not be recorded as an
- * opinion she does not have.
+ * One card at a time, and tapping a category files it on the spot — the same gesture, the same
+ * switch and the same default as opening the row from دفتر, because «which of the two screens am
+ * I on» must never change what a tap does. «فعلاً نه» writes nothing at all, on purpose: skipping
+ * must cost her nothing and must not be recorded as an opinion she does not have.
+ *
+ * A rule is opted into with [LearnSimilarToggle] *before* the tap, never extracted by a sheet
+ * after it: the old two-button question landed on every single card, and «فقط همین یکی» was the
+ * answer nine times out of ten.
  */
 @Composable
 fun ReviewDeck(
@@ -1065,9 +1085,13 @@ fun ReviewDeck(
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
     val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
 
-    // The picked category, cleared whenever the deck moves on: the answers it opens are about
-    // the card on screen, and carrying a highlight onto the next one would offer to file a
-    // transaction she has not looked at yet.
+    // Off on every new card, exactly as on the transaction page: a standing rule is opted into
+    // per transaction, and a switch that stayed on across cards would write rules she never read.
+    var learnSimilar by rememberSaveable(entry?.txn?.ref) { mutableStateOf(false) }
+
+    // The tap's receipt: filing runs off-thread and the card stays up until the ledger comes
+    // back, so the tile she chose holds the app's «this one» for that beat. Keyed by card, so
+    // the highlight can never survive onto a transaction she has not read.
     var picked by remember(entry?.txn?.ref) { mutableStateOf<String?>(null) }
 
     // Read off the database per card rather than carried in [LedgerView]: the deck holds one
@@ -1186,10 +1210,16 @@ fun ReviewDeck(
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(Space.m))
+                LearnSimilarToggle(entry.txn, learnSimilar) { learnSimilar = it }
+                Spacer(Modifier.height(Space.m))
                 CategoryGrid(
                     choices = choices,
                     selectedId = picked,
-                    onPick = { picked = it.id },
+                    onPick = { category ->
+                        picked = category.id
+                        onDecide(entry, category.id, learnSimilar)
+                        index = 0
+                    },
                     selectedLabel = "انتخاب‌شده",
                 )
 
@@ -1211,24 +1241,14 @@ fun ReviewDeck(
             // something she is not sure of just to reach the way out.
             Column(Modifier.fillMaxWidth().padding(bottom = Space.m).navigationBarsPadding()) {
                 DeckAnswer(
-                    label = "فعلاً نه",
+                    // Named by what it does — it sets this card aside unanswered and moves on,
+                    // which «نه» alone read as a verdict on the question above the grid.
+                    label = "بمونه برای بعد",
                     weight = AnswerWeight.QUIET,
                     onClick = { skipped = skipped + entry.txn.ref },
                 )
             }
 
-            // The two answers that commit, over the card they are about.
-            choices.firstOrNull { it.id == picked }?.let { category ->
-                DecisionSheet(
-                    entry = entry,
-                    category = category,
-                    onDecide = { always ->
-                        onDecide(entry, category.id, always)
-                        index = 0
-                        picked = null
-                    },
-                    onDismiss = { picked = null },
-                )
             }
             }
         }
