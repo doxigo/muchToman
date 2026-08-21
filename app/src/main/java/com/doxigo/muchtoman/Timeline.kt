@@ -124,6 +124,18 @@ fun faClock(epochMillis: Long): String {
 fun faMoment(at: Long, day: Long): String =
     if (at == tehranDayStart(day)) faDate(day) else "${faDate(day)}، ${bidi(faClock(at))}"
 
+/**
+ * «دیروز، ۱۴:۰۳» — the day as she says it, with the minute beside it where one was recorded.
+ *
+ * The hero's corner used to print the day alone, and «دیروز» over a card of three withdrawals
+ * from the same shop is three cards saying the same word. The clock is what tells them apart at
+ * a glance; a row that genuinely has no minute — a hand-entered one backdated to a bare date —
+ * keeps the day alone rather than claiming «۰۰:۰۰».
+ */
+fun faDayMoment(at: Long, day: Long, today: Long = tehranDay(System.currentTimeMillis())): String =
+    if (at == tehranDayStart(day)) faDay(day, today)
+    else "${faDay(day, today)}، ${bidi(faClock(at))}"
+
 private fun faYear(year: Int): String = faDigits(year.toString())
 
 private fun faDigits(s: String): String = buildString {
@@ -324,6 +336,8 @@ fun TimelineScreen(
     }
 }
 
+/**
+ * The door to a hand-entered transaction, beside the title — present wherever the ledger is,
  * because the moment she paid cash for something is not a moment she is standing in تنظیمات.
  *
  * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and the one
@@ -689,7 +703,6 @@ private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
 }
 
 @Composable
-private fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
 internal fun TimelineRow(entry: LedgerEntry, onClick: () -> Unit) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
@@ -1021,6 +1034,7 @@ private fun LearnSimilarToggle(txn: Txn, checked: Boolean, onChange: (Boolean) -
         Switch(checked = checked, onCheckedChange = null)
     }
 }
+
 /**
  * Her own words about the row, saved when she says so rather than on every keystroke.
  *
@@ -1205,7 +1219,7 @@ private fun TransactionHero(
     HeroPanel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    faDay(txn.day),
+                    faDayMoment(txn.at, txn.day),
                     fontSize = 15.sp,
                     color = Hero.muted,
                     modifier = Modifier.weight(1f),
