@@ -168,20 +168,40 @@ fun TimelineScreen(
 ) {
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
+    // Which categories she has narrowed the ledger to. Ids, empty for «all» — session state,
+    // like the lens: a filter that survived a week would be a week of «where did my money go».
+    var catFilter by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var filtering by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     // Two lists, not one: «nothing here at all» and «nothing on this side» are different facts
     // and get different answers, and telling her the ledger is empty when she has merely filtered
     // it to a side she has none of would be the screen lying about her money.
     val everything = remember(ledger.entries) { ledger.entries.filterNot { it.duplicate } }
-    val visible = remember(everything, lens) { everything.filter { lens.matches(it) } }
+    val visible = remember(everything, lens, catFilter) {
+        everything.filter {
+            lens.matches(it) && (catFilter.isEmpty() || it.categoryId in catFilter)
+        }
+    }
     val grouped = remember(visible) { visible.groupBy { it.txn.day }.toSortedMap(compareByDescending { it }) }
     val waiting = ledger.review.size
+
+    // Every category the ledger actually holds rows under, in the picker's own order — the
+    // filter can only ever narrow to things that exist, so nothing here is a dead option.
+    val filterOptions = remember(everything, ledger.categories) {
+        val used = everything.map { it.categoryId }.toSet()
+        val known = ledger.categories.filter { it.id in used }
+        val named = known.map { it.id to it.nameFa }
+        val leftover = (used - known.map { it.id }.toSet()).mapNotNull { id ->
+            everything.firstOrNull { it.categoryId == id }?.let { id to it.categoryFa }
+        }
+        named + leftover
+    }
 
     // The newest of what she just asked for, not wherever the old offset happened to land — two
     // hundred rows into «همه» is the middle of nothing in a list that is now nine rows long.
     // Instant rather than animated: the content was replaced, not moved, so there is no distance
     // to travel and scrolling it would only be a delay wearing choreography.
-    LaunchedEffect(lens) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
+    LaunchedEffect(lens, catFilter) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         // statusBars only: the tab bar below owns the bottom, and taking systemBars here
@@ -238,10 +258,42 @@ fun TimelineScreen(
             // Pinned above the list rather than scrolled with it. A filter she cannot see is a
             // filter she forgets she set, and on this screen that reads as money having gone
             // missing — the one thing the ledger must never look like.
-            LensPicker(lens) { lens = it }
+            Row(
+                Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(1f)) { LensPicker(lens) { lens = it } }
+                Spacer(Modifier.width(Space.s))
+                FilterButton(count = catFilter.size) { filtering = true }
+            }
+            // The narrowing named where it acts, for the reason the picker is pinned: a hidden
+            // filter reads as money gone missing. «پاک کردن» beside it is the one-tap way back.
+            if (catFilter.isNotEmpty()) {
+                val names = filterOptions.filter { it.first in catFilter }.map { it.second }
+                Row(
+                    Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "فقط ${names.joinToString("، ")}",
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(Space.s))
+                    PillButton("پاک کردن", { catFilter = emptyList() }, fontSize = 12.sp, minHeight = 40.dp)
+                }
+            }
 
             if (visible.isEmpty()) {
-                LensEmpty(lens) { lens = LedgerLens.ALL }
+                if (catFilter.isNotEmpty()) {
+                    FilterEmpty { catFilter = emptyList() }
+                } else {
+                    LensEmpty(lens) { lens = LedgerLens.ALL }
+                }
                 return@Column
             }
 
@@ -260,6 +312,17 @@ fun TimelineScreen(
             }
         }
     }
+
+    if (filtering) {
+        CategoryFilterSheet(
+            options = filterOptions,
+            selected = catFilter,
+            onChange = { catFilter = it },
+            onDismiss = { filtering = false },
+        )
+    }
+}
+
  * because the moment she paid cash for something is not a moment she is standing in تنظیمات.
  *
  * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and the one
@@ -318,6 +381,169 @@ internal fun PlusMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
 }
 
 /**
+ * The door to narrowing by category, beside the lens it composes with. Active, it wears the
+ * app's «this one» and carries the count, so a narrowed ledger names itself from across the room.
+ */
+@Composable
+private fun FilterButton(count: Int, onClick: () -> Unit) {
+    val active = count > 0
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceContainer,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = Space.l),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (active) "دسته‌ها • ${faNumber(count.toDouble())}" else "دسته‌ها",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (active) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
+}
+
+/** A narrowing that matched nothing. Not an empty ledger — the way back is the filter itself. */
+@Composable
+private fun FilterEmpty(onClear: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(Space.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            "با این فیلتر چیزی اینجا نیست",
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(Space.m))
+        PillButton("پاک کردن فیلتر", onClear)
+    }
+}
+
+/**
+ * Which categories the ledger shows, chosen live: every tap lands on the list behind the scrim,
+ * so the sheet never needs an apply button — «بستن» is the only verb left, and «هیچ‌کدوم انتخاب
+ * نشده» simply means the whole ledger.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryFilterSheet(
+    options: List<Pair<String, String>>,
+    selected: List<String>,
+    onChange: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            Text(
+                "کدوم دسته‌ها؟",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.semantics { heading() },
+            )
+            Text(
+                "هر چندتا که می‌خوای بزن؛ دفتر فقط همون‌ها رو نشون می‌ده.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s),
+            )
+
+            Spacer(Modifier.height(Space.l))
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+                verticalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                options.forEach { (id, name) ->
+                    FilterCategoryChip(
+                        name = name,
+                        chosen = id in selected,
+                        onToggle = {
+                            onChange(if (id in selected) selected - id else selected + id)
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                "بستن",
+                { close(onDismiss) },
+                voice = ButtonVoice.PRIMARY,
+                modifier = Modifier.fillMaxWidth(),
+                minHeight = 52.dp,
+            )
+            if (selected.isNotEmpty()) {
+                Spacer(Modifier.height(Space.s))
+                PillButton(
+                    "پاک کردن فیلتر",
+                    { onChange(emptyList()); close(onDismiss) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/** One category as a pill: its own mark in its own hue, and `primary` when chosen. */
+@Composable
+internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> Unit) {
+    val hue = categoryHue(name)
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(
+                if (chosen) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .toggleable(value = chosen, role = Role.Checkbox, onValueChange = { onToggle() })
+            .heightIn(min = 44.dp)
+            .padding(horizontal = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CategoryIcon(
+            name,
+            if (chosen) MaterialTheme.colorScheme.onPrimary else hue,
+            size = 16.dp,
+        )
+        Spacer(Modifier.width(Space.xs))
+        Text(
+            name,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (chosen) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
 }
 
 /**
