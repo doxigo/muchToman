@@ -139,6 +139,7 @@ fun ReportScreen(
     excluded: Set<String> = emptySet(),
     onExcluded: (Set<String>) -> Unit = {},
     /** Her «می‌ارزید؟» answers, summed over this report's own window. */
+    worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     /** The ledger itself, for the category drill-down — the rows behind every share bar. */
     entries: List<LedgerEntry> = emptyList(),
     /** Opens one transaction's own page, from the drill-down's list. */
@@ -208,6 +209,7 @@ fun ReportScreen(
                     categories = categories,
                     excluded = excluded,
                     onExcluded = onExcluded,
+                    worthIt = worthIt,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
                     modifier = Modifier
@@ -613,6 +615,7 @@ private fun CashFlowReportContent(
     categories: List<Category> = emptyList(),
     excluded: Set<String> = emptySet(),
     onExcluded: (Set<String>) -> Unit = {},
+    worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -663,6 +666,12 @@ private fun CashFlowReportContent(
             Spacer(Modifier.height(Space.l))
             ReportExclusions(categories, excluded, onExcluded)
         }
+
+        if (worthIt.total > 0) {
+            Spacer(Modifier.height(Space.xxl))
+            WorthItDetail(worthIt, cash.range)
+        }
+
         // Findings and wins in one grid, not two runs of one: paired by kind, each run could end
         // on a lone card and leave a hole mid-page.
         val cards = cash.insights + cash.wins
@@ -1512,6 +1521,72 @@ private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
  * and three rows of which two are dots is exactly the card that read as broken.
  */
 @Composable
+private fun WorthItDetail(summary: WorthItSummary, range: ReportRange) {
+    Column {
+        Text(
+            "به نظر خودت",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            "جمع جواب‌هایی که به «ارزش داشت؟» دادی، در ${range.fa}.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Space.m))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.card))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = Space.l, vertical = Space.s),
+        ) {
+            if (summary.worth > 0) {
+                WorthItLine("ارزش داشت", summary.worth, Color(0xFF2E9E5B))
+            }
+            if (summary.needed > 0) {
+                WorthItLine("لازم بود", summary.needed, MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (summary.regretted > 0) {
+                WorthItLine("ارزش نداشت", summary.regretted, MaterialTheme.colorScheme.primary)
+            }
+        }
+        if (summary.regretted > 0) {
+            Spacer(Modifier.height(Space.s))
+            Text(
+                // The whole reason for asking: "spend less" is advice nobody can act on; this is
+                // a figure attached to decisions she herself called mistaken.
+                "«ارزش نداشت» تنها رقمیه که می‌شه روش کاری کرد — خرجیه که خودت گفتی می‌شد نباشه.",
+                fontSize = 13.sp,
+                lineHeight = 21.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorthItLine(label: String, rial: Long, tone: Color) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            Modifier.weight(1f),
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            bidi("${faCompact(tomanOf(rial))} تومان"),
+            style = figureStyle(tone, FontWeight.Bold),
+            fontSize = 14.sp,
+        )
+    }
+}
 
 /**
  * What this report is deliberately not counting, and the door to changing that.

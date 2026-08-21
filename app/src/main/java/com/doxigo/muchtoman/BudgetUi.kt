@@ -117,7 +117,6 @@ fun BudgetScreen(
     budgets: List<BudgetProgress>,
     goals: List<GoalProgress>,
     categories: List<Category>,
-    summary: WorthItSummary,
     /** True when she keeps budgets and this phone would not be able to tell her about them. */
     notifyBlocked: Boolean,
     onAddBudget: (Category, BudgetPeriod, Long) -> Unit,
@@ -226,10 +225,6 @@ fun BudgetScreen(
                 onClick = { addingGoal = true },
             )
 
-            if (summary.total > 0) {
-                SectionLabel("به نظر خودت")
-                WorthItSummaryCard(summary)
-            }
             Spacer(Modifier.height(Space.huge))
         }
     }
@@ -1052,37 +1047,6 @@ internal fun tomanFieldToRial(text: String): Long? =
         ?.let { (it * 10.0).roundToLong() }
 
 // ─────────────────────────── «آیا ارزشش را داشت؟» ───────────────────────────
-
-@Composable
-private fun WorthItSummaryCard(summary: WorthItSummary) {
-    BandCard(shape = RoundedCornerShape(Radius.group), divided = false) {
-        WorthItRow("ارزش داشت", summary.worth, Color(0xFF2E9E5B))
-        WorthItRow("لازم بود", summary.needed, MaterialTheme.colorScheme.onSurfaceVariant)
-        WorthItRow("ارزش نداشت", summary.regretted, MaterialTheme.colorScheme.primary)
-        if (summary.regretted > 0) {
-            Spacer(Modifier.height(Space.s))
-            Text(
-                // The whole reason for asking: "spend less" is advice nobody can act on.
-                "این خرج‌ها رو می‌شه کم کرد، بدون اینکه چیزی از دست بدی.",
-                fontSize = 13.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WorthItRow(label: String, rial: Long, tone: Color) {
-    Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-        Text(
-            bidi(faCompact(tomanOf(rial))),
-            style = figureStyle(tone, FontWeight.Bold),
-            fontSize = 15.sp,
-        )
-    }
-}
 
 /**
  * The weekly question, asked about at most two large discretionary purchases.

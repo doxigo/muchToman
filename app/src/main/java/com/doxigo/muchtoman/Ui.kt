@@ -582,14 +582,10 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         return@Scaffold
       }
       if (tab == Tab.BUDGET) {
-        val summary = remember(state.ledger) {
-            worthItSummary(state.ledger.entries, state.ledger.worthIt)
-        }
         BudgetScreen(
             budgets = state.ledger.budgets,
             goals = state.ledger.goals,
             categories = state.ledger.categories,
-            summary = summary,
             // Only ever raised where there is something to be quiet about: a phone with no budget
             // has nothing to notify her of, and asking for the permission then would be the launch
             // -time prompt this app deliberately does not do.
@@ -631,6 +627,15 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 excluded = state.reportExcluded,
             )
         }
+        // Her «می‌ارزید؟» answers, over exactly the window the rest of the report reads — a
+        // summary that ignored the month picker would be the one section describing different
+        // months from every figure around it.
+        val worthIt = remember(cash, state.ledger) {
+            worthItSummary(
+                state.ledger.entries.filter { it.txn.day in cash.range },
+                state.ledger.worthIt,
+            )
+        }
         ReportScreen(
             history = state.history,
             current = state.totals.toman,
@@ -644,6 +649,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             categories = state.ledger.categories,
             excluded = state.reportExcluded,
             onExcluded = vm::setReportExcluded,
+            worthIt = worthIt,
             entries = state.ledger.entries,
             // The drill-down's rows open the transaction's own page; closing it lands back on
             // this report, because the tab underneath never moved.
