@@ -156,7 +156,7 @@ fun ReportScreen(
                         .semantics { heading() },
                 )
                 onBack?.let { back ->
-                    TextButton(onClick = back) { Text("برگشت") }
+                    PillButton("برگشت", back)
                 }
             }
 
@@ -650,14 +650,15 @@ private fun CashFlowReportContent(
  * watched you for a year yet*, and «۱ سال» simply missing says nothing at all.
  */
 @Composable
-private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = SegmentedChoice(
+private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = ChipChoice(
+    // Chips, not a second full-width track: the segment directly above this is the screen
+    // switcher, and two identical tracks stacked read as one control drawn twice. Slicers wear
+    // the small pill; there is exactly one big track per screen.
     options = ReportSpan.entries.toList(),
     selected = cash.span,
     label = { it.fa },
     enabled = { it in cash.spans },
     onSelect = onSelect,
-    role = Role.Tab,
-    fontSize = 14.sp,
 )
 
 /**
@@ -1276,20 +1277,23 @@ private fun CategoryDetail(period: PeriodReport) {
         // name; without that this pill was the third full-width segment in a column of them, and
         // nothing said whether it chose the report, the window, or something in this section.
         // The heading is what makes it obviously the last of those.
-        Text(
-            "دسته‌ها",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier = Modifier.semantics { heading() },
-        )
-        Spacer(Modifier.height(Space.m))
-        SegmentedChoice(
-            options = listOf(LedgerLens.EXPENSE, LedgerLens.INCOME),
-            selected = side,
-            label = { it.fa },
-            onSelect = { side = it },
-            fontSize = 14.sp,
-        )
+        // Heading and lens on one line: the heading names the section and the chips slice it,
+        // which is the whole two-tier rule — the screen's one full-width track is the mode
+        // switcher at the top, and everything below it wears the small pill.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "دسته‌ها",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+            ChipChoice(
+                options = listOf(LedgerLens.EXPENSE, LedgerLens.INCOME),
+                selected = side,
+                label = { it.fa },
+                onSelect = { side = it },
+            )
+        }
         Spacer(Modifier.height(Space.m))
         if (rows.isEmpty() || total <= 0L) {
             Text(

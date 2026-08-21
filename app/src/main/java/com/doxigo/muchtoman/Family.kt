@@ -158,7 +158,7 @@ fun CompanionScreen(
                         .padding(vertical = Space.m)
                         .semantics { heading() },
                 )
-                TextButton(onClick = onBack) { Text("برگشت") }
+                PillButton("برگشت", onBack)
             }
             Text(
                 "تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد.",

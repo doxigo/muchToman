@@ -241,9 +241,12 @@ fun SettingsScreen(
                         .weight(1f)
                         .semantics { heading() },
                 )
-                TextButton(onClick = { onNameChange(draft); onBack() }) {
-                    Text("ذخیره", fontSize = 17.sp)
-                }
+                PillButton(
+                    "ذخیره",
+                    { onNameChange(draft); onBack() },
+                    voice = ButtonVoice.PRIMARY,
+                    fontSize = 15.sp,
+                )
             }
 
             // First on the page and above its own label, which is the whole compensation for

@@ -2797,6 +2797,102 @@ internal fun SheetLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** How loudly a [PillButton] speaks: the answer, a real but quieter act, or an act on the field. */
+internal enum class ButtonVoice { PRIMARY, TONAL, HERO }
+
+/**
+ * The app's one shape for «press this» wherever a control stands on its own.
+ *
+ * A bare TextButton reads as a caption until it is tried, and half the app's ways out — «برگشت»,
+ * «بستن», «بعداً» — were captions. The pill is the shape the review pill, the sheet answers and
+ * the tab badge already speak in, so a control wearing it is recognisable as one before it is
+ * touched. [ButtonVoice.HERO] is for the green field, where the ordinary surfaces vanish.
+ */
+@Composable
+internal fun PillButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    voice: ButtonVoice = ButtonVoice.TONAL,
+    fontSize: TextUnit = 14.sp,
+    minHeight: Dp = 44.dp,
+) {
+    val fill = when (voice) {
+        ButtonVoice.PRIMARY -> MaterialTheme.colorScheme.primary
+        ButtonVoice.TONAL -> MaterialTheme.colorScheme.surfaceVariant
+        ButtonVoice.HERO -> Hero.well
+    }
+    val ink = when (voice) {
+        ButtonVoice.PRIMARY -> MaterialTheme.colorScheme.onPrimary
+        ButtonVoice.TONAL -> MaterialTheme.colorScheme.onSurface
+        ButtonVoice.HERO -> Hero.strong
+    }
+    Box(
+        modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(fill)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = minHeight)
+            .padding(horizontal = Space.l),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontSize = fontSize, fontWeight = FontWeight.Bold, color = ink, maxLines = 1)
+    }
+}
+
+/**
+ * The quieter sibling of [SegmentedChoice]: loose chips instead of a full-width track.
+ *
+ * Two tiers, so a screen never stacks twins. The tracked segment is the screen switcher — which
+ * report, which side of a form — and there is at most one of it in view; anything that merely
+ * slices the data below it wears these, the same small pills دفتر's filter button and category
+ * chips already speak in. Same colours, same roles, a size down: the hierarchy is the shape.
+ */
+@Composable
+internal fun <T> ChipChoice(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: (T) -> Boolean = { true },
+) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+        options.forEach { option ->
+            val active = option == selected
+            val usable = enabled(option)
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceContainer,
+                    )
+                    .selectable(
+                        selected = active,
+                        enabled = usable,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(option) },
+                    )
+                    .heightIn(min = 40.dp)
+                    .padding(horizontal = Space.l),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label(option),
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    color = when {
+                        active -> MaterialTheme.colorScheme.onPrimary
+                        usable -> MaterialTheme.colorScheme.onSurface
+                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    },
+                )
+            }
+        }
+    }
+}
 /**
  * One track, one filled pill — the app's only shape for "pick exactly one of a few". The
  * report's window picker, the theme picker and the two ways of recording a balance were three

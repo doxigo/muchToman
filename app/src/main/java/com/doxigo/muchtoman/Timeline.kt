@@ -356,7 +356,6 @@ private fun LensPicker(lens: LedgerLens, onSelect: (LedgerLens) -> Unit) {
         onSelect = onSelect,
         role = Role.Tab,
         fontSize = 14.sp,
-        modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
     )
 }
 
@@ -379,10 +378,8 @@ private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Spacer(Modifier.height(Space.s))
-        TextButton(onClick = onClear) {
-            Text("همه رو نشون بده", fontWeight = FontWeight.Bold)
-        }
+        Spacer(Modifier.height(Space.m))
+        PillButton("همه رو نشون بده", onClear)
     }
 }
 
@@ -829,9 +826,8 @@ private fun TransactionHero(
                         color = Hero.muted,
                     )
                 }
-                TextButton(onClick = onBack) {
-                    Text(backLabel, color = Hero.strong, fontWeight = FontWeight.SemiBold)
-                }
+                Spacer(Modifier.width(Space.m))
+                PillButton(backLabel, onBack, voice = ButtonVoice.HERO)
             }
 
             Spacer(Modifier.height(Space.s))
