@@ -218,6 +218,13 @@ fun listHoldings(
  * Today's history entry, but only a total worth remembering: something on the list, every
  * holding priced, rates younger than a day. A partial or stale total drawn into the chart
  * would look like a crash that never happened. Null means leave the history as it is.
+ *
+ * [stocksUpdatedAt] is the bourse snapshot's own clock. It has one, separately from the
+ * Worker's — [Store.cachedStocks] is the one price the phone fetches for itself and it goes
+ * stale on its own schedule — so gating on [ratesUpdatedAt] alone let a stockholder record
+ * "good" daily points that valued her shares at week-old prices. Only checked when a نماد is
+ * actually on the list: stale bourse prices on a phone with no shares gate nothing. Defaults
+ * to [now] so a caller with no stocks in play keeps the old behaviour.
  */
 fun snapshotHistory(
     history: Map<Long, Double>,
@@ -225,9 +232,13 @@ fun snapshotHistory(
     rates: Map<String, Double>,
     ratesUpdatedAt: Long,
     now: Long,
+    stocksUpdatedAt: Long = now,
 ): Map<Long, Double>? {
     if (list.isEmpty()) return null
     if (now - ratesUpdatedAt > 24 * 60 * 60_000L) return null
+    // The same 24h rule the rates just passed, applied to the shares' own clock — a stale
+    // بورس skips the day exactly as stale rates do, and the next fresh fetch fills it in.
+    if (list.any { isStockId(it.typeId) } && now - stocksUpdatedAt > 24 * 60 * 60_000L) return null
     val totals = computeTotals(list, rates)
     if (totals.missing.isNotEmpty()) return null
     return recordDay(history, now / DAY_MS, totals.toman)

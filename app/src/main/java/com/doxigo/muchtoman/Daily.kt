@@ -59,6 +59,10 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
                 effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
                 store.cachedRates.updatedAt,
                 System.currentTimeMillis(),
+                // The bourse cache keeps its own clock, and it is the one price nobody refetched
+                // while the phone was abroad or the fetch above failed — passed so a stockholder's
+                // "good" daily point cannot value shares at week-old prices. See [snapshotHistory].
+                store.cachedStocks.updatedAt,
             )?.let { store.history = it }
         }
         // AndWait: doWork returning is what makes this process killable again, and a
