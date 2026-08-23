@@ -28,7 +28,7 @@ const UPSTREAM_TIMEOUT_MS = 8_000;
 const WALLET_UPSTREAM_TIMEOUT_MS = 5_000;
 // A phone on Iranian mobile data is slow, and this one is tens of megabytes rather than a
 // price quote — the eight seconds the rate sources get would abort every download.
-const APK_TIMEOUT_MS = 60_000;
+const APK_HEADERS_TIMEOUT_MS = 30_000;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 const MAX_WALLET_REQUEST_BYTES = 4 * 1024;
@@ -975,31 +975,51 @@ async function fetchApk(ctx: ExecutionContext): Promise<Response> {
   const hit = await cache.match(key);
   if (hit) return hit;
 
-  const upstream = await fetchWithTimeout(release.asset, {
-    headers: { 'user-agent': UA, accept: 'application/octet-stream' },
-  }, APK_TIMEOUT_MS);
+  // The deadline covers time-to-headers only and is disarmed the moment GitHub answers. An
+  // AbortSignal.timeout here used to run for the whole streamed body, which cut every slow
+  // connection off at the sixty-second mark — 30 MB at Iranian mobile speeds is minutes —
+  // and took the tee'd cache fill down with it.
+  const control = new AbortController();
+  const armed = setTimeout(
+    () => control.abort(new Error('upstream headers timed out')),
+    APK_HEADERS_TIMEOUT_MS,
+  );
+  let upstream: Response;
+  try {
+    upstream = await fetch(release.asset, {
+      headers: { 'user-agent': UA, accept: 'application/octet-stream' },
+      signal: control.signal,
+    });
+  } finally {
+    clearTimeout(armed);
+  }
   // ponytail: the declared length is the cap, and it is forwarded — a body that runs past what
   // it promised errors the stream. Nothing is buffered here, so counting bytes ourselves the way
   // readBytesLimited does would buy nothing but a 128 MB copy in memory.
   const declared = Number(upstream.headers.get('content-length'));
-  if (!upstream.ok || !Number.isFinite(declared) || declared <= 0 || declared > MAX_APK_BYTES) {
+  if (
+    !upstream.ok || upstream.body == null ||
+    !Number.isFinite(declared) || declared <= 0 || declared > MAX_APK_BYTES
+  ) {
     await cancelBody(upstream.body);
     return textResponse('Download unavailable', 502);
   }
 
-  const res = new Response(upstream.body, {
-    headers: {
-      'content-type': 'application/vnd.android.package-archive',
-      'content-length': String(declared),
-      'content-disposition': `attachment; filename="muchtoman-${release.name}.apk"`,
-      'cache-control': 'public, max-age=31536000, immutable',
-      'x-content-type-options': 'nosniff',
-    },
-  });
-  ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
+  const headers = {
+    'content-type': 'application/vnd.android.package-archive',
+    'content-length': String(declared),
+    'content-disposition': `attachment; filename="muchtoman-${release.name}.apk"`,
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+  };
+  // The cache fill rides waitUntil on its own branch of the tee: the client dropping out
+  // mid-download no longer cancels the write, and it no longer takes a client fast enough to
+  // finish inside the old deadline for the edge to ever get seeded.
+  const [clientBody, cacheBody] = upstream.body.tee();
+  ctx.waitUntil(cache.put(key, new Response(cacheBody, { headers })).catch((error) => {
     console.error(JSON.stringify({ message: 'apk cache write failed', error: errorMessage(error) }));
   }));
-  return res;
+  return new Response(clientBody, { headers });
 }
 
 async function buildRates(): Promise<Response> {
