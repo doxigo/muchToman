@@ -20,6 +20,7 @@
 
   bodyEtag,
   etagMatches,
+  reservedTomanIds,
   TokenBucket,
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -226,7 +227,7 @@ const BONBAST_MAP: Record<string, string> = {
 };
 
 /** app id -> tgju indicator key. tgju quotes in RIAL, so every value is divided by 10. */
-const TGJU_MAP: Record<string, string> = {
+export const TGJU_MAP: Record<string, string> = {
   usd: 'price_dollar_rl',
   eur: 'price_eur',
   gbp: 'price_gbp',
@@ -243,7 +244,12 @@ const TGJU_MAP: Record<string, string> = {
   coin_gerami: 'gerami',
 };
 
-async function fetchBonbast(): Promise<Record<string, number>> {
+/**
+ * Ids no crypto ticker may shadow. This used to cover BONBAST_MAP only, which left
+ * silver_999/silver_925 and the sixteen parsian rows open to a token coded, say, PARSIAN
+ * quietly overwriting a gold price with a coin price.
+ */
+const RESERVED_TOMAN_IDS = reservedTomanIds(Object.keys(BONBAST_MAP));
   // The JSON endpoint only answers with a token minted into the homepage HTML.
   const home = await fetchWithTimeout('https://bonbast.com/', {
     headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
@@ -415,13 +421,6 @@ async function fetchFiat() {
     (v) => v.usd != null,
   );
 
-  const usd = got.value.usd;
-  if (usd < PLAUSIBLE_USD_TOMAN.min || usd > PLAUSIBLE_USD_TOMAN.max) {
-    throw new Error(`${got.via} dollar rate implausible: ${usd} Toman`);
-  }
-  return got;
-}
-
 // ───────────────────────── crypto ─────────────────────────
 
 /**
@@ -526,9 +525,9 @@ async function fetchCoinGecko(): Promise<{ usd: Record<string, number>; coins: C
     const id = String(coin.symbol ?? '').toLowerCase();
     const geckoId = String(coin.id ?? '');
     const price = num(coin.current_price);
-    // A coin whose ticker collides with a currency/gold/coin id would shadow it in the
-    // rates map. There are none today; skipping is still cheaper than debugging it later.
-    if (!id || !geckoId || price == null || id in BONBAST_MAP || id === 'toman') continue;
+    // A coin whose ticker collides with a currency/gold/silver/سکه id would shadow it in
+    // the rates map. There are none today; skipping is still cheaper than debugging it later.
+    if (!id || !geckoId || price == null || RESERVED_TOMAN_IDS.has(id)) continue;
     // The app has historically keyed holdings by ticker. When two current coins share one,
     // the higher-market-cap entry wins instead of the later one silently changing its price,
     // logo, and now its token contract.
@@ -1104,6 +1103,9 @@ async function buildRates(): Promise<Response> {
     usdVia = Object.keys(usdPrices).length ? 'binance' : 'nothing';
   }
 
+    }
+  }
+
   let tehranPriced = 0;
   let converted = 0;
 
@@ -1117,12 +1119,9 @@ async function buildRates(): Promise<Response> {
   // Every id anyone priced, not only the ones the catalogue happens to list. A coin she holds
   // that has since dropped out of the top 250 keeps its rate too, which it did not before.
   for (const id of new Set([...Object.keys(tomanNative), ...Object.keys(usdPrices)])) {
-    // A ticker that collides with a currency/gold/coin id would shadow it in the rates map.
-    if (id in BONBAST_MAP || id === 'toman') continue;
-
-    // Prefer the Tehran-quoted price; fall back to USD x the dollar rate.
-    if (tomanNative[id] != null) {
-      toman[id] = tomanNative[id];
+    // A ticker that collides with a currency/gold/silver/سکه/پارسیان id would shadow it in
+    // the rates map (this guard used to cover BONBAST_MAP only).
+    if (RESERVED_TOMAN_IDS.has(id)) continue;
       tehranPriced++;
     } else if (usdPrices[id] != null && toman.usd != null) {
       toman[id] = usdPrices[id] * toman.usd;
