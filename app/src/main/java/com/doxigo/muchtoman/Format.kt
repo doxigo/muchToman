@@ -6,16 +6,35 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
-import kotlin.math.truncate
 
 private val FA: Locale = Locale.forLanguageTag("fa-IR")
 private val FA_INTEGER = object : ThreadLocal<NumberFormat>() {
     override fun initialValue(): NumberFormat = NumberFormat.getIntegerInstance(FA)
 }
 
+/**
+ * How far past the shown precision a figure is settled before it is cut. Nine decimals is far
+ * below anything that is money — a milliard of Toman is off by half a Toman at worst — and far
+ * above the binary noise a double carries, so HALF_UP here only ever erases representation
+ * error, never a Rial she is owed. The same move [faHeld] makes with the asset's own precision.
+ */
+private const val SETTLE_SCALE = 9
+
 /** Grouped Persian digits: 118500 -> "۱۱۸٬۵۰۰" */
-fun faNumber(value: Double): String =
-    FA_INTEGER.get()!!.format(value.roundToLong())
+fun faNumber(value: Double): String {
+    // NaN and infinity cannot enter BigDecimal; they keep the old saturating path.
+    if (!value.isFinite()) return FA_INTEGER.get()!!.format(value.roundToLong())
+    // Truncated, never rounded — the policy every displayed figure follows: «۹۹۹٫۹» is «۹۹۹»,
+    // not «۱٬۰۰۰», because the number shown must never be larger than the real one. Settled in
+    // decimal first, as [faCompact] and [faHeld] are, so a binary hair under a whole figure she
+    // really has does not eat a Toman. BigInteger, not toLong(): a figure past Long would wrap.
+    return FA_INTEGER.get()!!.format(
+        BigDecimal(value)
+            .setScale(SETTLE_SCALE, RoundingMode.HALF_UP)
+            .setScale(0, RoundingMode.DOWN)
+            .toBigInteger(),
+    )
+}
 
 /**
  * Persian digits with decimals kept: 0.0345 -> "۰٫۰۳۴۵". With [pad] the decimals are held at
@@ -55,9 +74,18 @@ fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String {
     // comes and goes — except a figure that lands exactly on the unit, which drops its
     // decimals entirely: "۱۸۰٫۰۰۰ میلیون" is three zeros carrying nothing, and reads worse
     // than "۱۸۰ میلیون".
-    var f = 1.0
-    repeat(dec) { f *= 10 }
-    val t = truncate(toman / div * f) / f
+    //
+    // The cut is made in decimal, not on the raw double — the same BigDecimal move [faHeld]
+    // makes. 1,007,000 over a million is 1.00699999… as a binary double, and truncating that
+    // directly rendered «۱٫۰۰۶ میلیون»: a thousand Toman she really has, eaten by
+    // representation error. Settling at SETTLE_SCALE first erases the noise; DOWN then
+    // enforces the one safe direction.
+    val q = toman / div
+    val t = if (!q.isFinite()) q // NaN/∞ cannot enter BigDecimal; formatted as before
+    else BigDecimal(q)
+        .setScale(SETTLE_SCALE, RoundingMode.HALF_UP)
+        .setScale(dec, RoundingMode.DOWN)
+        .toDouble()
     return "${faDecimal(t, dec, pad && t % 1.0 != 0.0)} $unit"
 }
 

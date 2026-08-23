@@ -177,6 +177,25 @@ class MoneyTest {
     }
 
     @Test
+    fun `binary representation error does not eat a decimal the compact form owes her`() {
+        // 1,007,000 over a million is 1.00699999… as a raw double, and truncating that binary
+        // hair rendered «۱٫۰۰۶ میلیون» — a thousand Toman she really has. Settled in decimal
+        // first, the same BigDecimal move faHeld makes, then cut in the one safe direction.
+        assertEquals("۱٫۰۰۷ میلیون", faCompact(1_007_000.0, 3, pad = true))
+        assertEquals("${faDecimal(1.007, 3)} میلیون", faCompact(1_007_000.0, 3))
+    }
+
+    @Test
+    fun `grouped whole figures truncate too - rounding inflated them`() {
+        // faNumber used to round: 999.9 became «۱٬۰۰۰», money the account does not hold.
+        assertEquals("۹۹۹", faNumber(999.9))
+        assertEquals(faNumber(999.0), faNumber(999.999))
+        // Truncation, so a real fraction is simply dropped…
+        assertEquals(faNumber(2.0), faNumber(2.999999))
+        // …while a sub-Rial binary hair under a figure she really has is not eaten.
+        assertEquals(faNumber(3.0), faNumber(2.9999999999))
+    }
+    @Test
     fun `numbers are spelled out in persian`() {
         assertEquals("ده میلیون و هشتصد هزار", faWords(10_800_000))
         assertEquals("صفر", faWords(0))
