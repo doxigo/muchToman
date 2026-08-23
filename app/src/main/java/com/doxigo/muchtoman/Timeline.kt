@@ -420,8 +420,15 @@ fun TimelineScreen(
                 ),
             ) {
                 for ((day, rows) in grouped) {
-                    item(key = "day-$day") {
-                        DayBand(day, today, rows, onOpen)
+                    item(key = "day-$day", contentType = "day") {
+                        DayHeading(day, today, rows)
+                    }
+                    // One lazy item per transaction rather than the whole day as a block, so a
+                    // single row can recompose — or later animate — without dragging its whole
+                    // day with it. The rows are container-less on the paper, so nothing visual
+                    // belonged to the day composable but the heading.
+                    items(rows, key = { it.txn.ref }, contentType = { "txn" }) { entry ->
+                        TimelineRow(entry) { onOpen(entry) }
                     }
                 }
             }
@@ -807,17 +814,21 @@ internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> U
  * for money that *is* somewhere — an account, a budget, a cap — and activity is not a container,
  * it is a stream: Wise's own split, and the reason the asset list keeps its bands while this
  * list breathes. Nothing visual ever belonged to the day but this heading, so the rows ride the
+ * LazyColumn directly. The heading still carries the day's figure, the one number the ledger
+ * owns and no other screen shows — summed over [rows] so it can never disagree with the rows
+ * printed under it.
  *
  * The figure is the sum of the rows actually under it, so under a [LedgerLens] it is that day's
  * income or that day's spending rather than its net — which is what the heading of a filtered
- * day should say, and why the picker stays on screen to name which of the three she is reading.
+ * day should say, and why the picker stays on screen and the narrowings are named in words
+ * above the list.
  */
 @Composable
-private fun DayBand(
+private fun DayHeading(
     day: Long,
     today: Long,
+    /** The day's visible rows — read for the figure only; they are laid out by the caller. */
     rows: List<LedgerEntry>,
-    onOpen: (LedgerEntry) -> Unit,
 ) {
     // Transfers move money between her own accounts. Counting them would show a day that only
     // shuffled funds as a day she earned or spent, which is the whole reason they are struck
@@ -853,9 +864,6 @@ private fun DayBand(
                 fontSize = 13.sp,
             )
         }
-    }
-    rows.forEach { entry ->
-        TimelineRow(entry) { onOpen(entry) }
     }
 }
 
@@ -947,13 +955,17 @@ internal fun TimelineRow(
         incoming -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onBackground
     }
-    val categoryFa = if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
+    val categoryFa = ledgerCategoryFa(entry)
     // Same mark *and* same colour as the grid she chose it in: a hundred rows are read by the
     // disc at the start of the line long before the word is. «دسته‌بندی نشده» has no mark of
     // its own, falls to DOTS, and DOTS is the one entry in [categoryHue] that returns muted
     // text rather than a hue — a row still waiting for her stays grey while every filed row
     // beside it carries colour, which is the distinction the disc is for.
     val hue = categoryHue(categoryFa)
+    val rial = txn.signedRial ?: txn.amountRial
+    // The amber dot below is colour and nothing else, and colour is the one channel TalkBack
+    // and a colour-blind reader share none of. On a waiting row the whole line is restated the
+    // way BudgetCard states its card — the same words in the same order the eye reads them —
     Row(
         Modifier
             .fillMaxWidth()
