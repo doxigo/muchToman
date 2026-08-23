@@ -735,10 +735,29 @@ class Store(context: Context) {
         get() = read("reportExcluded", PASS_THROUGH_CATEGORIES.keys)
         set(v) = write("reportExcluded", v)
 
-    private inline fun <reified T> read(key: String, fallback: T): T =
-        prefs.getString(key, null)?.let {
-            runCatching { JSON.decodeFromString<T>(it) }.getOrNull()
-        } ?: fallback
+    private inline fun <reified T> read(key: String, fallback: T): T {
+        val raw = prefs.getString(key, null) ?: return fallback
+        return runCatching { JSON.decodeFromString<T>(raw) }.getOrElse {
+            stashCorrupt(key, raw, it)
+            fallback
+        }
+    }
+
+    /**
+     * A blob that stops decoding is still the only copy of itself. This read returns the
+     * fallback, the caller carries on, and the first ordinary write through the setter then
+     * destroys both the raw string and whatever it held — a bank balance gone without a trace.
+     * So one generation of the raw is stashed under "<key>.corrupt" first, recoverable off the
+     * device, and the log names the key only: the content may be a bank balance, and the
+     * exception message may quote it.
+     */
+    private fun stashCorrupt(key: String, raw: String, cause: Throwable) {
+        prefs.edit().putString("$key.corrupt", raw).apply()
+        android.util.Log.w(
+            "muchtoman",
+            "prefs blob '$key' failed to decode (${cause.javaClass.simpleName}); raw kept at '$key.corrupt'",
+        )
+    }
 
     private inline fun <reified T> write(key: String, value: T) {
         prefs.edit().putString(key, JSON.encodeToString(value)).apply()
