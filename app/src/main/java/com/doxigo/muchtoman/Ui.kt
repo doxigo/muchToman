@@ -390,20 +390,28 @@ private fun WidthCap(content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
+private fun AppScreens(
+    vm: AppVm,
+    state: UiState,
+    activity: FragmentActivity,
     notices: TransientNotices,
+) {
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
-    var settings by remember { mutableStateOf(false) }
+    // Saveable, like tab and transactionRef below: these four are *where she is standing*, and
+    // a process death that threw her from دسته‌بندی‌ها back to the asset list read as the app
+    // restarting itself. (The manifest's ponytail about half-typed sheet text still stands —
+    // sheets and their drafts are the part that does not survive.)
+    var settings by rememberSaveable { mutableStateOf(false) }
     // A page of تنظیمات, not a peer of it: `companion` is only ever read while `settings` is
     // true, so closing it lands back on the settings page she opened it from rather than on
     // whatever tab is underneath both.
-    var companion by remember { mutableStateOf(false) }
+    var companion by rememberSaveable { mutableStateOf(false) }
     // Another page of تنظیمات, same one-level rule: closing دسته‌بندی‌ها lands on the settings
     // page that opened it.
-    var categoriesPage by remember { mutableStateOf(false) }
+    var categoriesPage by rememberSaveable { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
-    var deck by remember { mutableStateOf(false) }
+    var deck by rememberSaveable { mutableStateOf(false) }
     // The hand-entered transaction sheet, over دفتر — the room where its row will land.
     var addingTxn by remember { mutableStateOf(false) }
     var transactionRef by rememberSaveable { mutableStateOf<String?>(null) }
