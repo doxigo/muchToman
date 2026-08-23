@@ -2831,6 +2831,11 @@ internal fun <T> ChipChoice(
                         role = Role.RadioButton,
                         onClick = { onSelect(option) },
                     )
+                    // 40dp drawn, 48dp touched: Compose hit-tests any sub-48dp clickable in
+                    // the full minimum touch target and reports those bounds to TalkBack, so
+                    // the finger already has its 48dp. Growing the *layout* instead
+                    // (minimumInteractiveComponentSize) would push every row these sit in
+                    // 8dp taller for no gain.
                     .heightIn(min = 40.dp)
                     .padding(horizontal = Space.l),
                 contentAlignment = Alignment.Center,

@@ -200,6 +200,9 @@ private fun CategoryRow(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // These pills draw at 40dp but are hit and announced at 48: Compose expands
+                // any smaller clickable to the minimum touch target. Growing their layout
+                // instead would push every row 4dp taller for a target the finger already has.
                 confirming -> Row {
                     PillButton("بی‌خیال", onDismiss, fontSize = 13.sp, minHeight = 40.dp)
                     Spacer(Modifier.width(Space.s))

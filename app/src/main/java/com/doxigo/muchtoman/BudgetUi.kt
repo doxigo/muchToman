@@ -1091,8 +1091,9 @@ private fun Answer(label: String, modifier: Modifier = Modifier, onClick: () -> 
             .clip(RoundedCornerShape(Radius.pill))
             .background(MaterialTheme.colorScheme.surface)
             .clickable(role = Role.Button, onClick = onClick)
-            // 44dp minimum: this is answered one-handed or it is not answered.
-            .height(48.dp)
+            // 48dp minimum, and a minimum only: this is answered one-handed or it is not
+            // answered, and a fixed height cut the label's descenders off at large font sizes.
+            .heightIn(min = 48.dp)
             .padding(vertical = Space.m),
     )
 }
