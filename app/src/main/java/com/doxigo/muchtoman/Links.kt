@@ -10,17 +10,20 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 
 /**
- * Transfers, refunds, fees and duplicates — the four ways one movement of money shows up as
- * more than one transaction, and the four ways a total goes quietly wrong if nothing notices.
+ * Transfers and duplicates — the two ways one movement of money shows up as more than one
+ * transaction, and the two ways a total goes quietly wrong if nothing notices.
  *
- * Every detector here is a pure function of the transactions. Nothing guesses, nothing scores,
- * and anything short of certain goes to the deck rather than being applied silently.
+ * Every detector here is a pure function of the transactions, and nothing guesses: a link is
+ * applied to the totals only when nothing about it is ambiguous — [LinkCandidate.auto] — and her
+ * verdict beats everything in both directions. A near miss is stored as a non-auto candidate,
+ * and that is all it does: it counts in nothing, [LinkCandidateDao.touching] reads it beside a
+ * row, and a verdict of hers has a pair to land on so the same question cannot come back.
+ * Refund and fee detectors lived here once, computing links nothing consumed; a detector whose
+ * output feeds no total and no screen is not caution, it is dead weight dressed as caution.
  */
 
 object LinkKind {
     const val TRANSFER = "transfer"
-    const val REFUND = "refund"
-    const val FEE_OF = "fee_of"
     const val DUPLICATE = "duplicate"
 }
 
@@ -41,8 +44,15 @@ data class LinkCandidate(
     val kind: String,
     /** Why, in a word, so the deck can say what it noticed rather than just assert it. */
     val reason: String,
-    /** True only when nothing about the match is ambiguous. False means: ask her. */
+    /** True only when nothing about the match is ambiguous. False means: not certain enough to apply. */
     val auto: Boolean,
+    /**
+     * The leg that arrived second, which is the one [hiddenRefs] strikes out. [aRef]/[bRef]
+     * order by ref, and a ref is a hash — its order against time is a coin flip — so time is
+     * carried here rather than inferred. Blank only on a pair built from a verdict whose legs
+     * the ledger no longer holds.
+     */
+    @ColumnInfo(name = "later_ref", defaultValue = "''") val laterRef: String = "",
 )
 
 /**
@@ -95,31 +105,43 @@ const val SLOW_RAIL_WINDOW_MS = 40 * 60 * 60 * 1000L
  */
 private val SLOW_RAILS = setOf("paya", "satna")
 
-/** Two identical purchases this close together are a real thing; only the deck may decide. */
+/** Two identical purchases this close together are a real thing; only she may decide. */
 const val DUPLICATE_WINDOW_MS = 90 * 1000L
 
-const val REFUND_KEYWORD_WINDOW_MS = 90L * 24 * 60 * 60 * 1000
-const val REFUND_QUIET_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+/**
+ * A reference number is the bank's own idempotency key, but some banks re-print a contract or
+ * instalment number where one belongs, so even this match carries a window. Seven days: wide
+ * enough for a delayed second copy of a real message, far short of next month's instalment.
+ */
+const val DUPLICATE_REFNO_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
 
-/** An unlabelled outflow at most this large, just after another, may be its fee. */
-const val LOOSE_FEE_MAX_RIAL = 200_000L
-const val LOOSE_FEE_WINDOW_MS = 120 * 1000L
-
-private val REFUND_WORDS = listOf("برگشت", "عودت", "ابطال", "استرداد", "کنسل")
+/**
+ * Two legs sharing a post-transaction balance settle a duplicate only this close together.
+ *
+ * Unbounded, this match also caught a backup-restore that re-stamps DATE months later — and that
+ * protection is deliberately traded away, because a fixed rent cycling an account back to the
+ * same figure every month is normal use, and it was being auto-hidden from every report for
+ * ever. A re-stamped restore now shows as two rows months apart, which is at least a wrongness
+ * she can see and reject.
+ */
+const val DUPLICATE_BALANCE_WINDOW_MS = 48 * 60 * 60 * 1000L
 
 private fun pair(a: Txn, b: Txn, kind: String, reason: String, auto: Boolean): LinkCandidate {
     val (x, y) = if (a.ref <= b.ref) a.ref to b.ref else b.ref to a.ref
-    return LinkCandidate(x, y, kind, reason, auto)
+    // The millisecond tie breaks on ref, so two devices deriving the same rows hide the same leg.
+    val later = if (a.at > b.at || (a.at == b.at && a.ref > b.ref)) a else b
+    return LinkCandidate(x, y, kind, reason, auto, later.ref)
 }
 
 /**
  * Duplicates, in this order, stopping at the first hit.
  *
- * The reference number is the bank's own idempotency key and settles it outright. A shared
- * post-transaction balance settles it nearly as well: two genuinely separate identical
- * purchases cannot both leave the account holding the same figure. Anything weaker than that
- * goes to the deck, because two identical taxi fares forty seconds apart is a thing that
- * happens to people.
+ * The reference number is the bank's own idempotency key and settles it within its window. A
+ * shared post-transaction balance settles it nearly as well: two genuinely separate identical
+ * purchases cannot both leave the account holding the same figure — unless a month passes and
+ * the same rent leaves the same account at the same figure again, which is why both matches
+ * are time-bounded now. Anything weaker than that is never settled by the app, because two
+ * identical taxi fares forty seconds apart is a thing that happens to people.
  */
 fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     val ordered = transactions.sortedWith(compareBy({ it.at }, { it.ref }))
@@ -128,6 +150,7 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     for (matches in ordered.filter { it.refNo.isNotEmpty() }.groupBy { it.bank to it.refNo }.values) {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
+                if (matches[j].at - matches[i].at > DUPLICATE_REFNO_WINDOW_MS) continue
                 byRefNo += pair(matches[i], matches[j], LinkKind.DUPLICATE, "refno", auto = true)
             }
         }
@@ -140,6 +163,7 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     for (matches in balanceGroups.values) {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
+                if (matches[j].at - matches[i].at > DUPLICATE_BALANCE_WINDOW_MS) continue
                 byBalance += pair(matches[i], matches[j], LinkKind.DUPLICATE, "balance", auto = true)
             }
         }
@@ -179,11 +203,10 @@ private fun railOf(sent: Txn, received: Txn): String? =
     listOf(sent.channel, received.channel).firstOrNull { it in SLOW_RAILS }
 
 fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
-    val out = mutableListOf<LinkCandidate>()
     val outgoing = transactions.filter { it.direction == "out" && it.amountRial != null }
     val incoming = transactions.filter { it.direction == "in" && it.amountRial != null }
-    for (sent in outgoing) {
-        val matches = incoming.filter { received ->
+    val candidates = outgoing.map { sent ->
+        sent to incoming.filter { received ->
             val slow = railOf(sent, received) != null
             received.accountId != sent.accountId &&
                 kotlin.math.abs(received.at - sent.at) <=
@@ -198,65 +221,33 @@ fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
                         sent.amountRial - received.amountRial <= TRANSFER_FEE_MAX_RIAL
                 }
         }
+    }
+    // One counter-leg settles at most one pair, so uniqueness is checked from the receiving
+    // side too. Checked only from the sent side, two equal payments out inside the window of a
+    // single equal leg in each looked unique from where they stood, both auto-paired with it,
+    // and the one of them that had actually left the household vanished from every report.
+    val claims = mutableMapOf<String, Int>()
+    for ((_, matches) in candidates) {
+        for (received in matches) claims[received.ref] = (claims[received.ref] ?: 0) + 1
+    }
+    val out = mutableListOf<LinkCandidate>()
+    for ((sent, matches) in candidates) {
         if (matches.isEmpty()) continue
-        val nearest = matches.minByOrNull { kotlin.math.abs(it.at - sent.at) }!!
+        // Ref breaks a tie in distance, so the pair does not depend on the order rows arrived.
+        val nearest = matches.minWithOrNull(
+            compareBy({ kotlin.math.abs(it.at - sent.at) }, { it.ref })
+        )!!
         val rail = railOf(sent, nearest)
         val exact = nearest.amountRial == sent.amountRial
-        val unique = matches.size == 1
-        // Automatic only when nothing about it is ambiguous: one candidate, exactly equal, and
-        // not on a rail whose forty-hour window makes coincidence plausible.
+        val unique = matches.size == 1 && claims[nearest.ref] == 1
+        // Automatic only when nothing about it is ambiguous: one candidate, claimed by no other
+        // leg, exactly equal, and not on a rail whose forty-hour window makes coincidence
+        // plausible.
         val auto = unique && exact && rail == null
         // The rail is its own reason, so the deck can say which one it noticed rather than
         // asserting a pairing she has no way to check.
         val reason = rail ?: if (exact) "exact" else "fee-band"
         out += pair(sent, nearest, LinkKind.TRANSFER, reason, auto)
-    }
-    return out
-}
-
-/** Money coming back. A keyword makes it certain; matching amounts alone only make it likely. */
-fun findRefunds(transactions: List<Txn>, bodyOf: (Txn) -> String): List<LinkCandidate> {
-    val out = mutableListOf<LinkCandidate>()
-    val ordered = transactions.sortedWith(compareBy({ it.at }, { it.ref }))
-    val outgoing = ordered
-        .filter { it.direction == "out" && it.amountRial != null }
-        .groupBy { it.accountId to it.amountRial }
-    for (back in ordered) {
-        if (back.direction != "in" || back.amountRial == null) continue
-        val labelled = REFUND_WORDS.any { bodyOf(back).contains(it) }
-        val window = if (labelled) REFUND_KEYWORD_WINDOW_MS else REFUND_QUIET_WINDOW_MS
-        val candidates = outgoing[back.accountId to back.amountRial].orEmpty().filter { spent ->
-            spent.at < back.at &&
-                back.at - spent.at <= window &&
-                (labelled || (spent.merchantNorm.isNotEmpty() && spent.merchantNorm == back.merchantNorm))
-        }
-        val original = candidates.maxByOrNull { it.at } ?: continue
-        out += pair(original, back, LinkKind.REFUND, if (labelled) "keyword" else "merchant", labelled)
-    }
-    return out
-}
-
-/**
- * A small unlabelled outflow just after another is very often that one's fee. Never automatic:
- * it is also very often a second small purchase.
- */
-fun findLooseFees(transactions: List<Txn>): List<LinkCandidate> {
-    val out = mutableListOf<LinkCandidate>()
-    val spends = transactions
-        .filter { it.direction == "out" && it.amountRial != null }
-        .sortedWith(compareBy({ it.at }, { it.ref }))
-    for (i in spends.indices) {
-        val fee = spends[i]
-        if (fee.amountRial!! > LOOSE_FEE_MAX_RIAL) continue
-        if (fee.channel == "fee") continue // already labelled; it needs no guess
-        val parent = spends.lastOrNull {
-            it.ref != fee.ref &&
-                it.accountId == fee.accountId &&
-                it.at <= fee.at &&
-                fee.at - it.at <= LOOSE_FEE_WINDOW_MS &&
-                it.amountRial!! > LOOSE_FEE_MAX_RIAL
-        } ?: continue
-        out += pair(parent, fee, LinkKind.FEE_OF, "near", auto = false)
     }
     return out
 }
@@ -269,12 +260,8 @@ fun findLooseFees(transactions: List<Txn>): List<LinkCandidate> {
 fun findLinks(
     transactions: List<Txn>,
     decisions: List<LinkDecision>,
-    bodyOf: (Txn) -> String = { "" },
 ): List<LinkCandidate> {
-    val found = findDuplicates(transactions) +
-        findTransfers(transactions) +
-        findRefunds(transactions, bodyOf) +
-        findLooseFees(transactions)
+    val found = findDuplicates(transactions) + findTransfers(transactions)
 
     val rejected = decisions.filter { it.verdict == Verdict.REJECTED && !it.deleted }
         .map { Triple(it.aRef, it.bRef, it.kind) }.toSet()
@@ -284,9 +271,12 @@ fun findLinks(
         .distinctBy { Triple(it.aRef, it.bRef, it.kind) }
         .filterNot { Triple(it.aRef, it.bRef, it.kind) in rejected }
 
+    // A confirmation may name legs the detectors never paired, so the later leg is looked up
+    // rather than carried — and left blank when a leg is no longer in the ledger.
+    val at = transactions.associate { it.ref to it.at }
     val hers = confirmed
         .filterNot { d -> kept.any { it.aRef == d.aRef && it.bRef == d.bRef && it.kind == d.kind } }
-        .map { LinkCandidate(it.aRef, it.bRef, it.kind, "confirmed", auto = true) }
+        .map { LinkCandidate(it.aRef, it.bRef, it.kind, "confirmed", auto = true, laterRef = laterOf(it.aRef, it.bRef, at)) }
 
     return kept.map { candidate ->
         // Her confirmation lifts a deck card into a settled fact.
@@ -297,16 +287,29 @@ fun findLinks(
     } + hers
 }
 
+private fun laterOf(aRef: String, bRef: String, at: Map<String, Long>): String {
+    val aAt = at[aRef] ?: return ""
+    val bAt = at[bRef] ?: return ""
+    return if (aAt > bAt || (aAt == bAt && aRef > bRef)) aRef else bRef
+}
+
 /** Both legs of every transfer that is settled, so reports can leave them out of both sides. */
 fun transferRefs(links: List<LinkCandidate>): Set<String> = links
     .filter { it.kind == LinkKind.TRANSFER && it.auto }
     .flatMap { listOf(it.aRef, it.bRef) }
     .toSet()
 
-/** The later leg of every settled duplicate — hidden from reports, never deleted. */
+/**
+ * The later leg of every settled duplicate — hidden from reports, never deleted.
+ *
+ * [LinkCandidate.laterRef], not [LinkCandidate.bRef]: the pair is stored in ref order, a ref is
+ * a hash, and hiding by hash order hid the original and kept the echo whenever the hashes
+ * happened to sort against time. bRef remains the fallback for a confirmed pair whose legs the
+ * ledger no longer holds, where "later" has no answer at all.
+ */
 fun hiddenRefs(links: List<LinkCandidate>): Set<String> = links
     .filter { it.kind == LinkKind.DUPLICATE && it.auto }
-    .map { it.bRef }
+    .map { it.laterRef.ifEmpty { it.bRef } }
     .toSet()
 
 @Dao
@@ -322,9 +325,6 @@ interface LinkCandidateDao {
 
     @Query("SELECT * FROM link_candidate WHERE a_ref = :ref OR b_ref = :ref")
     suspend fun touching(ref: String): List<LinkCandidate>
-
-    @Query("SELECT COUNT(*) FROM link_candidate WHERE auto = 0")
-    suspend fun askCount(): Int
 }
 
 @Dao

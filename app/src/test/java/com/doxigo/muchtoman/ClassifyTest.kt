@@ -5,7 +5,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The rule table and the four detectors, both of which are pure functions of the transactions. */
+/** The rule table and the two detectors, both of which are pure functions of the transactions. */
 class ClassifyTest {
 
     private var n = 0
@@ -258,6 +258,27 @@ class ClassifyTest {
     }
 
     @Test
+    fun `a monthly cycle back to the same balance is rent, not a duplicate`() {
+        // Same account, same amount, same مانده afterwards — a fixed rent that returns the
+        // account to the same figure every month looks exactly like the balance match, and
+        // without a window it was auto-hidden from every report for ever. Not even a question:
+        // paying the rent every month is what an account is for.
+        val months = (0..2L).map {
+            txn(at = 1_000_000 + it * 30 * DAY_MS, signed = -80_000_000, balance = 120_000_000)
+        }
+        assertTrue(findDuplicates(months).isEmpty())
+    }
+
+    @Test
+    fun `a reference number re-used across months is a cycle, not a duplicate`() {
+        // Some banks print a contract or instalment number where the idempotency key belongs,
+        // and it repeats every month by design.
+        val a = txn(at = 1_000_000, signed = -5_000_000, refNo = "020/000016703")
+        val b = txn(at = 1_000_000 + 30 * DAY_MS, signed = -5_000_000, refNo = "020/000016703")
+        assertTrue(findDuplicates(listOf(a, b)).isEmpty())
+    }
+
+    @Test
     fun `two identical taxi fares a minute apart are asked about, never merged`() {
         val a = txn(at = 1000, signed = -500_000, merchant = "اسنپ")
         val b = txn(at = 41_000, signed = -500_000, merchant = "اسنپ")
@@ -346,30 +367,16 @@ class ClassifyTest {
     }
 
     @Test
-    fun `a refund that says so is linked, and one that does not is asked about`() {
-        val spent = txn(at = 1_000_000, signed = -3_000_000, merchant = "دیجی کالا")
-        val back = txn(at = 5_000_000, signed = 3_000_000, merchant = "دیجی کالا")
-        val labelled = findRefunds(listOf(spent, back)) {
-            if (it.ref == back.ref) "برگشت وجه خرید" else ""
-        }.single()
-        assertEquals("keyword", labelled.reason)
-        assertTrue(labelled.auto)
-
-        val quiet = findRefunds(listOf(spent, back)) { "" }.single()
-        assertEquals("merchant", quiet.reason)
-        assertTrue(!quiet.auto)
-    }
-
-    @Test
-    fun `a small outflow just after a big one may be its fee, and she decides`() {
-        val purchase = txn(at = 1_000_000, signed = -5_000_000)
-        val fee = txn(at = 1_030_000, signed = -75_000)
-        val link = findLooseFees(listOf(purchase, fee)).single()
-        assertEquals(LinkKind.FEE_OF, link.kind)
-        assertTrue(!link.auto)
-        // A fee the bank labelled needs no guessing at all.
-        val labelled = txn(at = 1_030_000, signed = -75_000, channel = "fee")
-        assertTrue(findLooseFees(listOf(purchase, labelled)).isEmpty())
+    fun `two equal payments out cannot both claim the one leg that came in`() {
+        // The mirror of the case above, and it was checked only from the sent side: each payment
+        // saw exactly one counter-leg and looked unique from where it stood, so both auto-paired
+        // with the same incoming leg — and the one of them that had actually left the household,
+        // the rent say, vanished from the report as "a transfer".
+        val rent = txn(at = 1_000_000, signed = -50_000_000, account = "SAMAN")
+        val moved = txn(at = 1_040_000, signed = -50_000_000, account = "REFAH")
+        val landed = txn(at = 1_080_000, signed = 50_000_000, account = "BLU")
+        val links = findTransfers(listOf(rent, moved, landed))
+        assertTrue("one of these is a real expense; neither may settle silently", links.none { it.auto })
     }
 
     @Test
@@ -397,12 +404,17 @@ class ClassifyTest {
 
     @Test
     fun `a duplicate hides its later leg and never deletes anything`() {
-        val a = txn(at = 1000, signed = -5_000_000, balance = 90_000_000)
-        val b = txn(at = 2000, signed = -5_000_000, balance = 90_000_000)
-        val links = findLinks(listOf(a, b), emptyList())
+        // Order-hostile on purpose: the later-in-time leg carries the lexicographically SMALLER
+        // ref. Refs are hashes, so their order against time is a coin flip, and hiding by ref
+        // order — which is how the pair happens to be stored — hid the original and kept the echo
+        // whenever the flip came up wrong. This used to pass only because the test refs sorted
+        // the same way time did.
+        val early = txn(at = 1000, signed = -5_000_000, balance = 90_000_000, ref = "s:zzzz:0")
+        val later = txn(at = 2000, signed = -5_000_000, balance = 90_000_000, ref = "s:aaaa:0")
+        val links = findLinks(listOf(early, later), emptyList())
         val hidden = hiddenRefs(links)
         assertEquals(1, hidden.size)
-        assertTrue("the later one is the one that goes", hidden.single() == maxOf(a.ref, b.ref))
+        assertEquals("the later one is the one that goes", later.ref, hidden.single())
     }
 
     @Test

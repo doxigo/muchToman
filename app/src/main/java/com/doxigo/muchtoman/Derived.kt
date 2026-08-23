@@ -66,7 +66,7 @@ private const val META_DERIVE_MS = "derive_ms"
     // on purpose — the version going up drops every table, and the marker that says which
     // parser built these rows goes with them, so the next launch rebuilds. That is the intended
     // behaviour and not a shortcut: it costs under a second and nothing here is irreplaceable.
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class DerivedDb : RoomDatabase() {
@@ -382,7 +382,7 @@ suspend fun derive(
         all += family
         written += family.size
 
-        val links = findLinks(all, verdicts) { bodies[it.srcHash].orEmpty() }
+        val links = findLinks(all, verdicts)
         derived.links().putAll(links)
 
         val transfers = transferRefs(links)
