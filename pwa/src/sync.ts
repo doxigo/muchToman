@@ -49,6 +49,7 @@ export function nextStamp(previous: number | undefined, now: number): number {
   return Math.max(now, (previous ?? 0) + 1);
 }
 
+
 export function uuid7(now = Date.now()): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
   for (let i = 0; i < 6; i++) b[i] = Math.floor(now / 2 ** (8 * (5 - i))) & 0xff;
@@ -114,11 +115,15 @@ export async function remove(session: Session, id: string): Promise<void> {
   const existing = (await allRecords()).find((r) => r.id === id);
   if (!existing) return;
   const updatedAt = nextStamp(existing.updatedAt, Date.now());
-  const { nonce, body } = await seal(session.key, existing.value);
+  // The record's id, sealed in: receivers only believe a delete whose ciphertext authenticates
+  // and names the record it arrived on, so a compromised server cannot mint or re-aim one.
+  const value = { v: 1, id, deleted: true };
+  const { nonce, body } = await seal(session.key, value);
   await enqueue({
     ...existing,
     updatedAt,
     deleted: true,
+    value,
     nonce,
     body,
   });
@@ -159,6 +164,14 @@ export async function pull(session: Session): Promise<number> {
   for (const record of records) {
     const value = await unseal<unknown>(session.key, record.nonce, record.body);
     if (value == null) continue;
+    if (record.deleted) {
+      // The `deleted` flag rides in plaintext, so it proves nothing on its own: a delete is
+      // honoured only when the sealed body authenticates AND names this very record. The old
+      // contentless tombstone shape fails here and is rejected — the protocol never shipped in
+      // a tagged release, so nothing is owed to it.
+      const tombstone = value as { id?: unknown; deleted?: unknown };
+      if (tombstone.deleted !== true || tombstone.id !== record.id) continue;
+    }
     rows.push({
       id: record.id, scope: record.scope, updatedAt: record.updatedAt,
       device: record.device, kind: record.kind, ownerMemberId: record.ownerMemberId,
