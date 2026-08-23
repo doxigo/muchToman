@@ -113,12 +113,32 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // there is nothing to key on that is not a guess. It earns a rule the first time she files
     // one and says «همیشه», which is the mechanism that already exists for exactly this.
     Category("cat_instalment", nameFa = "قسط و وام", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
+    // The اسنپ‌پی/تپسی bill, which is a قسط with a brand on it: a month of rides taken on credit
+    // and settled in one payment. Filed under حمل و نقل it reads as a single fare the size of a
+    // week's خواربار, and filed under قسط و وام it disappears into the debt she is actually
+    // paying down — one row is what keeps both of those readable.
+    //
+    // Beside قسط و وام rather than beside حمل و نقل, because what she is looking at when this
+    // arrives is a repayment and not a ride. No shipped rule behind it, for the reason قسط و وام
+    // has none: it lands as an ordinary برداشت with nothing in the message to key on that is not
+    // a guess, and it earns a rule the first time she files one and says «همیشه».
+    Category("cat_ride_credit", nameFa = "بازپرداخت اسنپ و تپسی", kind = CategoryKind.EXPENSE, sort = 115, builtin = true),
     Category("cat_atina", nameFa = "خرج اتینا", kind = CategoryKind.EXPENSE, sort = 120, builtin = true),
 
     // ── the occasional ones ──
     Category("cat_savings", nameFa = "پس‌انداز و سرمایه", kind = CategoryKind.EXPENSE, sort = 130, builtin = true),
     Category("cat_gifts", nameFa = "هدیه و نیکوکاری", kind = CategoryKind.EXPENSE, sort = 140, builtin = true),
     Category("cat_beauty", nameFa = "زیبایی", kind = CategoryKind.EXPENSE, sort = 150, builtin = true),
+    // زیبایی split into the two things it was hiding, and left standing above them rather than
+    // archived: آرایشگاه is a handful of appointments a year, each big enough to want its own
+    // line, and آرایشی و بهداشتی is the small constant restocking of a shelf that adds up to more
+    // than either of them. Under one name the appointments read as an expensive month and the
+    // shelf reads as nothing at all.
+    //
+    // زیبایی keeps its row because every transaction already filed under it still names it, and
+    // because it is the honest answer for whatever is neither of these two.
+    Category("cat_salon", nameFa = "آرایشگاه", kind = CategoryKind.EXPENSE, sort = 152, builtin = true),
+    Category("cat_cosmetics", nameFa = "آرایشی و بهداشتی", kind = CategoryKind.EXPENSE, sort = 154, builtin = true),
     Category("cat_culture", nameFa = "فرهنگی و هنری", kind = CategoryKind.EXPENSE, sort = 160, builtin = true),
     Category("cat_tobacco", nameFa = "دخانیات", kind = CategoryKind.EXPENSE, sort = 170, builtin = true),
     // The two halves of a قرض, which only balance out over time: neither is really spending or

@@ -44,7 +44,7 @@ enum class CategoryGlyph {
     BASKET, CUP, BUS, RECEIPT, CROSS, TAG, NOTE, PERCENT, TRAY, SWAP,
     STACK, PLANE, GIFT, BLOOM, SHIRT, MUSIC, HOUSE, PERSON, LEND, PAYBACK,
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
-    RING, AIRPLANE,
+    RING, AIRPLANE, SCISSORS, BOTTLE, PIN,
     DOTS,
 }
 
@@ -77,6 +77,8 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "انتقال وجه" -> CategoryGlyph.PLANE
     "هدیه و نیکوکاری" -> CategoryGlyph.GIFT
     "زیبایی" -> CategoryGlyph.BLOOM
+    "آرایشگاه" -> CategoryGlyph.SCISSORS
+    "آرایشی و بهداشتی" -> CategoryGlyph.BOTTLE
     "مد و پوشاک" -> CategoryGlyph.SHIRT
     "فرهنگی و هنری" -> CategoryGlyph.MUSIC
     "خانه و کاشانه" -> CategoryGlyph.HOUSE
@@ -84,6 +86,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "قرض" -> CategoryGlyph.LEND
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
+    "بازپرداخت اسنپ و تپسی" -> CategoryGlyph.PIN
     "دخانیات" -> CategoryGlyph.SMOKE
     "خودرو" -> CategoryGlyph.WHEEL
     "اینترنت" -> CategoryGlyph.WIFI
@@ -198,19 +201,38 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // and قسط و وام are both already using it anyway. سایر came to sit beside it later and
         // cleared it by 61°, which is the constraint that picked the orchid rather than this.
         CategoryGlyph.WIFI -> if (dark) Color(0xFFA59EEB) else Color(0xFF4538B2)
-        // سفر sits between قرض and برداشت نقدی, with زیبایی directly above it and سایر directly
-        // below. Those four take the wheel apart between them: قرض's red-orange and زیبایی's burnt
-        // orange rule out everything warm, برداشت نقدی's green rules out the greens and teals, and
-        // سایر's orchid rules out the purples — which leaves the yellow-green, and it clears all
-        // four by around 70°.
+        // سفر sits between قرض and برداشت نقدی, with آرایشی و بهداشتی directly above it and سایر
+        // directly below. Those four take the wheel apart between them: قرض's red-orange rules out
+        // everything warm, آرایشی و بهداشتی's azure and برداشت نقدی's green rule out the greens,
+        // teals and blues, and سایر's orchid rules out the purples — which leaves the yellow-green,
+        // and it clears all four by 68° or more.
         //
         // What it does not clear is the two it never touches: همسر is 9° off it across a corner,
-        // and خواربار 9° the other way, four rows up. That is what a free slot looks like now — the
+        // and خواربار 9° the other way, five rows up. That is what a free slot looks like now — the
         // spending grid is past twenty cells, so 360° divided by them is less than the gap this
         // table is tuned to, and the only hues left are ones somebody non-adjacent already has. The
         // corner is the cheapest place to spend that, which is the rule this table already keeps:
         // the eye compares along a row and down a column, never across a diagonal.
         CategoryGlyph.AIRPLANE -> if (dark) Color(0xFFA6D478) else Color(0xFF598A28)
+        // بازپرداخت اسنپ و تپسی opens no row and closes none: it lands beside قسط و وام, under
+        // سلامت's red and over زیبایی's burnt orange. Those three rule out the warm half of the
+        // wheel and everything from teal round to violet, which leaves the green — and the green
+        // is where this grid is already thickest. Between پس‌انداز's leaf and برداشت نقدی's
+        // jade, about 11° off each: neither comes within a cell of it, and it clears قسط و وام
+        // beside it by 66°, which is the number that decides the cell.
+        CategoryGlyph.PIN -> if (dark) Color(0xFF7ED39C) else Color(0xFF1E854B)
+        // آرایشگاه opens the row below زیبایی, with خرج اتینا's teal above it and قرض's
+        // red-orange below. Violet is what is left, and the free space in it is the gap between
+        // مد و پوشاک's purple and دخانیات's plum — 12° off both, and neither is adjacent to this
+        // cell: مد و پوشاک is two rows up and one across, دخانیات the far end of this same row.
+        // The three it actually touches it clears by 84° and more.
+        CategoryGlyph.SCISSORS -> if (dark) Color(0xFFDBA5EE) else Color(0xFF8F56A4)
+        // آرایشی و بهداشتی sits beside آرایشگاه, under پس‌انداز and over سفر. Azure, which is the
+        // one part of the wheel this grid never spent: کارمزد is at the same hue and is grey by
+        // design, so the only real blues near it — حمل و نقل's in row one and قسط و وام's two
+        // rows up — are ten degrees away and nowhere near this cell. The narrowest gap it keeps is
+        // 65°, to پس‌انداز's green directly above it.
+        CategoryGlyph.BOTTLE -> if (dark) Color(0xFF7BC9EA) else Color(0xFF1B78A7)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -901,6 +923,66 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 tint,
                 style = ink,
             )
+        }
+        // Scissors, open. The two rings are the whole mark — blades on their own are an X — and
+        // they sit side by side at the foot of the box rather than diagonally, which is what
+        // keeps this off کارمزد's percent sign, the other two circles and a slash in this set.
+        // Each blade starts on its own ring's rim, so the two read as one tool rather than as
+        // four parts.
+        CategoryGlyph.SCISSORS -> {
+            drawCircle(tint, w * 0.14f, Offset(w * 0.3f, h * 0.8f), style = ink)
+            drawCircle(tint, w * 0.14f, Offset(w * 0.7f, h * 0.8f), style = ink)
+            drawLine(tint, Offset(w * 0.38f, h * 0.69f), Offset(w * 0.84f, h * 0.08f), stroke.toPx(), StrokeCap.Round)
+            drawLine(tint, Offset(w * 0.62f, h * 0.69f), Offset(w * 0.16f, h * 0.08f), stroke.toPx(), StrokeCap.Round)
+        }
+        // A bottle with its cap — the shelf rather than the face, because «آرایشی و بهداشتی» is
+        // the shampoo as much as the lipstick, and a lipstick says only half of it. Drawn as one
+        // path so the shoulder is a curve and not two outlines crossing, and the body is kept
+        // wide: this set already has three rounded boxes, and what tells this one from the
+        // banknote at 16dp is the narrow neck standing above it.
+        CategoryGlyph.BOTTLE -> {
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.38f, h * 0.06f)
+                    lineTo(w * 0.62f, h * 0.06f)
+                    lineTo(w * 0.62f, h * 0.3f)
+                    quadraticTo(w * 0.8f, h * 0.4f, w * 0.8f, h * 0.58f)
+                    lineTo(w * 0.8f, h * 0.86f)
+                    quadraticTo(w * 0.8f, h * 0.94f, w * 0.7f, h * 0.94f)
+                    lineTo(w * 0.3f, h * 0.94f)
+                    quadraticTo(w * 0.2f, h * 0.94f, w * 0.2f, h * 0.86f)
+                    lineTo(w * 0.2f, h * 0.58f)
+                    quadraticTo(w * 0.2f, h * 0.4f, w * 0.38f, h * 0.3f)
+                    close()
+                },
+                tint,
+                style = ink,
+            )
+            // The cap, as the one line across the neck. Without it the neck is a chimney.
+            drawLine(tint, Offset(w * 0.38f, h * 0.2f), Offset(w * 0.62f, h * 0.2f), stroke.toPx(), StrokeCap.Butt)
+        }
+        // A map pin, which is what اسنپ and تپسی both are before they are anything else. The
+        // repayment is what the row records, but «قسط» is already three columns stepping down one
+        // cell to the right of this one, and a second drawing of a debt beside it is two marks
+        // she has to read the words under. The brand is the thing she is looking for here.
+        //
+        // The hole is what makes it a pin and not a drop: at this weight a solid head reads as
+        // ink, and every other round mark in this set — the wheel, the coin, the face — is
+        // hollow the same way.
+        CategoryGlyph.PIN -> {
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.5f, h * 0.96f)
+                    quadraticTo(w * 0.14f, h * 0.6f, w * 0.14f, h * 0.4f)
+                    quadraticTo(w * 0.14f, h * 0.06f, w * 0.5f, h * 0.06f)
+                    quadraticTo(w * 0.86f, h * 0.06f, w * 0.86f, h * 0.4f)
+                    quadraticTo(w * 0.86f, h * 0.6f, w * 0.5f, h * 0.96f)
+                    close()
+                },
+                tint,
+                style = ink,
+            )
+            drawCircle(tint, w * 0.13f, Offset(w * 0.5f, h * 0.38f), style = ink)
         }
         // Nothing known yet. Three dots say «unset» without the alarm a «؟» carries.
         CategoryGlyph.DOTS -> {

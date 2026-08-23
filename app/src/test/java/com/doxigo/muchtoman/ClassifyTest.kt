@@ -129,6 +129,7 @@ class ClassifyTest {
         val noSender = classify(txn(signed = -900, channel = "atm"), listOf(hers))
         assertEquals(CAT_UNCATEGORISED, noSender.categoryId)
     }
+
     @Test
     fun `always-do-this keys on the merchant when there is one and the sender when there is not`() {
         val withMerchant = txn(signed = -1000, merchant = "فروشگاه رفاه", channel = "pos")
@@ -168,6 +169,9 @@ class ClassifyTest {
         val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
         assertTrue("خواربار" in outgoing)
         assertTrue("سفر" in outgoing)
+        assertTrue("بازپرداخت اسنپ و تپسی" in outgoing)
+        assertTrue("آرایشگاه" in outgoing)
+        assertTrue("آرایشی و بهداشتی" in outgoing)
         assertTrue("درآمد" !in outgoing)
 
         // Retired, and never offered again: «انتقال وجه» named how the money left and never why,
