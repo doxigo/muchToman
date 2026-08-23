@@ -1279,7 +1279,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
                 continue
             }
-            accounts = applyBankSms(accounts, parsed)
+            // Through the plausibility gate, not applyBankSms directly: a garbled twenty-one
+            // -digit figure from a matched sender must contribute nothing — see [foldBankSms].
+            accounts = foldBankSms(accounts, parsed)
             fresh += key
         }
 

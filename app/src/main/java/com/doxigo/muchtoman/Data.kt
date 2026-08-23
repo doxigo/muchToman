@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.abs
 
 @Serializable
 data class WalletOption(
@@ -244,6 +245,12 @@ fun snapshotHistory(
     return recordDay(history, now / DAY_MS, totals.toman)
 }
 
+    if (before.toman <= 0.0 || after.toman <= 0.0) return history
+    val factor = after.toman / before.toman
+    if (!factor.isFinite() || factor == 1.0) return history
+    return history.mapValues { (_, total) -> total * factor }
+}
+
 data class Change(val delta: Double, val percent: Double?, val sinceDay: Long)
 
 /**
@@ -260,6 +267,39 @@ fun changeOver(history: Map<Long, Double>, today: Long, windowDays: Int, current
     return Change(current - base, if (base > 0) (current - base) / base * 100 else null, day)
 }
 
+/**
+ * The fold's figures are Toman by the time [parseBankSms] is done; the ledger states its bound
+ * in Rial ([MAX_PLAUSIBLE_RIAL], Derived.kt), so this is the same line in the fold's unit.
+ */
+private val MAX_PLAUSIBLE_TOMAN = MAX_PLAUSIBLE_RIAL / 10.0
+
+/** A stated balance under this is pocket money; over it, a hundred-fold jump stops being believable. */
+private const val SPOOF_FLOOR_TOMAN = 100_000_000.0 // 1e9 Rial
+
+/**
+ * [applyBankSms], behind the same plausibility rule the ledger applies (see [MAX_PLAUSIBLE_RIAL]
+ * and PARSER_VERSION 2's note in Derived.kt): an implausible figure is DROPPED, never clamped —
+ * saturating would still invent money, and folding it raw set the shown balance to ~1e20 from one
+ * garbled twenty-one-digit read until the next real مانده. The whole message is refused when
+ * either figure fails, because a parse that produced one impossible number is not trusted about
+ * the other. The inbox stays the record either way: the message costs nothing, and the next clean
+ * one reads normally.
+ *
+ * The second refusal is about spoofing and parse slips rather than garbling. A stated balance is
+ * an anchor — it overwrites outright — so a single message asserting more than a hundred times
+ * what the account was last known to hold, and past pocket-money size, is far likelier a spoofed
+ * sender or a misread figure than a windfall; a real windfall keeps stating itself, and the next
+ * message consistent with what the account holds wins normally. The gate only speaks when the old
+ * figure is *known*: an unanchored balance is a running sum of whatever transactions happened to
+ * be read, not knowledge, and an anchored zero cannot scale — an emptied account refilling is the
+ * ordinary case, not a hundred-fold jump.
+ */
+fun foldBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
+    if (sms.balance != null && abs(sms.balance) > MAX_PLAUSIBLE_TOMAN) return accounts
+    if (sms.delta != null && abs(sms.delta) > MAX_PLAUSIBLE_TOMAN) return accounts
+    if (sms.balance != null) {
+        val known = accounts.firstOrNull { it.bank == sms.bank.name }
+        if (
 
 /**
  * The one gate over everything that publishes the ledger or read-modify-writes the prefs kept

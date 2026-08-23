@@ -783,6 +783,10 @@ class MoneyTest {
     private fun sms(body: String, at: Long = 1_000L, from: String = "0999 992 0000") =
         parseBankSms(from, body, at)
 
+    /** A bank-stated مانده alone, built directly so the figure is exact. Toman, like the fold. */
+    private fun stated(balanceToman: Double, at: Long, bank: Bank = Bank.SAMAN) =
+        BankSms(bank, SAMAN_NUM, "", delta = null, balance = balanceToman, at = at, inferred = false)
+
     @Test
     fun `a rial amount is never read as toman`() {
         // The tenfold error. 5,000,000 ریال is 500,000 تومان and nothing else.
@@ -1016,6 +1020,72 @@ class MoneyTest {
         var accounts = applyBankSms(emptyList(), sms("واریز 1 ریال\nمانده 90,000,000 ریال", at = 500)!!)
         accounts = applyBankSms(accounts, sms("واریز 1 ریال\nمانده 10,000,000 ریال", at = 100)!!)
         assertEquals(9_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    // ────────── the fold's plausibility gate — the ledger's own rule, applied here too ──────────
+
+    @Test
+    fun `a figure past the ledger's plausibility bound contributes nothing`() {
+        // PARSER_VERSION 2's decision, mirrored: dropped, never clamped — saturating still
+        // invents money. 2e16 Toman is 2e17 Rial, far past MAX_PLAUSIBLE_RIAL.
+        val start = applyBankSms(emptyList(), sms("مانده 50,000,000 ریال", at = 1)!!)
+        assertEquals(start, foldBankSms(start, stated(2e16, at = 2)))
+        // The delta path is clamped the same way: no account is invented from a garbled figure.
+        val garbledDelta =
+            BankSms(Bank.SAMAN, SAMAN_NUM, "", delta = 2e16, balance = null, at = 3, inferred = false)
+        assertTrue(foldBankSms(emptyList(), garbledDelta).isEmpty())
+        // One impossible figure poisons the whole message: the balance beside it is not trusted.
+        val half =
+            BankSms(Bank.SAMAN, SAMAN_NUM, "", delta = 2e16, balance = 5_000_000.0, at = 4, inferred = false)
+        assertEquals(start, foldBankSms(start, half))
+        // The bound itself is still money, exactly as the ledger reads it (inclusive).
+        val atBound = foldBankSms(emptyList(), stated(MAX_PLAUSIBLE_RIAL / 10.0, at = 5))
+        assertEquals(MAX_PLAUSIBLE_RIAL / 10.0, bankTotal(atBound, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `one message asserting a hundred-fold jump does not overwrite an anchored balance`() {
+        // 5,000,000 Toman, anchored by the bank itself…
+        var accounts = foldBankSms(emptyList(), sms("مانده 50,000,000 ریال", at = 1)!!)
+        // …then a single message asserting 600,000,000 Toman: 120× and over 1e9 Rial. Likelier
+        // a spoofed sender or a parse slip than a windfall, so it neither folds nor anchors.
+        accounts = foldBankSms(accounts, stated(600_000_000.0, at = 2))
+        assertEquals(5_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // The next message consistent with what the account holds wins normally.
+        accounts = foldBankSms(accounts, stated(5_100_000.0, at = 3))
+        assertEquals(5_100_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `a large but believable jump still anchors`() {
+        var accounts = foldBankSms(emptyList(), stated(10_000_000.0, at = 1))
+        accounts = foldBankSms(accounts, stated(200_000_000.0, at = 2))  // 20×: a windfall, kept
+        assertEquals(200_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `a small account growing a hundredfold stays under the floor and is kept`() {
+        var accounts = foldBankSms(emptyList(), stated(50_000.0, at = 1))
+        accounts = foldBankSms(accounts, stated(6_000_000.0, at = 2))  // 120×, but only 6e7 Rial
+        assertEquals(6_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `an unanchored running total does not veto the first stated balance`() {
+        // The running figure is the change since we started reading, not knowledge of the
+        // account — the first real مانده must land whatever the ratio says.
+        var accounts = foldBankSms(emptyList(), sms("واریز 10,000,000 ریال", at = 1)!!)
+        accounts = foldBankSms(accounts, stated(150_000_000.0, at = 2))
+        assertEquals(150_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+        assertTrue(accounts.single().anchored)
+    }
+
+    @Test
+    fun `an account emptied to zero can be refilled by any figure`() {
+        // 100× of an anchored zero forbids every deposit, so the gate stands aside for it.
+        var accounts = foldBankSms(emptyList(), sms("برداشت 50,000,000 ریال\nمانده: 0 ریال", at = 1)!!)
+        accounts = foldBankSms(accounts, stated(150_000_000.0, at = 2))
+        assertEquals(150_000_000.0, bankTotal(accounts, emptySet()), 0.01)
     }
 
     @Test
