@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,9 +46,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -56,6 +61,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import kotlinx.coroutines.launch
 
 fun qrBitmap(content: String, size: Int = 720): Bitmap {
     val hints = mapOf(
@@ -136,6 +142,35 @@ fun CompanionScreen(
     }
     val cleanName = name.trim()
 
+    // Removal and renewal run from here rather than through the ViewModel: they are leaf
+    // actions — read the session, speak to the server, write the ledger — with nothing the
+    // ViewModel computes, and they finish by handing control back to the two callbacks this
+    // screen already has: onSync to re-read what the household looks like, onInvite to put the
+    // fresh QR up. That keeps the member list and the only things that shrink it in one file.
+    val appContext = LocalContext.current.applicationContext
+    val actionScope = rememberCoroutineScope()
+    var acting by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+
+    fun familyAction(failText: String, after: () -> Unit, act: suspend (SyncSession, DurableDb) -> Unit) {
+        if (acting) return
+        acting = true
+        actionError = null
+        actionScope.launch {
+            val durable = DurableDb.get(appContext)
+            runCatching {
+                val session = loadSession(durable) ?: error("no session")
+                act(session, durable)
+            }.onSuccess {
+                acting = false
+                after()
+            }.onFailure {
+                acting = false
+                actionError = failText
+            }
+        }
+    }
+
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -203,6 +238,12 @@ fun CompanionScreen(
                                 member = member,
                                 contributions = contributions[member.id] ?: 0,
                                 shape = bandShape(index + 1, count),
+                                enabled = !state.working && !acting,
+                                onRemove = {
+                                    familyAction("حذف نشد. اینترنتت رو چک کن.", after = onSync) { session, durable ->
+                                        removeFamilyMember(session, durable, member.id)
+                                    }
+                                },
                             )
                         }
                     }
@@ -285,6 +326,10 @@ fun CompanionScreen(
                 Spacer(Modifier.height(Space.m))
                 Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             }
+            actionError?.let {
+                Spacer(Modifier.height(Space.m))
+                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            }
 
             Spacer(Modifier.height(Space.xxl))
             SectionHeading("حریم خصوصی")
@@ -295,7 +340,67 @@ fun CompanionScreen(
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (state.paired) {
+                Spacer(Modifier.height(Space.xxl))
+                SectionHeading("نو کردن خانواده")
+                Spacer(Modifier.height(Space.s))
+                Text(
+                    // Plain about the mechanism, because the whole point of the action is a
+                    // promise about keys: removing someone does not take back the key they
+                    // already hold; this does.
+                    "یک خانواده تازه با کلید تازه ساخته می‌شه و فقط تراکنش‌های همین گوشی دوباره فرستاده می‌شن. " +
+                        "بقیه اعضا باید کد تازه رو دوباره اسکن کنن؛ خانواده قبلی دیگه به‌روز نمی‌شه و دفتر مشترک از نو شروع می‌شه. " +
+                        "برای وقتی که کسی رو حذف کردی و می‌خوای مطمئن باشی چیز تازه‌ای بهش نمی‌رسه.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Space.s))
+                ArmedAction(
+                    label = "نو کردن خانواده",
+                    armedLabel = "مطمئنی؟ برای نو کردن دوباره بزن",
+                    enabled = !state.working && !acting,
+                ) {
+                    familyAction(
+                        "نو نشد. اینترنتت رو چک کن.",
+                        // The fresh QR first, so the reason she did this is on screen; the sync
+                        // then re-pushes this phone's records under the new key.
+                        after = { onInvite(); onSync() },
+                    ) { _, durable -> renewHousehold(durable) }
+                }
+            }
         }
+    }
+}
+
+/**
+ * The app's two-tap confirm, on the page where the destructive things are people: the first tap
+ * only turns the label into the question — the same device the asset sheet and the budgets use —
+ * so a stray tap can never cut a phone off the household or re-key it.
+ */
+@Composable
+private fun ArmedAction(
+    label: String,
+    armedLabel: String,
+    enabled: Boolean,
+    onConfirmed: () -> Unit,
+) {
+    var armed by remember { mutableStateOf(false) }
+    TextButton(
+        onClick = { if (armed) { armed = false; onConfirmed() } else armed = true },
+        enabled = enabled,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            if (armed) armedLabel else label,
+            fontSize = 14.sp,
+            fontWeight = if (armed) FontWeight.Bold else FontWeight.SemiBold,
+            // Announced, or the two-tap safeguard is invisible to TalkBack — a second
+            // double-tap acts with no confirmation ever perceived.
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
 }
 
@@ -360,6 +465,10 @@ private fun JoinCard(
     }
 }
 
+/**
+ * A pairing link scanned on a phone that already has a household — the other side of
+ * «نو کردن خانواده»: one member renewed, and this phone's QR-in-hand is the invitation to
+ * follow. Nothing replaces anything silently; the words say what stops, and the confirm is
 /**
  * Whose it is, at a glance. The initial, not a photo: there is no avatar anywhere in this app
  * and a family of four does not need four downloads to tell itself apart.
@@ -428,29 +537,63 @@ private fun MemberContribution(count: Int) {
 }
 
 /** Somebody else in the family: what they are called, what they contribute, what they share. */
+ * and the way out. Removal sits on the row it removes, behind the same two-tap confirm as every
+ * other destructive thing here, with the honest sentence under the question: it cuts their
+ * phone's sync, and it cannot un-see anything.
+ */
 @Composable
-private fun FamilyMemberRow(member: FamilyMember, contributions: Int, shape: Shape) {
-    Row(
+private fun FamilyMemberRow(
+    member: FamilyMember,
+    contributions: Int,
+    shape: Shape,
+    enabled: Boolean,
+    onRemove: () -> Unit,
+) {
+    var armed by remember(member.id) { mutableStateOf(false) }
+    Column(
         Modifier
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(Space.l),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        MemberAvatar(member.name)
-        Spacer(Modifier.size(Space.m))
-        Column(Modifier.weight(1f)) {
-            Text(
-                member.name,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(2.dp))
-            MemberContribution(contributions)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MemberAvatar(member.name)
+            Spacer(Modifier.size(Space.m))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    member.name,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                MemberContribution(contributions)
+            }
+            Spacer(Modifier.size(Space.m))
+            ShareStatus(member.sharesSms)
         }
-        Spacer(Modifier.size(Space.m))
-        ShareStatus(member.sharesSms)
+        TextButton(
+            onClick = { if (armed) { armed = false; onRemove() } else armed = true },
+            enabled = enabled,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.align(Alignment.End),
+        ) {
+            Text(
+                if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف از خانواده",
+                fontSize = 13.sp,
+                fontWeight = if (armed) FontWeight.Bold else FontWeight.Normal,
+                // Announced, or the safeguard is invisible to TalkBack.
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        if (armed) {
+            Text(
+                "همگام‌سازی گوشی این عضو قطع می‌شه، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
+                fontSize = 12.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

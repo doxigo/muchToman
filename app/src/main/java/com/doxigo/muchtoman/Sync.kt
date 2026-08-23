@@ -162,6 +162,7 @@ private data class SecretBody(
 @Serializable
 private data class CodeBody(val code: String = "")
 
+private data class RevokeBody(val member: String)
 private fun request(
     url: String,
     method: String,
@@ -334,25 +335,52 @@ suspend fun joinHousehold(link: String, durable: DurableDb, memberName: String):
         val device = newIdentity()
         val response = request(
             "${pairing.base}/v1/pair",
+/**
+ * Cuts a member's devices off the household, effective on their very next request.
+ *
+ * Three moves, in the order that fails safe. First the server forgets their tokens — the only
+ * step that stops future sync, so it goes first. Then their local row is buried so the list
+ * stops showing someone who is no longer there. Last, a sealed tombstone for their member record
+ * goes up so the other phones learn the same thing; the server lets a non-owner push exactly this
+ * one shape, and the receivers still verify the ciphertext names this very record.
+ *
+ * What this does not do, on purpose: it does not touch their past transactions here or anywhere,
+ * because they were already seen — the same honesty as the privacy sentence on the screen. And it
+ * does not re-key: an ex-member who somehow keeps reading ciphertext still holds the scope key.
+ * [renewHousehold] is the answer to that.
+ */
+suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberId: String): Unit =
+    withContext(Dispatchers.IO) {
+        require(memberId != session.member) { "not for leaving" }
+        request(
+            "${session.base}/v1/revoke",
             "POST",
-            "${pairing.hid}.${"0".repeat(64)}",
-            SYNC_JSON.encodeToString(PairBody(pairing.code, member, device)),
+            session.token,
+            SYNC_JSON.encodeToString(RevokeBody(member = memberId)),
         )
-        val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
-        val session = SyncSession(
-            base = pairing.base,
-            token = "${pairing.hid}.$secret",
-            device = device,
-            member = member,
-            scope = pairing.scope,
-            key = pairing.key,
-        )
-        saveSession(durable, session)
-        durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
+        val member = durable.familyMembers().get(memberId)
+        val stamp = nextStamp(member?.updatedAt, System.currentTimeMillis())
         durable.familyMembers().put(
-            FamilyMember(member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
+            (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
+                .copy(updatedAt = stamp, deleted = true)
         )
-        session
+        val recordId = memberRecordId(memberId)
+        val tombstone = wireRecord(
+            session,
+            recordId,
+            "member",
+            memberId,
+            stamp,
+            SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
+            deleted = true,
+        )
+        request(
+            "${session.base}/v1/sync",
+            "POST",
+            session.token,
+            SYNC_JSON.encodeToString(PushBody(listOf(tombstone))),
+        )
+    }
     }
 
 data class SyncResult(val sent: Int, val received: Int)
