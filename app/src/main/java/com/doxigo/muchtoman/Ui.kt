@@ -1992,7 +1992,16 @@ private fun BankSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    // «همین الان» must not still say that half an hour later — the same slow tick as the hero
+    // card keeps every row's faAgo honest while the sheet sits open; nothing finer than the
+    // minute would ever show anyway.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(30_000)
+        }
+    }
     var fixing by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
