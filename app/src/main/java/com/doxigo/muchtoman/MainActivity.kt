@@ -31,6 +31,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
@@ -116,6 +117,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // is being told, so the note comes down and the mark moves past everything on screen —
         // see [markFilingSeen].
         markFilingSeen(app, store, view)
+        // One publisher at a time past this line. [LedgerWatchWorker] runs the same read →
+        // announce → mark sequence from its own coroutine, and the marks those helpers write are
+        // get-then-set on prefs — interleaved, an alert is said twice or a mark is lost.
+        // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
+        // scheduleLedgerWatch, announceBudgets and markFilingSeen have all been checked.
+        ledgerGate.withLock {
     }
 
     /**
@@ -1064,7 +1071,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 // dropped marks would say the same warning a second time about nothing new.
                 if (goal.targetRial == capRial && goal.period == period.id) return@runCatching
                 durable.goals().put(goal.copy(targetRial = capRial, period = period.id, updatedAt = now))
-                store.budgetMarks = store.budgetMarks.filterNot { it.goalId == id }
+                // The marks list is get-then-set on prefs and [announceBudgets] does the same
+                // under [ledgerGate] — so this write takes the gate too, and releases it before
+                // publishLedger takes it again: the Mutex is not reentrant.
+                ledgerGate.withLock {
+                    store.budgetMarks = store.budgetMarks.filterNot { it.goalId == id }
+                }
                 clearBudgetNote(app, id)
                 publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "editBudget failed: $it") }
@@ -1311,6 +1323,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(bankAccounts = emptyList(), strangeSenders = emptyList()) }
     }
 
+            // Joined first, and rewound under the gate, so neither a pipeline mid-ingest nor the
+            // watch worker can write its watermark over the rewind.
+            ledgerJob?.join()
+            runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
+                .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
     /**
      * Change what the next scan would read, then read it — with the scan already in flight
      * stopped and waited for first.

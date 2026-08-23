@@ -19,6 +19,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
 
 /**
@@ -47,13 +48,19 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         stocks?.onSuccess { store.cachedStocks = it }
         // A failed fetch still falls through: cached rates younger than a day are good enough,
         // and snapshotHistory is the one that decides.
-        snapshotHistory(
-            store.history,
-            listHoldings(holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
-            effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
-            store.cachedRates.updatedAt,
-            System.currentTimeMillis(),
-        )?.let { store.history = it }
+        //
+        // Under [ledgerGate]: the history write is a read-modify-write on one prefs blob, and
+        // the app's own recordSnapshot does the same under the same gate — this worker landing
+        // between its read and its write silently dropped the day it had just recorded.
+        ledgerGate.withLock {
+            snapshotHistory(
+                store.history,
+                listHoldings(holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
+                effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
+                store.cachedRates.updatedAt,
+                System.currentTimeMillis(),
+            )?.let { store.history = it }
+        }
         // AndWait: doWork returning is what makes this process killable again, and a
         // fire-and-forget redraw would race that.
         updateTotalWidgetAndWait(applicationContext)
@@ -137,13 +144,19 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         return runCatching {
             val derived = DerivedDb.get(app)
             val extra = extraLookup(store.extraBankNumbers)
-            val added = ingestBankSms(app, durable, extra)
-            if (added > 0 || needsDerive(derived)) derive(durable, derived, extra)
-            // One read of the ledger for both. Two would be two walks over four thousand rows and,
-            // worse, two answers to «what is in the ledger right now».
-            val view = ledgerView(derived, durable)
-            announceBudgets(app, store, view.budgets)
-            announceFiling(app, store, view)
+            // The same [ledgerGate] the app's publishLedger holds around its read → announce →
+            // mark: the marks the announce helpers write are get-then-set on prefs, and this
+            // worker interleaving with a foreground publish was an alert said twice or a mark
+            // lost. The gate is not reentrant; nothing under this lock takes it again.
+            ledgerGate.withLock {
+                val added = ingestBankSms(app, durable, extra)
+                if (added > 0 || needsDerive(derived)) derive(durable, derived, extra)
+                // One read of the ledger for both. Two would be two walks over four thousand rows and,
+                // worse, two answers to «what is in the ledger right now».
+                val view = ledgerView(derived, durable)
+                announceBudgets(app, store, view.budgets)
+                announceFiling(app, store, view)
+            }
             Result.success()
         }.getOrElse {
             // Retry rather than success: a failed read here is an alert that did not happen, and
@@ -214,13 +227,6 @@ private const val LEDGER_WATCH_NOW_DELAY_SECONDS = 5L
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
-        val store = Store(context)
-        if (!store.smsEnabled) return
-        // getMessagesFromIntent reassembles a long message's parts, but the sender is on every
-        // part, so any() is asking one question however the message was split. Wrapped because a
-        // malformed PDU from a broken SMSC throws inside the platform's parser, and a message this
-        // app cannot even look at must not crash it.
-        val extra = extraLookup(store.extraBankNumbers)
         val fromBank = runCatching {
             Telephony.Sms.Intents.getMessagesFromIntent(intent)
                 .any { bankOf(it?.originatingAddress.orEmpty(), extra) != null }

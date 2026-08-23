@@ -318,6 +318,11 @@ fun clearBudgetNote(context: Context, goalId: String) {
  * Notifies even when the app is in the foreground. She may be reading the ledger on another tab,
  * and a redundant note she can dismiss is a much smaller failure than a missed one — which is the
  * only kind of failure this feature has.
+ *
+ * The marks below are get-then-set on prefs, so this must run under [ledgerGate] — which both
+ * callers ([AppVm]'s publishLedger and [LedgerWatchWorker]) already hold around the larger
+ * section this belongs to. Held there rather than taken here because the gate is not reentrant:
+ * locking again inside would hang the very callers that protect it.
  */
 fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress>) {
     // As soon as she keeps a budget, not when the first one crosses a line. A channel created
@@ -343,6 +348,9 @@ fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress
  * calls [markFilingSeen] instead.
  *
  * Idempotent, like its sibling: the mark it writes is what stops the next call repeating itself.
+ *
+ * Like [announceBudgets], the mark is get-then-set on prefs and runs under [ledgerGate], held by
+ * the worker around the section this is part of — never taken here, because it is not reentrant.
  */
 fun announceFiling(context: Context, store: Store, view: LedgerView) {
     // Any ledger at all means this channel can speak — the note covers filed landings too, so
@@ -365,6 +373,9 @@ fun announceFiling(context: Context, store: Store, view: LedgerView) {
  * This is what makes the whole feature quiet rather than nagging. Without it, an evening spent in
  * the app filing nine of twelve receipts would be followed at 3am by a note about the three she
  * decided to leave — which she did not decide by accident.
+ *
+ * The mark is get-then-set on prefs and its one caller — [AppVm]'s publishLedger — holds
+ * [ledgerGate] around it; not taken here, because the gate is not reentrant.
  */
 fun markFilingSeen(context: Context, store: Store, view: LedgerView) {
     // As soon as there is a ledger, not when the first note is posted — the same rule

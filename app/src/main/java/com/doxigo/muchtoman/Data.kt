@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -247,6 +248,22 @@ fun changeOver(history: Map<Long, Double>, today: Long, windowDays: Int, current
     val base = history.getValue(day)
     return Change(current - base, if (base > 0) (current - base) / base * 100 else null, day)
 }
+
+
+/**
+ * The one gate over everything that publishes the ledger or read-modify-writes the prefs kept
+ * beside it — budget marks, the filing mark, the day-by-day history.
+ *
+ * [LedgerWatchWorker] and [AppVm.publishLedger] run the same read → announce → mark sequence
+ * from different coroutines, and the marks are get-then-set on SharedPreferences: interleaved,
+ * that is an alert said twice or a mark lost, and the history write raced the same way between
+ * [DailySnapshotWorker] and the app. One coarse object-level Mutex on purpose, not a lattice —
+ * every section it guards is milliseconds, and a second lock is a deadlock waiting for the call
+ * graph to grow. It is NOT reentrant: nothing that runs under it may call back into anything
+ * that takes it, which is why the announce helpers in Notify.kt rely on their callers holding it
+ * rather than locking again.
+ */
+val ledgerGate = Mutex()
 
 private val JSON = Json { ignoreUnknownKeys = true }
 private const val MAX_RATES_RESPONSE_BYTES = 2 * 1024 * 1024
