@@ -37,10 +37,19 @@ jobs:
       # assembleRelease builds both editions. Both test variants run, and only those two: plain
       # `test` would now run the same suite six times, while one variant alone could not check that
       # the lite flavour is configured as anything other than a second copy of the full app.
+      #
+      # versionCode was github.run_number once. That counter resets to 1 if this file is ever
+      # renamed or the repo migrated, and a code lower than the installed one makes every phone
+      # refuse the update — discovered only on phones. The tag is the durable thing a release
+      # already has, so the code is arithmetic on it: v1.2.3 -> 1020300. Strictly increasing as
+      # long as tags are, and always above the small run numbers already shipped as codes.
       - run: |
+          v=${GITHUB_REF_NAME#v}
+          IFS=. read -r maj min pat <<< "$v"
+          for part in "$maj" "$min" "$pat"; do case "$part" in ''|*[!0-9]*) echo "::error::tag must be vMAJOR.MINOR.PATCH"; exit 1;; esac; done
           ./gradlew testFullDebugUnitTest testLiteDebugUnitTest lint assembleRelease \
-            -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
-            -Pmuchtoman.versionCode=${{ github.run_number }}
+            -Pmuchtoman.versionName=$v \
+            -Pmuchtoman.versionCode=$((maj*1000000 + min*10000 + pat*100))
 
       # 1.0.2 shipped an APK that could not start. R8 shrank away the no-argument constructor
       # Room reflects on, so WorkManager's startup provider threw before the first frame — on
@@ -142,10 +151,14 @@ jobs:
           EOF
 
       - name: Build signed release
+        # Same tag arithmetic as the verify job — the two builds must carry one identity.
         run: |
+          v=${GITHUB_REF_NAME#v}
+          IFS=. read -r maj min pat <<< "$v"
+          for part in "$maj" "$min" "$pat"; do case "$part" in ''|*[!0-9]*) echo "::error::tag must be vMAJOR.MINOR.PATCH"; exit 1;; esac; done
           ./gradlew assembleRelease \
-            -Pmuchtoman.versionName=${GITHUB_REF_NAME#v} \
-            -Pmuchtoman.versionCode=${{ github.run_number }}
+            -Pmuchtoman.versionName=$v \
+            -Pmuchtoman.versionCode=$((maj*1000000 + min*10000 + pat*100))
 
       - name: Remove signing material
         if: always()
