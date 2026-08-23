@@ -1,6 +1,7 @@
 package com.doxigo.muchtoman
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
@@ -16,6 +17,10 @@ import androidx.room.migration.Migration
 import androidx.room.withTransaction
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * `durable.db` — the messages themselves, and later everything she decides about them.
@@ -218,17 +223,43 @@ abstract class DurableDb : RoomDatabase() {
         }
 
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
-            instance ?: Room
-                .databaseBuilder(context.applicationContext, DurableDb::class.java, "durable.db")
-                // No fallbackToDestructiveMigration, now or ever. Every migration on this
-                // database is written by hand and tested. Losing this file is losing the only
-                // copy of messages her inbox may no longer have.
-                .addMigrations(
-                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7,
-                )
-                .build()
-                .also { instance = it }
+            instance ?: run {
+                // A staged restore is finished here, inside the one window where "durable.db is
+                // not open in this process" is a guarantee rather than a hope — this lock, with
+                // no instance built yet, before Room ever touches the file. Never thrown out of:
+                // a restore that cannot finish must not take the working database with it.
+                runCatching { finishStagedRestore(context.applicationContext) }
+                    .onFailure { android.util.Log.w("muchtoman", "restore completion failed: $it") }
+                Room
+                    .databaseBuilder(context.applicationContext, DurableDb::class.java, "durable.db")
+                    // No fallbackToDestructiveMigration, now or ever. Every migration on this
+                    // database is written by hand and tested. Losing this file is losing the only
+                    // copy of messages her inbox may no longer have.
+                    //
+                    // These migrations are also what a *restored* file runs through on its first
+                    // open: a backup written by an older build is simply an older schema arriving
+                    // the way an upgrade's would, which is the whole reason the backup carries
+                    // the database file rather than some export of it.
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                        MIGRATION_5_6, MIGRATION_6_7,
+                    )
+                    .build()
+                    .also { instance = it }
+            }
+        }
+
+        /**
+         * The early call [AppVm]'s constructor makes, before the first [Store] read, so the
+         * first frame after «ببند و باز کن» already shows the backup. Skipped when the database
+         * is open — then the swap belongs to the next process, where [get] will make it.
+         * Returns whether a restore was completed just now.
+         */
+        fun completePendingRestore(context: Context): Boolean = synchronized(this) {
+            if (instance != null) return false
+            runCatching { finishStagedRestore(context.applicationContext) }
+                .onFailure { android.util.Log.w("muchtoman", "restore completion failed: $it") }
+                .getOrDefault(false)
         }
     }
 }
@@ -746,3 +777,145 @@ suspend fun rewindIngest(db: DurableDb, now: Long = System.currentTimeMillis()) 
     db.meta().put(DurableMeta(SOURCE_SCANNED_TO, sourceHorizon(now).toString()))
 }
 
+// ——— The encrypted backup: durable.db as bytes going out, and the staged swap coming back ———
+
+/**
+ * `durable_meta` rows stripped from every exported copy: the family-sync device identity, its
+ * token, keys and cursor. A backup restored onto a second phone must arrive as a *new* device and
+ * re-pair with a fresh invite — two phones writing to the household under one token and one seq
+ * cursor would corrupt each other's sync, and a leaked backup file must not be able to impersonate
+ * the phone it came from even to someone who has the passphrase. Pinned by ExportTest.
+ */
+val BACKUP_STRIPPED_META: List<String> = listOf(
+    META_SYNC_BASE, META_SYNC_TOKEN, META_SYNC_TOKEN_AT, META_SYNC_DEVICE, META_SYNC_MEMBER,
+    META_SYNC_SCOPE, META_SYNC_KEY, META_SYNC_SEQ, META_SYNC_IDENTITY_OK, META_SYNC_SHARE_SMS,
+)
+
+/**
+ * The durable database as one byte array, safe to hand to the envelope.
+ *
+ * A live SQLite file cannot simply be read — half its truth may be sitting in the WAL, and a
+ * writer landing mid-copy tears the pages. So: checkpoint everything into the main file, then
+ * take the database's own write lock for the duration of the copy. With the one writer slot held
+ * and nothing committing, no page of the main file can move; WAL readers are untouched. A busy
+ * checkpoint (a reader holding a snapshot) only makes the copy a few seconds older, never torn —
+ * whatever it misses is still in the phone's own WAL, not lost.
+ *
+ * The copy — never the live file — then has [BACKUP_STRIPPED_META] deleted from it.
+ */
+suspend fun backupDurableDbBytes(context: Context, db: DurableDb): ByteArray =
+    withContext(Dispatchers.IO) {
+        val sql = db.openHelper.writableDatabase
+        for (attempt in 1..3) {
+            var busy = 1
+            sql.query("PRAGMA wal_checkpoint(TRUNCATE)").use { c ->
+                if (c.moveToFirst()) busy = c.getInt(0)
+            }
+            if (busy == 0) break
+        }
+        val temp = File(context.cacheDir, "backup-${uuid7()}.db")
+        try {
+            sql.beginTransaction()
+            try {
+                File(sql.path!!).copyTo(temp, overwrite = true)
+            } finally {
+                sql.endTransaction()
+            }
+            SQLiteDatabase.openDatabase(temp.path, null, SQLiteDatabase.OPEN_READWRITE).use { plain ->
+                for (key in BACKUP_STRIPPED_META) {
+                    plain.execSQL("DELETE FROM durable_meta WHERE k = ?", arrayOf(key))
+                }
+                // The sole connection, so this cannot be busy: the deletes land in the main file.
+                plain.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+            }
+            temp.readBytes()
+        } finally {
+            for (suffix in listOf("", "-wal", "-shm", "-journal")) File(temp.path + suffix).delete()
+        }
+    }
+
+private const val RESTORE_DB = "durable.db.restore"
+private const val RESTORE_PREFS = "durable.db.restore-prefs"
+private const val RESTORE_READY = "durable.db.restore-ready"
+
+private fun writeSynced(file: File, bytes: ByteArray) {
+    FileOutputStream(file).use { out ->
+        out.write(bytes)
+        out.fd.sync()
+    }
+}
+
+/**
+ * Park a decrypted backup beside the database for the next launch to apply.
+ *
+ * Deliberately *not* an in-place swap. Closing the live Room instance safely would need every
+ * toucher of `durable.db` quiescent at once — the six-hour watch worker, the receiver's one-shot
+ * run, family sync, whatever the ViewModel has in flight — and that is a hope, not a proof. The
+ * staged file is applied by [finishStagedRestore] inside `DurableDb.get`'s synchronized block,
+ * where instance == null *is* the proof, before Room opens the file in that process.
+ *
+ * Ready marker last, after both halves are on disk and synced: its existence is the commit point,
+ * so a kill mid-staging leaves nothing armed.
+ */
+fun stageRestore(context: Context, dbBytes: ByteArray, prefsJson: String) {
+    val dir = context.getDatabasePath("durable.db").parentFile ?: error("no database dir")
+    dir.mkdirs()
+    File(dir, RESTORE_READY).delete() // never a marker standing over half-written staging
+    val dbTmp = File(dir, "$RESTORE_DB.tmp")
+    writeSynced(dbTmp, dbBytes)
+    if (!dbTmp.renameTo(File(dir, RESTORE_DB))) error("could not stage database")
+    val prefsTmp = File(dir, "$RESTORE_PREFS.tmp")
+    writeSynced(prefsTmp, prefsJson.toByteArray(Charsets.UTF_8))
+    if (!prefsTmp.renameTo(File(dir, RESTORE_PREFS))) error("could not stage preferences")
+    writeSynced(File(dir, RESTORE_READY), ByteArray(0))
+}
+
+/**
+ * Apply a staged restore, if one is waiting. Only ever called with the DurableDb companion lock
+ * held and no instance built — see [stageRestore] for why that is the one safe moment.
+ *
+ * Idempotent by construction, marker deleted last: killed anywhere in the middle, the next launch
+ * runs it again — the prefs write re-applies, a staged db either still waits or is already in
+ * place, and the derived wipe repeats for free.
+ */
+private fun finishStagedRestore(context: Context): Boolean {
+    val target = context.getDatabasePath("durable.db")
+    val dir = target.parentFile ?: return false
+    val ready = File(dir, RESTORE_READY)
+    if (!ready.exists()) return false
+    android.util.Log.i("muchtoman", "applying staged restore")
+
+    val stagedPrefs = File(dir, RESTORE_PREFS)
+    val stagedDb = File(dir, RESTORE_DB)
+    if (stagedPrefs.exists()) {
+        val prefs = runCatching { decodeBackupPrefs(stagedPrefs.readText()) }.getOrNull()
+        if (prefs == null) {
+            // Torn staging on disk. Abandon the restore whole rather than apply half of it —
+            // she still has the phone's current data, and can run the import again.
+            android.util.Log.w("muchtoman", "staged prefs unreadable; abandoning restore")
+            stagedPrefs.delete()
+            stagedDb.delete()
+            ready.delete()
+            return false
+        }
+        applyRestoredPrefs(context, prefs)
+    }
+    if (stagedDb.exists()) {
+        // The old file's sidecars must go before anything opens the new one: SQLite would
+        // otherwise replay the *old* database's WAL frames into the restored file.
+        File("${target.path}-wal").delete()
+        File("${target.path}-shm").delete()
+        File("${target.path}-journal").delete()
+        if (!stagedDb.renameTo(target)) {
+            stagedDb.copyTo(target, overwrite = true)
+            stagedDb.delete()
+        }
+    }
+    // derived.db is a cache and its parser marker dies with it — deleting the files is the
+    // existing force-a-full-re-derive mechanism, so the next pipeline run rebuilds every
+    // transaction from the restored messages instead of trusting rows derived from the old ones.
+    for (name in listOf("derived.db", "derived.db-wal", "derived.db-shm")) File(dir, name).delete()
+    stagedPrefs.delete()
+    ready.delete()
+    return true
+}

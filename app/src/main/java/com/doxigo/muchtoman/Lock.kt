@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.Manifest
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -40,16 +42,20 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,9 +67,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -71,6 +79,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,7 +89,9 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * Combining BIOMETRIC_STRONG with DEVICE_CREDENTIAL is not supported below API 30, so the
@@ -462,6 +474,11 @@ fun SettingsScreen(
                 )
             }
 
+            // The recovery path. Android backup is off on purpose, so without this file a lost
+            // phone loses the messages, the anchors and every decision she ever made.
+            SectionLabel("پشتیبان")
+            BackupBand(activity)
+
             // Last of the real settings, above the version line: a repair tool, not a thing
             // about her money.
             SectionLabel("حافظهٔ موقت")
@@ -762,6 +779,399 @@ fun SettingCard(
                     .align(Alignment.BottomStart)
                     .padding(start = Space.l + 44.dp + Space.m),
             )
+        }
+    }
+}
+
+/**
+ * The two backup rows and everything behind them: the passphrase sheets, the file pickers, and
+ * the words that report how it went.
+ *
+ * The ViewModel is fetched from the activity rather than passed down — [SettingsScreen]'s call
+ * site is owned elsewhere, and the same instance MainActivity built is what the provider returns.
+ */
+@Composable
+private fun BackupBand(activity: FragmentActivity) {
+    val vm = remember { ViewModelProvider(activity)[AppVm::class.java] }
+    val backup by vm.backup.collectAsStateWithLifecycle()
+
+    var exportSheet by remember { mutableStateOf(false) }
+    // Held only across the file-picker round trip, then cleared. Never written anywhere.
+    var exportPass by remember { mutableStateOf("") }
+    var importUri by remember { mutableStateOf<Uri?>(null) }
+
+    val createFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val pass = exportPass
+        exportPass = ""
+        if (uri != null && pass.isNotEmpty()) vm.exportBackup(uri, pass)
+    }
+    val openFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) importUri = uri }
+
+    DoorRow(
+        title = "پشتیبان‌گیری از همه‌چیز",
+        subtitle = "پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات، توی یک فایل رمزدار",
+        glyph = CategoryGlyph.STACK,
+        shape = bandShape(0, 2),
+        divided = true,
+        enabled = !backup.working,
+        onClick = { exportSheet = true },
+    )
+    DoorRow(
+        title = "بازگردانی از پشتیبان",
+        subtitle = "همه‌چیز از روی فایل پشتیبان برمی‌گرده",
+        glyph = CategoryGlyph.TRAY,
+        shape = bandShape(1, 2),
+        divided = false,
+        enabled = !backup.working,
+        // The file first, so the passphrase is only ever asked about a file that exists.
+        onClick = { openFile.launch(arrayOf("*/*")) },
+    )
+    Text(
+        "فایل پشتیبان رمز داره و بدون رمزش هیچ‌کس نمی‌تونه بخوندش — حتی خود برنامه. " +
+            "رمز رو یه جای مطمئن نگه دار.",
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
+    )
+    backup.notice?.let { words ->
+        Text(
+            words,
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = if (backup.failed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .padding(top = Space.m, start = Space.xs, end = Space.xs)
+                // Said aloud too: the tap that caused this happened a sheet and a picker ago.
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+    if (backup.restartNeeded) {
+        Text(
+            "برای تمام شدن بازگردانی، برنامه رو ببند و دوباره باز کن.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .padding(top = Space.m, start = Space.xs, end = Space.xs)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+
+    if (exportSheet) {
+        ExportPassSheet(
+            onDismiss = { exportSheet = false },
+            onDone = { pass ->
+                exportPass = pass
+                exportSheet = false
+                createFile.launch(backupFileName())
+            },
+        )
+    }
+    importUri?.let { uri ->
+        RestoreSheet(
+            backup = backup,
+            onRead = { pass -> vm.readBackupFile(uri, pass) },
+            onConfirm = { vm.confirmRestore() },
+            onDismiss = { importUri = null; vm.dismissRestore() },
+        )
+    }
+}
+
+/** A row that is a door, in the band the switches wear — [CategoriesRow]'s shape, groupable. */
+@Composable
+private fun DoorRow(
+    title: String,
+    subtitle: String,
+    glyph: CategoryGlyph,
+    shape: Shape,
+    divided: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    /** Off for the rows that act in place rather than lead somewhere. */
+    chevron: Boolean = true,
+) {
+    Box(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)) {
+        Row(
+            Modifier
+                .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+                .padding(horizontal = Space.l, vertical = Space.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) { GlyphIcon(glyph, MaterialTheme.colorScheme.onSurface, size = 22.dp) }
+            Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    subtitle,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            if (chevron) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l + 44.dp + Space.m),
+            )
+        }
+    }
+}
+
+/** SAF supplies the real name; this is the suggestion it opens with. */
+private fun backupFileName(): String {
+    val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        .format(java.util.Date())
+    return "muchtoman-$day.mtbak"
+}
+
+/**
+ * The passphrase, twice, before the file picker ever opens — words-first errors, minimum six
+ * characters, and the one warning that matters said up front: forgotten means gone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var pass by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("رمز فایل پشتیبان")
+            Text(
+                "فایل با همین رمز قفل می‌شه و بدون اون هیچ‌کس — حتی خود برنامه — نمی‌تونه " +
+                    "بازش کنه. اگه یادت بره، هیچ راهی برای باز کردنش نیست.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            OutlinedTextField(
+                value = pass,
+                onValueChange = { pass = it; problem = null },
+                singleLine = true,
+                label = { Text("رمز — دست‌کم ۶ حرف") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Next,
+                ),
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(Space.m))
+            OutlinedTextField(
+                value = again,
+                onValueChange = { again = it; problem = null },
+                singleLine = true,
+                label = { Text("دوباره همون رمز") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            problem?.let { words ->
+                Text(
+                    words,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .padding(top = Space.m, start = Space.xs)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            Spacer(Modifier.height(Space.xl))
+            Button(
+                onClick = {
+                    when {
+                        pass.length < BACKUP_MIN_PASSPHRASE -> problem = "رمز کوتاهه — دست‌کم ۶ حرف باشه."
+                        again != pass -> problem = "دوتا رمز یکی نیستن."
+                        else -> onDone(pass)
+                    }
+                },
+                shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 60.dp),
+            ) { Text("ساختن فایل پشتیبان", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+/**
+ * The import sheet, in two moods: first the passphrase and «خواندن فایل», then — once the file
+ * has decrypted and proved itself — the armed two-tap that actually replaces everything. The
+ * armed label names the consequence and is a polite live region, so TalkBack hears the safeguard
+ * instead of double-tapping through it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RestoreSheet(
+    backup: BackupUi,
+    onRead: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var pass by remember { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    // Staged: the line under the rows carries it from here, so the sheet bows out.
+    LaunchedEffect(backup.restartNeeded) { if (backup.restartNeeded) onDismiss() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("بازگردانی از پشتیبان")
+            if (!backup.ready) {
+                Text(
+                    "رمزی که موقع ساختن فایل گذاشتی رو بزن.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+                Spacer(Modifier.height(Space.l))
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = { pass = it; problem = null },
+                    singleLine = true,
+                    label = { Text("رمز فایل") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    shape = RoundedCornerShape(Radius.field),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                (problem ?: backup.notice)?.let { words ->
+                    Text(
+                        words,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(top = Space.m, start = Space.xs)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                Spacer(Modifier.height(Space.xl))
+                Button(
+                    onClick = {
+                        if (pass.isEmpty()) problem = "اول رمز فایل رو بزن."
+                        else onRead(pass)
+                    },
+                    enabled = !backup.working,
+                    shape = RoundedCornerShape(Radius.pill),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp),
+                ) {
+                    Text(
+                        // The KDF is deliberately slow, so the wait is named rather than mute.
+                        if (backup.working) "در حال خواندن…" else "خواندن فایل",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            } else {
+                Text(
+                    "${backup.readyWords} خونده شد و رمزش درسته.",
+                    fontSize = 15.sp,
+                    lineHeight = 24.sp,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+                Text(
+                    "با بازگردانی، همه‌چیزِ الانِ برنامه — پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و " +
+                        "تنظیمات — با نسخهٔ پشتیبان عوض می‌شه و برنمی‌گرده.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.m),
+                )
+                Spacer(Modifier.height(Space.xl))
+                // Two taps, as everywhere destructive in the app, with the consequence named
+                // on the second — and announced, so the armed state exists for ears too.
+                var armed by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { if (armed) { armed = false; onConfirm() } else armed = true },
+                    enabled = !backup.working,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                ) {
+                    Text(
+                        if (armed) "مطمئنی؟ همه‌چیز با نسخهٔ پشتیبان عوض می‌شه — دوباره بزن"
+                        else "بازگردانی از این پشتیبان",
+                        fontSize = 15.sp,
+                        fontWeight = if (armed) FontWeight.Bold else FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                ) { Text("بی‌خیال", fontSize = 15.sp) }
+            }
         }
     }
 }

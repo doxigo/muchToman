@@ -3,6 +3,7 @@ package com.doxigo.muchtoman
 import android.Manifest
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -34,14 +35,26 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import kotlin.io.encoding.Base64
 
 private const val WALLET_REFRESH_MS = 10 * 60_000L
 private const val STOCK_REFRESH_MS = 10 * 60_000L
 private const val MAX_PARALLEL_WALLET_FETCHES = 4
 
 class AppVm(app: Application) : AndroidViewModel(app) {
+    // Before the first Store read, deliberately: if a staged restore is waiting, the swap and the
+    // prefs rewrite happen now, so the state built two lines down — and the first frame after
+    // «ببند و باز کن» — is already the backup. Milliseconds when idle (one file stat), renames
+    // when not; the bytes were written at import time.
+    private val restoredAtLaunch = DurableDb.completePendingRestore(app)
     private val store = Store(app)
 
+    // Belt over the derived.db wipe the completion already did: if anything had the derived file
+    // open at that instant, its marker would still match and needsDerive would wave the old rows
+    // through. One forced full derive costs under a second and closes that hole for good.
+    private var deriveAfterRestore = restoredAtLaunch
     /**
      * The scan in flight, if any. Only one runs at a time, and anything that wants the inbox
      * read differently — from the start, or from further back — waits for this one to finish
@@ -508,7 +521,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // Derive when anything new arrived, or when this build reads messages differently from
         // whatever produced the rows already there. The second case needs no inbox, no
         // permission and no network — it is why a parser fix is now a Tuesday job.
-        if (added > 0 || needsDerive(derived)) {
+        if (added > 0 || deriveAfterRestore || needsDerive(derived)) {
+            deriveAfterRestore = false
             val rows = derive(durable, derived, extra)
             android.util.Log.i("muchtoman", "ledger: +$added messages, $rows transactions")
         }
@@ -800,6 +814,129 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         refreshAll()
     }
 
+    // ——— Backup and restore: the recovery path for a phone that no longer exists ———
+
+    private val _backup = MutableStateFlow(BackupUi())
+
+    /** Its own flow, not [UiState]: only the two settings rows read it. */
+    val backup: StateFlow<BackupUi> = _backup.asStateFlow()
+
+    /** The decrypted backup between «رمز درسته» and the armed confirm. Never touches disk. */
+    private var pendingRestore: BackupPayload? = null
+
+    /**
+     * Everything into the file she just picked. The payload is gathered under [ledgerGate] so the
+     * prefs slice and the database bytes describe one moment; the slow parts — 600k rounds of the
+     * KDF and the stream write — run outside it, where they block nobody.
+     */
+    fun exportBackup(uri: Uri, passphrase: String) {
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true, notice = null, failed = false) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val durable = DurableDb.get(app)
+                val payload = ledgerGate.withLock {
+                    BackupPayload(
+                        prefs = exportablePrefs(app),
+                        durableDbB64 = Base64.encode(backupDurableDbBytes(app, durable)),
+                    )
+                }
+                val sealed = sealBackup(
+                    payload,
+                    passphrase,
+                    createdAt = System.currentTimeMillis(),
+                    appVersionCode = BuildConfig.VERSION_CODE,
+                )
+                // "wt" truncates a file she chose to overwrite; a provider that cannot do that
+                // gets a plain write, and the runCatching owns whatever it thinks of it.
+                val stream = runCatching { app.contentResolver.openOutputStream(uri, "wt") }
+                    .getOrNull() ?: app.contentResolver.openOutputStream(uri)
+                (stream ?: error("no stream for $uri")).use { it.write(sealed) }
+            }.onSuccess {
+                _backup.update {
+                    it.copy(working = false, notice = "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
+                }
+            }.onFailure { e ->
+                android.util.Log.w("muchtoman", "backup export failed: $e")
+                _backup.update {
+                    it.copy(working = false, failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.")
+                }
+            }
+        }
+    }
+
+    /**
+     * Decrypt and judge the picked file — nothing on the phone changes here. A payload that
+     * passes waits in [pendingRestore] for the armed confirm; every refusal is words, and the
+     * wrong-passphrase words deliberately cannot tell a bad passphrase from a damaged file,
+     * because GCM cannot either.
+     */
+    fun readBackupFile(uri: Uri, passphrase: String) {
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true, notice = null, failed = false, ready = false) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytesLimited() }
+                    ?: error("no stream for $uri")
+                openBackup(bytes, passphrase)
+            }.onSuccess { opened ->
+                pendingRestore = opened.payload
+                val day = opened.header.createdAt.takeIf { it > 0 }?.let { faDate(tehranDay(it)) }
+                _backup.update {
+                    it.copy(
+                        working = false,
+                        ready = true,
+                        readyWords = if (day == null) "فایل پشتیبان" else "پشتیبانِ $day",
+                    )
+                }
+            }.onFailure { e ->
+                pendingRestore = null
+                android.util.Log.w("muchtoman", "backup open failed: ${(e as? BackupException)?.fault ?: e}")
+                val words = when ((e as? BackupException)?.fault) {
+                    BackupFault.NOT_A_BACKUP -> "این فایل پشتیبانِ چقدر تومن نیست."
+                    BackupFault.NEWER_FORMAT ->
+                        "این پشتیبان با نسخهٔ جدیدتر برنامه ساخته شده. اول برنامه رو به‌روز کن."
+                    BackupFault.WRONG_PASSPHRASE_OR_CORRUPT -> "رمز اشتباهه یا فایل خرابه."
+                    null -> "فایل خونده نشد. دوباره امتحان کن."
+                }
+                _backup.update { it.copy(working = false, failed = true, notice = words) }
+            }
+        }
+    }
+
+    /**
+     * The destructive step, behind the sheet's armed two-tap. Nothing is swapped here either:
+     * the payload is staged beside the database and [DurableDb.completePendingRestore] applies
+     * it at the next launch, before Room opens — see [stageRestore] for why in-place was refused.
+     * Room then runs its migrations over the restored file if the backup is from an older build.
+     */
+    fun confirmRestore() {
+        val payload = pendingRestore ?: return
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                stageRestore(app, Base64.decode(payload.durableDbB64), encodeBackupPrefs(payload.prefs))
+            }.onSuccess {
+                pendingRestore = null
+                _backup.update { BackupUi(restartNeeded = true) }
+            }.onFailure { e ->
+                android.util.Log.w("muchtoman", "backup staging failed: $e")
+                _backup.update {
+                    it.copy(working = false, failed = true, notice = "بازگردانی نشد. دوباره امتحان کن.")
+                }
+            }
+        }
+    }
+
+    /** She closed the sheet. The decrypted payload goes with it; the file stays hers to re-pick. */
+    fun dismissRestore() {
+        pendingRestore = null
+        _backup.update { it.copy(ready = false, readyWords = "", notice = null, failed = false) }
+    }
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 
@@ -1579,6 +1716,37 @@ data class UiState(
 
     /** Reads both of the above, so as a get() it paid for both of them again every time. */
     val totals: Totals by lazy { computeTotals(listHoldings, effective) }
+}
+
+/** What the backup rows in تنظیمات have to say. Everything user-visible in it is words. */
+data class BackupUi(
+    val working: Boolean = false,
+    /** The one line under the rows — success and failure alike are said, never just implied. */
+    val notice: String? = null,
+    val failed: Boolean = false,
+    /** A decrypted backup is in hand, waiting behind the armed confirm. */
+    val ready: Boolean = false,
+    /** Which backup, in words she can check against the file — «پشتیبانِ ۳ مرداد ۱۴۰۵». */
+    val readyWords: String = "",
+    /** Staged. Nothing changes until the app is closed and opened, and the line says so. */
+    val restartNeeded: Boolean = false,
+)
+
+/** A backup is a few MB; a "backup" that will not fit in memory is an attack or a mistake. */
+private const val MAX_BACKUP_FILE_BYTES = 256 * 1024 * 1024
+
+private fun InputStream.readBytesLimited(maxBytes: Int = MAX_BACKUP_FILE_BYTES): ByteArray {
+    val out = ByteArrayOutputStream(DEFAULT_BUFFER_SIZE)
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) error("file too large")
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
 }
 
 // FragmentActivity, not ComponentActivity: androidx.biometric's BiometricPrompt requires it.

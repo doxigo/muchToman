@@ -851,6 +851,87 @@ class Store(context: Context) {
 }
 
 /**
+ * Every preference the encrypted backup carries — her own statements and the cheap settings,
+ * exactly the keys [Store] writes. `smsSchema` rides along so the schema gate can judge restored
+ * balances by the parser that built them: a backup from an older build lands, the gate sees the
+ * old number, and the rescan rebuilds exactly as an upgrade would. Pinned by ExportTest, so a new
+ * key is a deliberate decision here rather than a drive-by.
+ */
+val EXPORTED_PREFS: List<String> = listOf(
+    "holdings", "overrides", "history", "bankAccounts", "disabledBanks",
+    "seenSms", "smsScannedTo", "smsSchema", "extraBankNumbers", "dismissedSenders",
+    "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
+    "dismissedUpdate", "reportExcluded",
+)
+
+/**
+ * Deliberately left out, and pinned by ExportTest so nobody quietly adds one back:
+ *
+ * - `rates`, `stocks` — caches of public prices; the restored phone refetches them in seconds.
+ * - `budgetMarks`, `filingMark` — what *this phone* has already announced. Imported onto another
+ *   phone they would silence alerts it never said, or say ones it already had.
+ * - `strangers` — suggestions read off this phone's inbox; the next scan rebuilds them.
+ *
+ * The family-sync token and keys are not on either list because they never lived in prefs — they
+ * are `durable_meta` rows, stripped from the exported database itself (see BACKUP_STRIPPED_META
+ * in Ledger.kt): a restored phone is a new device and must re-pair, or two phones would write to
+ * the household as one.
+ */
+val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "strangers")
+
+/**
+ * One preference as the backup stores it, or null for a shape [Store] never writes. Pure, so the
+ * typing — the part a mistake in which destroys a restored preference — is testable off-device.
+ */
+fun prefBackupValue(value: Any?): BackupPref? = when (value) {
+    is String -> BackupPref("s", value)
+    is Boolean -> BackupPref("b", value.toString())
+    is Int -> BackupPref("i", value.toString())
+    is Long -> BackupPref("l", value.toString())
+    else -> null
+}
+
+/** The exportable slice of the prefs file, raw strings and all — decoding them is not our job. */
+fun exportablePrefs(context: Context): Map<String, BackupPref> {
+    val all = context.getSharedPreferences("muchtoman", Context.MODE_PRIVATE).all
+    return EXPORTED_PREFS.mapNotNull { key -> prefBackupValue(all[key])?.let { key to it } }.toMap()
+}
+
+/**
+ * Write a backup's preferences over this phone's, for exactly the keys a backup may carry. A key
+ * the backup lacks is *removed* — restoring is replacement, and a holdings list surviving from
+ * the phone's own life would be this phone's data wearing the backup's name. Keys outside
+ * [EXPORTED_PREFS] — the per-phone marks, the caches — stay this phone's own on purpose.
+ *
+ * commit(), not apply(): the database swap runs right behind this at next-launch completion, and
+ * the two halves of a restore must not be separable by a badly timed process death.
+ */
+fun applyRestoredPrefs(context: Context, restored: Map<String, BackupPref>) {
+    val editor = context.getSharedPreferences("muchtoman", Context.MODE_PRIVATE).edit()
+    for (key in EXPORTED_PREFS) {
+        val pref = restored[key]
+        if (pref == null) {
+            editor.remove(key)
+            continue
+        }
+        // A lock restored onto a phone with no fingerprint and no PIN is a lockout, not a
+        // setting: the lock screen would ask for a credential the phone cannot produce.
+        if (key == "lockEnabled" && pref.v.toBoolean() && !canLock(context)) {
+            editor.putBoolean(key, false)
+            continue
+        }
+        when (pref.t) {
+            "s" -> editor.putString(key, pref.v)
+            "b" -> editor.putBoolean(key, pref.v.toBoolean())
+            "i" -> pref.v.toIntOrNull()?.let { editor.putInt(key, it) }
+            "l" -> pref.v.toLongOrNull()?.let { editor.putLong(key, it) }
+            // A tag from a future build: skipped rather than guessed at.
+        }
+    }
+    editor.commit()
+}
+
+/**
  * Manual overrides layered on top of fetched rates, with Toman pinned at 1 on top of both.
  * Toman-in-the-bank must still count when the network is down and must not be "correctable"
  * to anything other than itself — and the same goes for the bank balances, which are already
