@@ -141,8 +141,15 @@ which link actually answered.
   Solana, and TronGrid for TRON. These calls use public addresses only and are read-only.
 
 Wallex and Nobitex refuse Cloudflare's edge IPs, which is why the chain exists rather than a
-single source. If the fiat chain fails entirely there is no dollar rate, so the Worker
-publishes no crypto at all rather than inventing a conversion.
+single source. If the fiat chain fails entirely there is no dollar rate, so the Worker drops
+every USD-cross-rated crypto price rather than inventing a conversion; coins with a Tehran
+Toman quote (bitpin/tetherland) keep publishing, because those never needed the dollar.
+
+Every price passes relational plausibility checks before it is published — gold against the
+dollar, mesghal against gold, silver far under gold, سکه against their gold content, پارسیان
+monotonic in سوت, crypto's Tehran quote against its USD cross — and a failing asset is dropped
+and named in `sources.plausibility`, never zeroed. The bands and their reasoning live in
+`worker/src/checks.ts`, which is also where the Worker's tests point.
 
 ## Adding an asset
 
@@ -188,8 +195,10 @@ characters. A lightweight tag (`git tag v1.0.1`) has no message: the update card
 and the sheet simply lists nothing. The English `## Changes` list under it is the commit
 subjects, for whoever is reading the diff rather than using the app.
 
-`versionName` comes from the tag, `versionCode` from the CI run number, so each release
-installs over the last. `mapping.txt` is attached beside the APK: R8 renames everything, so a
+`versionName` comes from the tag, `versionCode` from arithmetic on it — `v1.2.3` → `1020300` —
+so each release installs over the last. It used to be the CI run number, which resets to 1 if
+the workflow file is renamed or the repo migrated, and a lower code makes every installed phone
+refuse the update; the tag survives both. `mapping.txt` is attached beside the APK: R8 renames everything, so a
 stack trace off someone's phone is unreadable without the map for that exact build, and the
 build is gone the moment the runner is. `retrace mapping.txt trace.txt` turns one back into
 names.
@@ -281,10 +290,14 @@ punctuation is invisible in practice.
 
 ## Implementation notes
 
-- No database — holdings and optional public-wallet links are a short JSON string in
-  SharedPreferences and are explicitly excluded from Android backup and device transfer. No
-  accounts and no analytics. Wallet tracking adds an opt-in call to `POST /wallet-balance`;
-  manual holdings use the rates endpoint, plus direct TSETMC access when stocks are involved.
+- Holdings and optional public-wallet links are a short JSON string in SharedPreferences (the
+  ledger's two Room databases are described below), and everything is explicitly excluded from
+  Android backup and device transfer. No accounts and no analytics. The recovery path is the
+  app's own passphrase-encrypted backup file (`Export.kt`, the two rows in تنظیمات): AES-GCM
+  over the durable database and the exported prefs, with the sync identity stripped so a leaked
+  backup cannot impersonate the phone. Wallet tracking adds an opt-in call to
+  `POST /wallet-balance`; manual holdings use the rates endpoint, plus direct TSETMC access
+  when stocks are involved.
 - Displayed figures **truncate**, never round, so the number shown is never larger than the
   real one. The spelled-out Persian words are never abbreviated at all.
 - Latin tickers are wrapped in Unicode bidi isolates, or "۴۰ SOL · نرخ ۱۴ میلیون" renders
@@ -349,13 +362,15 @@ its current window, which is also how the list is pruned. The level is a high-wa
 lowered, so refiling a receipt back under 80% and then crossing it again does not say the same thing
 twice. Another phone in the household keeps its own and neither owes the other one.
 
-**Freshness has a ceiling, and it is architectural.** There is no `RECEIVE_SMS` receiver, so a
-purchase becomes visible only when something reads the inbox. `LedgerWatchWorker` is the only thing
-that does so unattended — every six hours, no network constraint, scheduled by whether any budget
-exists **or** bank messages are switched on, and cancelled when the last of both goes. The app's own
-`publishLedger` covers the foreground case, and it is the single place any path may publish a
-ledger, precisely so that `announceBudgets` cannot be forgotten by one of the eight callers that
-change one.
+**Freshness is event-driven, with a six-hour floor.** `SmsReceiver` hears a bank message land and
+runs the ledger watch at once — but it never ingests its own broadcast payload: `readSmsInbox`
+stays the single reader, so one message cannot enter under two identities. `LedgerWatchWorker`
+remains the unattended sweep — every six hours, no network constraint, scheduled by whether any
+budget exists **or** bank messages are switched on, and cancelled when the last of both goes — and
+is the floor for whatever the receiver missed (permission revoked, force-stop, a dropped
+broadcast). The app's own `publishLedger` covers the foreground case, and it is the single place
+any path may publish a ledger, precisely so that `announceBudgets` cannot be forgotten by one of
+the eight callers that change one.
 
 `announceBudgets` is shared by the worker and the app and is idempotent. Notifications use the goal
 id as the tag with one fixed id, so one budget is one live note that gets replaced rather than

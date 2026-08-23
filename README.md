@@ -57,6 +57,10 @@ Sample data, live rates.
 - **Your own names.** Any holding can carry a label of your own — "تتر شخصی" beside "تتر
   مشترک". The asset keeps its real name underneath, so the rate still applies.
 - **A year of history.** The total is remembered once a day, with 1/3/6/12-month change.
+- **A backup only you can read.** Everything — messages, balances, every decision — exports to
+  one passphrase-encrypted file and restores from it on a new phone.
+- **Search the ledger.** By merchant, note, category, or amount — in Persian, Arabic, or Latin
+  digits, it does not matter.
 - **Offline-tolerant.** The last good rates are cached on the phone.
 - **Missing rates are never zero.** An asset with no price is left out of the total and named
   in a note, and any rate can be overridden by hand.
@@ -81,7 +85,7 @@ or header, never words in the body.
 | بانک پارسیان | `PARSIANBANK` |
 | بانک ملت | `Bank Mellat`, `6104` |
 | بانک ملی ایران | `6037`, `09830009417` |
-| بانک دی | `Day Bank` |
+| بانک دی | `Day Bank`, `DayBank` |
 
 **Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
 
@@ -127,7 +131,9 @@ Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian ex
 ## Privacy
 
 No account, no login, no analytics. Holdings, saved wallet links, and raw bank SMS live in the
-app's own storage on the phone and are excluded from Android backup and device transfer.
+app's own storage on the phone and are excluded from Android backup and device transfer. The
+way off a dying phone is the app's own backup: one file, encrypted with a passphrase you
+choose, holding everything — and readable by nobody without it, including the app.
 
 Family sync is optional and end-to-end encrypted. SMS sharing starts off. When a person enables
 it, their phone shares only the parsed amount, direction, time, bank, merchant, and category. It
