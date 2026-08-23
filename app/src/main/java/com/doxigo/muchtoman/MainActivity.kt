@@ -55,6 +55,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     // open at that instant, its marker would still match and needsDerive would wave the old rows
     // through. One forced full derive costs under a second and closes that hole for good.
     private var deriveAfterRestore = restoredAtLaunch
+
     /**
      * The scan in flight, if any. Only one runs at a time, and anything that wants the inbox
      * read differently — from the start, or from further back — waits for this one to finish
@@ -118,24 +119,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun publishLedger(durable: DurableDb, derived: DerivedDb) {
         val app = getApplication<Application>()
-        val view = ledgerView(derived, durable)
-        _state.update { it.copy(ledger = view) }
-        // Watching is scheduled by whether there is anything left to watch, so deleting the last
-        // budget on a phone that does not read messages stops the worker rather than leaving it to
-        // wake up and find nothing four times a day.
-        scheduleLedgerWatch(app, view.budgets.isNotEmpty() || store.smsEnabled)
-        announceBudgets(app, store, view.budgets)
-        // The other half is deliberately not announced here: this line runs with the app in front
-        // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
-        // is being told, so the note comes down and the mark moves past everything on screen —
-        // see [markFilingSeen].
-        markFilingSeen(app, store, view)
         // One publisher at a time past this line. [LedgerWatchWorker] runs the same read →
         // announce → mark sequence from its own coroutine, and the marks those helpers write are
         // get-then-set on prefs — interleaved, an alert is said twice or a mark is lost.
         // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
         // scheduleLedgerWatch, announceBudgets and markFilingSeen have all been checked.
         ledgerGate.withLock {
+            val view = ledgerView(derived, durable)
+            _state.update { it.copy(ledger = view) }
+            // Watching is scheduled by whether there is anything left to watch, so deleting the last
+            // budget on a phone that does not read messages stops the worker rather than leaving it to
+            // wake up and find nothing four times a day.
+            scheduleLedgerWatch(app, view.budgets.isNotEmpty() || store.smsEnabled)
+            announceBudgets(app, store, view.budgets)
+            // The other half is deliberately not announced here: this line runs with the app in front
+            // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
+            // is being told, so the note comes down and the mark moves past everything on screen —
+            // see [markFilingSeen].
+            markFilingSeen(app, store, view)
+        }
     }
 
     /**
@@ -266,10 +268,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         } else {
             list + Holding(typeId = typeId, amount = amount, wallet = wallet, id = key)
         }
-        // Fixed assets keep their catalogue order; coins fall in after them in the order she
-        // added them (sortedBy is stable), since there is no meaningful order for 250 coins.
+        persist(catalogOrdered(next))
+    }
+
+    /**
+     * Fixed assets keep their catalogue order; coins fall in after them in the order she
+     * added them (sortedBy is stable), since there is no meaningful order for 250 coins.
+     */
+    private fun catalogOrdered(list: List<Holding>): List<Holding> {
         val order = STATIC_CATALOG.withIndex().associate { (i, t) -> t.id to i }
-        persist(next.sortedBy { order[it.typeId] ?: Int.MAX_VALUE })
+        return list.sortedBy { order[it.typeId] ?: Int.MAX_VALUE }
     }
 
     /** A rainy-day asset: stays on the list, drops out of the total. */
@@ -288,6 +296,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Puts back a holding [removeHolding] took off, exactly as it was — amount, label, wallet
+     * link and the set-aside flag all ride the same object, so undo restores all of it.
+     * Unreferenced for now: the UI wave wires the undo affordance to it.
+     */
+    fun reinstateHolding(h: Holding) {
+        val list = _state.value.holdings
+        if (list.any { it.key == h.key }) return // undo tapped twice; it is already back
+        persist(catalogOrdered(list + h))
+    }
     fun clearWalletError(key: String) {
         if (key !in _state.value.walletErrors) return
         _state.update { it.copy(walletErrors = it.walletErrors - key) }
