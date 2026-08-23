@@ -317,6 +317,7 @@ export class Household extends DurableObject<Env> {
       if (path === '/pull' && request.method === 'GET') return await this.pull(request, url);
       if (path === '/push' && request.method === 'POST') return await this.push(request);
       if (path === '/revoke' && request.method === 'POST') return await this.revoke(request);
+      if (path === '/rotate' && request.method === 'POST') return await this.rotate(request);
       return textResponse('not found\n', 404);
     } catch (error) {
       if (error instanceof BodyTooLargeError) return jsonResponse({ code: 'body_too_large' }, 413);
@@ -582,6 +583,23 @@ export class Household extends DurableObject<Env> {
     if (device) this.sql.exec('DELETE FROM device WHERE id = ?', device);
     if (member) this.sql.exec('DELETE FROM device WHERE member_id = ?', member);
   }
+
+  /**
+   * A new secret for the calling device; the old one is gone the moment the row updates — the
+   * same immediacy argument as revoke. Clients rotate opportunistically after a month, so a
+   * token lifted from a backup or a bus-shoulder photo has a bounded useful life.
+   */
+  private async rotate(request: Request): Promise<Response> {
+    const auth = await this.authorise(request);
+    const secret = randomToken();
+    this.sql.exec(
+      'UPDATE device SET token_hash = ?, last_seen = ? WHERE id = ?',
+      await sha256Hex(secret),
+      Date.now(),
+      auth.id,
+    );
+    return jsonResponse({ secret });
+  }
 }
 
 export default {
@@ -637,6 +655,7 @@ export default {
             : path === '/v1/pair' && request.method === 'POST' ? 'pair'
             : path === '/v1/identity' && request.method === 'POST' ? 'identity'
             : path === '/v1/revoke' && request.method === 'POST' ? 'revoke'
+            : path === '/v1/rotate' && request.method === 'POST' ? 'rotate'
             : null;
         if (!route) return textResponse('not found\n', 404);
 

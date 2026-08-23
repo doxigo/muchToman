@@ -386,6 +386,27 @@ describe('revocation', () => {
     expect(revoke.status).toBe(200);
     expect((await pull(member.token)).status).toBe(401);
   });
+
+    const paired = await SELF.fetch('https://sync.test/v1/pair', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({ code }),
+    });
+    expect(paired.status).toBe(403);
+  });
+
+  it('lets another member bury a removed member profile, but never rewrite it', async () => {
+    // Removal happens after the removed person's token is dead, so the tombstone has to come
+    // from someone else — the same set of people who could revoke the device in the first
+    // place. A live rewrite of somebody else's profile stays forbidden.
+    const hid = 'd3'.repeat(16);
+    const scope = 'family:d3';
+    const removed = 'd4'.repeat(16);
+    const owner = await claimDevice(hid, [scope], { memberId: removed, deviceId: 'd5'.repeat(16) });
+    const other = await pairDevice(owner.token, 'd6'.repeat(16), 'd7'.repeat(16));
+    await push(owner.token, [
+      record({ id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed }),
+    ]);
     const rotated = await pull(fresh);
     expect(rotated.status).toBe(200);
     expect(rotated.json.records).toHaveLength(1);
