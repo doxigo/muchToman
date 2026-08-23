@@ -197,6 +197,13 @@ export async function push(session: Session): Promise<number> {
     }),
   });
   if (!res.ok) throw new Error(`push failed: ${res.status}`);
+  // The server clamps far-future stamps (its LWW skew bound) and answers with what it stored;
+  // the local copy takes the server's word so both sides count from the same stamp.
+  const ack = (await res.json()) as { clamped?: Array<{ id: string; updatedAt: number }> };
+  for (const clamp of ack.clamped ?? []) {
+    const row = await getRecord(clamp.id);
+    if (row) await putRecords([{ ...row, updatedAt: clamp.updatedAt }]);
+  }
   await clearOutbox(pending.map((r) => r.id));
   return pending.length;
 }
