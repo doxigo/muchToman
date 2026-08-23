@@ -281,10 +281,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /** A rainy-day asset: stays on the list, drops out of the total. */
-    fun setExcluded(key: String, excluded: Boolean) =
-        persist(_state.value.holdings.map {
-            if (it.key == key) it.copy(excluded = excluded) else it
-        })
+    fun setExcluded(key: String, excluded: Boolean) {
+        // Read before the write, and handed to the history: setting money aside is not losing
+        // it. Without this the chart stepped down by whatever she set aside and the report
+        // called it a loss — «۸۷٪ کمتر شده» for a decision that moved nothing. See [rebaseHistory].
+        val before = _state.value.totals
+        persist(
+            _state.value.holdings.map {
+                if (it.key == key) it.copy(excluded = excluded) else it
+            },
+            countedBefore = before,
 
     fun removeHolding(key: String) {
         persist(_state.value.holdings.filterNot { it.key == key })
@@ -1591,8 +1597,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     fun setSmsEnabled(on: Boolean) {
+        val before = _state.value.totals
         store.smsEnabled = on
         _state.update { it.copy(smsEnabled = on) }
+        // The bank row is in the total only while messages are read, so switching them off
+        // takes every tracked balance out of it at once — a step, not a withdrawal.
+        recordSnapshot(countedBefore = before)
         // The switch is one of the two things the watch is scheduled by, and turning it off is the
         // only path that can take the last reason to watch away without touching a budget.
         scheduleLedgerWatch(
@@ -1604,10 +1614,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /** A bank she switched off stays tracked and stays listed — it just leaves the total. */
     fun setBankEnabled(bank: String, on: Boolean) {
+        val before = _state.value.totals
         val next = if (on) store.disabledBanks - bank else store.disabledBanks + bank
         store.disabledBanks = next
         _state.update { it.copy(disabledBanks = next) }
-        recordSnapshot()
+        recordSnapshot(countedBefore = before)
     }
 
     /** She tells us what an account really holds; everything read after it builds on that. */
@@ -1642,30 +1653,54 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         recordSnapshot()
     }
 
-    private fun persist(list: List<Holding>) {
+    private fun persist(list: List<Holding>, countedBefore: Totals? = null) {
         store.holdings = list
         _state.update { it.copy(holdings = list) }
-        recordSnapshot()
+        recordSnapshot(countedBefore)
     }
 
     /**
      * Remembers today's total for the report chart, via the same [snapshotHistory] the daily
      * worker uses — and since this runs on every path that touches money, it is also the
      * moment the home-screen widget learns the new total.
+     *
+     * Launched rather than run inline, for two reasons that arrive together: half its callers
+     * are plain UI handlers on Main, and the history write is a read-modify-write that must
+     * hold [ledgerGate] — the same gate [DailySnapshotWorker] holds — or the worker landing
+     * between this read and this write silently drops whatever day it had just written. The
+     * read is [Store.history] inside the lock, not the state's copy, because the worker writes
+     * the store without ever seeing this ViewModel.
      */
-    private fun recordSnapshot() {
-        val s = _state.value
-        // listHoldings, not holdings: someone whose only money is bank balances read from her
-        // messages has an empty holdings list and a perfectly good total, and guarding on the
-        // raw list left her report saying "هنوز نموداری نیست" for ever.
-        snapshotHistory(
-            s.history, s.listHoldings, s.effective, s.rates.updatedAt,
-            System.currentTimeMillis(),
-        )?.let { next ->
-            store.history = next
-            _state.update { it.copy(history = next) }
+    private fun recordSnapshot(countedBefore: Totals? = null) {
+        // Paired here rather than inside the lock, and only when a rebase was asked for: this is
+        // the one moment the two bases are exactly one toggle apart, and a rate refresh landing
+        // before the lock would otherwise be rescaled away as part of the step.
+        val rebase = countedBefore?.to(_state.value.totals)
+        viewModelScope.launch(Dispatchers.Default) {
+            ledgerGate.withLock {
+                val s = _state.value
+                val base = rebase
+                    ?.let { (before, after) -> rebaseHistory(store.history, before, after) }
+                    ?: store.history
+                // listHoldings, not holdings: someone whose only money is bank balances read from her
+                // messages has an empty holdings list and a perfectly good total, and guarding on the
+                // raw list left her report saying "هنوز نموداری نیست" for ever.
+                val next = snapshotHistory(
+                    base, s.listHoldings, s.effective, s.rates.updatedAt,
+                    System.currentTimeMillis(),
+                    // The bourse snapshot's own clock — see [snapshotHistory] for why the rates'
+                    // clock alone let shares ride week-old prices into the chart.
+                    s.tse.updatedAt,
+                    // Stale rates refuse today's point, but the rebase still stands: what the
+                    // total counts changed whether or not the day could be recorded.
+                ) ?: base
+                if (next != store.history) {
+                    store.history = next
+                    _state.update { it.copy(history = next) }
+                }
+            }
+            updateTotalWidget(getApplication())
         }
-        updateTotalWidget(getApplication())
     }
 }
 
