@@ -7,7 +7,19 @@
          of its gradient — a browser chrome in the darker green read as a seam across the field. -->
     <meta name="theme-color" content="#0C544A" />
     <meta name="color-scheme" content="light dark" />
+    <!-- Stated twice on purpose: the Worker sets the same policy as a header on every asset,
+         and this copy survives in a saved page or a cache the header never reached. Inline
+         styles are real — the stylesheet below and the style="--fit:…" sizing attributes —
+         hence 'unsafe-inline' for styles only; scripts stay 'self'. connect-src 'self' also
+         means a dev page on :5173 cannot talk to a worker on :8787 — run against the built
+         assets served by the Worker instead. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS ignores the manifest's icons; without this the Home Screen tile is a screenshot. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <!-- Blocking, and worth it: the whole page is figures, and a fallback face swapping out from
          under a Toman total is the one reflow that changes what the number looks like. -->
     <link rel="preload" href="/modam.woff2" as="font" type="font/woff2" crossorigin />
