@@ -113,8 +113,22 @@ private data class SyncCategoryPayload(
     val editedByMemberId: String,
 )
 
+/**
+ * A delete, said inside the ciphertext.
+ *
+ * `deleted`, `updatedAt` and `ownerMemberId` ride outside the seal, so an honoured contentless
+ * tombstone would let a compromised server erase anything by flipping a bit on a stored row. A
+ * delete is believed only when this payload authenticates under the scope key *and* names the
+ * record it arrived on. No field has a default: the old contentless shape must fail to parse,
+ * and it may — the protocol has never shipped in a tagged release, so there is nothing to keep
+ * reading.
+ */
 @Serializable
-private data class SyncTombstonePayload(val kind: String = "tombstone")
+internal data class SyncTombstonePayload(val v: Int, val id: String, val deleted: Boolean)
+
+internal fun parseTombstone(plain: String): SyncTombstonePayload? =
+    runCatching { SYNC_JSON.decodeFromString<SyncTombstonePayload>(plain) }
+        .getOrNull()?.takeIf { it.deleted && it.id.isNotBlank() }
 
 @Serializable
 private data class WireRecord(
@@ -456,6 +470,7 @@ suspend fun renewHousehold(durable: DurableDb): SyncSession = withContext(Dispat
     }
     session
 }
+
 /**
  * Every local trace of the household this phone is leaving, buried in place — shared by
  * [renewHousehold] and [rejoinHousehold], whose only difference is whether the member walks
@@ -595,7 +610,6 @@ private suspend fun outgoingRecords(
         )
     }
 
-    val tombstonePayload = SYNC_JSON.encodeToString(SyncTombstonePayload())
     for (publication in publications.values) {
         if (publication.sourceKind == "category" || publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
@@ -607,7 +621,9 @@ private suspend fun outgoingRecords(
                 "transaction",
                 session.member,
                 updatedAt,
-                tombstonePayload,
+                // The record's own id, sealed in: a delete another phone will only believe when
+                // the ciphertext authenticates and names the record it arrived on.
+                SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = publication.id, deleted = true)),
                 deleted = true,
             ),
             deleted,
@@ -729,13 +745,6 @@ private suspend fun applyTransaction(
     val familyRef = if (record.id.startsWith("txn:")) record.id else familyTxnId(owner, record.id)
     if (ownerOfFamilyTxnId(familyRef) != owner) return false
     val existing = durable.familyTxns().get(familyRef)
-    if (record.deleted) {
-        if (existing != null && existing.updatedAt <= record.updatedAt) {
-            durable.familyTxns().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
-            return true
-        }
-        return false
-    }
     if (payload.direction !in setOf("in", "out")) return false
     if (payload.amountRial !in 0..MAX_PLAUSIBLE_RIAL) return false
     if (existing != null && existing.updatedAt > record.updatedAt) return false
@@ -861,31 +870,70 @@ private suspend fun applyCategory(
     return true
 }
 
+/** A verified tombstone for someone else's transaction: mark the local copy gone. */
+private suspend fun applyTransactionTombstone(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+): Boolean {
+    val owner = record.ownerMemberId
+    if (owner.isBlank() || owner == session.member) return false
+    val existing = durable.familyTxns().get(record.id) ?: return false
+    if (existing.updatedAt > record.updatedAt) return false
+    durable.familyTxns().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
+    return true
+}
+
+/**
+ * A verified tombstone for a member record: this is how the rest of the household learns someone
+ * was removed, since the removed person's own device can no longer say anything. Never applied to
+ * this device's own member — if that ever arrives, the next request will be a 401 and honest
+ * about it, and a phone should not erase its owner from her own screen on a server's word.
+ */
+private suspend fun applyMemberTombstone(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+): Boolean {
+    val memberId = record.id.removePrefix("member:")
+    if (!isValidSyncIdentity(memberId) || memberId == session.member) return false
+    val existing = durable.familyMembers().get(memberId)
+    if (existing != null && existing.updatedAt > record.updatedAt) return false
+    durable.familyMembers().put(
+        (existing ?: FamilyMember(memberId, "عضو خانواده", updatedAt = record.updatedAt))
+            .copy(updatedAt = record.updatedAt, deleted = true)
+    )
+    return true
+}
+
 private suspend fun applyRecord(
     durable: DurableDb,
     session: SyncSession,
     record: WireRecord,
 ): Boolean {
     if (record.device == session.device) return false
-    if (record.deleted && record.kind == "transaction") {
-        val owner = record.ownerMemberId
-        if (owner.isNotBlank() && owner != session.member) {
-            val existing = durable.familyTxns().get(record.id)
-            if (existing != null && existing.updatedAt <= record.updatedAt) {
-                durable.familyTxns().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
-                return true
-            }
-        }
-        return false
-    }
     val plain = openSealed(session.key, record.nonce, record.body) ?: return false
+    if (record.deleted) {
+        // A delete is only a delete when the sealed body says so and names this very record.
+        // The flag, the stamp and the owner all ride in plaintext, so honouring them alone would
+        // let a compromised server forge a tombstone out of any stored row — or move a real one
+        // onto a different record. Old contentless tombstones fail [parseTombstone] and are
+        // rejected outright; the protocol never shipped in a tagged release, so nothing is owed
+        // to that shape.
+        val tombstone = parseTombstone(plain) ?: return false
+        if (tombstone.id != record.id) return false
+        return when (record.kind) {
+            "transaction" -> applyTransactionTombstone(durable, session, record)
+            "member" -> applyMemberTombstone(durable, session, record)
+            else -> false
+        }
+    }
     return when (record.kind) {
         "member" -> runCatching { SYNC_JSON.decodeFromString<SyncMemberPayload>(plain) }
             .getOrNull()?.let { applyMember(durable, record, it) } ?: false
         "category" -> runCatching { SYNC_JSON.decodeFromString<SyncCategoryPayload>(plain) }
             .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
-            .getOrNull()?.let { applyTransaction(durable, session, record, it) } ?: false
         else -> false
     }
 }

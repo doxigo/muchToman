@@ -64,6 +64,23 @@ class FamilySyncTest {
         assertEquals("member-a", resolvedTransactionOwner("legacy", "member-b", "member-a"))
         assertEquals("member-b", resolvedTransactionOwner("transaction", "member-b", "member-a"))
     }
+
+    @Test
+    fun `a delete is only believed when the sealed body says so and names its record`() {
+        // The plaintext here stands for a body that already authenticated under the scope key;
+        // what these pin down is the parse: which sealed sentences count as a delete at all.
+        val good = parseTombstone("""{"v":1,"id":"txn:member-a:736f75726365","deleted":true}""")
+        assertEquals("txn:member-a:736f75726365", good?.id)
+
+        // The pre-release contentless shape carried no id to bind, so a compromised server could
+        // re-attach a real tombstone to any record. Rejected outright — nothing shipped it.
+        assertNull(parseTombstone("""{"kind":"tombstone"}"""))
+        assertNull(parseTombstone("""{"v":1,"id":"txn:member-a:736f75726365","deleted":false}"""))
+        assertNull(parseTombstone("""{"v":1,"id":"","deleted":true}"""))
+        assertNull(parseTombstone("""{"v":1,"deleted":true}"""))
+        assertNull(parseTombstone("not json"))
+    }
+
     @Test
     fun `a scanned link is a join, a shrug or a replace depending on the household it names`() {
         val hid = "aabbccddeeff00112233445566778899"
