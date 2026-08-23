@@ -1813,8 +1813,10 @@ fun ReviewDeck(
     var autoFiling by remember { mutableStateOf(false) }
     var makingCategory by rememberSaveable { mutableStateOf(false) }
     // Always the head of what is left: answering or skipping a card changes [pending] itself,
+    // so there is no position to keep — the deck is a countdown, not a carousel, and the state
+    // that pretended otherwise only ever read «۱ از N».
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
-    val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
+    val entry = pending.firstOrNull()
 
     // Off on every new card, exactly as on the transaction page: a standing rule is opted into
     // per transaction, and a switch that stayed on across cards would write rules she never read.
@@ -1849,7 +1851,9 @@ fun ReviewDeck(
                     incoming = entry.txn.direction == "in",
                     onBack = onDone,
                     backLabel = "بستن",
-                    note = "${faNumber((index + 1).toDouble())} از ${faNumber(pending.size.toDouble())}",
+                    // What is left, not a position: the deck never moves through the list, the
+                    // list shrinks — «۱ از ۵۳» claimed a place in a queue nothing was walking.
+                    note = "${faNumber(pending.size.toDouble())} مونده",
                 )
             }
 
@@ -1925,7 +1929,6 @@ fun ReviewDeck(
                     onPick = { category ->
                         picked = category.id
                         onDecide(entry, category.id, learnSimilar)
-                        index = 0
                     },
                     selectedLabel = "انتخاب‌شده",
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
@@ -1988,7 +1991,6 @@ fun ReviewDeck(
             onConfirm = { assignments ->
                 onAutoFile?.invoke(assignments)
                 autoFiling = false
-                index = 0
             },
             onDismiss = { autoFiling = false },
         )
