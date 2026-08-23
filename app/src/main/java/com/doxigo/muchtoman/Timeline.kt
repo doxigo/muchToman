@@ -1,11 +1,16 @@
 package com.doxigo.muchtoman
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -56,9 +62,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -167,6 +178,47 @@ internal enum class LedgerLens(val fa: String, val emptyFa: String) {
     }
 }
 
+
+/**
+ * One string folded for searching the ledger, the same folding on both sides of the match.
+ *
+ * Persian, Arabic-Indic and ASCII digits become one set — she types on whichever keyboard is up,
+ * and the bank wrote in whichever its gateway uses. ZWNJ and spaces go entirely, `Catalog.kt`'s
+ * own reasoning: «اسنپ‌فود», «اسنپ فود» and «اسنپفود» are one merchant three ways. [faLetters]
+ * folds the Arabic ي/ك a bank's system spells where her keyboard makes ی/ک, and lowercasing
+ * covers the latin merchants.
+ */
+internal fun searchFold(s: String): String = buildString {
+    for (c in faLetters(s)) when {
+        c in '۰'..'۹' -> append('0' + (c - '۰'))
+        c in '٠'..'٩' -> append('0' + (c - '٠'))
+        c == '\u200C' || c.isWhitespace() -> Unit  // ZWNJ
+        else -> append(c.lowercaseChar())
+    }
+}
+
+/** What the row prints on its category line — the transfer override included, so a search for
+ * «انتقال» finds what a search of the visible words should find. */
+internal fun ledgerCategoryFa(entry: LedgerEntry): String =
+    if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
+
+/**
+ * Does this row answer to what she typed? Searched over what the row actually shows — the title
+ * ([txnTitleFa], so a merchantless row is findable by its bank's name), the category line, her
+ * note — and over the amount's digits, because «۲۵۰» is how she remembers a purchase she cannot
+ * name. The amount is matched in Rial digits, which contain the Toman digits as a prefix, so
+ * either way she thinks of the figure lands. A blank query narrows nothing.
+ */
+internal fun matchesLedgerSearch(entry: LedgerEntry, query: String): Boolean {
+    val q = searchFold(query)
+    if (q.isEmpty()) return true
+    if (q in searchFold(txnTitleFa(entry.txn))) return true
+    if (q in searchFold(ledgerCategoryFa(entry))) return true
+    if (entry.note.isNotBlank() && q in searchFold(entry.note)) return true
+    val digits = q.filter { it in '0'..'9' }
+    return digits.isNotEmpty() && entry.txn.amountRial?.toString()?.contains(digits) == true
+}
+
 @Composable
 fun TimelineScreen(
     ledger: LedgerView,
@@ -185,14 +237,21 @@ fun TimelineScreen(
     // like the lens: a filter that survived a week would be a week of «where did my money go».
     var catFilter by rememberSaveable { mutableStateOf(listOf<String>()) }
     var filtering by remember { mutableStateOf(false) }
+    // The words she is looking for, and whether the field for typing them is open. Two states,
+    // because closing the field must not silently drop the narrowing — like the category sheet,
+    // the filter outlives its own controls, and the sentence under the chips is what names it.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     // Two lists, not one: «nothing here at all» and «nothing on this side» are different facts
     // and get different answers, and telling her the ledger is empty when she has merely filtered
     // it to a side she has none of would be the screen lying about her money.
     val everything = remember(ledger.entries) { ledger.entries.filterNot { it.duplicate } }
-    val visible = remember(everything, lens, catFilter) {
+    val visible = remember(everything, lens, catFilter, query) {
         everything.filter {
-            lens.matches(it) && (catFilter.isEmpty() || it.categoryId in catFilter)
+            lens.matches(it) &&
+                (catFilter.isEmpty() || it.categoryId in catFilter) &&
+                matchesLedgerSearch(it, query)
         }
     }
     val grouped = remember(visible) { visible.groupBy { it.txn.day }.toSortedMap(compareByDescending { it }) }
@@ -214,7 +273,7 @@ fun TimelineScreen(
     // hundred rows into «همه» is the middle of nothing in a list that is now nine rows long.
     // Instant rather than animated: the content was replaced, not moved, so there is no distance
     // to travel and scrolling it would only be a delay wearing choreography.
-    LaunchedEffect(lens, catFilter) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
+    LaunchedEffect(lens, catFilter, query) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         // statusBars only: the tab bar below owns the bottom, and taking systemBars here
@@ -229,12 +288,17 @@ fun TimelineScreen(
                 // The count never goes: «مرور ۵۳ مورد» is the one control on the line she has to
                 // act on, and a truncated number is worse than no pill at all.
                 val labelled = waiting == 0 || maxWidth >= 300.dp
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // spacedBy rather than a Spacer after the add pill: the gap belongs *between* two
+                // pills, and written as a trailing Spacer it was still emitted on the ledger that
+                // has nothing waiting — leaving the add pill 8dp off the edge the چیپ‌ها below it
+                // are flush with, on the screen she sees most of the time.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     ScreenTitle("دفتر", modifier = Modifier.weight(1f))
-                    if (onAddTxn != null) {
-                        AddTxnButton(onAddTxn, labelled)
-                        Spacer(Modifier.width(Space.s))
-                    }
+                    if (onAddTxn != null) AddTxnButton(onAddTxn, labelled)
                     if (waiting > 0) ReviewPill(waiting, onReview)
                 }
             }
@@ -267,35 +331,48 @@ fun TimelineScreen(
             ) {
                 Box(Modifier.weight(1f)) { LensPicker(lens) { lens = it } }
                 Spacer(Modifier.width(Space.s))
+                SearchButton(active = searching || query.isNotBlank()) { searching = !searching }
+                Spacer(Modifier.width(Space.s))
                 FilterButton(count = catFilter.size) { filtering = true }
+            }
+            // The field the search disc opens. It narrows as she types — the sheet's own live
+            // rule, no apply button — and closing it keeps the words at work, named below.
+            if (searching) {
+                val searchFocus = remember { FocusRequester() }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    // No fontSize on the placeholder: it sits in the same slot as the value and
+                    // must not shrink the moment she starts typing.
+                    placeholder = { Text("جستجو…") },
+                    shape = RoundedCornerShape(Radius.field),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = Space.xl, end = Space.xl, bottom = Space.m)
+                        .focusRequester(searchFocus)
+                        .semantics { contentDescription = "جستجوی دفتر" },
+                )
+                // She opened it to type, so the caret goes where the typing goes.
+                LaunchedEffect(Unit) { searchFocus.requestFocus() }
             }
             // The narrowing named where it acts, for the reason the picker is pinned: a hidden
             // filter reads as money gone missing. «پاک کردن» beside it is the one-tap way back.
+            if (query.isNotBlank()) {
+                NarrowedLine("فقط نتیجه‌های «${bidi(query.trim())}»") { query = "" }
+            }
             if (catFilter.isNotEmpty()) {
                 val names = filterOptions.filter { it.first in catFilter }.map { it.second }
-                Row(
-                    Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "فقط ${names.joinToString("، ")}",
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.width(Space.s))
-                    PillButton("پاک کردن", { catFilter = emptyList() }, fontSize = 12.sp, minHeight = 40.dp)
-                }
+                NarrowedLine("فقط ${names.joinToString("، ")}") { catFilter = emptyList() }
             }
 
             if (visible.isEmpty()) {
-                if (catFilter.isNotEmpty()) {
-                    FilterEmpty { catFilter = emptyList() }
-                } else {
-                    LensEmpty(lens) { lens = LedgerLens.ALL }
+                when {
+                    // The words go first: they are the narrowing she touched last, and clearing
+                    // them may still leave the category filter standing to answer for itself.
+                    query.isNotBlank() -> SearchEmpty(query) { query = "" }
+                    catFilter.isNotEmpty() -> FilterEmpty { catFilter = emptyList() }
+                    else -> LensEmpty(lens) { lens = LedgerLens.ALL }
                 }
                 return@Column
             }
@@ -414,6 +491,148 @@ private fun FilterButton(count: Int, onClick: () -> Unit) {
                 MaterialTheme.colorScheme.onSurface
             },
         )
+    }
+}
+
+/**
+ * The door to narrowing by words, in the disc [AddTxnButton] already wears when its own word is
+ * gone: mark-only, pill-round, 48dp. Open — or closed over words still at work — it holds the
+ * app's «this one», exactly as the filter button beside it does when it is the thing narrowing.
+ */
+@Composable
+private fun SearchButton(active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceContainer,
+            )
+            .clickable(role = Role.Button, onClickLabel = "جستجو", onClick = onClick)
+            .size(48.dp)
+            // The mark is the only thing on the disc, and a mark says nothing to TalkBack.
+            .semantics { contentDescription = "جستجو" },
+        contentAlignment = Alignment.Center,
+    ) {
+        SearchMark(
+            if (active) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** The magnifier, drawn with the one pen — same nib as [PlusMark] beside it on the screen. */
+@Composable
+private fun SearchMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
+    Canvas(Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val ink = pen(2.2.dp)
+        drawCircle(tint, radius = w * 0.27f, center = Offset(w * 0.44f, h * 0.44f), style = ink)
+        drawPath(
+            Path().apply { moveTo(w * 0.64f, h * 0.64f); lineTo(w * 0.86f, h * 0.86f) },
+            tint,
+            style = ink,
+        )
+    }
+}
+
+/**
+ * One narrowing named in words where it acts, with the one-tap way back beside it — the words
+ * and the category picks each get their own line, because each «پاک کردن» must say exactly what
+ * it will stop doing by sitting next to the sentence that describes it.
+ */
+@Composable
+private fun NarrowedLine(words: String, onClear: () -> Unit) {
+    Row(
+        Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            words,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(Space.s))
+        ClearPill("پاک کردن", onClear)
+    }
+}
+
+/**
+ * [PillButton]'s 40dp look on a 48dp touch surface. The line it sits in earns the small pill —
+ * a 48dp-drawn one would out-shout the sentence it serves — but a 40dp *target* is below the
+ * floor a thumb can be asked to hit. PillButton binds paint and input to one node, so this pill
+ * separates them: the drawn pill is the layout, so nothing around it moves, and an invisible
+ * skin over it takes the finger — `matchParentSize` keeps the skin out of the measurement and
+ * `requiredHeightIn` lets it stand 4dp proud of the pill on each side, into padding that holds
+ * nothing else pressable. The press ripple and the give are PillButton's own, on the visible
+ * pill; the skin is also the one node TalkBack gets, wearing the pill's own word.
+ */
+@Composable
+private fun ClearPill(label: String, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val give by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.press(), label = "give")
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .scale(give)
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .indication(press, LocalIndication.current)
+                .heightIn(min = 40.dp)
+                .padding(horizontal = Space.l)
+                // Spoken by the skin below instead, or every pass reads the pill twice.
+                .clearAndSetSemantics {},
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+        Box(
+            Modifier
+                .matchParentSize()
+                .requiredHeightIn(min = 48.dp)
+                .clickable(
+                    interactionSource = press,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+                .semantics { contentDescription = label },
+        )
+    }
+}
+
+/**
+ * A search that matched nothing. Names the words, like the asset picker's own empty answer —
+ * a bare «nothing here» over a query she may have mistyped is an accusation aimed at the ledger.
+ */
+@Composable
+private fun SearchEmpty(query: String, onClear: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(Space.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            // bidi(): a mixed query like «cafe ۲» would otherwise reorder inside the guillemets.
+            "برای «${bidi(query.trim())}» چیزی پیدا نشد",
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(Space.m))
+        PillButton("پاک کردن جستجو", onClear)
     }
 }
 
@@ -546,12 +765,13 @@ internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> U
 }
 
 /**
- * A day: a quiet heading, then its transactions as plain rows on the paper.
+ * A day's quiet heading; its transactions follow as plain rows on the paper, each its own lazy
+ * item keyed by ref.
  *
- * The rows used to sit inside a grouped band. Containers are for money that *is* somewhere — an
- * account, a budget, a cap — and activity is not a container, it is a stream: Wise's own split,
- * and the reason the asset list keeps its bands while this list breathes. The heading still
- * carries the day's net, the one figure the ledger owns and no other screen shows.
+ * The rows used to sit inside a grouped band, and then inside this composable. Containers are
+ * for money that *is* somewhere — an account, a budget, a cap — and activity is not a container,
+ * it is a stream: Wise's own split, and the reason the asset list keeps its bands while this
+ * list breathes. Nothing visual ever belonged to the day but this heading, so the rows ride the
  *
  * The figure is the sum of the rows actually under it, so under a [LedgerLens] it is that day's
  * income or that day's spending rather than its net — which is what the heading of a filtered
