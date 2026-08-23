@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The variant source set, because it is the only shelf that beats src/dev: build type outranks
+  flavour, so the lite sandbox named in src/lite/res would still install as plain «muchToman».
+-->
+<resources>
+    <string name="app_name">muchToman Lite</string>
+</resources>

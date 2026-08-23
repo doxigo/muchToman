@@ -4,5 +4,6 @@
   two have to be tellable apart at a glance on a launcher full of Persian names.
 -->
 <resources>
-    <string name="app_name">muchToman family</string>
+    <!-- The lite sandbox says which one it is in src/liteDev, which outranks this file. -->
+    <string name="app_name">muchToman</string>
 </resources>

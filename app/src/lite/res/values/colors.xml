@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lite is the gold edition — the app for someone who only wants to know what their gold is
+  worth — so its icon wears the report's own gold (#F7C948, the GOLD bar tint) on the same
+  near-black darkness the full icon uses, hue swapped from green to amber. Same glyph, same
+  geometry: the two must read as siblings on a launcher, just never as the same app.
+-->
+<resources>
+    <color name="ic_launcher_background">#332500</color>
+    <color name="ic_launcher_glyph">#F7C948</color>
+</resources>
