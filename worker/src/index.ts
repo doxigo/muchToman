@@ -18,6 +18,7 @@
  * go out and the phone keeps the names and logos it already has.
  */
 
+  TokenBucket,
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
@@ -809,6 +810,15 @@ async function lookupWalletBalance(body: unknown): Promise<number> {
   return amount;
 }
 
+ * wall — Cloudflare runs many isolates and recycles them freely, and each starts with fresh
+ * buckets. That is enough: the point is to keep one misbehaving client from turning this
+ * endpoint into a free blockchain-RPC relay, while a phone refreshing a family's handful of
+ * wallets never notices it. The 429 carries its own `rate_limited` code so the app cannot
+ * mistake being throttled for the upstream being down (`unavailable` keeps the last amount;
+ * this should too, but for a different stated reason).
+ */
+const walletLimiter = new TokenBucket(30, 30 / (5 * 60 * 1000));
+
 function jsonResponse(payload: unknown, status = 200, cacheControl = 'no-store'): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -1051,7 +1061,6 @@ async function buildRates(): Promise<Response> {
     }
   };
 
-  if (fiat.status === 'fulfilled') Object.assign(toman, fiat.value.value);
   note('fiat_gold_coins', fiat, 'ok');
 
   // Both are tgju-only and stand alone: either one going down takes nothing else with it, and
