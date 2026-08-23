@@ -966,11 +966,33 @@ internal fun TimelineRow(
     // The amber dot below is colour and nothing else, and colour is the one channel TalkBack
     // and a colour-blind reader share none of. On a waiting row the whole line is restated the
     // way BudgetCard states its card — the same words in the same order the eye reads them —
+    // with the dot's meaning in words at the end. Only on waiting rows: everywhere else the
+    // texts already say everything there is.
+    val pendingWords = if (entry.needsReview && !entry.transfer) {
+        buildString {
+            append(txnTitleFa(txn))
+            append("، ")
+            append(categoryFa)
+            if (entry.ownerName.isNotBlank()) append("، از ${entry.ownerName}")
+            if (rial != null) {
+                append("، ${faSignedCompact(tomanOf(rial), incoming)} تومان")
+            } else {
+                append("، مانده")
+            }
+            append("، در انتظار دسته‌بندی")
+        }
+    } else {
+        null
+    }
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.field))
             .clickable(role = Role.Button, onClick = onClick)
+            .then(
+                if (pendingWords == null) Modifier
+                else Modifier.semantics { contentDescription = pendingWords },
+            )
             .padding(vertical = 10.dp, horizontal = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1027,7 +1049,6 @@ internal fun TimelineRow(
             }
         }
         Spacer(Modifier.width(Space.s))
-        val rial = txn.signedRial ?: txn.amountRial
         if (rial != null) {
             Text(
                 faSignedCompact(tomanOf(rial), incoming),
@@ -1788,10 +1809,10 @@ fun ReviewDeck(
     /** Her note on the card, so the deck and the transaction page stay one screen. */
     onNote: ((LedgerEntry, String) -> Unit)? = null,
 ) {
-    var index by remember { mutableStateOf(0) }
     var skipped by remember { mutableStateOf(setOf<String>()) }
     var autoFiling by remember { mutableStateOf(false) }
     var makingCategory by rememberSaveable { mutableStateOf(false) }
+    // Always the head of what is left: answering or skipping a card changes [pending] itself,
     val pending = ledger.review.filterNot { it.txn.ref in skipped }
     val entry = pending.getOrNull(index.coerceAtMost(pending.lastIndex.coerceAtLeast(0)))
 
