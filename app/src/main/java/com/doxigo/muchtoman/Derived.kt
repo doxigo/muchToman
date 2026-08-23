@@ -34,7 +34,19 @@ import androidx.room.withTransaction
 // beside the date — سامان, خاورمیانه and بلو all do, and all three were stored as a bare date.
 // The time was never lost, only unread: it is in the message, so the rebuild recovers it for
 // every transaction already in the ledger.
-const val PARSER_VERSION = 4
+// 5: the reading and the linking both tightened, and one bump carries both because both only
+// take effect by looking again. «قابل برداشت» is ability, not a withdrawal — a Saman balance
+// statement had been deriving as spending of the entire balance; a wallet promo's «موجودی کیف
+// پول» no longer states or anchors the bank balance; a «مبلغ» search now stops at a balance
+// word, as the direction searches have since 3. The parser stops mistaking a figure printed
+// beside the amount for the amount; the duplicate matches on refNo and balance now carry time
+// windows, so a fixed
+// rent cycling an account back to the same figure every month is no longer auto-hidden from
+// every report; one incoming leg can no longer settle two equal outgoing payments at once; the
+// leg a settled duplicate hides is now the later one in time rather than the larger hash; and a
+// poison timestamp is clamped on the way through, so its money counts under an approximated day
+// instead of crashing the timeline it would sort on top of.
+const val PARSER_VERSION = 5
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

@@ -43,6 +43,18 @@
       ],
       "why": "From a real bank, but it names no amount and no balance, so it is not a transaction and must produce nothing rather than something at low confidence.",
       "expect": null
+    },
+    {
+      "id": "rejected-wallet-promo-from-a-real-bank-number",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "بانک سامان",
+        "موجودی کیف پول شما: 200,000 ریال",
+        "همین حالا از همراه‌بانک شارژش کن!"
+      ],
+      "why": "From the bank's own number, so the sender gate rightly lets it in — but the موجودی it quotes is the wallet inside its app, not the account. Read as a stated balance it would overwrite the real figure and anchor the mistake: the wallet and bundle words veto a balance in the parse now, exactly as they always did in the suggestion classifier.",
+      "expect": null
     }
   ]
 }

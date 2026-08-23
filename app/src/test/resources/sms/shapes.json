@@ -148,9 +148,10 @@
       "body": [
         "موجودی قابل برداشت حساب سپرده کوتاه مدت 1,978,750,309 ریال"
       ],
-      "why": "The search window is applied after the whole body has been scanned for numbers, so a long figure sitting past the window boundary is never truncated into a smaller one. NOTE: «برداشت» in «قابل برداشت» is also a direction word, so today's parser reads this one figure as BOTH the amount and the balance. Pinned as it stands — the corpus records what the parser does, and a fix is a deliberate edit here rather than a surprise. Harmless while a stated balance wins, wrong the moment a ledger counts the amount as spending.",
+      "why": "The search window is applied after the whole body has been scanned for numbers, so a long figure sitting past the window boundary is never truncated into a smaller one. «برداشت» in «قابل برداشت» used to read as a direction word too, and this one figure came back as BOTH the amount and the balance — harmless while only the stated balance was used, and everything she had counted as spending the day the ledger began reading amounts. A direction word right after «قابل» is ability, not an event, and is vetoed now: this message states a balance and nothing else.",
       "expect": {
-        "amountRial": 1978750309,
+        "direction": null,
+        "amountRial": null,
         "balanceRial": 1978750309,
         "feeRial": null,
         "mask": "",
@@ -159,7 +160,8 @@
         "refNo": "",
         "printedAt": "",
         "channel": "unknown",
-        "unitPrinted": "rial"
+        "unitPrinted": "none",
+        "inferred": false
       }
     },
     {

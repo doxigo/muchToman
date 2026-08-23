@@ -239,6 +239,21 @@ private val AMOUNT_WORDS = listOf("مبلغ", "مقدار")
  */
 private val NOT_A_BALANCE = listOf("بدهی", "تسهیلات", "وام", "قسط", "چک", "کارت اعتباری")
 
+/**
+ * Words that mark a مانده as an operator's bundle or an app wallet — data, minutes, credit,
+ * «کیف پول» — not money at a bank. The bare «کیف» is deliberate: [normalise] strips ZWNJ, so
+ * «کیف‌پول» arrives glued.
+ */
+private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "مکالمه", "شارژ", "کیف")
+
+/**
+ * Both lists together, and one name for them on purpose: the veto used to live only in
+ * [looksLikeBankSms], so a promo from a bank's own trusted number could still quote its
+ * wallet's موجودی and have it overwrite — and anchor — the account. Every place that reads
+ * a مانده as money must refuse the same words.
+ */
+private val BALANCE_VETO = NOT_A_BALANCE + OPERATOR_WORDS
+
 /** A run of digits with its separators, in any of the three digit sets. */
 private val NUMBER = Regex("[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]")
 
@@ -306,6 +321,33 @@ private fun isIdentifierPart(text: String, at: IntRange): Boolean {
     return false
 }
 
+/**
+ * Whether the word found at [at] sits right after «قابل», which turns an event into an
+ * ability: «موجودی قابل برداشت» is what she may take out, not money leaving. Read as a
+ * withdrawal, a Saman balance statement became a spend of everything the account held.
+ * [normalise] already strips ZWNJ, so «قابل‌برداشت» arrives glued and the whitespace here
+ * is optional.
+ */
+private fun qualifiedAt(text: String, at: Int): Boolean {
+    var i = at - 1
+    while (i >= 0 && text[i].isWhitespace()) i--
+    if (i < 3 || !text.startsWith("قابل", i - 3)) return false
+    // «مقابل» ends in the same four letters and is a different word.
+    return text.getOrNull(i - 4)?.isLetter() != true
+}
+
+/** Whether any of [words] appears unqualified: a message whose only «برداشت» follows «قابل» states no direction. */
+private fun statesDirection(text: String, words: List<String>): Boolean {
+    for (word in words) {
+        var i = text.indexOf(word)
+        while (i >= 0) {
+            if (!qualifiedAt(text, i)) return true
+            i = text.indexOf(word, i + 1)
+        }
+    }
+    return false
+}
+
 private fun figureAfter(
     text: String,
     labels: List<String>,
@@ -321,6 +363,7 @@ private fun figureAfter(
             if (at < 0) break
             val start = at + label.length
             from = start
+            if (qualifiedAt(text, at)) continue
             // "مانده بدهی" is a different noun from "مانده".
             val ahead = text.substring(start, minOf(text.length, start + 16))
             if (veto.any { ahead.contains(it) }) continue
@@ -363,6 +406,7 @@ private fun figureBefore(text: String, labels: List<String>): Figure? {
             val at = text.indexOf(label, from)
             if (at < 0) break
             from = at + label.length
+            if (qualifiedAt(text, at)) continue
             val lineStart = text.lastIndexOf('\n', at - 1) + 1
             val found = NUMBER.findAll(text.substring(lineStart, at))
                 .map { IntRange(lineStart + it.range.first, lineStart + it.range.last) }
@@ -412,16 +456,16 @@ fun parseBankSms(
 
     // Zero is allowed here and nowhere else: an emptied account really does have a balance of
     // nought, and refusing to read it would leave the old figure standing for ever.
-    val balance = figureAfter(text, BALANCE_WORDS, allowZero = true, veto = NOT_A_BALANCE)
+    val balance = figureAfter(text, BALANCE_WORDS, allowZero = true, veto = BALANCE_VETO)
         ?.let { it.value / (it.divisor ?: fallback) }
 
     // Direction decides the sign, so a message that states no direction states no delta —
     // guessing one is how a deposit becomes a withdrawal.
-    val deposit = IN_WORDS.any { text.contains(it) }
-    val withdrawal = OUT_WORDS.any { text.contains(it) }
+    val deposit = statesDirection(text, IN_WORDS)
+    val withdrawal = statesDirection(text, OUT_WORDS)
     val inWords = IN_WORDS.takeIf { deposit } ?: emptyList()
     val outWords = OUT_WORDS.takeIf { withdrawal } ?: emptyList()
-    val amount = figureAfter(text, AMOUNT_WORDS)
+    val amount = figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
         ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
         ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
         // Nothing after the direction word, so the figure it refers to is the one in front of
@@ -650,9 +694,6 @@ internal fun enrich(normalised: String, rawBody: String, fallback: Double): Extr
     feeRial = feeIn(normalised, fallback),
 )
 
-/** Words that mark a مانده as an operator's bundle — data, minutes, credit — not money at a bank. */
-private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "مکالمه", "شارژ")
-
 private data class IgnoredBank(val name: String, val senders: List<String>)
 
 private val IGNORED_BANKS = listOf(
@@ -678,7 +719,7 @@ fun isIgnoredBankSms(sender: String, body: String): Boolean {
  */
 fun looksLikeBankSms(body: String): Boolean {
     val text = normalise(body)
-    val f = figureAfter(text, BALANCE_WORDS, veto = NOT_A_BALANCE + OPERATOR_WORDS)
+    val f = figureAfter(text, BALANCE_WORDS, veto = BALANCE_VETO)
     return f != null && f.value >= 100_000
 }
 
