@@ -10,28 +10,49 @@
  *   crypto                bitpin -> tetherland (Toman, real Tehran price)
  *                         -> coingecko -> binance (USD, x the dollar rate)
  *
- * Two independent chains, because they fail independently. Everything is cross-checked
- * against the dollar rate before it is published.
+ * Two independent chains, because they fail independently — and they referee each other
+ * before anything is published: the dollar against the USDT-Toman market, gold against the
+ * dollar, مثقال / silver / سکه / پارسیان against gold and against each other, and crypto's
+ * Tehran prices against its USD prices (see checks.ts for every band and its dated
+ * reasoning). A price that fails a check is dropped and named in `sources` — never zeroed,
+ * never silently passed through.
  *
  * Names and prices are two different jobs, and only coingecko does both. A price is never
  * held back for want of a name: when the catalogue is the thing that is down, prices still
  * go out and the phone keeps the names and logos it already has.
  */
 
+import {
+  agreesWithin,
+  applyPlausibility,
   bodyEtag,
+  btcUsdVerdict,
+  CRYPTO_CROSS_MAX_RATIO,
+  deriveParsianPerSoot,
+  type Drop,
   etagMatches,
+  formatDrops,
+  PARSIAN_SOOT,
   reservedTomanIds,
+  staleNote,
+  tgjuStampMs,
   TokenBucket,
+  usdBandVerdict,
+} from './checks';
+
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully faster.
-const RATES_CACHE_VERSION = 'proxied-apk-v3';
+// v4: entries now carry an ETag; older cached bodies without one must miss after deploy.
+const RATES_CACHE_VERSION = 'checked-rates-v4';
 const PUBLIC_ORIGIN = 'https://rates.muchtoman.com';
 const UPSTREAM_TIMEOUT_MS = 8_000;
 const WALLET_UPSTREAM_TIMEOUT_MS = 5_000;
-// A phone on Iranian mobile data is slow, and this one is tens of megabytes rather than a
-// price quote — the eight seconds the rate sources get would abort every download.
+// APK downloads are bounded on time-to-headers only. A whole-body deadline here used to cut
+// slow Iranian connections off mid-file — 30 MB at 2 Mbit/s is about two minutes, and the
+// abort killed the tee'd cache fill with it. Once GitHub has answered with headers, the body
+// takes as long as it takes.
 const APK_HEADERS_TIMEOUT_MS = 30_000;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
@@ -44,13 +65,6 @@ const COINGECKO_ICON_ORIGIN = 'https://coin-images.coingecko.com';
 /** Where the app's own APKs come from — the source of the update note in /rates. */
 const REPO = 'doxigo/muchToman';
 const APK_PATH = '/download';
-
-/**
- * A scrape that half-works is more dangerous than one that fails, because it produces a
- * confident wrong total. The official IRR peg would land the dollar near 4,200 Toman and a
- * parse slip lands it near zero — both are rejected rather than shown to a user.
- */
-const PLAUSIBLE_USD_TOMAN = { min: 10_000, max: 10_000_000 };
 
 /** How many coins the picker offers, by market cap. */
 const COIN_LIMIT = 250;
@@ -188,16 +202,26 @@ async function getJson(
   return JSON.parse(text) as unknown;
 }
 
-/** Runs sources in order, returns the first that yields anything. Collects the failures. */
-async function firstOf<T>(
+/**
+ * Runs sources in order, returns the first that yields anything usable. Collects the failures.
+ *
+ * `usable` returns true or the reason it is not — and it is part of the per-source gate on
+ * purpose: plausibility lives here so a wrong-but-numeric source (bonbast quoting the dollar
+ * at 4,200, say) is recorded as failed and the chain advances to a healthy tgju, instead of
+ * being selected first and then aborting everything downstream of it.
+ */
+export async function firstOf<T>(
   sources: { name: string; run: () => Promise<T> }[],
-  usable: (v: T) => boolean,
+  usable: (v: T) => boolean | string,
 ): Promise<{ value: T; via: string; failures: string[] }> {
   const failures: string[] = [];
   for (const s of sources) {
     try {
       const value = await s.run();
-      if (!usable(value)) throw new Error('response had no usable values');
+      const verdict = usable(value);
+      if (verdict !== true) {
+        throw new Error(typeof verdict === 'string' ? verdict : 'response had no usable values');
+      }
       return { value, via: s.name, failures };
     } catch (error) {
       failures.push(`${s.name}: ${errorMessage(error)}`);
@@ -209,7 +233,7 @@ async function firstOf<T>(
 // ───────────────────────── fiat, gold, coins ─────────────────────────
 
 /** app id -> bonbast field. The "1" fields are the headline (sell) side. Already Toman. */
-const BONBAST_MAP: Record<string, string> = {
+export const BONBAST_MAP: Record<string, string> = {
   usd: 'usd1',
   eur: 'eur1',
   gbp: 'gbp1',
@@ -250,6 +274,15 @@ export const TGJU_MAP: Record<string, string> = {
  * quietly overwriting a gold price with a coin price.
  */
 const RESERVED_TOMAN_IDS = reservedTomanIds(Object.keys(BONBAST_MAP));
+
+/**
+ * What a fiat-chain source answers with. [stampMs] is the source's own freshest timestamp
+ * where it publishes one (tgju does, bonbast does not) — it feeds a stale note in `sources`,
+ * never the top-level updatedAt, which stays "when this worker answered".
+ */
+type FiatQuote = { prices: Record<string, number>; stampMs: number | null };
+
+async function fetchBonbast(): Promise<FiatQuote> {
   // The JSON endpoint only answers with a token minted into the homepage HTML.
   const home = await fetchWithTimeout('https://bonbast.com/', {
     headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
@@ -280,17 +313,25 @@ const RESERVED_TOMAN_IDS = reservedTomanIds(Object.keys(BONBAST_MAP));
     const v = num(data?.[field]);
     if (v != null) out[id] = v;
   }
-  return out;
+  return { prices: out, stampMs: null };
 }
 
-async function fetchTgjuKeys(map: Record<string, string>): Promise<Record<string, number>> {
+async function fetchTgjuKeys(map: Record<string, string>): Promise<FiatQuote> {
   const keys = Object.values(map).join(',');
   const data = asRecord(await getJson(`https://api.tgju.org/v1/widget/tmp?keys=${keys}`));
 
   const byName = new Map<string, unknown>();
+  let stampMs: number | null = null;
   for (const value of asArray(asRecord(data.response).indicators)) {
     const indicator = asRecord(value);
     byName.set(String(indicator.name ?? ''), indicator.p);
+    // Each row carries the source's own timestamp (the field name has not been stable, so
+    // both spellings are tried). The freshest one dates the whole answer; if even that is a
+    // day old, the sources note says so in words.
+    for (const field of ['updated_at', 'created_at']) {
+      const stamp = tgjuStampMs(indicator[field]);
+      if (stamp != null && (stampMs == null || stamp > stampMs)) stampMs = stamp;
+    }
   }
 
   const out: Record<string, number> = {};
@@ -298,7 +339,7 @@ async function fetchTgjuKeys(map: Record<string, string>): Promise<Record<string
     const rial = num(byName.get(key));
     if (rial != null) out[id] = rial / 10; // Rial -> Toman
   }
-  return out;
+  return { prices: out, stampMs };
 }
 
 const fetchTgju = () => fetchTgjuKeys(TGJU_MAP);
@@ -372,10 +413,8 @@ const fetchSilver = () =>
  * close to fixed per coin and so weighs heaviest on the smallest: when this was written a
  * 100 سوت piece went for about 24% over its gold content, a 500 سوت one 8%, and a 1500 سوت
  * one 6%. Pricing them as gold18 × weight would understate the smallest by nearly a quarter.
+ * The size table itself lives in checks.ts, next to the monotonicity invariant over it.
  */
-const PARSIAN_SOOT = [100, 200, 300, 400, 500, 600, 700, 800, 900,
-  1000, 1100, 1200, 1300, 1400, 1500];
-
 const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const faDigits = (s: string) => s.replace(/\d/g, (d) => FA_DIGITS[Number(d)]);
 
@@ -385,13 +424,6 @@ const parsianSlug = (soot: number) =>
   faDigits(String(soot % 1000).padStart(3, '0'));
 
 /**
- * Which quote stands in for "one سوت". The 1 گرم coin first, because that is the size the
- * market itself quotes as the reference; then the largest still on the page, since the اجرت
- * shrinks with size and the big coins sit closest to the gold in them.
- */
-const PARSIAN_REFERENCE = [1000, ...[...PARSIAN_SOOT].reverse()];
-
-/**
  * The app offers one سکه پارسیان counted in سوت rather than fifteen coins, so alongside the
  * fifteen sizes — still published, because holdings saved against them are priced from them
  * — this derives the per-سوت rate that single row multiplies by.
@@ -399,7 +431,8 @@ const PARSIAN_REFERENCE = [1000, ...[...PARSIAN_SOOT].reverse()];
  * It is an approximation and knowingly so: the اجرت is close to fixed per coin, so a ۱۰۰ سوت
  * piece really costs about a quarter over its gold and a ۱۵۰۰ سوت one a few per cent. One
  * scalar cannot hold both. The reference size is the honest middle, and the phone can
- * override any rate by hand.
+ * override any rate by hand. (If a row is later dropped as implausible, the assembly
+ * re-derives this from the rows that survived.)
  */
 async function fetchParsian(): Promise<Record<string, number>> {
   const prices = await fetchTgjuPage(
@@ -407,18 +440,22 @@ async function fetchParsian(): Promise<Record<string, number>> {
     Object.fromEntries(PARSIAN_SOOT.map((s) => [parsianSlug(s), `parsian_${s}`])),
   );
 
-  const reference = PARSIAN_REFERENCE.find((s) => prices[`parsian_${s}`] != null);
-  if (reference != null) prices.parsian = prices[`parsian_${reference}`] / reference;
+  const perSoot = deriveParsianPerSoot(prices);
+  if (perSoot != null) prices.parsian = perSoot;
   return prices;
 }
 
-async function fetchFiat() {
-  const got = await firstOf(
+const fetchFiat = () =>
+  // The absolute dollar band sits inside the gate, so an implausible source counts as a
+  // failed one and the chain advances instead of aborting (the relational checks — USDT
+  // agreement and everything hanging off gold — run once at assembly, where both chains
+  // are in hand).
+  firstOf(
     [
       { name: 'bonbast', run: fetchBonbast },
       { name: 'tgju', run: fetchTgju },
     ],
-    (v) => v.usd != null,
+    (v) => usdBandVerdict(v.prices.usd),
   );
 
 // ───────────────────────── crypto ─────────────────────────
@@ -811,6 +848,8 @@ async function lookupWalletBalance(body: unknown): Promise<number> {
   return amount;
 }
 
+/**
+ * 30 lookups per IP per five minutes. Per-isolate and in-memory, so this is friction, not a
  * wall — Cloudflare runs many isolates and recycles them freely, and each starts with fresh
  * buckets. That is enough: the point is to keep one misbehaving client from turning this
  * endpoint into a free blockchain-RPC relay, while a phone refreshing a family's handful of
@@ -1062,7 +1101,14 @@ async function buildRates(): Promise<Response> {
     }
   };
 
+  if (fiat.status === 'fulfilled') Object.assign(toman, fiat.value.value.prices);
   note('fiat_gold_coins', fiat, 'ok');
+  if (fiat.status === 'fulfilled') {
+    // Words, not a timestamp swap: updatedAt stays "when this worker answered", which the
+    // phone depends on. If the source's own freshest stamp is over a day old, say so.
+    const stale = staleNote(fiat.value.value.stampMs, Date.now());
+    if (stale != null) sources.fiat_gold_coins += ` (${stale})`;
+  }
 
   // Both are tgju-only and stand alone: either one going down takes nothing else with it, and
   // the phone shows those assets as "نرخ ندارد" rather than folding a guess into the total.
@@ -1091,6 +1137,12 @@ async function buildRates(): Promise<Response> {
   const coins = gecko.status === 'fulfilled' ? gecko.value.coins : [];
   let usdPrices: Record<string, number> = gecko.status === 'fulfilled' ? gecko.value.usd : {};
 
+  // The relational invariants, now that both chains are in hand: the dollar against the
+  // Tehran USDT market, gold against the dollar, and مثقال/silver/سکه/پارسیان against gold
+  // and each other. Whatever fails is deleted — dropped, not zeroed — and named below, so
+  // the phone's "missing rates are named" behaviour does its job.
+  const drops: Drop[] = applyPlausibility(toman, tomanNative.usdt ?? null);
+
   // The catalogue is a source like any other and fails on its own — and it used to take every
   // crypto price down with it, because pricing ran over `coins`: an empty catalogue published
   // bitpin's hundreds of perfectly good Toman prices as nothing at all. Binance stands in for
@@ -1103,6 +1155,13 @@ async function buildRates(): Promise<Response> {
     usdVia = Object.keys(usdPrices).length ? 'binance' : 'nothing';
   }
 
+  // Bitcoin's USD side gets absolute rails of its own: a feed quoting cents or satoshis is
+  // cheap to catch here and expensive on a phone. The Tehran quote, if any, still stands.
+  if (usdPrices.btc != null) {
+    const verdict = btcUsdVerdict(usdPrices.btc);
+    if (verdict !== true) {
+      delete usdPrices.btc;
+      drops.push({ id: 'btc', reason: `${verdict} (${usdVia} side dropped)` });
     }
   }
 
@@ -1122,9 +1181,25 @@ async function buildRates(): Promise<Response> {
     // A ticker that collides with a currency/gold/silver/سکه/پارسیان id would shadow it in
     // the rates map (this guard used to cover BONBAST_MAP only).
     if (RESERVED_TOMAN_IDS.has(id)) continue;
+
+    // Prefer the Tehran-quoted price; fall back to USD x the dollar rate — but when both
+    // exist they must agree, else the coin is dropped rather than guessed at. If the dollar
+    // itself was dropped above, no USD price cross-rates at all, by design.
+    const tehran = tomanNative[id];
+    const crossed = usdPrices[id] != null && toman.usd != null ? usdPrices[id] * toman.usd : null;
+    if (tehran != null && crossed != null && !agreesWithin(tehran, crossed, CRYPTO_CROSS_MAX_RATIO)) {
+      drops.push({
+        id,
+        reason: `Tehran ${Math.round(tehran)} vs USD-crossed ${Math.round(crossed)} Toman ` +
+          `disagree beyond ×${CRYPTO_CROSS_MAX_RATIO}`,
+      });
+      continue;
+    }
+    if (tehran != null) {
+      toman[id] = tehran;
       tehranPriced++;
-    } else if (usdPrices[id] != null && toman.usd != null) {
-      toman[id] = usdPrices[id] * toman.usd;
+    } else if (crossed != null) {
+      toman[id] = crossed;
       converted++;
     }
     // else: no dollar rate and no local price — the coin stays out of the map entirely,
@@ -1138,6 +1213,9 @@ async function buildRates(): Promise<Response> {
       : `failed, sending none so the phone keeps its own: ${errorMessage(gecko.reason)}`;
   sources.crypto_pricing =
     `${tehranPriced} at Tehran price, ${converted} cross-rated from USD via ${usdVia}`;
+  // Every asset the invariants dropped, named — the counterpart of the phone showing
+  // "نرخ ندارد" for it instead of a stale or invented number.
+  sources.plausibility = formatDrops(drops);
 
   sources.latest_release =
     release.status === 'fulfilled'
@@ -1166,12 +1244,16 @@ async function buildRates(): Promise<Response> {
       : null,
   };
 
-  return new Response(JSON.stringify(payload), {
+  // A strong ETag so a phone that already has this exact body pays for headers, not for the
+  // coin catalogue again — Iranian mobile data is metered and the catalogue is the bulk.
+  const body = JSON.stringify(payload);
+  return new Response(body, {
     status: ok ? 200 : 502,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': ok ? `public, max-age=${TTL_SECONDS}` : 'no-store',
       'x-content-type-options': 'nosniff',
+      ...(ok ? { etag: await bodyEtag(body) } : {}),
     },
   });
 }
@@ -1204,6 +1286,7 @@ async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext)
   }
   return (await ratesInFlight).clone();
 }
+
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1230,6 +1313,22 @@ export default {
     if (url.pathname === '/wallet-balance') {
       if (request.method !== 'POST') {
         return textResponse('Method not allowed', 405, 'POST');
+      }
+      // Before the body is even read: a throttled caller costs headers, not upstream RPCs.
+      const verdict = walletLimiter.take(
+        request.headers.get('cf-connecting-ip') ?? 'unknown',
+        Date.now(),
+      );
+      if (!verdict.ok) {
+        return new Response(JSON.stringify({ code: 'rate_limited' }), {
+          status: 429,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+            'retry-after': String(verdict.retryAfterSeconds),
+          },
+        });
       }
       const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
       if (contentType !== 'application/json') {
@@ -1262,8 +1361,8 @@ export default {
         404,
       );
     }
-    if (request.method !== 'GET') {
-      return textResponse('Method not allowed', 405, 'GET');
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return textResponse('Method not allowed', 405, 'GET, HEAD');
     }
 
     const cache = caches.default;
@@ -1283,6 +1382,20 @@ export default {
     // pays for headers. The comparison is RFC 9110's weak one; the etag itself is strong.
     const etag = res.headers.get('etag');
     if (res.status === 200 && etag != null &&
+      etagMatches(request.headers.get('if-none-match'), etag)) {
+      await cancelBody(res.body);
+      return new Response(null, {
+        status: 304,
+        headers: {
+          etag,
+          'cache-control': res.headers.get('cache-control') ?? 'no-store',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    }
+    if (request.method === 'HEAD') {
+      await cancelBody(res.body);
+      return new Response(null, { status: res.status, headers: res.headers });
     }
     return res;
   },
