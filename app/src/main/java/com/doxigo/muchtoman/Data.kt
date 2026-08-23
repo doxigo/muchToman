@@ -245,6 +245,22 @@ fun snapshotHistory(
     return recordDay(history, now / DAY_MS, totals.toman)
 }
 
+/**
+ * The history rebased when what the total *counts* changes without any money moving — an asset
+ * set aside, a bank switched off, messages stopped. The money is still hers; she only told the
+ * report to stop counting it, so the chart must not step and the report must not call it a loss.
+ *
+ * Rescaled rather than shifted, because nothing here remembers what one holding was worth on a
+ * past day and only this guess keeps the shape: every percentage the report quotes comes out
+ * exactly as it did before the toggle, where subtracting today's figure from every past point
+ * shrinks the denominator too and reads a quiet +3% month as +35%. It also undoes itself, so
+ * setting an asset aside and thinking better of it leaves the history where it started.
+ *
+ * Refused when either basis is partial or not positive: a total missing a price is not a
+ * measurement, and a zero can never be scaled back if she changes her mind.
+ */
+fun rebaseHistory(history: Map<Long, Double>, before: Totals, after: Totals): Map<Long, Double> {
+    if (before.missing.isNotEmpty() || after.missing.isNotEmpty()) return history
     if (before.toman <= 0.0 || after.toman <= 0.0) return history
     val factor = after.toman / before.toman
     if (!factor.isFinite() || factor == 1.0) return history
@@ -300,6 +316,12 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
     if (sms.balance != null) {
         val known = accounts.firstOrNull { it.bank == sms.bank.name }
         if (
+            known != null && known.anchored && known.balance > 0.0 &&
+            sms.balance > known.balance * 100 && sms.balance > SPOOF_FLOOR_TOMAN
+        ) return accounts
+    }
+    return applyBankSms(accounts, sms)
+}
 
 /**
  * The one gate over everything that publishes the ledger or read-modify-writes the prefs kept
@@ -562,14 +584,78 @@ class Store(context: Context) {
         }
     }
 
+    /**
+     * The hottest JSON blobs, decoded once per write instead of once per read. The rates blob
+     * alone is ~80KB, and every access used to parse it from scratch — on Main, several times
+     * per composition. The memo is keyed by the raw string's *identity*: SharedPreferences
+     * keeps its map in memory and hands back the same String instance until the key is
+     * rewritten, so `===` is an exact dirty check that costs nothing (a copying implementation
+     * would only ever miss, never lie). Store is touched from Main, Default and IO, hence one
+     * @Volatile reference to an immutable pair rather than two fields — two fields could pair
+     * a new raw with a stale value, where a race on the single cell only costs a re-decode.
+     */
+    private inner class CachedBlob<T : Any>(
+        private val key: String,
+        /** Raw string to the value exactly as the getter must return it, sanitising included. */
+        private val decode: (String) -> T,
+        private val encode: (T) -> String,
+        private val fallback: () -> T,
+        /** The value as handed to the setter, to the value a following get must return. */
+        private val onSet: (T) -> T = { it },
+    ) {
+        @Volatile private var cell: Pair<String, T>? = null
+
+        fun get(): T {
+            val raw = prefs.getString(key, null) ?: return fallback()
+            cell?.let { (from, value) -> if (from === raw) return value }
+            val value = runCatching { decode(raw) }.getOrElse {
+                stashCorrupt(key, raw, it)
+                // Cached against the corrupt raw too, so it is stashed and logged once per
+                // generation rather than on every read until something writes.
+                fallback()
+            }
+            cell = raw to value
+            return value
+        }
+
+        fun set(value: T) {
+            val encoded = encode(value)
+            prefs.edit().putString(key, encoded).apply()
+            cell = encoded to onSet(value)
+        }
+    }
+
+    private val holdingsBlob = CachedBlob(
+        "holdings",
+        decode = { JSON.decodeFromString<List<Holding>>(it) },
+        encode = { JSON.encodeToString(it) },
+        fallback = { emptyList() },
+    )
+
+    private val ratesBlob = CachedBlob(
+        "rates",
+        decode = { sanitizeRates(JSON.decodeFromString<Rates>(it), BuildConfig.RATES_URL) },
+        encode = { JSON.encodeToString(it) },
+        fallback = { Rates() },
+        // The getter always sanitises, so the memo must hold what a re-read would produce.
+        onSet = { sanitizeRates(it, BuildConfig.RATES_URL) },
+    )
+
+    private val stocksBlob = CachedBlob(
+        "stocks",
+        decode = { JSON.decodeFromString<TseSnapshot>(it) },
+        encode = { JSON.encodeToString(it) },
+        fallback = { TseSnapshot() },
+    )
+
     var holdings: List<Holding>
-        get() = read("holdings", emptyList())
-        set(v) = write("holdings", v)
+        get() = holdingsBlob.get()
+        set(v) = holdingsBlob.set(v)
 
     /** Last successful fetch, so the app still shows something offline. */
     var cachedRates: Rates
-        get() = sanitizeRates(read("rates", Rates()), BuildConfig.RATES_URL)
-        set(v) = write("rates", v)
+        get() = ratesBlob.get()
+        set(v) = ratesBlob.set(v)
 
     /**
      * Last successful TSETMC snapshot. Kept apart from [cachedRates] because that is the
@@ -578,8 +664,8 @@ class Store(context: Context) {
      * and this is what keeps the shares she already priced showing a number.
      */
     var cachedStocks: TseSnapshot
-        get() = read("stocks", TseSnapshot())
-        set(v) = write("stocks", v)
+        get() = stocksBlob.get()
+        set(v) = stocksBlob.set(v)
 
     /** The release she has already waved off, so the note does not come back every time. */
     var dismissedUpdate: String
