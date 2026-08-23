@@ -262,7 +262,11 @@ fun SettingsScreen(
         onSmsChange(ok)
     }
     // Held locally while typing so each keystroke is not a disk write; committed on leaving.
+    // «Leaving» has more doors than the ذخیره pill: the system back, and the companion and
+    // categories pages, all unmount this screen — so the commit rides the unmount itself,
+    // and none of them can quietly drop a typed name. (Reads `draft` at dispose time.)
     var draft by remember { mutableStateOf(name) }
+    DisposableEffect(Unit) { onDispose { onNameChange(draft) } }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -441,6 +445,7 @@ fun SettingsScreen(
                     onClick = onRescanInbox,
                     // An action that stays on this page, so the door's chevron would lie.
                     chevron = false,
+                )
             }
 
             SectionLabel("دسته‌بندی‌ها")
