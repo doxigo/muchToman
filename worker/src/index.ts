@@ -18,6 +18,8 @@
  * go out and the phone keeps the names and logos it already has.
  */
 
+  bodyEtag,
+  etagMatches,
   TokenBucket,
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -1254,6 +1256,12 @@ export default {
       ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
         console.error(JSON.stringify({ message: 'rates cache write failed', error: errorMessage(error) }));
       }));
+
+    // Conditional requests: the body is mostly the coin catalogue, and mobile data there is
+    // metered. A phone re-asking within the TTL with the etag it already has gets 304 and
+    // pays for headers. The comparison is RFC 9110's weak one; the etag itself is strong.
+    const etag = res.headers.get('etag');
+    if (res.status === 200 && etag != null &&
     }
     return res;
   },
