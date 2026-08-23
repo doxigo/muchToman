@@ -24,6 +24,7 @@ private val SYNC_JSON = Json { ignoreUnknownKeys = true }
 
 const val META_SYNC_BASE = "sync_base"
 const val META_SYNC_TOKEN = "sync_token"
+const val META_SYNC_TOKEN_AT = "sync_token_at"
 const val META_SYNC_DEVICE = "sync_device"
 const val META_SYNC_MEMBER = "sync_member"
 const val META_SYNC_SCOPE = "sync_scope"
@@ -194,6 +195,7 @@ private data class ClampedStamp(val id: String = "", val updatedAt: Long = 0)
 
 @Serializable
 private data class PushAck(val seq: Long = 0, val clamped: List<ClampedStamp> = emptyList())
+
 private fun request(
     url: String,
     method: String,
@@ -256,6 +258,7 @@ fun localRefOfFamilyTxn(familyRef: String, memberId: String): String? {
 private fun memberRecordId(memberId: String): String = "member:$memberId"
 private fun categoryRecordId(familyRef: String): String = "category:${sha256Hex(familyRef)}"
 
+/** One fresh household on the server: a random id, claimed for this member and device. */
 private fun claimFreshHousehold(base: String, member: String, device: String): SyncSession {
     val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
     val scope = "family:$hid"
@@ -278,12 +281,11 @@ private fun claimFreshHousehold(base: String, member: String, device: String): S
 
 suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String): SyncSession =
     withContext(Dispatchers.IO) {
-        val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
         val session = claimFreshHousehold(base, newIdentity(), newIdentity())
         saveSession(durable, session)
         durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
         durable.familyMembers().put(
-            FamilyMember(member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
+            FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
         )
         session
     }
@@ -291,6 +293,9 @@ suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String)
 suspend fun saveSession(durable: DurableDb, session: SyncSession) {
     durable.meta().put(DurableMeta(META_SYNC_BASE, session.base))
     durable.meta().put(DurableMeta(META_SYNC_TOKEN, session.token))
+    // Every caller of this is a moment a token was minted, so the issue date rides along; it is
+    // what lets a later sync notice the token has been in one place for a month and rotate it.
+    durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, System.currentTimeMillis().toString()))
     durable.meta().put(DurableMeta(META_SYNC_DEVICE, session.device))
     durable.meta().put(DurableMeta(META_SYNC_MEMBER, session.member))
     durable.meta().put(DurableMeta(META_SYNC_SCOPE, session.scope))
@@ -430,6 +435,7 @@ suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String
         }
         session
     }
+
 /**
  * Cuts a member's devices off the household, effective on their very next request.
  *
@@ -476,6 +482,18 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             SYNC_JSON.encodeToString(PushBody(listOf(tombstone))),
         )
     }
+
+/**
+ * Cryptographic eviction: a fresh household under a fresh key, because [removeFamilyMember]
+ * alone leaves the ex-member holding the scope key — able to read any future ciphertext they
+ * ever get their hands on.
+ *
+ * This device keeps its identity and walks alone into a new household: new id, new token, new
+ * key, same person. The publication marks are buried so the next ordinary sync re-pushes every
+ * record this device owns, and the old household's copy of everyone else is buried locally —
+ * that ledger stops updating, and the shared one starts over. Everyone remaining has to scan a
+ * fresh QR; the copy on the screen says so in as many words.
+ */
 suspend fun renewHousehold(durable: DurableDb): SyncSession = withContext(Dispatchers.IO) {
     val old = loadSession(durable) ?: error("no household to renew")
     val session = claimFreshHousehold(old.base, old.member, old.device)
@@ -960,6 +978,29 @@ private suspend fun applyRecord(
     }
 }
 
+private const val TOKEN_ROTATE_AFTER_MS = 30L * 24 * 60 * 60 * 1000
+
+/**
+ * A new secret once a month, taken opportunistically at the end of a sync that already proved
+ * the network works. The window between the server forgetting the old secret and this device
+ * writing the new one is one Room put; a crash inside it means re-pairing, which is why this
+ * runs monthly on a good connection rather than eagerly on every launch.
+ */
+private suspend fun rotateTokenIfStale(durable: DurableDb, session: SyncSession, now: Long) {
+    val issuedAt = durable.meta().get(META_SYNC_TOKEN_AT)?.toLongOrNull()
+    if (issuedAt == null) {
+        // A session from before rotation existed. Its age is unknown, not known-old: stamp it
+        // now and let the month run from here.
+        durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, now.toString()))
+        return
+    }
+    if (now - issuedAt < TOKEN_ROTATE_AFTER_MS) return
+    val response = request("${session.base}/v1/rotate", "POST", session.token, "{}")
+    val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
+    if (secret.isBlank()) return
+    durable.meta().put(DurableMeta(META_SYNC_TOKEN, "${session.token.substringBefore('.')}.$secret"))
+    durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, now.toString()))
+}
 
 suspend fun syncNow(
     durable: DurableDb,
@@ -1010,5 +1051,6 @@ suspend fun syncNow(
         cursor = nextCursor
         val more = pulled.records.size >= 1000 && cursor > previous
     } while (more)
+    rotateTokenIfStale(durable, session, now)
     SyncResult(sent, received)
 }
