@@ -6,7 +6,8 @@ import org.junit.Test
 /**
  * The one rule the widget's three layouts stand on: every step up in size adds a line and
  * never takes one away. A single layout is what let a four-cell tile show less than a
- * two-cell one, so the mapping is worth pinning down.
+ * two-cell one, so the mapping is worth pinning down — and each orientation of the same
+ * placed tile reads its own pair of the host's bounds, or landscape inherits portrait's face.
  */
 class WidgetFaceTest {
 
@@ -32,6 +33,25 @@ class WidgetFaceTest {
     fun `an unmeasured tile falls back to the middle, never the largest`() {
         assertEquals(Face.WIDE, Face.of(0, 0))
         assertEquals(Face.WIDE, Face.of(250, 0))
+    }
+
+    @Test
+    fun `a landscape cell is judged by its own pair, never portrait's`() {
+        // One four-by-two tablet tile; the host bounds it 250–330dp wide and 100–215dp tall.
+        // Portrait (minWidth × maxHeight) has the height for the chart; landscape
+        // (maxWidth × minHeight) is wide and short and gets the second column — reading the
+        // portrait pair for both is what put a TALL chart in a cell 100dp high.
+        val faces = Face.of(minWidthDp = 250, maxWidthDp = 330, minHeightDp = 100, maxHeightDp = 215)
+        assertEquals(Face.TALL, faces.portrait)
+        assertEquals(Face.WIDE, faces.landscape)
+    }
+
+    @Test
+    fun `when both orientations agree the pair is one face, the single-views path`() {
+        // A two-by-one stays stacked whichever way the screen turns…
+        assertEquals(FacePair(Face.COMPACT, Face.COMPACT), Face.of(110, 160, 40, 100))
+        // …and an unmeasured host is unmeasured in both orientations: the middle, never TALL.
+        assertEquals(FacePair(Face.WIDE, Face.WIDE), Face.of(0, 0, 0, 0))
     }
 
     @Test

@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
 
 // The hero's own colours (Theme.kt Hero) — RemoteViews cannot read Compose values, so the
 // ARGB ints live here and must not drift from that object.
-private const val GOLD = 0xFF9FE870.toInt()
+private const val ACCENT = 0xFF9FE870.toInt()
 private const val MINT = 0xFF9FE870.toInt()
 private const val WARN = 0xFFFFB59F.toInt()
 private const val MUTED = 0xFFA9C295.toInt()
@@ -91,12 +91,34 @@ internal enum class Face(
             widthDp >= 220 -> WIDE
             else -> COMPACT
         }
+
+        /**
+         * One face per orientation of the same placed tile. The host reports four dp bounds
+         * and shows the tile as minWidth × maxHeight in portrait but maxWidth × minHeight in
+         * landscape — so each orientation must be judged by its own pair, or a landscape home
+         * screen (tablets by design) gets a face chosen from tall-narrow portrait numbers, up
+         * to a chart in a wide-short cell with no height for one. The step-up rule holds
+         * within each orientation on its own: growing the cell still only ever adds lines.
+         */
+        fun of(minWidthDp: Int, maxWidthDp: Int, minHeightDp: Int, maxHeightDp: Int) = FacePair(
+            portrait = of(minWidthDp, maxHeightDp),
+            landscape = of(maxWidthDp, minHeightDp),
+        )
     }
 }
 
-/** The portrait pair out of a host's options bundle. */
-private fun Bundle?.widthDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0
-private fun Bundle?.heightDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0
+/** [Face.of] both ways round; equal whenever the two shapes land on the same layout. */
+internal data class FacePair(val portrait: Face, val landscape: Face)
+
+/**
+ * The host's four dp bounds. A placed tile is minWidth × maxHeight in portrait and
+ * maxWidth × minHeight in landscape; a host that has not measured yet reports nothing, and
+ * the zeros are what [Face.of] reads as "unmeasured".
+ */
+private fun Bundle?.minWidthDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0
+private fun Bundle?.maxWidthDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH) ?: 0
+private fun Bundle?.minHeightDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT) ?: 0
+private fun Bundle?.maxHeightDp(): Int = this?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0
 
 /**
  * One line of text as pixels, set in a real Modam instance. Rendered here because the
@@ -373,8 +395,42 @@ private val WIDGET_DISPATCHER = Dispatchers.Default.limitedParallelism(1)
  */
 private val WIDGET_SCOPE = CoroutineScope(WIDGET_DISPATCHER + SupervisorJob())
 
+/**
+ * The tile as the host will show it in either orientation. Rotating the screen reshapes the
+ * cell — the same "four by two" is tall-narrow in portrait and wide-short in landscape — and
+ * the launcher swaps orientations with no broadcast to this process, so both faces have to be
+ * in its hands before the turn. The two-views RemoteViews lets it pick; rendering only the
+ * portrait face is how a landscape home screen got a chart in a cell with no height for one.
+ *
+ * When the two shapes land on the same face, one plain RemoteViews goes out and the common
+ * phone-portrait path is exactly what it always was. When they differ, each face carries its
+ * own bitmaps at its own sizes (the launcher cannot rescale them — no fitCenter, see above),
+ * so the parcel grows by one face's worth: a few one-line text bitmaps, a few hundred KB at
+ * the largest sizes. Never a second chart — two TALL faces are the same face and take the
+ * single-views path — so the total stays far below the platform's per-widget bitmap allowance
+ * of one and a half screens.
+ */
 private fun render(context: Context, model: WidgetModel, options: Bundle?): RemoteViews {
-    val face = Face.of(options.widthDp(), options.heightDp())
+    val faces = Face.of(
+        minWidthDp = options.minWidthDp(),
+        maxWidthDp = options.maxWidthDp(),
+        minHeightDp = options.minHeightDp(),
+        maxHeightDp = options.maxHeightDp(),
+    )
+    val portrait = renderFace(context, model, faces.portrait, options.minWidthDp(), options.maxHeightDp())
+    if (faces.landscape == faces.portrait) return portrait
+    val landscape = renderFace(context, model, faces.landscape, options.maxWidthDp(), options.minHeightDp())
+    return RemoteViews(landscape, portrait)
+}
+
+/** One orientation of the tile, every line rasterised at this face's own sizes. */
+private fun renderFace(
+    context: Context,
+    model: WidgetModel,
+    face: Face,
+    widthDp: Int,
+    heightDp: Int,
+): RemoteViews {
     val views = RemoteViews(context.packageName, face.layout)
 
     views.setImageViewBitmap(
@@ -399,7 +455,7 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
     if (model.masked) {
         views.setImageViewBitmap(
             R.id.widget_total,
-            textBitmap(context, "٭٭٭", face.total, R.font.modam_heavy, GOLD),
+            textBitmap(context, "٭٭٭", face.total, R.font.modam_heavy, ACCENT),
         )
         views.setContentDescription(R.id.widget_total, "مبلغ پنهانه")
         views.setViewVisibility(R.id.widget_change, View.GONE)
@@ -410,7 +466,7 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
     val totalText = "${faCompact(model.total, 3, pad = true)} تومان"
     views.setImageViewBitmap(
         R.id.widget_total,
-        textBitmap(context, totalText, face.total, R.font.modam_heavy, GOLD),
+        textBitmap(context, totalText, face.total, R.font.modam_heavy, ACCENT),
     )
     views.setContentDescription(R.id.widget_total, totalText)
 
@@ -448,7 +504,7 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
     }
 
     if (face == Face.TALL) {
-        val chart = chartBitmap(context, model, options)
+        val chart = chartBitmap(context, model, widthDp, heightDp)
         if (chart == null) {
             views.setViewVisibility(R.id.widget_chart, View.GONE)
         } else {
@@ -461,17 +517,18 @@ private fun render(context: Context, model: WidgetModel, options: Bundle?): Remo
 
 /**
  * The chart at the size the tile will actually give it, so fitXY has nothing left to stretch.
+ * The pair is the orientation's own — a landscape face is sized for the landscape cell.
  * Height is what the tile has left once the header, the total and the pill are paid for; the
  * estimate only has to be close, since fitXY absorbs the rest.
  *
  * Null when there is nothing honest to draw: a single day is a dot, not a line, and a chart
  * of one point would read as a flat month she never had.
  */
-private fun chartBitmap(context: Context, model: WidgetModel, options: Bundle?): Bitmap? {
+private fun chartBitmap(context: Context, model: WidgetModel, faceWidthDp: Int, faceHeightDp: Int): Bitmap? {
     if (model.points.size < 2) return null
     val d = context.resources.displayMetrics.density
-    val widthDp = options.widthDp().takeIf { it > 0 } ?: 250
-    val heightDp = options.heightDp().takeIf { it > 0 } ?: 140
+    val widthDp = faceWidthDp.takeIf { it > 0 } ?: 250
+    val heightDp = faceHeightDp.takeIf { it > 0 } ?: 140
     return sparkBitmap(
         context,
         model.points,
