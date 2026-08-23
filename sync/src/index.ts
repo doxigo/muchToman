@@ -26,6 +26,10 @@ const MAX_SYNC_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_RECORDS_PER_PUSH = 500;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_SCOPE_CHARS = 128;
+// LWW griefing/skew bound: a stamp from the far future would win every merge for ever, so
+// nothing may claim to be written more than a day ahead of this server's clock. The clamped
+// value is returned to the pusher so both sides converge on the same stamp.
+const MAX_STAMP_SKEW_MS = 24 * 60 * 60 * 1000;
 // A record id is the client's own transaction reference: "s:" + a 64-character SHA-256 + ":"
 // + a sequence number, or "m:" + a UUID. 128 clears both with room to spare; 64 did not clear
 // the first one, which is every SMS-derived transaction there is.
@@ -485,6 +489,8 @@ export class Household extends DurableObject<Env> {
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
     const start = head ? Number(head.v) : 0;
     let seq = start;
+    const maxStamp = Date.now() + MAX_STAMP_SKEW_MS;
+    const clamped: { id: string; updatedAt: number }[] = [];
     try {
       for (const record of records) {
         if (!auth.scopes.includes(record.scope)) throw new SyncError('forbidden_scope', 403);
@@ -517,6 +523,8 @@ export class Household extends DurableObject<Env> {
           (existing.kind === 'member' || existing.kind === 'transaction') &&
           existing.owner_member !== auth.memberId
         ) throw new SyncError('forbidden_owner', 403);
+        const storedAt = Math.min(record.updatedAt, maxStamp);
+        if (storedAt !== record.updatedAt) clamped.push({ id: record.id, updatedAt: storedAt });
         // Last write wins, with the device id breaking a tie so two phones that disagree at the
         // same millisecond still converge on the same answer rather than flapping.
         //
@@ -524,8 +532,8 @@ export class Household extends DurableObject<Env> {
         // of them wins. A CRDT would fix that and cost more than the problem is worth.
         if (
           existing &&
-          (existing.updated_at > record.updatedAt ||
-            (existing.updated_at === record.updatedAt && existing.device >= auth.id))
+          (existing.updated_at > storedAt ||
+            (existing.updated_at === storedAt && existing.device >= auth.id))
         ) {
           continue;
         }
@@ -537,7 +545,7 @@ export class Household extends DurableObject<Env> {
           record.id,
           record.scope,
           seq,
-          record.updatedAt,
+          storedAt,
           auth.id,
           record.kind,
           record.ownerMemberId,
@@ -552,7 +560,7 @@ export class Household extends DurableObject<Env> {
         this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'seq', String(seq));
       }
     }
-    return jsonResponse({ seq, accepted: records.length });
+    return jsonResponse({ seq, accepted: records.length, clamped });
   }
 
   /**

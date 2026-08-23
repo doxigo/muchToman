@@ -386,4 +386,32 @@ describe('revocation', () => {
     expect(revoke.status).toBe(200);
     expect((await pull(member.token)).status).toBe(401);
   });
+      headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({ code }),
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('too_many_devices');
+  });
+
+  it('clamps a far-future stamp and returns the value it stored', async () => {
+    // Without the bound, one device with a wrong clock — or a griefer — pins a record for
+    // ever: nothing honest could ever outbid a stamp from the year 3000.
+    const token = await claim('e5'.repeat(16), ['personal:her']);
+    const farFuture = Date.now() + 365 * 24 * 60 * 60 * 1000;
+    const res = await push(token, [record({ updatedAt: farFuture })]);
+    expect(res.status).toBe(200);
+    const ack = (await res.json()) as { clamped: Array<{ id: string; updatedAt: number }> };
+    expect(ack.clamped).toHaveLength(1);
+    expect(ack.clamped[0].id).toBe('r1');
+    expect(ack.clamped[0].updatedAt).toBeGreaterThan(Date.now());
+    expect(ack.clamped[0].updatedAt).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000 + 5_000);
+
+    const { json } = await pull(token);
+    expect(json.records[0].updatedAt).toBe(ack.clamped[0].updatedAt);
+
+    // An honest stamp from within the skew window is left alone.
+    const near = await push(token, [record({ id: 'r2', updatedAt: Date.now() + 60_000 })]);
+    expect(((await near.json()) as { clamped: unknown[] }).clamped).toHaveLength(0);
+  });
+
 });
