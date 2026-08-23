@@ -58,9 +58,12 @@
         </intent>
     </queries>
 
+    <!-- Predictive back: navigation is BackHandler-based (androidx bridges it), and nothing
+         overrides onBackPressed, so the system animation costs nothing to allow. -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
