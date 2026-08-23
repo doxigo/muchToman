@@ -465,6 +465,24 @@ describe('revocation', () => {
       record({ id, scope, kind: 'transaction', ownerMemberId: ownerMember, updatedAt: 2000, deleted: true }),
     ]);
     expect(buried.status).toBe(403);
+  });
+});
+
+describe('token rotation', () => {
+  it('replaces the secret and kills the old one immediately', async () => {
+    const token = await claim('ab'.repeat(16), ['personal:her']);
+    await push(token, [record()]);
+
+    const res = await SELF.fetch('https://sync.test/v1/rotate', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const { secret } = (await res.json()) as { secret: string };
+    const fresh = `${token.split('.')[0]}.${secret}`;
+
+    // Same immediacy argument as revocation: the object is the only authority on the secret.
+    expect((await pull(token)).status).toBe(401);
     const rotated = await pull(fresh);
     expect(rotated.status).toBe(200);
     expect(rotated.json.records).toHaveLength(1);
@@ -550,4 +568,21 @@ describe('abuse resistance', () => {
         headers: { 'cf-connecting-ip': ip },
         body: JSON.stringify({ scopes: ['personal:her'] }),
       });
+    for (let i = 0; i < 5; i++) {
+      expect((await claimAs('198.51.100.7', `f${i}`.repeat(16))).status).toBe(200);
+    }
+    const throttled = await claimAs('198.51.100.7', 'f6'.repeat(16));
+    expect(throttled.status).toBe(429);
+    expect(((await throttled.json()) as { code: string }).code).toBe('rate_limited');
+    // Another address is another bucket; the neighbour is not paying for the flood.
+    expect((await claimAs('198.51.100.8', 'f7'.repeat(16))).status).toBe(200);
+  });
+});
+
+describe('the PWA it serves', () => {
+  it('rides a content-security-policy header on asset responses', async () => {
+    const res = await SELF.fetch('https://sync.test/');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+  });
 });

@@ -394,6 +394,7 @@ export class Household extends DurableObject<Env> {
       memberId,
     )][0];
     if (identityCollision && identityCollision.n > 0) throw new SyncError('identity_exists', 409);
+    const devices = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
     if (devices && devices.n >= MAX_DEVICES) throw new SyncError('too_many_devices', 409);
     const secret = randomToken();
     this.sql.exec(
@@ -625,6 +626,40 @@ export class Household extends DurableObject<Env> {
 }
 
 /**
+ * Household creation is the one unauthenticated write, so it gets a token bucket per caller IP.
+ *
+ * Honest about what this is: friction, not a wall. The map lives in one isolate's memory, and an
+ * attacker who spreads requests across colos — or simply waits for the isolate to recycle —
+ * starts with a fresh bucket every time. It exists to make casual abuse boring; the per-household
+ * caps inside the Durable Object are the actual bound on what any one household can cost.
+ */
+const CLAIM_BURST = 5;
+const CLAIM_REFILL_MS = 60_000; // one new household a minute, five in a burst
+const claimBuckets = new Map<string, { tokens: number; last: number }>();
+
+function allowClaim(ip: string, now = Date.now()): boolean {
+  // The keys are attacker-chosen, so the map is bounded the blunt way: a rare full reset is
+  // cheaper than an LRU and errs on the side of letting people in.
+  if (claimBuckets.size > 10_000) claimBuckets.clear();
+  const bucket = claimBuckets.get(ip) ?? { tokens: CLAIM_BURST, last: now };
+  bucket.tokens = Math.min(CLAIM_BURST, bucket.tokens + (now - bucket.last) / CLAIM_REFILL_MS);
+  bucket.last = now;
+  const allowed = bucket.tokens >= 1;
+  if (allowed) bucket.tokens -= 1;
+  claimBuckets.set(ip, bucket);
+  return allowed;
+}
+
+/**
+ * One policy, stated twice — here as a header on every asset, and as a `<meta>` in the PWA's
+ * index.html so a copy of the page saved or served from a cache keeps it. `unsafe-inline` styles
+ * are real: the page ships its stylesheet as an inline `<style>` and sizes figures with inline
+ * `style="--fit:…"` attributes. Scripts stay 'self' only.
+ */
+const ASSET_CSP =
+  "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+  "style-src 'self' 'unsafe-inline'; script-src 'self'";
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -652,6 +687,11 @@ export default {
 
       if (path === '/v1/claim') {
         if (request.method !== 'POST') return textResponse('POST only\n', 405, 'POST');
+        // Cloudflare's edge always sets CF-Connecting-IP and strips any copy a client sends, so
+        // an absent header means the request never crossed the edge — tests and local workerd —
+        // and those are exactly the callers the bucket should not throttle.
+        const ip = request.headers.get('cf-connecting-ip');
+        if (ip && !allowClaim(ip)) return jsonResponse({ code: 'rate_limited' }, 429);
         // A new household names itself; there is no registry to collide with because the id is
         // 32 random bytes and the object is created by being addressed.
         const hid = url.searchParams.get('hid') ?? '';
@@ -690,8 +730,11 @@ export default {
         return await env.HOUSEHOLD.getByName(token.hid).fetch(inner);
       }
 
-      // Anything else is the PWA.
-      return await env.ASSETS.fetch(request);
+      // Anything else is the PWA, with its content-security-policy riding on every response.
+      const asset = await env.ASSETS.fetch(request);
+      const headers = new Headers(asset.headers);
+      headers.set('content-security-policy', ASSET_CSP);
+      return new Response(asset.body, { status: asset.status, headers });
     } catch (error) {
       console.error(JSON.stringify({ message: 'sync failed', error: errorMessage(error) }));
       return jsonResponse({ code: 'internal' }, 500);
