@@ -1,5 +1,9 @@
-import { SELF } from 'cloudflare:test';
+import { env, runInDurableObject, SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+
+declare module 'cloudflare:test' {
+  interface ProvidedEnv extends Env {}
+}
 
 /**
  * The claims this Worker makes about people's money, checked against the real Worker running on
@@ -387,6 +391,29 @@ describe('revocation', () => {
     expect((await pull(member.token)).status).toBe(401);
   });
 
+  it('revokes a whole member and spends every outstanding pairing code with them', async () => {
+    const owner = await claimDevice('cd'.repeat(16), ['family:cd'], {
+      memberId: 'ce'.repeat(16),
+      deviceId: 'cf'.repeat(16),
+    });
+    const member = await pairDevice(owner.token, 'd1'.repeat(16), 'd2'.repeat(16));
+    // An invite is sitting on a screen — or in an ex-member's photo roll — when the revocation
+    // happens. It must die with them: a code is not attributed to whoever minted it.
+    const invite = await SELF.fetch('https://sync.test/v1/invite', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({}),
+    });
+    const { code } = (await invite.json()) as { code: string };
+
+    const revoke = await SELF.fetch('https://sync.test/v1/revoke', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({ member: member.memberId }),
+    });
+    expect(revoke.status).toBe(200);
+    expect((await pull(member.token)).status).toBe(401);
+
     const paired = await SELF.fetch('https://sync.test/v1/pair', {
       method: 'POST',
       headers: { authorization: `Bearer ${owner.token}` },
@@ -407,6 +434,37 @@ describe('revocation', () => {
     await push(owner.token, [
       record({ id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed }),
     ]);
+
+    const rewrite = await push(other.token, [
+      record({ id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed, updatedAt: 2000 }),
+    ]);
+    expect(rewrite.status).toBe(403);
+
+    const tombstone = await push(other.token, [
+      record({
+        id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed,
+        updatedAt: 2000, deleted: true,
+      }),
+    ]);
+    expect(tombstone.status).toBe(200);
+    const { json } = await pull(other.token);
+    const row = json.records.find((r) => r.id === `member:${removed}`);
+    expect(row.deleted).toBe(true);
+  });
+
+  it('does not extend the tombstone exception to another member\'s transactions', async () => {
+    const hid = 'd8'.repeat(16);
+    const scope = 'family:d8';
+    const ownerMember = 'd9'.repeat(16);
+    const owner = await claimDevice(hid, [scope], { memberId: ownerMember, deviceId: 'db'.repeat(16) });
+    const other = await pairDevice(owner.token, 'da'.repeat(16), 'dc'.repeat(16));
+    const id = `txn:${ownerMember}:736f75726365`;
+    await push(owner.token, [record({ id, scope, kind: 'transaction', ownerMemberId: ownerMember })]);
+
+    const buried = await push(other.token, [
+      record({ id, scope, kind: 'transaction', ownerMemberId: ownerMember, updatedAt: 2000, deleted: true }),
+    ]);
+    expect(buried.status).toBe(403);
     const rotated = await pull(fresh);
     expect(rotated.status).toBe(200);
     expect(rotated.json.records).toHaveLength(1);

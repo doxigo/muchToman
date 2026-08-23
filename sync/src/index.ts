@@ -394,6 +394,7 @@ export class Household extends DurableObject<Env> {
       memberId,
     )][0];
     if (identityCollision && identityCollision.n > 0) throw new SyncError('identity_exists', 409);
+    if (devices && devices.n >= MAX_DEVICES) throw new SyncError('too_many_devices', 409);
     const secret = randomToken();
     this.sql.exec(
       'INSERT INTO device (id, member_id, token_hash, scopes, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
@@ -495,6 +496,8 @@ export class Household extends DurableObject<Env> {
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
     const start = head ? Number(head.v) : 0;
     let seq = start;
+    // Replacing a row never grows the household; only a new id counts against the cap.
+    let rows = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM record')][0]?.n ?? 0;
     const maxStamp = Date.now() + MAX_STAMP_SKEW_MS;
     const clamped: { id: string; updatedAt: number }[] = [];
     try {
@@ -507,6 +510,13 @@ export class Household extends DurableObject<Env> {
         if (reservedKind && record.kind !== reservedKind) throw new SyncError('invalid_kind', 400);
         if (record.kind === 'member') {
           // A member record is normally written only by the person it describes. The one
+          // exception is a tombstone: removal happens after the described person's token is
+          // revoked, so someone else has to say it — and anyone who may revoke a device (any
+          // member) may say this too. Clients still refuse the tombstone unless its sealed body
+          // authenticates and names this very id, so this loosens routing, not truth.
+          const ownWrite = record.ownerMemberId === auth.memberId && record.id === `member:${auth.memberId}`;
+          const removal = record.deleted && record.id === `member:${record.ownerMemberId}`;
+          if (!ownWrite && !removal) throw new SyncError('forbidden_owner', 403);
         }
         if (record.kind === 'transaction') {
           if (record.ownerMemberId !== auth.memberId || !record.id.startsWith(`txn:${auth.memberId}:`)) {
@@ -524,8 +534,10 @@ export class Household extends DurableObject<Env> {
         )][0];
         if (
           existing &&
-          (existing.kind === 'member' || existing.kind === 'transaction') &&
-          existing.owner_member !== auth.memberId
+          existing.owner_member !== auth.memberId &&
+          // The member-tombstone exception again: replacing the removed person's profile row
+          // with their tombstone is the entire mechanism of telling the household they left.
+          (existing.kind === 'transaction' || (existing.kind === 'member' && !record.deleted))
         ) throw new SyncError('forbidden_owner', 403);
         const storedAt = Math.min(record.updatedAt, maxStamp);
         if (storedAt !== record.updatedAt) clamped.push({ id: record.id, updatedAt: storedAt });
@@ -540,6 +552,10 @@ export class Household extends DurableObject<Env> {
             (existing.updated_at === storedAt && existing.device >= auth.id))
         ) {
           continue;
+        }
+        if (!existing) {
+          if (rows >= MAX_RECORD_ROWS) throw new SyncError('household_full', 409);
+          rows += 1;
         }
         seq += 1;
         this.sql.exec(
@@ -570,18 +586,24 @@ export class Household extends DurableObject<Env> {
   /**
    * Immediate, because this object is the only thing that decides whether a token is good. There
    * is no cache anywhere to expire and no eventually-consistent store to catch up.
+   *
+   * Takes a device id or a member id: the phones list people, not devices, so removing a person
+   * is the request they can actually make. Revoking by member cuts every device that person has.
    */
   private async revoke(request: Request): Promise<Response> {
     await this.authorise(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
-    const target = typeof body.device === 'string' ? body.device : '';
-    if (!target) throw new SyncError('invalid_request', 400);
-    this.sql.exec('DELETE FROM device WHERE id = ?', target);
-    return jsonResponse({ revoked: target });
+    const device = typeof body.device === 'string' ? body.device : '';
     const member = typeof body.member === 'string' ? body.member : '';
     if (!device && !member) throw new SyncError('invalid_request', 400);
     if (device) this.sql.exec('DELETE FROM device WHERE id = ?', device);
     if (member) this.sql.exec('DELETE FROM device WHERE member_id = ?', member);
+    // Outstanding invite codes die with the revocation. A pairing row is not attributed to the
+    // device that minted it, and an ex-member who photographed a QR before being evicted must
+    // not be able to walk back in with it — the remaining members can mint a fresh code in one
+    // tap, so sweeping them all costs nothing.
+    this.sql.exec('DELETE FROM pairing');
+    return jsonResponse({ revoked: device || member });
   }
 
   /**
@@ -602,6 +624,7 @@ export class Household extends DurableObject<Env> {
   }
 }
 
+/**
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
