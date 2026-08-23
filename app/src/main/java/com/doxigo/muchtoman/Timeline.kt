@@ -52,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -178,6 +183,36 @@ internal enum class LedgerLens(val fa: String, val emptyFa: String) {
     }
 }
 
+/**
+ * The Tehran day it is *right now*, kept true across midnight.
+ *
+ * `remember { tehranDay(...) }` froze the answer at composition, so a ledger left open past
+ * midnight went on calling yesterday «امروز» — the one word on this screen that is a claim about
+ * the present. The effect sleeps until the next Tehran midnight and recomputes; the floor under
+ * the delay is for a clock yanked backwards, where an instant re-fire would spin. A phone asleep
+ * at midnight can deliver the alarm late, so coming back to the app rechecks — ON_START is the
+ * first moment she can be looking at a stale «امروز».
+ */
+@Composable
+private fun rememberTehranDay(): Long {
+    var day by remember { mutableStateOf(tehranDay(System.currentTimeMillis())) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val midnight = tehranDayStart(tehranDay(System.currentTimeMillis()) + 1)
+            delay((midnight - System.currentTimeMillis()).coerceAtLeast(1_000L))
+            day = tehranDay(System.currentTimeMillis())
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) day = tehranDay(System.currentTimeMillis())
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return day
+}
 
 /**
  * One string folded for searching the ledger, the same folding on both sides of the match.
@@ -231,7 +266,7 @@ fun TimelineScreen(
     /** A transaction no message will ever report, typed in by hand. */
     onAddTxn: (() -> Unit)? = null,
 ) {
-    val today = remember { tehranDay(System.currentTimeMillis()) }
+    val today = rememberTehranDay()
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
     // Which categories she has narrowed the ledger to. Ids, empty for «all» — session state,
     // like the lens: a filter that survived a week would be a week of «where did my money go».
