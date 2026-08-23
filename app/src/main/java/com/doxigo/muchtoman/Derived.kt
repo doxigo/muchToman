@@ -419,10 +419,6 @@ suspend fun seedBuiltins(durable: DurableDb, now: Long = System.currentTimeMilli
     durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })
 }
 
-/** How many transactions are waiting for her, which is the only number the deck needs. */
-suspend fun reviewCount(derived: DerivedDb): Int =
-    derived.classes().reviewCount() + derived.links().askCount()
-
 /** One line of the timeline: what happened, what it was filed as, and whether that is settled. */
 data class LedgerEntry(
     val txn: Txn,

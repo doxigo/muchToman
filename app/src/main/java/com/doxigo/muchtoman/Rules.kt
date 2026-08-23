@@ -668,7 +668,4 @@ interface TxnClassDao {
 
     @Query("SELECT * FROM txn_class WHERE ref = :ref")
     suspend fun forRef(ref: String): TxnClass?
-
-    @Query("SELECT COUNT(*) FROM txn_class WHERE needs_review = 1")
-    suspend fun reviewCount(): Int
 }
