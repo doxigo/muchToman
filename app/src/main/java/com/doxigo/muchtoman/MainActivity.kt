@@ -291,6 +291,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 if (it.key == key) it.copy(excluded = excluded) else it
             },
             countedBefore = before,
+        )
+    }
 
     fun removeHolding(key: String) {
         persist(_state.value.holdings.filterNot { it.key == key })
@@ -312,6 +314,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (list.any { it.key == h.key }) return // undo tapped twice; it is already back
         persist(catalogOrdered(list + h))
     }
+
     fun clearWalletError(key: String) {
         if (key !in _state.value.walletErrors) return
         _state.update { it.copy(walletErrors = it.walletErrors - key) }
@@ -811,6 +814,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
      * The tombstone [deleteManualTxn] writes, written the other way: the row comes back with a
      * newer stamp, so the other phones learn it is back the same way they learnt it was gone.
      * Unreferenced for now: the UI wave wires the undo affordance to it.
@@ -831,6 +835,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     "UPDATE manual_txn SET deleted = 0, updated_at = MAX(?, updated_at + 1) " +
                         "WHERE id = ? AND deleted = 1",
                     arrayOf<Any>(System.currentTimeMillis(), ref.removePrefix("m:")),
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
+        }
+    }
+
     /** Which categories دخل و خرج leaves out. A way of reading the report, never a fact about money. */
     fun setReportExcluded(ids: Set<String>) {
         store.reportExcluded = ids
@@ -987,6 +999,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         pendingRestore = null
         _backup.update { it.copy(ready = false, readyWords = "", notice = null, failed = false) }
     }
+
     /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
     private val syncBase = BuildConfig.SYNC_URL
 
@@ -1040,24 +1053,29 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     /** Called from the Android deep link opened by a scanned family invitation. */
     fun acceptPairing(link: String?) {
         if (link.isNullOrBlank()) return
-        if (_state.value.family.paired) {
-            _state.update {
-                it.copy(family = it.family.copy(error = "این گوشی از قبل عضو یک خانواده است."))
-            }
-            return
-        }
-        if (parsePairingLink(link) == null) {
+        val pairing = parsePairingLink(link)
+        if (pairing == null) {
             _state.update { it.copy(family = it.family.copy(error = "کد خانواده معتبر نیست.")) }
             return
         }
-        _state.update {
-            it.copy(
-                family = it.family.copy(
-                    pendingPairing = link,
-                    error = null,
-                    pairingUrl = null,
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            // The stored session, not the state's paired flag: at a cold start through the
+            // link the flag has not been read yet, and the answer decides which question she
+            // is asked — join, nothing (her own family's QR), or replace.
+            val session = loadSession(DurableDb.get(app))
+            _state.update {
+                it.copy(
+                    family = when (pairingCase(session?.token, pairing.hid)) {
+                        PairingCase.JOIN ->
+                            it.family.copy(pendingPairing = link, error = null, pairingUrl = null)
+                        PairingCase.SAME_HOUSEHOLD ->
+                            it.family.copy(error = "این گوشی از قبل عضو یک خانواده است.")
+                        PairingCase.REJOIN ->
+                            it.family.copy(pendingRejoin = link, error = null, pairingUrl = null)
+                    },
                 )
-            )
+            }
         }
     }
 
@@ -1087,6 +1105,39 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * The confirmed replace, behind the family screen's armed two-tap: the network pair runs
+     * first — a dead code leaves the old household untouched — then the old family's local
+     * state is buried the way «نو کردن خانواده» buries it, and the join lands under the
+     * display name she already had. See [rejoinHousehold].
+     */
+    fun confirmRejoin() {
+        val link = _state.value.family.pendingRejoin ?: return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            // Her name walks with her: the old household's row, not a fresh ask.
+            val name = loadSession(durable)?.let { durable.familyMembers().get(it.member)?.name }
+                .orEmpty().ifBlank { store.name }
+            runCatching { rejoinHousehold(link, durable, name) }
+                .onSuccess { session ->
+                    _state.update { it.copy(family = it.family.copy(pendingRejoin = null)) }
+                    refreshFamily(session, note = "به خانواده جدید پیوستی.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "rejoin failed: $it")
+                    _state.update {
+                        it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
+                    }
+                }
+        }
+    }
+
+    /** She thought better of it: the old household stands, the scanned link is dropped. */
+    fun dismissRejoin() =
+        _state.update { it.copy(family = it.family.copy(pendingRejoin = null, error = null)) }
 
     fun setFamilyName(name: String) {
         val clean = name.filterNot(Char::isISOControl).trim().take(32)

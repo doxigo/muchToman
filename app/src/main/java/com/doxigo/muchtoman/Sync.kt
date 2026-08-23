@@ -225,27 +225,30 @@ fun localRefOfFamilyTxn(familyRef: String, memberId: String): String? {
 private fun memberRecordId(memberId: String): String = "member:$memberId"
 private fun categoryRecordId(familyRef: String): String = "category:${sha256Hex(familyRef)}"
 
+private fun claimFreshHousehold(base: String, member: String, device: String): SyncSession {
+    val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
+    val scope = "family:$hid"
+    val response = request(
+        "${base.trimEnd('/')}/v1/claim?hid=$hid",
+        "POST",
+        null,
+        SYNC_JSON.encodeToString(ClaimBody(listOf(scope), member, device)),
+    )
+    val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
+    return SyncSession(
+        base = base.trimEnd('/'),
+        token = "$hid.$secret",
+        device = device,
+        member = member,
+        scope = scope,
+        key = newScopeKey(),
+    )
+}
+
 suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String): SyncSession =
     withContext(Dispatchers.IO) {
         val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
-        val member = newIdentity()
-        val device = newIdentity()
-        val scope = "family:$hid"
-        val response = request(
-            "${base.trimEnd('/')}/v1/claim?hid=$hid",
-            "POST",
-            null,
-            SYNC_JSON.encodeToString(ClaimBody(listOf(scope), member, device)),
-        )
-        val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
-        val session = SyncSession(
-            base = base.trimEnd('/'),
-            token = "$hid.$secret",
-            device = device,
-            member = member,
-            scope = scope,
-            key = newScopeKey(),
-        )
+        val session = claimFreshHousehold(base, newIdentity(), newIdentity())
         saveSession(durable, session)
         durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
         durable.familyMembers().put(
@@ -328,13 +331,74 @@ fun parsePairingLink(value: String): PairingInvite? = runCatching {
     PairingInvite(base, hid, code, scope, key)
 }.getOrNull()
 
+/** The network half of a join: redeem the one-time code for a session. Persists nothing. */
+private fun pairHousehold(link: String): SyncSession {
+    val pairing = parsePairingLink(link) ?: error("invalid pairing link")
+    val member = newIdentity()
+    val device = newIdentity()
+    val response = request(
+        "${pairing.base}/v1/pair",
+        "POST",
+        "${pairing.hid}.${"0".repeat(64)}",
+        SYNC_JSON.encodeToString(PairBody(pairing.code, member, device)),
+    )
+    val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
+    return SyncSession(
+        base = pairing.base,
+        token = "${pairing.hid}.$secret",
+        device = device,
+        member = member,
+        scope = pairing.scope,
+        key = pairing.key,
+    )
+}
+
+/** The local half: the session becomes this phone's household, private until she says otherwise. */
+private suspend fun commitJoin(durable: DurableDb, session: SyncSession, memberName: String) {
+    saveSession(durable, session)
+    durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
+    durable.familyMembers().put(
+        FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
+    )
+}
+
 suspend fun joinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
     withContext(Dispatchers.IO) {
-        val pairing = parsePairingLink(link) ?: error("invalid pairing link")
-        val member = newIdentity()
-        val device = newIdentity()
-        val response = request(
-            "${pairing.base}/v1/pair",
+        val session = pairHousehold(link)
+        commitJoin(durable, session, memberName)
+        session
+    }
+
+/**
+ * What a scanned pairing link means on this phone. Decided from the stored token rather than
+ * any on-screen flag, because at a cold start through the link the state has not been read
+ * yet — and the hid *is* the household: the same one names her own family's QR (nothing to do),
+ * a different one asks to replace the household this phone is in.
+ */
+enum class PairingCase { JOIN, SAME_HOUSEHOLD, REJOIN }
+
+fun pairingCase(sessionToken: String?, linkHid: String): PairingCase = when {
+    sessionToken == null -> PairingCase.JOIN
+    sessionToken.substringBefore('.') == linkHid -> PairingCase.SAME_HOUSEHOLD
+    else -> PairingCase.REJOIN
+}
+
+/**
+ * A confirmed replace: the same join, from a phone that already belongs somewhere. The network
+ * pair runs first so a dead code costs nothing — the old household is untouched until the new
+ * one has said yes — and then, in one transaction, the old household is buried exactly as
+ * [renewHousehold] buries it and the new session is written. Nobody is kept: unlike a renewal,
+ * the pair minted a fresh member id, so the old own row belongs to a household this phone left.
+ */
+suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
+    withContext(Dispatchers.IO) {
+        val session = pairHousehold(link)
+        durable.withTransaction {
+            buryHousehold(durable, keepMember = null)
+            commitJoin(durable, session, memberName)
+        }
+        session
+    }
 /**
  * Cuts a member's devices off the household, effective on their very next request.
  *
@@ -381,7 +445,44 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             SYNC_JSON.encodeToString(PushBody(listOf(tombstone))),
         )
     }
+suspend fun renewHousehold(durable: DurableDb): SyncSession = withContext(Dispatchers.IO) {
+    val old = loadSession(durable) ?: error("no household to renew")
+    val session = claimFreshHousehold(old.base, old.member, old.device)
+    durable.withTransaction {
+        saveSession(durable, session)
+        // The device keeps its identity here, so its own member row rides into the new
+        // household; everything else about the old one is buried.
+        buryHousehold(durable, keepMember = session.member)
     }
+    session
+}
+/**
+ * Every local trace of the household this phone is leaving, buried in place — shared by
+ * [renewHousehold] and [rejoinHousehold], whose only difference is whether the member walks
+ * into the next household under the same identity. Callers run this inside the transaction
+ * that writes the replacement session, so a crash can never leave half a household.
+ */
+private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
+    // The cursor and the identity registration belong to a server this device will never
+    // speak to again; the publications are buried rather than deleted so the same rows keep
+    // their monotonic stamps when they are re-published under the new key.
+    durable.meta().put(DurableMeta(META_SYNC_SEQ, "0"))
+    durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "false"))
+    val publications = durable.syncPublications().all()
+    if (publications.isNotEmpty()) {
+        durable.syncPublications().putAll(publications.map { it.copy(deleted = true) })
+    }
+    val now = System.currentTimeMillis()
+    for (member in durable.familyMembers().all()) {
+        if (member.id == keepMember) continue
+        durable.familyMembers().put(member.copy(updatedAt = nextStamp(member.updatedAt, now), deleted = true))
+    }
+    // Their rows would double the moment they rejoin and re-push under a fresh member id,
+    // so the old copies go now, while the copy on screen is saying "از نو".
+    for (txn in durable.familyTxns().all()) {
+        durable.familyTxns().put(txn.copy(updatedAt = nextStamp(txn.updatedAt, now), deleted = true))
+    }
+}
 
 data class SyncResult(val sent: Int, val received: Int)
 

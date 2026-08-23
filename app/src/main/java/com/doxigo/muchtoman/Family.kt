@@ -128,6 +128,9 @@ fun CompanionScreen(
     suggestedName: String,
     onStart: (String) -> Unit,
     onJoin: (String) -> Unit,
+    /** The confirmed replace: bury this phone's household and join the scanned one. */
+    onRejoin: () -> Unit,
+    onDismissRejoin: () -> Unit,
     onNameChange: (String) -> Unit,
     onShareSmsChange: (Boolean) -> Unit,
     onInvite: () -> Unit,
@@ -199,6 +202,13 @@ fun CompanionScreen(
             Spacer(Modifier.height(Space.l))
 
             when {
+                // Before the plain join: a link on a phone that already belongs somewhere is
+                // this question, whatever the rest of the state says.
+                state.pendingRejoin != null -> RejoinCard(
+                    working = state.working,
+                    onConfirm = onRejoin,
+                    onDismiss = onDismissRejoin,
+                )
                 state.pendingPairing != null -> JoinCard(
                     name = name,
                     working = state.working,
@@ -469,6 +479,48 @@ private fun JoinCard(
  * A pairing link scanned on a phone that already has a household — the other side of
  * «نو کردن خانواده»: one member renewed, and this phone's QR-in-hand is the invitation to
  * follow. Nothing replaces anything silently; the words say what stops, and the confirm is
+ * the same armed two-tap every destructive thing here wears. Her display name rides along,
+ * so there is no name field to fill twice.
+ */
+@Composable
+private fun RejoinCard(
+    working: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Panel {
+        Text(
+            "پیوستن به خانواده جدید",
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(Space.s))
+        Text(
+            "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: " +
+                "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. " +
+                "تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Space.s))
+        ArmedAction(
+            label = if (working) "در حال پیوستن..." else "پیوستن به خانواده جدید",
+            armedLabel = "مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن",
+            enabled = !working,
+            onConfirmed = onConfirm,
+        )
+        TextButton(
+            onClick = onDismiss,
+            enabled = !working,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("بی‌خیال", fontSize = 15.sp) }
+    }
+}
+
 /**
  * Whose it is, at a glance. The initial, not a photo: there is no avatar anywhere in this app
  * and a family of four does not need four downloads to tell itself apart.
@@ -536,7 +588,8 @@ private fun MemberContribution(count: Int) {
     )
 }
 
-/** Somebody else in the family: what they are called, what they contribute, what they share. */
+/**
+ * Somebody else in the family: what they are called, what they contribute, what they share —
  * and the way out. Removal sits on the row it removes, behind the same two-tap confirm as every
  * other destructive thing here, with the honest sentence under the question: it cuts their
  * phone's sync, and it cannot un-see anything.
@@ -712,6 +765,8 @@ private fun NameField(value: String, onValueChange: (String) -> Unit) {
 data class FamilyState(
     val paired: Boolean = false,
     val pendingPairing: String? = null,
+    /** A scanned link for a *different* household than this phone's, waiting on the confirm. */
+    val pendingRejoin: String? = null,
     val memberId: String = "",
     val memberName: String = "",
     val members: List<FamilyMember> = emptyList(),

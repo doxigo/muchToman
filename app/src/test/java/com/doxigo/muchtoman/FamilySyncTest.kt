@@ -64,4 +64,24 @@ class FamilySyncTest {
         assertEquals("member-a", resolvedTransactionOwner("legacy", "member-b", "member-a"))
         assertEquals("member-b", resolvedTransactionOwner("transaction", "member-b", "member-a"))
     }
+    @Test
+    fun `a scanned link is a join, a shrug or a replace depending on the household it names`() {
+        val hid = "aabbccddeeff00112233445566778899"
+        val other = "ffeeddccbbaa99887766554433221100"
+        val token = "$hid.some-server-secret"
+
+        // No session: the ordinary join, no question to ask.
+        assertEquals(PairingCase.JOIN, pairingCase(null, hid))
+        assertEquals(PairingCase.JOIN, pairingCase(null, other))
+
+        // Her own household's QR: nothing to join and nothing to replace.
+        assertEquals(PairingCase.SAME_HOUSEHOLD, pairingCase(token, hid))
+
+        // A different household: only ever behind the confirmed replace.
+        assertEquals(PairingCase.REJOIN, pairingCase(token, other))
+
+        // A malformed stored token still cannot make its own household look foreign.
+        assertEquals(PairingCase.SAME_HOUSEHOLD, pairingCase(hid, hid))
+    }
+
 }

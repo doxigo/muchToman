@@ -502,11 +502,14 @@ private fun AppScreens(
         }
     }
 
-    LaunchedEffect(state.family.pendingPairing) {
-        // Scanning the invite must still land on the join card, and that card is two taps deep
-        // now. A pairing link can also arrive at the lite build — the intent filter is in the
-        // shared manifest — and that edition has no household to join it to.
-        if (!BuildConfig.LITE && state.family.pendingPairing != null) {
+    LaunchedEffect(state.family.pendingPairing, state.family.pendingRejoin) {
+        // Scanning the invite must still land on the join card — or, on a phone that already
+        // has a household, the replace question — and that card is two taps deep now. A pairing
+        // link can also arrive at the lite build — the intent filter is in the shared manifest
+        // — and that edition has no household to join it to.
+        if (!BuildConfig.LITE &&
+            (state.family.pendingPairing != null || state.family.pendingRejoin != null)
+        ) {
             settings = true
             companion = true
         }
@@ -589,6 +592,8 @@ private fun AppScreens(
             suggestedName = state.name,
             onStart = vm::startFamily,
             onJoin = vm::joinFamily,
+            onRejoin = vm::confirmRejoin,
+            onDismissRejoin = vm::dismissRejoin,
             onNameChange = vm::setFamilyName,
             onShareSmsChange = vm::setFamilySmsSharing,
             onInvite = vm::inviteDevice,
@@ -2330,6 +2335,9 @@ private fun BankAccountRow(
                         fontWeight = if (sure) FontWeight.Bold else null,
                         // Announced, or the two-tap safeguard is invisible to TalkBack — a
                         // second double-tap deletes with no confirmation ever perceived.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
             }
         }
     }
