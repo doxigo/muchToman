@@ -1177,6 +1177,34 @@ async function buildRates(): Promise<Response> {
   });
 }
 
+/**
+ * One in-flight build per isolate: N requests that miss the cache in the same instant become
+ * one upstream fan-out instead of N. This matters more here than the usual stampede does,
+ * because bonbast fingerprint-blocks bursts — ten simultaneous token dances from one IP is
+ * exactly the shape it punishes. Per-isolate, like every module-scoped thing on Workers, so
+ * it is coalescing rather than a global lock; that is all it needs to be.
+ *
+ * Nobody consumes the shared Response itself — every caller (and the cache) gets a clone, so
+ * the original's body is never disturbed and stays cloneable for the next waiter.
+ */
+let ratesInFlight: Promise<Response> | null = null;
+
+async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext): Promise<Response> {
+  if (ratesInFlight == null) {
+    const building = buildRates().finally(() => {
+      ratesInFlight = null;
+    });
+    ratesInFlight = building;
+    const res = await building;
+    if (res.status === 200) {
+      ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
+        console.error(JSON.stringify({ message: 'rates cache write failed', error: errorMessage(error) }));
+      }));
+    }
+    return res.clone();
+  }
+  return (await ratesInFlight).clone();
+}
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -1249,13 +1277,7 @@ export default {
     // location after deployment. There is deliberately no public cache-bypass query: it let an
     // unauthenticated caller force the full upstream fan-out on every request.
     const hit = await cache.match(key);
-    if (hit) return hit;
-
-    const res = await buildRates();
-    if (res.status === 200) {
-      ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
-        console.error(JSON.stringify({ message: 'rates cache write failed', error: errorMessage(error) }));
-      }));
+    const res = hit ?? await coalescedRates(cache, key, ctx);
 
     // Conditional requests: the body is mostly the coin catalogue, and mobile data there is
     // metered. A phone re-asking within the TTL with the etag it already has gets 304 and
