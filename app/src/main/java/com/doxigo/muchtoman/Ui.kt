@@ -3021,6 +3021,14 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
         Bank.SHAHR -> R.drawable.ic_bank_shahr
         Bank.SINA -> R.drawable.ic_bank_sina
         Bank.POST_BANK -> R.drawable.ic_bank_post
+        Bank.MASKAN -> R.drawable.ic_bank_maskan
+        Bank.GARDESHGARI -> R.drawable.ic_bank_gardeshgari
+        Bank.SARMAYEH -> R.drawable.ic_bank_sarmayeh
+        Bank.KARAFARIN -> R.drawable.ic_bank_karafarin
+        Bank.MEHR_IRAN -> R.drawable.ic_bank_mehr_iran
+        Bank.TOSEE_TAAVON -> R.drawable.ic_bank_tosee_taavon
+        Bank.IRAN_ZAMIN -> R.drawable.ic_bank_iran_zamin
+        Bank.SANAT_MADAN -> R.drawable.ic_bank_sanat_madan
         Bank.OTHER -> null
     }
 

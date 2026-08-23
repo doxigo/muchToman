@@ -80,6 +80,16 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     SHAHR("بانک شهر", emptyList()),
     SINA("بانک سینا", emptyList()),
     POST_BANK("پست بانک", emptyList()),
+    MASKAN("بانک مسکن", emptyList()),
+    GARDESHGARI("بانک گردشگری", emptyList()),
+    SARMAYEH("بانک سرمایه", emptyList()),
+    KARAFARIN("بانک کارآفرین", emptyList()),
+    // Before ایران زمین on purpose: a Mehr Iran body contains «ایران» too, and [guessBank]
+    // takes the first keyword that matches, so «قرض‌الحسنه» has to be asked before «ایران».
+    MEHR_IRAN("بانک قرض‌الحسنه مهر ایران", emptyList()),
+    TOSEE_TAAVON("بانک توسعه تعاون", emptyList()),
+    IRAN_ZAMIN("بانک ایران زمین", emptyList()),
+    SANAT_MADAN("بانک صنعت و معدن", emptyList()),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build
@@ -698,8 +708,10 @@ private val Bank.keyword: String? get() = fa.split(' ').firstOrNull { it != "ب�
 fun guessBank(body: String): Bank? {
     if (isIgnoredBankSms("", body)) return null
     val text = normalise(body)
+    // The keyword is normalised like the text, or «قرض‌الحسنه» — whose ZWNJ the text no
+    // longer has — could never match anything.
     return Bank.entries.firstOrNull { b ->
-        b.keyword?.let { containsWord(text, it) } == true
+        b.keyword?.let { containsWord(text, normalise(it)) } == true
     }
 }
 

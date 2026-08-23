@@ -195,6 +195,7 @@ class MoneyTest {
         // …while a sub-Rial binary hair under a figure she really has is not eaten.
         assertEquals(faNumber(3.0), faNumber(2.9999999999))
     }
+
     @Test
     fun `numbers are spelled out in persian`() {
         assertEquals("ده میلیون و هشتصد هزار", faWords(10_800_000))
@@ -505,7 +506,10 @@ class MoneyTest {
         // An operator's مانده is data, not money; a bank nowhere in the list suggests nothing;
         // a small figure is not a balance; chatter is chatter.
         assertTrue(!looksLikeBankSms("مانده اینترنت شما: 2,500,000 کیلوبایت"))
-        assertNull(guessBank("جشنواره بانک مسکن! مانده 5,000,000"))
+        assertNull(guessBank("جشنواره بانک ملل! مانده 5,000,000"))
+        // مسکن joined the name-only list, so what used to be the "nowhere in the list"
+        // example is now suggestible like تجارت above.
+        assertEquals(Bank.MASKAN, guessBank("جشنواره بانک مسکن! مانده 5,000,000"))
         // آینده is in the enum but still on IGNORED_BANKS, which wins: being listed by name makes
         // a bank suggestible, and the ignore list is the separate, deliberate veto over that.
         assertNull(guessBank("بانک آینده\nخرید اینترنتی\nمانده 5,000,000"))
