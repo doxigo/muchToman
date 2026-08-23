@@ -10,7 +10,12 @@
  * is exactly why the Android app is the household's sensor and this is the companion.
  */
 
-const SHELL = 'muchtoman-shell-v1';
+// The name is the version, and bumping it is how the cache is emptied: the fetch handler below
+// `cache.put`s every asset it ever serves — including hashed bundles whose names change on every
+// deploy — and nothing else ever removes an entry, so without a bump the old builds pile up for
+// ever. Bump it whenever the shell's shape changes; activate deletes every cache that is not
+// this one.
+const SHELL = 'muchtoman-shell-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
