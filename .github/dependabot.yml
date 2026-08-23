@@ -1,0 +1,24 @@
+# Actions are SHA-pinned and the toolchain is version-catalogued; without this,
+# both age silently — there is no other reminder to bump anything.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /worker
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /sync
+    schedule:
+      interval: monthly
+  - package-ecosystem: npm
+    directory: /pwa
+    schedule:
+      interval: monthly
