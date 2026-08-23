@@ -29,8 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -105,6 +107,12 @@ fun ManualTxnSheet(
     androidx.compose.runtime.LaunchedEffect(choices) {
         if (categoryId != null && choices.none { it.id == categoryId }) categoryId = null
     }
+    // Raised by a save tap with no category picked. The grid cannot flag itself the way the
+    // amount and clock fields do, so the refusal's words live under it instead.
+    var missingCategory by remember { mutableStateOf(false) }
+    // And by one with no amount at all: the field's own error only speaks over a malformed
+    // figure, so an untouched field refused in silence.
+    var missingAmount by remember { mutableStateOf(false) }
 
     val usable = rial != null && categoryId != null && sinceMidnight != null
 
@@ -142,6 +150,13 @@ fun ManualTxnSheet(
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 supportingText = when {
+                    amount.isBlank() && missingAmount -> ({
+                        Text(
+                            "مبلغش رو بنویس.",
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    })
                     amount.isNotBlank() && rial == null -> ({
                         Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
                     })
@@ -173,6 +188,18 @@ fun ManualTxnSheet(
                 onPick = { categoryId = it.id },
                 selectedLabel = "انتخاب‌شده",
             )
+            if (missingCategory && categoryId == null) {
+                Text(
+                    "دسته‌اش رو انتخاب کن.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .padding(top = Space.s, start = Space.xs)
+                        // Announced, so the refusal exists for someone listening too — the
+                        // words appearing under a grid mid-sheet are easy to never reach.
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
 
             SheetLabel("کِی؟")
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -240,11 +267,18 @@ fun ManualTxnSheet(
             PillButton(
                 "ثبت تراکنش",
                 {
+                    // The pill never greys out — a dead button explains nothing — so a tap
+                    // that cannot save has to say why. A malformed amount and the clock speak
+                    // for themselves; a blank amount and the category need this tap to raise
+                    // their words.
+                    missingCategory = categoryId == null
+                    missingAmount = amount.isBlank()
                     val cleanRial = rial ?: return@PillButton
                     val minute = sinceMidnight ?: return@PillButton
+                    val category = categoryId ?: return@PillButton
                     val at = tehranDayStart(day) + minute
                     val signed = if (outgoing) -cleanRial else cleanRial
-                    close { onSave(signed, categoryId, merchant, note, at) }
+                    close { onSave(signed, category, merchant, note, at) }
                 },
                 voice = if (usable) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
                 modifier = Modifier.fillMaxWidth(),
