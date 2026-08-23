@@ -17,8 +17,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
 
@@ -231,22 +234,43 @@ private const val LEDGER_WATCH_NOW_DELAY_SECONDS = 5L
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
-        val fromBank = runCatching {
-            Telephony.Sms.Intents.getMessagesFromIntent(intent)
-                .any { bankOf(it?.originatingAddress.orEmpty(), extra) != null }
-        }.getOrDefault(false)
-        if (!fromBank) return
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            LEDGER_WATCH_NOW_WORK,
-            // APPEND_OR_REPLACE, never REPLACE: a purchase and its balance line arrive as two
-            // messages seconds apart, and REPLACE would cancel a run already past its marks but
-            // not yet past its notify — an alert written down as said and never posted. Appending
-            // runs again after, and a run with nothing new says nothing.
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
-            OneTimeWorkRequestBuilder<LedgerWatchWorker>()
-                .setInitialDelay(LEDGER_WATCH_NOW_DELAY_SECONDS, TimeUnit.SECONDS)
-                .build(),
-        )
+        // Everything below used to run right here, on Main: Store() faults the whole prefs file
+        // in on first touch, and extraBankNumbers is a JSON decode — paid inside whatever frame
+        // the foreground app was drawing. goAsync moves it to a worker thread. The platform's
+        // budget for a goAsync receiver is about ten seconds before it declares the process
+        // hung; this work is milliseconds, and the budget is respected by keeping the handler
+        // this small — never by starting anything slow here. finish() must run on every path,
+        // or the system holds the process (and its wakelock) for that whole allowance.
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                val store = Store(context)
+                if (!store.smsEnabled) return@launch
+                // getMessagesFromIntent reassembles a long message's parts, but the sender is on every
+                // part, so any() is asking one question however the message was split. Wrapped because a
+                // malformed PDU from a broken SMSC throws inside the platform's parser, and a message this
+                // app cannot even look at must not crash it.
+                val extra = extraLookup(store.extraBankNumbers)
+                val fromBank = runCatching {
+                    Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                        .any { bankOf(it?.originatingAddress.orEmpty(), extra) != null }
+                }.getOrDefault(false)
+                if (!fromBank) return@launch
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    LEDGER_WATCH_NOW_WORK,
+                    // APPEND_OR_REPLACE, never REPLACE: a purchase and its balance line arrive as two
+                    // messages seconds apart, and REPLACE would cancel a run already past its marks but
+                    // not yet past its notify — an alert written down as said and never posted. Appending
+                    // runs again after, and a run with nothing new says nothing.
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
+                    OneTimeWorkRequestBuilder<LedgerWatchWorker>()
+                        .setInitialDelay(LEDGER_WATCH_NOW_DELAY_SECONDS, TimeUnit.SECONDS)
+                        .build(),
+                )
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }
 
