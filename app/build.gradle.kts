@@ -153,6 +153,18 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric drives the durable migrations on the JVM; the committed schema JSON
+            // rides in as test assets so MigrationTestHelper can rebuild each old version.
+            isIncludeAndroidResources = true
+        }
+    }
+
+    sourceSets.getByName("test") {
+        assets.srcDir("schemas")
+    }
 }
 
 androidComponents {
@@ -194,4 +206,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
 }
