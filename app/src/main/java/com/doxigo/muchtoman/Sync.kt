@@ -130,6 +130,16 @@ internal fun parseTombstone(plain: String): SyncTombstonePayload? =
     runCatching { SYNC_JSON.decodeFromString<SyncTombstonePayload>(plain) }
         .getOrNull()?.takeIf { it.deleted && it.id.isNotBlank() }
 
+/**
+ * The client half of the server's 24-hour stamp clamp, wider so an honest offline device that
+ * pushed through a skewed peer still converges: a record claiming to be written more than two
+ * days in the future is treated as written at the horizon, so one wrong clock — or one device
+ * that dodges the server clamp — cannot pin a record against every later honest edit.
+ */
+internal const val MAX_SYNC_STAMP_SKEW_MS = 48L * 60 * 60 * 1000
+
+internal fun clampSyncStamp(stamp: Long, now: Long): Long = minOf(stamp, now + MAX_SYNC_STAMP_SKEW_MS)
+
 @Serializable
 private data class WireRecord(
     val id: String,
@@ -176,7 +186,14 @@ private data class SecretBody(
 @Serializable
 private data class CodeBody(val code: String = "")
 
+@Serializable
 private data class RevokeBody(val member: String)
+
+@Serializable
+private data class ClampedStamp(val id: String = "", val updatedAt: Long = 0)
+
+@Serializable
+private data class PushAck(val seq: Long = 0, val clamped: List<ClampedStamp> = emptyList())
 private fun request(
     url: String,
     method: String,
@@ -738,6 +755,7 @@ private suspend fun applyTransaction(
     session: SyncSession,
     record: WireRecord,
     payload: SyncEntry,
+    now: Long,
 ): Boolean {
     val owner = resolvedTransactionOwner(record.kind, record.ownerMemberId, record.authorMemberId)
     if (owner.isBlank() || owner == session.member) return false
@@ -790,7 +808,9 @@ private suspend fun applyTransaction(
         val localRef = familyLocalRef(familyRef)
         val existingDecision = durable.decisions().forRef(localRef)
             .firstOrNull { it.kind == DecisionKind.CATEGORY }
-        val categoryUpdatedAt = payload.categoryUpdatedAt.coerceAtLeast(0L)
+        // Same skew bound as the envelope stamp: this one rides inside the payload, so it needs
+        // its own clamp or a skewed editor pins the category for ever.
+        val categoryUpdatedAt = clampSyncStamp(payload.categoryUpdatedAt.coerceAtLeast(0L), now)
         val categoryEditorId = payload.categoryEditorId.ifBlank { owner }
         val incomingWins = categoryUpdateWins(
             existingDecision?.updatedAt,
@@ -910,6 +930,7 @@ private suspend fun applyRecord(
     durable: DurableDb,
     session: SyncSession,
     record: WireRecord,
+    now: Long,
 ): Boolean {
     if (record.device == session.device) return false
     val plain = openSealed(session.key, record.nonce, record.body) ?: return false
@@ -934,9 +955,11 @@ private suspend fun applyRecord(
         "category" -> runCatching { SYNC_JSON.decodeFromString<SyncCategoryPayload>(plain) }
             .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
+            .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
         else -> false
     }
 }
+
 
 suspend fun syncNow(
     durable: DurableDb,
@@ -948,13 +971,19 @@ suspend fun syncNow(
     val outgoing = outgoingRecords(durable, derived, session, now)
     var sent = 0
     for (chunk in outgoing.chunked(200)) {
-        request(
+        val response = request(
             "${session.base}/v1/sync",
             "POST",
             session.token,
             SYNC_JSON.encodeToString(PushBody(chunk.map { it.wire })),
         )
-        val publications = chunk.mapNotNull { it.publication }
+        // The server clamps far-future stamps and answers with what it stored; the publication
+        // marks take the server's word so the next nextStamp builds on a stamp that can win.
+        val clamped = runCatching { SYNC_JSON.decodeFromString<PushAck>(response) }
+            .getOrNull()?.clamped?.associate { it.id to it.updatedAt }.orEmpty()
+        val publications = chunk.mapNotNull { prepared ->
+            prepared.publication?.let { pub -> clamped[pub.id]?.let { pub.copy(updatedAt = it) } ?: pub }
+        }
         if (publications.isNotEmpty()) durable.syncPublications().putAll(publications)
         sent += chunk.size
     }
@@ -969,7 +998,12 @@ suspend fun syncNow(
         val nextCursor = maxOf(cursor, pulled.seq)
         received += durable.withTransaction {
             var applied = 0
-            for (record in pulled.records) if (applyRecord(durable, session, record)) applied++
+            for (record in pulled.records) {
+                // The client half of the skew bound, in one choke point: everything downstream
+                // compares and stores the clamped stamp.
+                val bounded = record.copy(updatedAt = clampSyncStamp(record.updatedAt, now))
+                if (applyRecord(durable, session, bounded, now)) applied++
+            }
             durable.meta().put(DurableMeta(META_SYNC_SEQ, nextCursor.toString()))
             applied
         }

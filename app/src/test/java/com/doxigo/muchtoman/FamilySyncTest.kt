@@ -101,4 +101,14 @@ class FamilySyncTest {
         assertEquals(PairingCase.SAME_HOUSEHOLD, pairingCase(hid, hid))
     }
 
+    @Test
+    fun `stamps from the far future are clamped so one skewed clock cannot pin a record`() {
+        val now = 1_700_000_000_000L
+        val horizon = now + MAX_SYNC_STAMP_SKEW_MS
+        assertEquals(now, clampSyncStamp(now, now))
+        assertEquals(now - 1, clampSyncStamp(now - 1, now))
+        assertEquals(horizon, clampSyncStamp(horizon, now))
+        assertEquals(horizon, clampSyncStamp(horizon + 1, now))
+        assertEquals(horizon, clampSyncStamp(Long.MAX_VALUE, now))
+    }
 }
