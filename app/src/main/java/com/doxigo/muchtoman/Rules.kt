@@ -375,10 +375,17 @@ data class Rule(
             pMinRial, pMaxRial, pInstrument,
         ).size
 
-    fun matches(txn: Txn): Boolean {
+    fun matches(txn: Txn, addrKey: String? = null): Boolean {
         if (!enabled || deleted) return false
         pMerchantNorm?.let { if (txn.merchantNorm != it) return false }
         pMerchantLike?.let { if (!txn.merchantNorm.contains(it)) return false }
+        // The sender is the message's, not the row's — sms_source keeps it frozen and derive()
+        // threads it in beside each transaction. This predicate was persisted and counted in
+        // specificity from the first release but never evaluated, so a merchant-less «همیشه»
+        // rule quietly degenerated to (bank, direction) and refiled everything that bank ever
+        // sent. A rule that names a sender must not fire when the sender is unknown — a manual
+        // or family row — because "unknown" is not "any".
+        pAddrKey?.let { if (addrKey != it) return false }
         pBank?.let { if (txn.bank != it) return false }
         pChannel?.let { if (txn.channel != it) return false }
         pDirection?.let { if (txn.direction != it) return false }
@@ -462,12 +469,16 @@ private fun confidenceOf(rule: Rule): Int = when {
  * last tiebreak is a sync requirement, not tidiness: without it two rules of equal standing
  * classify differently on two phones and the family ledger disagrees with itself for reasons
  * nobody can debug.
+ *
+ * [addrKey] is the frozen sender key of the message behind [txn], for [Rule.matches] to hold
+ * sender-keyed rules against. Null for a row with no message behind it.
  */
 fun classify(
     txn: Txn,
     rules: List<Rule>,
     pinned: String? = null,
     transferRefs: Set<String> = emptySet(),
+    addrKey: String? = null,
 ): TxnClass {
     if (pinned != null) {
         return TxnClass(txn.ref, pinned, null, Confidence.USER_PINNED, needsReview = false)
@@ -477,7 +488,7 @@ fun classify(
         return TxnClass(txn.ref, CAT_TRANSFER, null, Confidence.USER_PINNED, needsReview = false)
     }
     val winner = rules
-        .filter { it.matches(txn) }
+        .filter { it.matches(txn, addrKey) }
         .maxWithOrNull(
             compareBy({ it.priority }, { it.specificity }, { it.updatedAt }, { it.id })
         )

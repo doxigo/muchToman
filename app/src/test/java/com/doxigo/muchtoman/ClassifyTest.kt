@@ -106,12 +106,29 @@ class ClassifyTest {
         assertTrue(shipped.confidence < REVIEW_BELOW)
 
         val hers = ruleFrom(atm, CAT_CASH, addrKey = "20004861", now = 5)
-        val after = classify(atm, BUILTIN_RULES + hers)
+        val after = classify(atm, BUILTIN_RULES + hers, addrKey = "20004861")
         assertEquals(CAT_CASH, after.categoryId)
         assertTrue("and never again after that", !after.needsReview)
         assertTrue(after.confidence >= REVIEW_BELOW)
     }
 
+    @Test
+    fun `a rule minted from one sender never fires on another sender of the same bank`() {
+        // Merchant-less, so the rule keys on the sender — the closest the message came to naming
+        // who was paid. The sender predicate was once persisted but never evaluated, and the rule
+        // degenerated to (bank, direction), refiling everything the bank ever sent.
+        val hers = ruleFrom(txn(signed = -1000, channel = "atm"), CAT_CASH, addrKey = "20004861", now = 5)
+
+        val sameSender = classify(txn(signed = -900, channel = "atm"), listOf(hers), addrKey = "20004861")
+        assertEquals(CAT_CASH, sameSender.categoryId)
+
+        val otherSender = classify(txn(signed = -900, channel = "atm"), listOf(hers), addrKey = "998877")
+        assertEquals(CAT_UNCATEGORISED, otherSender.categoryId)
+
+        // No sender at all — a manual row, say. "Unknown" is not "any".
+        val noSender = classify(txn(signed = -900, channel = "atm"), listOf(hers))
+        assertEquals(CAT_UNCATEGORISED, noSender.categoryId)
+    }
     @Test
     fun `always-do-this keys on the merchant when there is one and the sender when there is not`() {
         val withMerchant = txn(signed = -1000, merchant = "فروشگاه رفاه", channel = "pos")

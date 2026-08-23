@@ -349,7 +349,9 @@ suspend fun derive(
 ): Int {
     val started = System.currentTimeMillis()
     val sources = durable.smsSource().allOldestFirst()
-    val bodies = sources.associate { it.srcHash to it.body }
+    // The frozen sender key of each message, for sender-keyed rules: it lives on the message
+    // and not on the row, so it rides across in a map the way every durable→derived join does.
+    val addrKeys = sources.associate { it.srcHash to it.addrKey }
 
     // Everything she has decided, loaded once. The two databases cannot be joined — that is the
     // point of them being two files — so the join happens here, in a map, keyed by the message.
@@ -387,7 +389,7 @@ suspend fun derive(
 
         val transfers = transferRefs(links)
         derived.classes().putAll(
-            all.map { classify(it, rules, pinned[it.ref], transfers) }
+            all.map { classify(it, rules, pinned[it.ref], transfers, addrKeys[it.srcHash]) }
         )
     }
     derived.meta().put(LedgerMeta(META_PARSER_VER, PARSER_VERSION.toString()))
