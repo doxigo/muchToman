@@ -33,6 +33,7 @@ function escape(value: string): string {
 interface StoredSession {
   base: string;
   token: string;
+  issuedAt?: number;
   device: string;
   member?: string;
   name?: string;
@@ -43,13 +44,23 @@ interface StoredSession {
 async function loadSession(): Promise<Session | null> {
   const stored = await getMeta<StoredSession>('session');
   if (!stored) return null;
-  const migrated: Required<StoredSession> = {
-    ...stored,
+  // The raw key bytes used to sit in this record beside the token, which defeated the point of
+  // a non-extractable CryptoKey: anything that could read IndexedDB could lift the key itself.
+  // Structured clone stores the CryptoKey object directly, so the bytes exist nowhere at rest —
+  // an old-shape record is imported once, rewritten, and the bytes are gone.
+  const legacyKey = Array.isArray(stored.key);
+  const session: Session = {
+    base: stored.base,
+    token: stored.token,
+    issuedAt: stored.issuedAt ?? Date.now(),
+    device: stored.device,
     member: stored.member ?? memberId(),
     name: stored.name?.trim() || 'عضو خانواده',
+    scope: stored.scope,
+    key: legacyKey ? await importKey(new Uint8Array(stored.key as number[])) : (stored.key as CryptoKey),
   };
-  if (!stored.member || !stored.name) await setMeta('session', migrated);
-  return { ...migrated, key: await importKey(new Uint8Array(migrated.key)) };
+  if (legacyKey || !stored.member || !stored.name || !stored.issuedAt) await setMeta('session', session);
+  return session;
 }
 
 async function redeemPairing(pairing: Pairing, name: string): Promise<Session> {
@@ -62,17 +73,19 @@ async function redeemPairing(pairing: Pairing, name: string): Promise<Session> {
   });
   if (!res.ok) throw new Error('این کد دیگه معتبر نیست.');
   const { secret } = (await res.json()) as { secret: string };
-  const stored: Required<StoredSession> = {
+  const session: Session = {
     base: pairing.url,
     token: `${pairing.hid}.${secret}`,
+    issuedAt: Date.now(),
     device,
     member,
     name: name.trim().slice(0, 32),
     scope: pairing.scope,
-    key: [...pairing.key],
+    // Imported before it is stored, so what lands in IndexedDB is only ever the
+    // non-extractable object — the raw bytes stay in the URL fragment they arrived in.
+    key: await importKey(pairing.key),
   };
-  await setMeta('session', stored);
-  const session = { ...stored, key: await importKey(pairing.key) };
+  await setMeta('session', session);
   await saveProfile(session);
   return session;
 }
