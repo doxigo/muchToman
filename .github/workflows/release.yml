@@ -208,6 +208,17 @@ jobs:
           cp app/build/outputs/mapping/liteRelease/mapping.txt \
              muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt
 
+          # Sideload users have no store checking hashes for them, and the APKs get mirrored
+          # (Obtainium, Telegram forwards). One file of sums, written where the APKs were
+          # built, lets anyone verify a copy came through intact.
+          sha256sum \
+            muchtoman-${GITHUB_REF_NAME}.apk \
+            muchtoman-lite-${GITHUB_REF_NAME}.apk \
+            muchtoman-${GITHUB_REF_NAME}-mapping.txt \
+            muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt \
+            > muchtoman-${GITHUB_REF_NAME}-sha256sums.txt
+          cat muchtoman-${GITHUB_REF_NAME}-sha256sums.txt
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-artifacts
@@ -216,6 +227,7 @@ jobs:
             muchtoman-${{ github.ref_name }}-mapping.txt
             muchtoman-lite-${{ github.ref_name }}.apk
             muchtoman-lite-${{ github.ref_name }}-mapping.txt
+            muchtoman-${{ github.ref_name }}-sha256sums.txt
             notes.md
           if-no-files-found: error
           retention-days: 1
@@ -225,16 +237,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-artifacts
+      # The sums file says the bytes are intact; this says where they came from. Signed
+      # provenance ties each APK to this exact workflow run, checkable by anyone with
+      # `gh attestation verify muchtoman-vX.Y.Z.apk --repo <this repo>`.
+      - uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            muchtoman-${{ github.ref_name }}.apk
+            muchtoman-lite-${{ github.ref_name }}.apk
       - run: |
           gh release create "$GITHUB_REF_NAME" \
             "muchtoman-${GITHUB_REF_NAME}.apk" \
             "muchtoman-${GITHUB_REF_NAME}-mapping.txt" \
             "muchtoman-lite-${GITHUB_REF_NAME}.apk" \
             "muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt" \
+            "muchtoman-${GITHUB_REF_NAME}-sha256sums.txt" \
             --notes-file notes.md --title "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY"
         env:
