@@ -523,7 +523,17 @@ suspend fun ledgerEntries(
     durable: DurableDb,
     limit: Int = LEDGER_VIEW_LIMIT,
 ): LedgerEntries {
-    val transactions = derived.txn().newest(limit)
+    // One snapshot of derived.db: a derive rewrites transactions, links and classes in a single
+    // transaction, and reading them one call at a time could straddle it — transactions from
+    // before the rebuild, links from after — which is how the filing note once inflated its
+    // count. The durable reads stay outside: nothing rewrites those tables underneath a read.
+    val (transactions, links, classes) = derived.withTransaction {
+        Triple(
+            derived.txn().newest(limit),
+            derived.links().all(),
+            derived.classes().all().associateBy { it.ref },
+        )
+    }
     val categories = durable.categories().all()
     // Every category ever, for the names — a transaction filed under one she has since retired
     // still says what she filed it as. `categories` stays the live list: that one is the picker.
@@ -535,8 +545,6 @@ suspend fun ledgerEntries(
     val notes = durable.decisions().ofKind(DecisionKind.NOTE)
         .mapNotNull { d -> d.value?.takeIf { it.isNotBlank() }?.let { d.ref to it } }
         .toMap()
-    val links = derived.links().all()
-    val classes = derived.classes().all().associateBy { it.ref }
     val hidden = hiddenRefs(links)
     val transfers = transferRefs(links)
     val entries = transactions.map { txn ->
