@@ -274,6 +274,7 @@ fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
         }
     }
 }
+
 /**
  * One transient notice at a time, app-wide: the words, and at most one way to act on them.
  * Posted by the two deletes (undo is their second net — the two-tap arming stays) and by the
@@ -369,6 +370,21 @@ private fun TransientNoticeBand(notices: TransientNotices, modifier: Modifier = 
         }
     }
 }
+
+/**
+ * One phone column on any width: the app installs on tablets too, and a ledger row stretched
+ * across 900dp is a line nobody's eye can track back. Content is capped and centred; the
+ * paper behind it and the tab bar below stay full-bleed. Under the cap the constraints pass
+ * through untouched, so a phone never feels this exists.
+ */
+@Composable
+private fun WidthCap(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 640.dp),
+        ) { content() }
     }
 }
 
@@ -701,7 +717,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
       // The tabs that are their own screens. They sit inside the Scaffold rather than
       // returning early, so the bar stays under them and there is always a way out.
       if (tab == Tab.LEDGER) {
-        TimelineScreen(
+        WidthCap {
+          TimelineScreen(
             ledger = state.ledger,
             bottomInset = pad.calculateBottomPadding(),
             // Only where there is something to be quiet about, exactly as on آینده: a ledger that
@@ -711,11 +728,13 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onAskNotify = askNotify,
             onOpen = { transactionRef = it.txn.ref },
             onAddTxn = { addingTxn = true },
-        )
+          )
+        }
         return@Scaffold
       }
       if (tab == Tab.BUDGET) {
-        BudgetScreen(
+        WidthCap {
+          BudgetScreen(
             budgets = state.ledger.budgets,
             goals = state.ledger.goals,
             categories = state.ledger.categories,
@@ -730,7 +749,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onDelete = vm::deleteGoal,
             onAskNotify = askNotify,
             bottomInset = pad.calculateBottomPadding(),
-        )
+          )
+        }
         return@Scaffold
       }
       if (tab == Tab.REPORT) {
@@ -769,7 +789,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 state.ledger.worthIt,
             )
         }
-        ReportScreen(
+        WidthCap {
+          ReportScreen(
             history = state.history,
             current = state.totals.toman,
             composition = composition,
@@ -791,7 +812,8 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             // still opens this from the گزارش button on its field, so there it keeps the
             // «برگشت» it had as an overlay — see [tabs].
             onBack = ({ tab = tabs.first() }).takeIf { tabs.size == 1 },
-        )
+          )
+        }
         return@Scaffold
       }
 
@@ -804,6 +826,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
         var pulled by remember { mutableStateOf(false) }
         LaunchedEffect(state.refreshing) { if (!state.refreshing) pulled = false }
         val pullState = rememberPullToRefreshState()
+        WidthCap {
         PullToRefreshBox(
             isRefreshing = state.refreshing && pulled,
             onRefresh = { pulled = true; vm.refreshAll() },
@@ -1033,6 +1056,7 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             if (portfolio && state.totals.missing.isNotEmpty()) {
                 item { MissingNote(state.totals.missing, state.coins, state.stocks) }
             }
+        }
         }
         }
 
