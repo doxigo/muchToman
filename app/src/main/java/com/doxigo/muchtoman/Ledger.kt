@@ -400,7 +400,8 @@ interface BalanceAnchorDao {
  * [sender], [addrKey], [body] and [at] are stored rather than only hashed, which is what makes
  * [srcHash] reversible: if a v2 of the hash is ever forced, a migration recomputes it from these
  * columns and rewrites every decision that points at it, in one transaction. A hash whose inputs
- * you did not keep is a trapdoor.
+ * you did not keep is a trapdoor. The one exception is a row whose stamp [clampAt] had to move,
+ * where the hash keeps the raw stamp the columns no longer hold — see [ingestBankSms].
  */
 @Entity(
     tableName = "sms_source",
@@ -414,7 +415,7 @@ data class SmsSource(
     @ColumnInfo(name = "addr_key") val addrKey: String,
     /** Verbatim. Never normalised on the way in; normalising is the parser's job, downstream. */
     val body: String,
-    /** `Telephony.Sms.DATE`, epoch milliseconds. */
+    /** `Telephony.Sms.DATE`, epoch milliseconds — [clampAt]-ed at ingest, see [ingestBankSms]. */
     val at: Long,
     @ColumnInfo(name = "ingested_at") val ingestedAt: Long,
     /** Which generation of [srcHash] produced the key. Bumped only by a hash migration. */
@@ -443,6 +444,10 @@ interface SmsSourceDao {
 
     @Query("SELECT MAX(at) FROM sms_source")
     suspend fun newestAt(): Long?
+
+    /** When something last actually arrived, which is what [clockRunsAhead] holds `now` against. */
+    @Query("SELECT MAX(ingested_at) FROM sms_source")
+    suspend fun newestIngestedAt(): Long?
 
     @Query("SELECT addr_key FROM sms_source WHERE src_hash = :srcHash")
     suspend fun addrKeyOf(srcHash: String): String?
@@ -502,6 +507,34 @@ fun sourceHorizon(now: Long): Long =
 
 /** Below this, a stored message is past the horizon plus its grace and can go. */
 fun sourcePruneFloor(now: Long): Long = sourceHorizon(now) - SOURCE_GRACE_DAYS * DAY_MS
+
+/** Slack for a bank or carrier clock running a little fast; further out than this is not a time. */
+const val AT_FUTURE_SLACK_MS = 48 * 60 * 60 * 1000L
+
+/**
+ * A timestamp forced into the span the ledger can live with.
+ *
+ * A restore tool that writes `DATE` in microseconds stamps a message fifty thousand years out;
+ * a negative one stamps it before time. Either way the figure in the body is real money and only
+ * its stamp is nonsense — so the money is kept and the day approximated, never the other way
+ * round. Left unclamped, the row sorts newest for ever, sits under [SmsSourceDao.trimToNewest]'s
+ * protection while real months fall off, and derives a day the Jalali arithmetic cannot even
+ * represent (jalCal throws outside years −61..3177).
+ */
+fun clampAt(at: Long, now: Long): Long = at.coerceIn(0L, now + AT_FUTURE_SLACK_MS)
+
+/** Longer than any real gap between a scan and the newest thing it ever stored. */
+const val INGEST_CLOCK_SKEW_MAX_MS = 30L * DAY_MS
+
+/**
+ * Whether the wall clock has run away from reality.
+ *
+ * A clock more than a month past everything ever ingested is a broken clock, not a year of
+ * silence: real silence ends the moment a message arrives, and ingesting it moves
+ * `MAX(ingested_at)` forward with it. Null means an empty archive, which has nothing to protect.
+ */
+fun clockRunsAhead(now: Long, lastIngestedAt: Long?): Boolean =
+    lastIngestedAt != null && now - lastIngestedAt > INGEST_CLOCK_SKEW_MAX_MS
 
 /**
  * The identity of one inbox row, frozen for ever.
@@ -589,6 +622,14 @@ suspend fun ingestBankSms(
     val messages = readSmsInbox(context, since)
     if (messages.isEmpty()) return 0
 
+    // Read before anything is written, so it describes the archive and not this scan. One scan
+    // with the phone at 2035 used to run the prune below against 2035's floor — the whole
+    // archive, gone — and park the watermark ten years out, freezing ingest long after the
+    // clock was fixed. When the clock is that far past everything ever received, nothing
+    // destructive and nothing irreversible happens on its say-so.
+    val lastIngest = db.smsSource().newestIngestedAt()
+    val brokenClock = clockRunsAhead(now, lastIngest)
+    val ceiling = if (brokenClock) lastIngest!! + INGEST_CLOCK_SKEW_MAX_MS else now
 
     var stored = 0
     // Chunked so a kill part way through resumes at the last chunk boundary rather than starting
@@ -600,25 +641,33 @@ suspend fun ingestBankSms(
         val rows = chunk.mapNotNull { m ->
             if (bankOf(m.from, extra) == null) return@mapNotNull null
             SmsSource(
+                // The hash keeps the raw stamp: identity must be whatever every future re-read
+                // of the same inbox row computes, and the clamp below moves with `now`. The one
+                // cost is that a clamped row's stored columns no longer recompute its own hash —
+                // accepted, because that stamp was never a real time to begin with.
                 srcHash = srcHash(m.from, m.body, m.at),
                 sender = m.from,
                 addrKey = srcAddrKeyV1(m.from),
                 body = m.body,
-                at = m.at,
+                // The money is never wrong, only its day — see [clampAt].
+                at = clampAt(m.at, now),
                 ingestedAt = now,
             )
         }
-        // Never past now: one inbox row stamped in 2030 by a restored backup or a skewed
-        // carrier clock would otherwise park the watermark there and freeze ingest for ever.
-        val watermark = minOf(chunk.maxOf { it.at }, now)
+        // Never past now, or past what a broken clock may claim: one inbox row stamped in 2030
+        // by a restored backup or a skewed carrier clock would otherwise park the watermark
+        // there and freeze ingest for ever.
+        val watermark = minOf(chunk.maxOf { it.at }, ceiling)
         db.withTransaction {
             stored += db.smsSource().insertAll(rows).count { it != -1L }
             db.meta().put(DurableMeta(SOURCE_SCANNED_TO, watermark.toString()))
         }
     }
-    db.withTransaction {
-        db.smsSource().deleteBefore(sourcePruneFloor(now))
-        db.smsSource().trimToNewest(SOURCE_HARD_CAP)
+    if (!brokenClock) {
+        db.withTransaction {
+            db.smsSource().deleteBefore(sourcePruneFloor(now))
+            db.smsSource().trimToNewest(SOURCE_HARD_CAP)
+        }
     }
     return stored
 }
@@ -696,3 +745,4 @@ suspend fun migrateAnchorsFromPrefs(accounts: List<BankAccount>, db: DurableDb, 
 suspend fun rewindIngest(db: DurableDb, now: Long = System.currentTimeMillis()) {
     db.meta().put(DurableMeta(SOURCE_SCANNED_TO, sourceHorizon(now).toString()))
 }
+

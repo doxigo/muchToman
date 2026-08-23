@@ -106,6 +106,34 @@ class LedgerTest {
     }
 
     @Test
+    fun `a poison stamp is clamped at the gate, the money kept and the day approximated`() {
+        val now = 1_700_000_000_000L
+        // DATE written in microseconds by a restore tool: fifty thousand years out, past what
+        // the Jalali arithmetic can even say, and sorted newest for ever if it were believed.
+        assertEquals(now + AT_FUTURE_SLACK_MS, clampAt(1_700_000_000_000_000L, now))
+        // Before time is not a time either.
+        assertEquals(0L, clampAt(-5L, now))
+        // A bank clock a few minutes fast is the normal case and passes untouched.
+        assertEquals(now + 300_000L, clampAt(now + 300_000L, now))
+        assertEquals(now - DAY_MS, clampAt(now - DAY_MS, now))
+    }
+
+    @Test
+    fun `a clock a month past everything ever received is broken, not a year of silence`() {
+        // Real silence ends the moment a message arrives: ingesting it moves MAX(ingested_at)
+        // forward with it, so `now` can never honestly get a month past the newest ingest. A
+        // wall clock that far out must not be allowed to prune the archive against its floor
+        // or park the watermark years ahead — both are for ever, and the clock is for a reboot.
+        val last = 1_700_000_000_000L
+        assertTrue(!clockRunsAhead(last + 29 * DAY_MS, last))
+        assertTrue(clockRunsAhead(last + 31 * DAY_MS, last))
+        // A clock running behind is wrong the recoverable way; only ahead destroys.
+        assertTrue(!clockRunsAhead(last - 365 * DAY_MS, last))
+        // An empty archive has nothing to protect.
+        assertTrue(!clockRunsAhead(last, null))
+    }
+
+    @Test
     fun `a reference names its message and its position in it`() {
         val hash = srcHash("100031", "بانک رفاه", 1L)
         assertEquals("s:$hash:0", refOf(hash))

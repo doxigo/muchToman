@@ -73,7 +73,8 @@ data class FilingAlert(
  *  - She reaches back a year with `rewindIngest`: every row it imports is stamped in the past, so a
  *    deliberate import cannot ambush her with a notification about last spring.
  *
- * It is a high-water mark and never lowered, for the reason [BudgetMark]'s level is not.
+ * It is a high-water mark and never lowered, for the reason [BudgetMark]'s level is not — except
+ * back to the wall clock, which no honestly-stamped row can ever be ahead of.
  */
 data class FilingNews(val alert: FilingAlert?, val mark: Long)
 
@@ -106,10 +107,16 @@ private const val FIRST_PASS_LIMIT = 3
  * holding nothing but what just arrived is a new phone's first spend and is exactly what she
  * installed this for.
  */
-fun filingNews(entries: List<LedgerEntry>, review: List<LedgerEntry>, said: Long): FilingNews {
+fun filingNews(
+    entries: List<LedgerEntry>,
+    review: List<LedgerEntry>,
+    said: Long,
+    now: Long = System.currentTimeMillis(),
+): FilingNews {
     // Over everything, not just review: a filed row must move the mark too, or it would be news
-    // again on every wakeup for ever.
-    val mark = maxOf(said, entries.maxOfOrNull { it.txn.at } ?: 0L)
+    // again on every wakeup for ever. Capped at the wall clock, belt and braces under the ingest
+    // clamp — a mark written off a poison stamp would silence every note until that date arrived.
+    val mark = maxOf(said, entries.maxOfOrNull { it.txn.at } ?: 0L).coerceAtMost(now)
     val fresh = review.filter { it.txn.at > said }
     val filed = entries.filter {
         !it.needsReview && !it.duplicate && !it.transfer && it.txn.at > said

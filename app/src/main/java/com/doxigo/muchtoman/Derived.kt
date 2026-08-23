@@ -238,8 +238,14 @@ const val MAX_PLAUSIBLE_RIAL = 100_000_000_000_000L // 10 trillion Toman
 private fun plausible(rial: Long?): Boolean =
     rial == null || (rial in -MAX_PLAUSIBLE_RIAL..MAX_PLAUSIBLE_RIAL)
 
-fun parseToRows(source: SmsSource, extra: Map<String, Bank>): List<Txn> {
-    val read = parseBankSms(source.sender, source.body, source.at, extra) ?: return emptyList()
+fun parseToRows(source: SmsSource, extra: Map<String, Bank>, now: Long = System.currentTimeMillis()): List<Txn> {
+    // Clamped again here, not only at ingest: rows stored before the ingest gate learned to
+    // clamp re-derive through this line, and this is what repairs them. The money is never
+    // wrong, only its day — a poison stamp otherwise derives a day the Jalali arithmetic throws
+    // on, sorts newest for ever, and drags the whole timeline down with it. The clamp moves
+    // with `now`, so only a row that was never a real time can differ between two derives.
+    val at = clampAt(source.at, now)
+    val read = parseBankSms(source.sender, source.body, at, extra) ?: return emptyList()
     if (!plausible(read.amountRial) || !plausible(read.balanceRial)) return emptyList()
     val direction = read.delta?.let { if (it > 0) "in" else "out" }
     return listOf(
@@ -247,8 +253,8 @@ fun parseToRows(source: SmsSource, extra: Map<String, Bank>): List<Txn> {
             ref = refOf(source.srcHash, 0),
             srcHash = source.srcHash,
             seq = 0,
-            at = source.at,
-            day = tehranDay(source.at),
+            at = at,
+            day = tehranDay(at),
             bank = read.bank.name,
             accountId = read.bank.name,
             direction = direction,
@@ -367,7 +373,7 @@ suspend fun derive(
 
         val all = mutableListOf<Txn>()
         for (chunk in sources.chunked(500)) {
-            val rows = chunk.flatMap { parseToRows(it, extra) }
+            val rows = chunk.flatMap { parseToRows(it, extra, now) }
             derived.txn().insertAll(rows)
             all += rows
             written += rows.size

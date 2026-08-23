@@ -144,6 +144,33 @@ class DeriveTest {
     }
 
     @Test
+    fun `a poison-pill timestamp keeps its money and loses only its day`() {
+        // A restore tool that writes DATE in microseconds stamps a message fifty thousand years
+        // out. The Jalali arithmetic throws past year 3177, the row sorts newest-first for ever,
+        // and rows already stored this way re-derive through here — so the clamp has to hold at
+        // this gate too, not only at ingest. The figure is real money; only its stamp is
+        // nonsense. The money is never wrong, only its day.
+        val now = 1_700_000_000_000L
+        val micro = SmsSource(
+            srcHash = srcHash("100031", "z", 1_700_000_000_000_000L),
+            sender = "100031", addrKey = "100031",
+            body = "بانک رفاه واریز مبلغ 900,000 ریال مانده 1,000,000 ریال",
+            at = 1_700_000_000_000_000L, ingestedAt = 0L,
+        )
+        val row = parseToRows(micro, emptyMap(), now).single()
+        assertEquals(900_000L, row.amountRial)
+        assertEquals(now + AT_FUTURE_SLACK_MS, row.at)
+        assertEquals(tehranDay(row.at), row.day)
+
+        // …and a stamp from before time clamps to the epoch rather than a negative day.
+        val negative = micro.copy(srcHash = srcHash("100031", "z", -5L), at = -5L)
+        assertEquals(0L, parseToRows(negative, emptyMap(), now).single().at)
+
+        // A real stamp passes through untouched.
+        assertEquals(2L, parseToRows(micro.copy(at = 2L), emptyMap(), now).single().at)
+    }
+
+    @Test
     fun `deriving twice produces identical rows`() {
         // B.5, the invariant that makes shipping a parser fix a thing you can do on a Tuesday.
         // Order-dependence anywhere in the pipeline shows up here and nowhere else.

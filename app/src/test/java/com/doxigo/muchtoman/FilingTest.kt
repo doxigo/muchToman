@@ -174,6 +174,16 @@ class FilingTest {
     }
 
     @Test
+    fun `the mark can never run past the wall clock`() {
+        // Belt and braces under the ingest clamp: a poison stamp that slipped through would
+        // otherwise park the mark years out and silence every filing note until that date came.
+        val poisoned = waiting(at = 9_999_999L)
+        val news = filingNews(listOf(poisoned), listOf(poisoned), said = 400L, now = 1_000L)
+        assertNotNull("the row itself is still news", news.alert)
+        assertEquals(1_000L, news.mark)
+    }
+
+    @Test
     fun `a mark is never lowered, so an emptied backlog cannot make old rows new`() {
         // Everything filed: nothing to say, and nothing to forget either. A mark that fell back to
         // zero here would announce the whole ledger the next time one row was refiled.
