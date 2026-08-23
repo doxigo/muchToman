@@ -2307,12 +2307,23 @@ private fun BankAccountRow(
                     TextButton(onClick = onFix) { Text("اصلاح موجودی", fontSize = 14.sp) }
                 }
                 Spacer(Modifier.weight(1f))
+                // Two taps, as for deleting a holding: the balance she anchored by hand is a
+                // number nothing can rebuild, so the first tap only names what would be lost.
+                // Keyed by account, so a recycled row never wakes up armed.
+                var sure by remember(account.key) { mutableStateOf(false) }
                 TextButton(
-                    onClick = onForget,
+                    onClick = { if (sure) onForget() else sure = true },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
-                ) { Text("حذف حساب", fontSize = 14.sp) }
+                ) {
+                    Text(
+                        if (sure) "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن"
+                        else "حذف حساب",
+                        fontSize = 14.sp,
+                        fontWeight = if (sure) FontWeight.Bold else null,
+                        // Announced, or the two-tap safeguard is invisible to TalkBack — a
+                        // second double-tap deletes with no confirmation ever perceived.
             }
         }
     }
