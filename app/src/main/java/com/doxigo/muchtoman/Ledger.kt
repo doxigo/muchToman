@@ -589,10 +589,13 @@ suspend fun ingestBankSms(
     val messages = readSmsInbox(context, since)
     if (messages.isEmpty()) return 0
 
+
     var stored = 0
     // Chunked so a kill part way through resumes at the last chunk boundary rather than starting
     // again: the rows and the watermark move in one transaction, so they can never disagree about
-    // what has been read.
+    // what has been read. The next read is `DATE >=` the watermark — see [readSmsInbox] — so the
+    // boundary row is read twice and the primary key absorbs it; strictly-after lost the second
+    // of two same-millisecond rows straddling a chunk cut for ever.
     for (chunk in messages.chunked(500)) {
         val rows = chunk.mapNotNull { m ->
             if (bankOf(m.from, extra) == null) return@mapNotNull null

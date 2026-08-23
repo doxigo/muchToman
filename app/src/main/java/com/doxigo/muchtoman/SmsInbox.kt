@@ -36,8 +36,13 @@ fun openSmsThread(context: Context, sender: String): Boolean {
 }
 
 /**
- * Everything in the inbox newer than [since], oldest first — the order [applyBankSms] needs,
- * so a stated balance is never overwritten by a transaction that came before it.
+ * Everything in the inbox stamped at or after [since], oldest first — the order [applyBankSms]
+ * needs, so a stated balance is never overwritten by a transaction that came before it.
+ *
+ * At-or-after, not strictly after: the ledger's watermark commits per chunk, and under `>` two
+ * messages sharing the boundary millisecond, cut apart by a chunk edge and a mid-ingest kill,
+ * lost the second one for ever. Re-reading the row at the watermark costs one INSERT that the
+ * primary key ignores; both consumers already dedup ([SmsSource.srcHash] there, `seenSms` here).
  *
  * This is the only way a message ever enters the app, including the real-time path: [SmsReceiver]
  * does not read its broadcast's payload, it schedules the worker that comes back here. One reader
@@ -52,7 +57,7 @@ suspend fun readSmsInbox(context: Context, since: Long): List<RawSms> = withCont
         context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-            "${Telephony.Sms.DATE} > ?",
+            "${Telephony.Sms.DATE} >= ?",
             arrayOf(since.toString()),
             "${Telephony.Sms.DATE} ASC",
         )?.use { c ->
