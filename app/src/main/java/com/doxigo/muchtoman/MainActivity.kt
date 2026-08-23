@@ -185,8 +185,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             var failure: String? = null
             fetchRates(BuildConfig.RATES_URL).onSuccess { fetched ->
-                val fresh = mergeRates(fetched, store.cachedRates)
-                store.cachedRates = fresh
+                // The merge reads the cached blob and the store write encodes ~80KB of JSON —
+                // that ran on Main and cost a frame after every fetch. The state update stays
+                // on the calling context; only the decode/merge/encode moves.
+                val fresh = withContext(Dispatchers.Default) {
+                    mergeRates(fetched, store.cachedRates).also { store.cachedRates = it }
+                }
                 _state.update { it.copy(rates = fresh) }
             }.onFailure { e ->
                 // Keep showing the cached rates; an old number beats a blank screen. The
@@ -217,7 +221,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             var changed = false
             fetchTse().onSuccess { fresh ->
                 changed = true
-                store.cachedStocks = fresh
+                // A couple of thousand نماد encode to a sizeable blob; written off Main for the
+                // same reason refresh() moved its merge there.
+                withContext(Dispatchers.Default) { store.cachedStocks = fresh }
                 _state.update { it.copy(tse = fresh) }
                 android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
             }.onFailure { error ->
