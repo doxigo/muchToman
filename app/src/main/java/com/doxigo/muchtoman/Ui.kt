@@ -634,6 +634,12 @@ private fun AppScreens(
             onWidgetLockChange = vm::setWidgetLock,
             onCategories = { categoriesPage = true },
             onClearCache = vm::clearCaches,
+            // The callback carries the acknowledgement too: only this call site holds the
+            // scaffold-level notices, which is why it is a parameter and not a VM fetch.
+            onRescanInbox = {
+                vm.rescanInbox()
+                notices.show("در حال بازخوانی…")
+            },
             onBack = { settings = false },
         )
         return

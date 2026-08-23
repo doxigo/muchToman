@@ -1087,6 +1087,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+
     fun setFamilyName(name: String) {
         val clean = name.filterNot(Char::isISOControl).trim().take(32)
         if (clean.isBlank()) return
@@ -1512,11 +1513,28 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(bankAccounts = emptyList(), strangeSenders = emptyList()) }
     }
 
+    /**
+     * «بازخوانی همهٔ پیامک‌ها»: both pipelines read the whole inbox again with the parser as it
+     * stands — the ledger by winding its ingest watermark back to the horizon (stored messages
+     * dedupe by content, her filings replay), the fold by walking from the start again.
+     *
+     * Deliberately NOT [rescanSms]: only the watermark is rewound, so a balance she anchored by
+     * hand — the one figure no rescan can rebuild — stays anchored, and seenSms keeps every
+     * counted message counted once. Unreferenced for now: the UI wave adds the settings row.
+     */
+    fun rescanInbox() {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
             // Joined first, and rewound under the gate, so neither a pipeline mid-ingest nor the
             // watch worker can write its watermark over the rewind.
             ledgerJob?.join()
             runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
                 .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
+            runLedger()
+            restartScan { store.smsScannedTo = 0L }
+        }
+    }
+
     /**
      * Change what the next scan would read, then read it — with the scan already in flight
      * stopped and waited for first.

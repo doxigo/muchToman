@@ -226,6 +226,8 @@ fun SettingsScreen(
     onCategories: () -> Unit,
     /** Drops and rebuilds everything rebuildable — see [AppVm.clearCaches]. */
     onClearCache: () -> Unit,
+    /** Reads the whole inbox again, keeping her hand-typed anchors — see [AppVm.rescanInbox]. */
+    onRescanInbox: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -423,6 +425,22 @@ fun SettingsScreen(
                         )
                     }
                 }
+
+                // One tap, no confirm: it re-reads, it does not destroy — the subtitle says
+                // exactly what it keeps, and the transient «در حال بازخوانی…» upstairs is the
+                // receipt that the tap did something. See [AppVm.rescanInbox].
+                Spacer(Modifier.height(Space.m))
+                DoorRow(
+                    title = "بازخوانی همهٔ پیامک‌ها",
+                    subtitle = "اگر پیامکی جا مونده یا از پشتیبان برگشتی، از اول می‌خونه؛ " +
+                        "موجودی‌هایی که خودت نوشتی سر جاشون می‌مونن.",
+                    glyph = CategoryGlyph.SWAP,
+                    shape = bandShape(0, 1),
+                    divided = false,
+                    enabled = true,
+                    onClick = onRescanInbox,
+                    // An action that stays on this page, so the door's chevron would lie.
+                    chevron = false,
             }
 
             SectionLabel("دسته‌بندی‌ها")
