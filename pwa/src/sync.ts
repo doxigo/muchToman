@@ -1,10 +1,11 @@
 import { open as unseal, seal } from './crypto';
-import { allRecords, clearOutbox, enqueue, getMeta, getRecord, outbox, putRecords, setMeta } from './db';
+import {
 import type { OutboxRecord, StoredRecord } from './db';
 
 export interface Session {
   base: string;
   token: string;
+  issuedAt: number;
   device: string;
   member: string;
   name: string;
@@ -208,9 +209,28 @@ export async function push(session: Session): Promise<number> {
   return pending.length;
 }
 
+const TOKEN_ROTATE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * A new secret once a month, taken at the end of a sync that already proved the network works.
+ * The old secret is dead the moment the server answers, so the session is persisted immediately;
+ * the shape written here is exactly the one main.ts stores and loads.
+ */
+async function rotateTokenIfStale(session: Session): Promise<void> {
+  if (Date.now() - session.issuedAt < TOKEN_ROTATE_AFTER_MS) return;
+  const res = await request(session, '/v1/rotate', { method: 'POST' });
+  if (!res.ok) return;
+  const { secret } = (await res.json()) as { secret: string };
+  if (!secret) return;
+  session.token = `${session.token.split('.')[0]}.${secret}`;
+  session.issuedAt = Date.now();
+  await setMeta('session', session);
+}
+
 export async function syncNow(session: Session): Promise<{ sent: number; received: number }> {
   await registerIdentity(session);
   const sent = await push(session);
   const received = await pull(session);
+  await rotateTokenIfStale(session);
   return { sent, received };
 }
