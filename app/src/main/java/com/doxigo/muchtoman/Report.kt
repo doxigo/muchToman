@@ -48,7 +48,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +64,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -75,7 +73,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -647,9 +644,10 @@ private fun CashFlowReportContent(
             MonthSummary(period, cash.current)
         }
 
-        // Two months is the least a comparison can be made of. One month drawn alone is a chart
-        // that answers «is this month unusual» with the month itself.
-        if (cash.series.size > 1 && cash.series.any { it.incomeRial > 0 || it.spentRial > 0 }) {
+        // Two months *with something in them* is the least a comparison can be made of. One
+        // lived-in month beside empty neighbours is a chart that answers «is this month unusual»
+        // with the month itself — and the empty neighbours draw as bare floating numerals.
+        if (cash.series.count { it.incomeRial > 0 || it.spentRial > 0 } > 1) {
             Spacer(Modifier.height(Space.xxl))
             MonthBars(cash, onWindow)
         }
@@ -1021,9 +1019,9 @@ private const val BAR_FLOOR = 0.03f
  *
  * One scale across every bar in the window, which is the entire point: scaling each month to
  * itself would draw a two-million month and a two-hundred-million month at the same height and
- * call it a comparison. Time runs left to right inside the chart even though the app reads
- * right to left — the asset chart above made the same decision, and every Iranian bank app
- * agrees — so the row is laid out LTR explicitly rather than inheriting the shell's direction.
+ * call it a comparison. Time runs right to left, the direction the page reads: the newest month
+ * lands on the left — the same side its «ماه بعد» arrow sits on — and the category sheet's own
+ * ماه به ماه strip already flows this way, so the row simply inherits the shell's direction.
  *
  * Each month is a control, not a picture: tapping one reads that month on its own — with the
  * span dropping back to «۱ ماه», visibly, so the report never changes what it covers without the
@@ -1060,92 +1058,90 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
             BarKey("خرج", spend)
         }
         Spacer(Modifier.height(Space.m))
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(Space.xs),
-            ) {
-                cash.series.forEach { report ->
-                    // Read as one month, or read as part of a longer window. Only the first is a
-                    // selection — at «۶ ماه» nothing here is selected, six months are simply
-                    // being counted together, and telling a screen reader otherwise would make
-                    // six bars announce themselves as six chosen tabs.
-                    val only = cash.range.count == 1 && report.month == cash.selected
-                    val inWindow = report.month in cash.range
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            // Shaped background rather than clip-then-fill: the clip cut off the
-                            // month names, which at twelve bars are wider than their own column
-                            // by design — see the label below.
-                            .background(
-                                color = if (only || (inWindow && markWindow)) {
-                                    MaterialTheme.colorScheme.surfaceContainer
-                                } else {
-                                    Color.Transparent
-                                },
-                                shape = RoundedCornerShape(Radius.field),
-                            )
-                            .selectable(
-                                selected = only,
-                                role = Role.Tab,
-                                onClick = { onWindow(report.month, ReportSpan.MONTH) },
-                            )
-                            .heightIn(min = 48.dp)
-                            .padding(vertical = Space.s)
-                            .semantics(mergeDescendants = true) {
-                                contentDescription = "${report.month.fa}: " +
-                                    "درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، " +
-                                    "خرج ${faCompact(tomanOf(report.spentRial))} تومان" +
-                                    if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            cash.series.forEach { report ->
+                // Read as one month, or read as part of a longer window. Only the first is a
+                // selection — at «۶ ماه» nothing here is selected, six months are simply
+                // being counted together, and telling a screen reader otherwise would make
+                // six bars announce themselves as six chosen tabs.
+                val only = cash.range.count == 1 && report.month == cash.selected
+                val inWindow = report.month in cash.range
+                Column(
+                    Modifier
+                        .weight(1f)
+                        // Shaped background rather than clip-then-fill: the clip cut off the
+                        // month names, which at twelve bars are wider than their own column
+                        // by design — see the label below.
+                        .background(
+                            color = if (only || (inWindow && markWindow)) {
+                                MaterialTheme.colorScheme.surfaceContainer
+                            } else {
+                                Color.Transparent
                             },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Row(
-                            Modifier.height(BAR_BOX),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            verticalAlignment = Alignment.Bottom,
-                        ) {
-                            Bar(report.incomeRial, top, INCOME_TINT, barWidth)
-                            Bar(report.spentRial, top, spend, barWidth)
-                        }
-                        Spacer(Modifier.height(Space.s))
-                        // The month's number, not its name. «فروردین» and «اردیبهشت» are wider
-                        // than a sixth of a phone, let alone a twelfth, so every window longer
-                        // than a couple of months printed «فرورد…» — a label that has lost the
-                        // one syllable telling it apart from «فروردین» of the year before, and
-                        // that at twelve bars was only printed on every other month anyway.
-                        // «۱» fits any column at any count, so every bar can be labelled again.
-                        //
-                        // Nothing is lost by it: the window's full name is set above the card,
-                        // tapping a bar puts that month's name up there, and the spoken
-                        // description on this very column has said «مرداد ۱۴۰۵» all along.
-                        //
-                        // Tabular figures, so «۱۰» and «۱۱» are the same width as each other and
-                        // the row of numerals sits on one baseline grid rather than drifting.
-                        Text(
-                            faNumber(report.month.month.toDouble()),
-                            style = figureStyle(
-                                // Weight and a container, not a colour: the selected month has to
-                                // be findable without seeing one.
-                                color = if (only) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                weight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
-                            ),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            // Measured outside its own column, because a twelfth of a 320dp phone
-                            // is not reliably wide enough for two digits: at that width «۱۰»,
-                            // «۱۱» and «۱۲» each lost their second digit and drew as a bare «۱»,
-                            // which is not a clipped label but a wrong one — three months of the
-                            // year silently claiming to be فروردین. A numeral overspills by a
-                            // hair rather than by two thirds, so unlike the month names this
-                            // never reaches the label beside it.
-                            modifier = Modifier.wrapContentWidth(unbounded = true),
+                            shape = RoundedCornerShape(Radius.field),
                         )
+                        .selectable(
+                            selected = only,
+                            role = Role.Tab,
+                            onClick = { onWindow(report.month, ReportSpan.MONTH) },
+                        )
+                        .heightIn(min = 48.dp)
+                        .padding(vertical = Space.s)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "${report.month.fa}: " +
+                                "درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، " +
+                                "خرج ${faCompact(tomanOf(report.spentRial))} تومان" +
+                                if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Row(
+                        Modifier.height(BAR_BOX),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Bar(report.incomeRial, top, INCOME_TINT, barWidth)
+                        Bar(report.spentRial, top, spend, barWidth)
                     }
+                    Spacer(Modifier.height(Space.s))
+                    // The month's number, not its name. «فروردین» and «اردیبهشت» are wider
+                    // than a sixth of a phone, let alone a twelfth, so every window longer
+                    // than a couple of months printed «فرورد…» — a label that has lost the
+                    // one syllable telling it apart from «فروردین» of the year before, and
+                    // that at twelve bars was only printed on every other month anyway.
+                    // «۱» fits any column at any count, so every bar can be labelled again.
+                    //
+                    // Nothing is lost by it: the window's full name is set above the card,
+                    // tapping a bar puts that month's name up there, and the spoken
+                    // description on this very column has said «مرداد ۱۴۰۵» all along.
+                    //
+                    // Tabular figures, so «۱۰» and «۱۱» are the same width as each other and
+                    // the row of numerals sits on one baseline grid rather than drifting.
+                    Text(
+                        faNumber(report.month.month.toDouble()),
+                        style = figureStyle(
+                            // Weight and a container, not a colour: the selected month has to
+                            // be findable without seeing one.
+                            color = if (only) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            weight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
+                        ),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        // Measured outside its own column, because a twelfth of a 320dp phone
+                        // is not reliably wide enough for two digits: at that width «۱۰»,
+                        // «۱۱» and «۱۲» each lost their second digit and drew as a bare «۱»,
+                        // which is not a clipped label but a wrong one — three months of the
+                        // year silently claiming to be فروردین. A numeral overspills by a
+                        // hair rather than by two thirds, so unlike the month names this
+                        // never reaches the label beside it.
+                        modifier = Modifier.wrapContentWidth(unbounded = true),
+                    )
                 }
             }
         }
