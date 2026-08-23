@@ -72,6 +72,14 @@ describe('quick paste', () => {
     expect(got.balanceRial).toBeNull();
     expect(got.amountRial).toBe(3_000_000);
   });
+
+  it('never reads a wallet promo as the bank balance', () => {
+    // The corpus pins this as a declined message, which this side skips — declining is about
+    // who sent it. The veto itself still has to hold here, or a pasted promo states a balance.
+    const got = parsePasted('بانک سامان\nموجودی کیف پول شما: 200,000 ریال\nهمین حالا از همراه‌بانک شارژش کن!');
+    expect(got.balanceRial).toBeNull();
+    expect(got.amountRial).toBeNull();
+  });
 });
 
 describe('sync bookkeeping', () => {

@@ -19,6 +19,12 @@ const OUT_WORDS = [
 const AMOUNT_WORDS = ['مبلغ', 'مقدار'];
 const BALANCE_WORDS = ['مانده', 'موجودی'];
 const NOT_A_BALANCE = ['بدهی', 'تسهیلات', 'وام', 'قسط', 'چک', 'کارت اعتباری'];
+// An operator's bundle or an app wallet — data, minutes, «کیف پول» — not money at a bank. The
+// bare «کیف» is deliberate: normalise strips ZWNJ, so «کیف‌پول» arrives glued.
+const OPERATOR_WORDS = ['اینترنت', 'بسته', 'گیگ', 'مکالمه', 'شارژ', 'کیف'];
+// One veto for every place that reads a مانده as money, so a bank's own wallet promo cannot
+// state the account's balance here while the Android side refuses it.
+const BALANCE_VETO = [...NOT_A_BALANCE, ...OPERATOR_WORDS];
 
 export interface Pasted {
   amountRial: number | null;
@@ -104,6 +110,32 @@ function isIdentifierPart(text: string, start: number, end: number): boolean {
   return false;
 }
 
+/**
+ * Whether the word found at [at] sits right after «قابل», which turns an event into an ability:
+ * «موجودی قابل برداشت» is what she may take out, not money leaving. Read as a withdrawal, a
+ * Saman balance statement became a spend of everything the account held. normalise already
+ * strips ZWNJ, so «قابل‌برداشت» arrives glued and the whitespace here is optional.
+ */
+function qualifiedAt(text: string, at: number): boolean {
+  let i = at - 1;
+  while (i >= 0 && /\s/.test(text.charAt(i))) i--;
+  if (i < 3 || text.slice(i - 3, i + 1) !== 'قابل') return false;
+  // «مقابل» ends in the same four letters and is a different word.
+  return !/\p{L}/u.test(text.charAt(i - 4));
+}
+
+/** Whether any of [words] appears unqualified: a message whose only «برداشت» follows «قابل» states no direction. */
+function statesDirection(text: string, words: string[]): boolean {
+  for (const word of words) {
+    let i = text.indexOf(word);
+    while (i >= 0) {
+      if (!qualifiedAt(text, i)) return true;
+      i = text.indexOf(word, i + 1);
+    }
+  }
+  return false;
+}
+
 /** The unit printed beside a figure, not one decided for the whole message. */
 function unitAfter(text: string, end: number): number | null {
   const tail = text.slice(end, end + 14);
@@ -129,6 +161,7 @@ function figureAfter(
       if (at < 0) break;
       const start = at + label.length;
       from = start;
+      if (qualifiedAt(text, at)) continue;
       const ahead = text.slice(start, start + 16);
       if (opts.veto?.some((v) => ahead.includes(v))) continue;
       // Where this search must give up rather than keep walking. A figure on the far side of
@@ -176,6 +209,7 @@ function figureBefore(text: string, labels: string[]): { value: number; divisor:
       const at = text.indexOf(label, from);
       if (at < 0) break;
       from = at + label.length;
+      if (qualifiedAt(text, at)) continue;
       const lineStart = text.lastIndexOf('\n', at - 1) + 1;
 
       let found: { value: number; divisor: number | null } | null = null;
@@ -203,13 +237,13 @@ export function parsePasted(body: string): Pasted {
   const text = normalise(body);
   const fallback = fallbackDivisor(text);
 
-  const balance = figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: NOT_A_BALANCE });
-  const deposit = IN_WORDS.some((w) => text.includes(w));
-  const withdrawal = OUT_WORDS.some((w) => text.includes(w));
+  const balance = figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: BALANCE_VETO });
+  const deposit = statesDirection(text, IN_WORDS);
+  const withdrawal = statesDirection(text, OUT_WORDS);
   const inWords = deposit ? IN_WORDS : [];
   const outWords = withdrawal ? OUT_WORDS : [];
   const amount =
-    figureAfter(text, AMOUNT_WORDS) ??
+    figureAfter(text, AMOUNT_WORDS, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, inWords, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, outWords, { stopAt: BALANCE_WORDS }) ??
     // Nothing after the direction word, so the figure it refers to is the one in front of it: Blu
