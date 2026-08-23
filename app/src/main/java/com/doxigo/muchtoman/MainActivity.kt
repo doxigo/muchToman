@@ -781,6 +781,26 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+     * The tombstone [deleteManualTxn] writes, written the other way: the row comes back with a
+     * newer stamp, so the other phones learn it is back the same way they learnt it was gone.
+     * Unreferenced for now: the UI wave wires the undo affordance to it.
+     */
+    fun restoreManualTxn(ref: String) {
+        if (!ref.startsWith("m:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                // The DAO deliberately hides tombstones — manual().all() filters deleted rows,
+                // and its file is owned elsewhere this wave — so the flip goes through the
+                // openHelper. Safe to bypass Room's invalidation tracker: nothing observes this
+                // table (every reader is a one-shot suspend query), and the derive below is the
+                // re-read. MAX keeps the stamp monotonic, exactly as the delete's maxOf does.
+                durable.openHelper.writableDatabase.execSQL(
+                    "UPDATE manual_txn SET deleted = 0, updated_at = MAX(?, updated_at + 1) " +
+                        "WHERE id = ? AND deleted = 1",
+                    arrayOf<Any>(System.currentTimeMillis(), ref.removePrefix("m:")),
     /** Which categories دخل و خرج leaves out. A way of reading the report, never a fact about money. */
     fun setReportExcluded(ids: Set<String>) {
         store.reportExcluded = ids

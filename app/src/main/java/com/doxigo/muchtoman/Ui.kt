@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -261,13 +262,120 @@ private data class Editing(val typeId: String, val key: String)
 @Composable
 fun AppRoot(vm: AppVm, state: UiState, activity: FragmentActivity) {
     CompositionLocalProvider(LocalCustomGlyphs provides state.ledger.marks) {
-        AppScreens(vm, state, activity)
+        // The transient words live above every page, not inside the tab Scaffold: an undo has
+        // to survive her walking into تنظیمات or a pushed screen while the band is still up.
+        val notices = remember { TransientNotices() }
+        Box(Modifier.fillMaxSize()) {
+            AppScreens(vm, state, activity, notices)
+            // Never over the lock — the band carries words about her money.
+            if (!state.locked) {
+                TransientNoticeBand(notices, Modifier.align(Alignment.BottomCenter))
+            }
+        }
+    }
+}
+/**
+ * One transient notice at a time, app-wide: the words, and at most one way to act on them.
+ * Posted by the two deletes (undo is their second net — the two-tap arming stays) and by the
+ * rescan row's acknowledgement. The newest post takes the slot; a queue of old news is not
+ * worth the machinery.
+ */
+internal class TransientNotices {
+    var current by mutableStateOf<TransientNotice?>(null)
+        private set
+    private var stamp = 0
+
+    fun show(words: String, action: String? = null, onAction: () -> Unit = {}) {
+        current = TransientNotice(++stamp, words, action, onAction)
+    }
+
+    /** Only the notice that asked leaves — a stale timer must not take down a newer band. */
+    fun dismiss(of: TransientNotice) {
+        if (current?.id == of.id) current = null
+    }
+}
+
+internal data class TransientNotice(
+    val id: Int,
+    val words: String,
+    val action: String?,
+    val onAction: () -> Unit,
+)
+
+/**
+ * The band itself: the tab bar's own furniture colours, held to the page by a hairline the way
+ * the floor is — no shadow, no island — floating where the floor's top edge sits. It leaves on
+ * its own after ~6 seconds; the words are a polite live region so the notice is heard as well
+ * as seen, and the one action wears the CTA pill because «برگردون» is genuinely *press this*.
+ */
+@Composable
+private fun TransientNoticeBand(notices: TransientNotices, modifier: Modifier = Modifier) {
+    val notice = notices.current
+    // Keyed on the id, not on presence: a second delete restarts the six seconds.
+    LaunchedEffect(notice?.id) {
+        if (notice != null) {
+            delay(6_000)
+            notices.dismiss(notice)
+        }
+    }
+    // Held through the exit so the band does not blank while sliding away.
+    var shown by remember { mutableStateOf(notice) }
+    if (notice != null) shown = notice
+    AnimatedVisibility(
+        visible = notice != null,
+        enter = slideInVertically(tween(Motion.medium, easing = Motion.enter)) { it } +
+            fadeIn(tween(Motion.medium)),
+        exit = slideOutVertically(tween(Motion.fast, easing = Motion.exit)) { it } +
+            fadeOut(tween(Motion.fast)),
+        modifier = modifier,
+    ) {
+        shown?.let { n ->
+            val shape = RoundedCornerShape(Radius.group)
+            Row(
+                Modifier
+                    .widthIn(max = 640.dp)
+                    .padding(edge)
+                    .navigationBarsPadding()
+                    // Clear of the tab bar's 64dp floor. The pushed pages have no bar, but one
+                    // fixed home beats a band that lands somewhere different on every page.
+                    .padding(bottom = 64.dp + Space.m)
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                    .padding(horizontal = Space.l, vertical = Space.m),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    n.words,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        // Announced: the band comes and goes on its own schedule.
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                n.action?.let { label ->
+                    Spacer(Modifier.width(Space.m))
+                    PillButton(
+                        label,
+                        { n.onAction(); notices.dismiss(n) },
+                        voice = ButtonVoice.PRIMARY,
+                    )
+                }
+            }
+        }
+    }
+}
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
+    notices: TransientNotices,
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
     var settings by remember { mutableStateOf(false) }
@@ -518,7 +626,12 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
                 onBack = { transactionRef = null },
                 categoryUse = state.ledger.categoryUse,
                 onNote = vm::setNote,
-                onDelete = vm::deleteManualTxn,
+                onDelete = { entry ->
+                    vm.deleteManualTxn(entry)
+                    // The undo is a second net under the two-tap arming, not a replacement.
+                    val deletedRef = entry.txn.ref
+                    notices.show("تراکنش پاک شد", "برگردون") { vm.restoreManualTxn(deletedRef) }
+                },
                 onCreateCategory = vm::addCategory,
             )
             return
@@ -998,7 +1111,15 @@ private fun AppScreens(vm: AppVm, state: UiState, activity: FragmentActivity) {
             onSaveWallet = { option, address, onSuccess ->
                 vm.connectWallet(key, typeId, option, address, onSuccess)
             },
-            onDelete = { vm.removeHolding(key); editing = null },
+            onDelete = {
+                // The whole Holding, captured before the removal — amount, label, wallet link
+                // and the set-aside flag are what «برگردون» has to put back.
+                held?.let { h ->
+                    vm.removeHolding(h.key)
+                    notices.show("دارایی پاک شد", "برگردون") { vm.reinstateHolding(h) }
+                }
+                editing = null
+            },
             onRate = { r -> vm.setOverride(typeId, r) },
             onLabel = { name -> vm.setLabel(key, name) },
             onDismiss = { editing = null },
