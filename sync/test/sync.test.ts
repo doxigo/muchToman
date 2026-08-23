@@ -386,6 +386,56 @@ describe('revocation', () => {
     expect(revoke.status).toBe(200);
     expect((await pull(member.token)).status).toBe(401);
   });
+    const rotated = await pull(fresh);
+    expect(rotated.status).toBe(200);
+    expect(rotated.json.records).toHaveLength(1);
+  });
+});
+
+describe('abuse resistance', () => {
+  it('caps how many record rows a household may hold', async () => {
+    const hid = 'e1'.repeat(16);
+    const token = await claim(hid, ['personal:her']);
+    // 120_000 is the production cap; the test seeds to two under it directly in the object's
+    // SQLite, because pushing 120k records through HTTP would test patience rather than the cap.
+    const capMinusTwo = 120_000 - 2;
+    const stub = env.HOUSEHOLD.getByName(hid);
+    await runInDurableObject(stub, async (_instance, state) => {
+      state.storage.sql.exec(
+        `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${capMinusTwo})
+         INSERT INTO record (id, scope, seq, updated_at, device, kind, owner_member, author_member, deleted, nonce, body)
+         SELECT 'seed-' || i, 'personal:her', i, 1, 'seed', 'legacy', '', '', 0, 'n', 'b' FROM n`,
+      );
+    });
+
+    expect((await push(token, [record({ id: 'fits-1' }), record({ id: 'fits-2' })])).status).toBe(200);
+    const refused = await push(token, [record({ id: 'one-too-many' })]);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('household_full');
+    // Replacing an existing row is not growth, so edits keep working at the cap.
+    expect((await push(token, [record({ id: 'fits-1', updatedAt: 2000 })])).status).toBe(200);
+  });
+
+  it('caps a household at sixteen devices', async () => {
+    const owner = await claimDevice('e2'.repeat(16), ['family:e2'], {
+      memberId: 'e3'.repeat(16),
+      deviceId: 'e4'.repeat(16),
+    });
+    for (let i = 0; i < 15; i++) {
+      await pairDevice(
+        owner.token,
+        (0xa0 + i).toString(16).repeat(16),
+        (0xc0 + i).toString(16).repeat(16),
+      );
+    }
+    const invite = await SELF.fetch('https://sync.test/v1/invite', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({}),
+    });
+    const { code } = (await invite.json()) as { code: string };
+    const refused = await SELF.fetch('https://sync.test/v1/pair', {
+      method: 'POST',
       headers: { authorization: `Bearer ${owner.token}` },
       body: JSON.stringify({ code }),
     });
@@ -414,4 +464,11 @@ describe('revocation', () => {
     expect(((await near.json()) as { clamped: unknown[] }).clamped).toHaveLength(0);
   });
 
+  it('rate limits household creation per IP, as friction', async () => {
+    const claimAs = (ip: string, hid: string) =>
+      SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
+        method: 'POST',
+        headers: { 'cf-connecting-ip': ip },
+        body: JSON.stringify({ scopes: ['personal:her'] }),
+      });
 });

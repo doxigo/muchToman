@@ -26,6 +26,11 @@ const MAX_SYNC_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_RECORDS_PER_PUSH = 500;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_SCOPE_CHARS = 128;
+// A household is a family, not a tenant: sixteen devices and a hundred and twenty thousand
+// records are an order of magnitude past any real household, and a bound that exists is what
+// keeps one hijacked token from growing a Durable Object without limit.
+const MAX_RECORD_ROWS = 120_000;
+const MAX_DEVICES = 16;
 // LWW griefing/skew bound: a stamp from the far future would win every merge for ever, so
 // nothing may claim to be written more than a day ahead of this server's clock. The clamped
 // value is returned to the pusher so both sides converge on the same stamp.
@@ -500,9 +505,7 @@ export class Household extends DurableObject<Env> {
               : null;
         if (reservedKind && record.kind !== reservedKind) throw new SyncError('invalid_kind', 400);
         if (record.kind === 'member') {
-          if (record.ownerMemberId !== auth.memberId || record.id !== `member:${auth.memberId}`) {
-            throw new SyncError('forbidden_owner', 403);
-          }
+          // A member record is normally written only by the person it describes. The one
         }
         if (record.kind === 'transaction') {
           if (record.ownerMemberId !== auth.memberId || !record.id.startsWith(`txn:${auth.memberId}:`)) {
@@ -574,6 +577,10 @@ export class Household extends DurableObject<Env> {
     if (!target) throw new SyncError('invalid_request', 400);
     this.sql.exec('DELETE FROM device WHERE id = ?', target);
     return jsonResponse({ revoked: target });
+    const member = typeof body.member === 'string' ? body.member : '';
+    if (!device && !member) throw new SyncError('invalid_request', 400);
+    if (device) this.sql.exec('DELETE FROM device WHERE id = ?', device);
+    if (member) this.sql.exec('DELETE FROM device WHERE member_id = ?', member);
   }
 }
 
