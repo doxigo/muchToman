@@ -1,7 +1,7 @@
 import { importKey, readPairing } from './crypto';
 import type { Pairing } from './crypto';
 import { allRecords, getMeta, setMeta } from './db';
-import { memberId, save, saveProfile, syncNow } from './sync';
+import { inJalaliMonth, memberId, save, saveProfile, syncNow } from './sync';
 import type { CategoryDecision, Entry, MemberProfile, Session } from './sync';
 import { parsePasted } from './paste';
 
@@ -38,7 +38,8 @@ interface StoredSession {
   member?: string;
   name?: string;
   scope: string;
-  key: number[];
+  /** The non-extractable CryptoKey itself; `number[]` is the pre-release shape, migrated once. */
+  key: CryptoKey | number[];
 }
 
 async function loadSession(): Promise<Session | null> {
@@ -197,8 +198,12 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
     })
     .sort((a, b) => b.entry.at - a.entry.at);
 
-  const income = rows.filter((r) => r.entry.direction === 'in').reduce((s, r) => s + r.entry.amountRial, 0);
-  const spent = rows.filter((r) => r.entry.direction === 'out').reduce((s, r) => s + r.entry.amountRial, 0);
+  // The hero says «این ماه», so it sums this Jalali month and nothing else — the list below
+  // still carries everything.
+  const now = Date.now();
+  const monthRows = rows.filter((r) => inJalaliMonth(r.entry.at, now));
+  const income = monthRows.filter((r) => r.entry.direction === 'in').reduce((s, r) => s + r.entry.amountRial, 0);
+  const spent = monthRows.filter((r) => r.entry.direction === 'out').reduce((s, r) => s + r.entry.amountRial, 0);
   const members = [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
   const [net, earned, paid] = [toman(income - spent), toman(income), toman(spent)];
 

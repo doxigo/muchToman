@@ -1,10 +1,13 @@
 import { open as unseal, seal } from './crypto';
 import {
+  allRecords, clearOutbox, enqueue, getMeta, getRecord, outbox, putRecords, setMeta,
+} from './db';
 import type { OutboxRecord, StoredRecord } from './db';
 
 export interface Session {
   base: string;
   token: string;
+  /** When the token was minted; a monthly sync-time rotation runs off it. */
   issuedAt: number;
   device: string;
   member: string;
@@ -50,6 +53,27 @@ export function nextStamp(previous: number | undefined, now: number): number {
   return Math.max(now, (previous ?? 0) + 1);
 }
 
+/**
+ * «این ماه» has to mean this *Jalali* month. Intl's Persian calendar already knows the leap
+ * years, so month membership is string equality on formatted parts rather than Jalali
+ * arithmetic; Tehran's clock decides which day a timestamp lands on, exactly as the app does.
+ * (It lives in this file because main.ts cannot be imported without a DOM — the tests need it.)
+ */
+const JALALI_MONTH = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+  timeZone: 'Asia/Tehran',
+  year: 'numeric',
+  month: 'numeric',
+});
+
+export function jalaliMonthKey(at: number): string {
+  const parts = JALALI_MONTH.formatToParts(at);
+  const part = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}`;
+}
+
+export function inJalaliMonth(at: number, reference: number): boolean {
+  return jalaliMonthKey(at) === jalaliMonthKey(reference);
+}
 
 export function uuid7(now = Date.now()): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
