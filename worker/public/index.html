@@ -129,12 +129,23 @@
         gap: var(--l);
         padding-top: calc(env(safe-area-inset-top) + var(--xl));
       }
-      .mark { display: flex; align-items: center; gap: var(--m); font-weight: 800; font-size: 1.06rem; }
+      .mark { display: flex; align-items: center; gap: var(--m); font-weight: 800; font-size: 1.06rem; white-space: nowrap; }
       .mark img { width: 28px; height: 28px; border-radius: 8px; display: block; }
       .top nav { margin-inline-start: auto; display: flex; align-items: center; gap: var(--s); }
       .top nav a { text-decoration: none; font-weight: 700; font-size: .94rem; }
-      .top .ghost { padding: .35rem .8rem; border-radius: var(--r-pill); color: var(--muted); }
+      .top .ghost { display: inline-flex; align-items: center; padding: .35rem .8rem; border-radius: var(--r-pill); color: var(--muted); white-space: nowrap; }
       .top .ghost:hover { color: var(--ink); }
+      /* The star count, written in by the Worker on the way out — the page itself runs no
+         scripts. Hidden until it holds a real number: an unearned zero is worse than nothing. */
+      .stars { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: var(--s); font-size: .85rem; }
+      .stars[hidden] { display: none; }
+      .stars b { font-weight: 700; font-stretch: 90%; font-variant-numeric: tabular-nums; }
+      /* A phone header has no room for the word and the count both. The hero repeats the
+         گیت‌هاب pill a thumb's reach below, so here the count is the link. */
+      @media (max-width: 430px) {
+        .gh-word { display: none; }
+        .top .ghost .stars { margin-inline-start: 0; font-size: 1rem; }
+      }
 
       /* ————— pills: `PillButton`, to the letter. Flat colour, give under the thumb. ————— */
       .pill {
@@ -298,7 +309,7 @@
     <header class="wrap top">
       <span class="mark"><img src="/icon.svg" alt="" width="28" height="28" />چقدر تومن</span>
       <nav aria-label="پیوندها">
-        <a class="ghost" href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
+        <a class="ghost" href="https://github.com/doxigo/muchToman" aria-label="گیت‌هاب"><span class="gh-word">گیت‌هاب</span><span class="stars" hidden><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg><b id="stars"></b></span></a>
         <a class="pill primary small" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود</a>
       </nav>
     </header>

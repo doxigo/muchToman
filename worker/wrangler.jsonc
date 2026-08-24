@@ -11,16 +11,21 @@
   // builds already installed; nothing has to be retired for this to take effect.
   // The apex rides on the same Worker as the rates: both are public, cacheable and stateless,
   // which is the property the sync Worker was split off to protect — a landing page has no
-  // private data to keep away from a public code path. Deploying creates the apex DNS record.
+  // private data to keep away from a public code path. The apex and www are zone routes, not
+  // custom domains, on purpose: those hostnames already carry proxied DNS records, and a
+  // custom domain refuses to attach over existing records (API error 100117) while a route
+  // simply rides them. www serves the same page; the canonical tag points it at the apex.
   "routes": [
     { "pattern": "rates.muchtoman.com", "custom_domain": true },
-    { "pattern": "muchtoman.com", "custom_domain": true }
+    { "pattern": "muchtoman.com/*", "zone_name": "muchtoman.com" },
+    { "pattern": "www.muchtoman.com/*", "zone_name": "muchtoman.com" }
   ],
 
-  // The landing page. Assets answer first, so `/` is the page and `/img/...` are its pictures,
-  // while `/rates`, `/download`, `/coin-icon` and `/wallet-balance` — none of which exist as
-  // files — keep falling through to the code below exactly as before.
-  "assets": { "directory": "./public" },
+  // The landing page. `run_worker_first` because asset matching is hostname-blind: left to
+  // answer first, the platform would serve index.html at rates.muchtoman.com/ too. Every
+  // request goes through the code instead, which serves the page everywhere except the API
+  // hostnames, and writes the GitHub star count into the header on the way out.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   // Declaring `routes` switches the workers.dev subdomain OFF unless this says otherwise,
   // which took the only working endpoint down with it the first time. It stays on: builds
   // already installed point at it, and it is the fallback if the custom domain ever fails

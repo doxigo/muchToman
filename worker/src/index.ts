@@ -974,6 +974,56 @@ async function fetchLatestRelease(): Promise<
   };
 }
 
+/** ۱٬۲۳۴ — the same digits and separator every figure on the page already uses. */
+function faFigure(n: number): string {
+  return faDigits(n.toLocaleString('en-US')).replace(/,/g, '٬');
+}
+
+/**
+ * The landing page, with the repo's star count written into the header on the way out.
+ * Fetched here rather than by the page: the page ships no scripts at all, and from the
+ * audience's side of the network api.github.com is the request most likely to hang — the
+ * same reason the release check lives up here. A failed count leaves the badge hidden;
+ * a zero nobody earned is worse than nothing.
+ */
+async function landingPage(request: Request, env: Env): Promise<Response> {
+  const page = await env.ASSETS.fetch(request);
+  if (!(page.headers.get('content-type') ?? '').includes('text/html')) return page;
+  const stars = await fetchStars();
+  if (stars == null) return page;
+  const out = new HTMLRewriter()
+    .on('.stars', { element(el) { el.removeAttribute('hidden'); } })
+    .on('#stars', { element(el) { el.setInnerContent(faFigure(stars)); } })
+    .transform(page);
+  // The asset's validators describe the file, not this rewritten body: left on, a browser
+  // revalidates, gets a 304, and keeps yesterday's count until the next deploy.
+  const headers = new Headers(out.headers);
+  headers.delete('etag');
+  headers.delete('last-modified');
+  return new Response(out.body, { status: out.status, headers });
+}
+
+async function fetchStars(): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.github.com/repos/${REPO}`,
+      {
+        headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
+        cf: { cacheTtl: 3600, cacheEverything: true },
+      },
+      4_000,
+    );
+    if (!res.ok) {
+      await cancelBody(res.body);
+      return null;
+    }
+    const body = asRecord(JSON.parse(await readTextLimited(res.body, res.headers, 64 * 1024)) as unknown);
+    return typeof body.stargazers_count === 'number' ? body.stargazers_count : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The Persian half of a release body: what the phone actually shows someone running an old
  * build. The rest of the body is the commit subjects, which are English and written for whoever
@@ -1287,8 +1337,13 @@ async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext)
   return (await ratesInFlight).clone();
 }
 
+/** The landing page's static files; see `assets` in wrangler.jsonc for why the code serves them. */
+interface Env {
+  ASSETS: Fetcher;
+}
+
 export default {
-  async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === '/coin-icon') {
@@ -1355,7 +1410,13 @@ export default {
       }
     }
 
+    // The landing page everywhere except the API hostnames — rates. and workers.dev keep
+    // answering with the usage line so the rates origin never turns into a website, and
+    // `wrangler dev` on localhost gets the page like the apex does.
     if (url.pathname !== '/rates') {
+      if (url.hostname !== 'rates.muchtoman.com' && !url.hostname.endsWith('.workers.dev')) {
+        return await landingPage(request, env);
+      }
       return textResponse(
         'muchtoman: GET /rates, GET /coin-icon, GET /download, or POST /wallet-balance\n',
         404,
@@ -1399,4 +1460,4 @@ export default {
     }
     return res;
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Env>;
