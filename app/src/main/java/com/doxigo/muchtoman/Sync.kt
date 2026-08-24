@@ -31,7 +31,15 @@ const val META_SYNC_SCOPE = "sync_scope"
 const val META_SYNC_KEY = "sync_key"
 const val META_SYNC_SEQ = "sync_seq"
 const val META_SYNC_SHARE_SMS = "sync_share_sms"
+const val META_SYNC_SHARE_ASSETS = "sync_share_assets"
+/** Comma-joined bank names kept out of sharing — transactions and balances both. */
+const val META_SYNC_EXCLUDED_BANKS = "sync_excluded_banks"
+/** The household founder, as the server names them on every pull. */
+const val META_SYNC_PRIMARY = "sync_primary_member"
 const val META_SYNC_IDENTITY_OK = "sync_identity_ok"
+
+fun parseExcludedBanks(raw: String?): Set<String> =
+    raw?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet() ?: emptySet()
 
 data class SyncSession(
     val base: String,
@@ -103,6 +111,33 @@ private data class SyncMemberPayload(
     val sharesSms: Boolean,
 )
 
+/**
+ * One line of a member's shared دارایی: their own name for it and its value in Toman, priced on
+ * their phone with their rates. Nothing here is re-derived on arrival — the owner's figure is
+ * the figure, exactly as the owner's parse of a message is the transaction.
+ */
+@Serializable
+data class AssetShareItem(val name: String, val toman: Double)
+
+@Serializable
+private data class SyncAssetPayload(
+    val kind: String = "asset",
+    val memberId: String,
+    val totalToman: Double,
+    val items: List<AssetShareItem> = emptyList(),
+)
+
+/** A member's shared دارایی as the screens read it: who, what, and their own total. */
+data class FamilyAssetView(
+    val memberId: String,
+    val name: String,
+    val items: List<AssetShareItem>,
+    val totalToman: Double,
+)
+
+fun decodeAssetItems(json: String): List<AssetShareItem> =
+    runCatching { SYNC_JSON.decodeFromString<List<AssetShareItem>>(json) }.getOrDefault(emptyList())
+
 @Serializable
 private data class SyncCategoryPayload(
     val kind: String = "category",
@@ -159,7 +194,11 @@ private data class WireRecord(
 private data class PushBody(val records: List<WireRecord>)
 
 @Serializable
-private data class PullBody(val seq: Long = 0, val records: List<WireRecord> = emptyList())
+private data class PullBody(
+    val seq: Long = 0,
+    val records: List<WireRecord> = emptyList(),
+    val primaryMemberId: String = "",
+)
 
 @Serializable
 private data class ClaimBody(
@@ -188,7 +227,10 @@ private data class SecretBody(
 private data class CodeBody(val code: String = "")
 
 @Serializable
-private data class RevokeBody(val member: String)
+private data class RemoveMemberBody(val member: String, val record: WireRecord)
+
+@Serializable
+private data class LeaveBody(val record: WireRecord)
 
 @Serializable
 private data class ClampedStamp(val id: String = "", val updatedAt: Long = 0)
@@ -256,6 +298,7 @@ fun localRefOfFamilyTxn(familyRef: String, memberId: String): String? {
 }
 
 private fun memberRecordId(memberId: String): String = "member:$memberId"
+private fun assetRecordId(memberId: String): String = "asset:$memberId"
 private fun categoryRecordId(familyRef: String): String = "category:${sha256Hex(familyRef)}"
 
 /** One fresh household on the server: a random id, claimed for this member and device. */
@@ -283,7 +326,7 @@ suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String)
     withContext(Dispatchers.IO) {
         val session = claimFreshHousehold(base, newIdentity(), newIdentity())
         saveSession(durable, session)
-        durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
+        resetFamilySharing(durable)
         durable.familyMembers().put(
             FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
         )
@@ -392,10 +435,16 @@ private fun pairHousehold(link: String): SyncSession {
 /** The local half: the session becomes this phone's household, private until she says otherwise. */
 private suspend fun commitJoin(durable: DurableDb, session: SyncSession, memberName: String) {
     saveSession(durable, session)
-    durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
+    resetFamilySharing(durable)
     durable.familyMembers().put(
         FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
     )
+}
+
+private suspend fun resetFamilySharing(durable: DurableDb) {
+    durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "false"))
+    durable.meta().put(DurableMeta(META_SYNC_SHARE_ASSETS, "false"))
+    durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, ""))
 }
 
 suspend fun joinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
@@ -439,11 +488,8 @@ suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String
 /**
  * Cuts a member's devices off the household, effective on their very next request.
  *
- * Three moves, in the order that fails safe. First the server forgets their tokens — the only
- * step that stops future sync, so it goes first. Then their local row is buried so the list
- * stops showing someone who is no longer there. Last, a sealed tombstone for their member record
- * goes up so the other phones learn the same thing; the server lets a non-owner push exactly this
- * one shape, and the receivers still verify the ciphertext names this very record.
+ * The server publishes the sealed tombstone and revokes every device in one transaction. Only
+ * after that succeeds does this phone bury its local member row.
  *
  * What this does not do, on purpose: it does not touch their past transactions here or anywhere,
  * because they were already seen — the same honesty as the privacy sentence on the screen. And it
@@ -453,18 +499,8 @@ suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String
 suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberId: String): Unit =
     withContext(Dispatchers.IO) {
         require(memberId != session.member) { "not for leaving" }
-        request(
-            "${session.base}/v1/revoke",
-            "POST",
-            session.token,
-            SYNC_JSON.encodeToString(RevokeBody(member = memberId)),
-        )
         val member = durable.familyMembers().get(memberId)
         val stamp = nextStamp(member?.updatedAt, System.currentTimeMillis())
-        durable.familyMembers().put(
-            (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
-                .copy(updatedAt = stamp, deleted = true)
-        )
         val recordId = memberRecordId(memberId)
         val tombstone = wireRecord(
             session,
@@ -476,12 +512,54 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             deleted = true,
         )
         request(
-            "${session.base}/v1/sync",
+            "${session.base}/v1/remove",
             "POST",
             session.token,
-            SYNC_JSON.encodeToString(PushBody(listOf(tombstone))),
+            SYNC_JSON.encodeToString(RemoveMemberBody(memberId, tombstone)),
+        )
+        durable.familyMembers().put(
+            (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
+                .copy(updatedAt = stamp, deleted = true)
         )
     }
+
+/**
+ * This phone walks out on its own feet — the other side of [removeFamilyMember].
+ *
+ * The goodbye and token revocation are one server operation. Only after it succeeds is the local
+ * household buried and the session erased in one Room transaction.
+ *
+ * The same honesty as removal: nothing already seen is taken back, and the key this phone holds
+ * is not un-held. «نو کردن خانواده» on a remaining phone is the answer to that.
+ */
+suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withContext(Dispatchers.IO) {
+    val recordId = memberRecordId(session.member)
+    val stamp = nextStamp(durable.familyMembers().get(session.member)?.updatedAt, System.currentTimeMillis())
+    val tombstone = wireRecord(
+        session,
+        recordId,
+        "member",
+        session.member,
+        stamp,
+        SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
+        deleted = true,
+    )
+    request(
+        "${session.base}/v1/leave",
+        "POST",
+        session.token,
+        SYNC_JSON.encodeToString(LeaveBody(tombstone)),
+    )
+    durable.withTransaction {
+        buryHousehold(durable, keepMember = null)
+        // loadSession treats any stored base as a session to resume, so the keys must go, not blank.
+        durable.meta().delete(META_SYNC_BASE)
+        durable.meta().delete(META_SYNC_TOKEN)
+        durable.meta().delete(META_SYNC_SCOPE)
+        durable.meta().delete(META_SYNC_KEY)
+        durable.meta().delete(META_SYNC_PRIMARY)
+    }
+}
 
 /**
  * Cryptographic eviction: a fresh household under a fresh key, because [removeFamilyMember]
@@ -518,19 +596,31 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     // their monotonic stamps when they are re-published under the new key.
     durable.meta().put(DurableMeta(META_SYNC_SEQ, "0"))
     durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "false"))
+    resetFamilySharing(durable)
     val publications = durable.syncPublications().all()
     if (publications.isNotEmpty()) {
         durable.syncPublications().putAll(publications.map { it.copy(deleted = true) })
     }
     val now = System.currentTimeMillis()
     for (member in durable.familyMembers().all()) {
-        if (member.id == keepMember) continue
+        if (member.id == keepMember) {
+            if (member.sharesSms) {
+                durable.familyMembers().put(
+                    member.copy(sharesSms = false, updatedAt = nextStamp(member.updatedAt, now))
+                )
+            }
+            continue
+        }
         durable.familyMembers().put(member.copy(updatedAt = nextStamp(member.updatedAt, now), deleted = true))
     }
     // Their rows would double the moment they rejoin and re-push under a fresh member id,
     // so the old copies go now, while the copy on screen is saying "از نو".
     for (txn in durable.familyTxns().all()) {
         durable.familyTxns().put(txn.copy(updatedAt = nextStamp(txn.updatedAt, now), deleted = true))
+    }
+    // Every shared دارایی row here belongs to somebody in the household being left.
+    for (asset in durable.familyAssets().all()) {
+        durable.familyAssets().put(asset.copy(updatedAt = nextStamp(asset.updatedAt, now), deleted = true))
     }
 }
 
@@ -571,8 +661,11 @@ private suspend fun outgoingRecords(
     derived: DerivedDb,
     session: SyncSession,
     now: Long,
+    /** This member's دارایی as they share it, or null when sharing is off. */
+    assets: List<AssetShareItem>?,
 ): List<PreparedRecord> {
     val shareSms = durable.meta().get(META_SYNC_SHARE_SMS).toBoolean()
+    val excludedBanks = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS))
     val ownMember = durable.familyMembers().get(session.member) ?: FamilyMember(
         id = session.member,
         name = "عضو خانواده",
@@ -613,6 +706,9 @@ private suspend fun outgoingRecords(
         val signed = txn.signedRial ?: continue
         val sourceKind = txn.sourceKind
         if (sourceKind == "sms" && !shareSms) continue
+        // A bank she set aside: its rows never leave, and ones already out are swept below —
+        // dropping out of activeIds is what turns yesterday's share into today's tombstone.
+        if (txn.bank in excludedBanks) continue
         val id = familyTxnId(session.member, txn.ref)
         activeIds += id
         val category = categoryById[entry.categoryId]
@@ -646,7 +742,11 @@ private suspend fun outgoingRecords(
     }
 
     for (publication in publications.values) {
-        if (publication.sourceKind == "category" || publication.deleted || publication.id in activeIds) continue
+        // Only transaction publications sweep here: category records answer to their decisions,
+        // and the asset record has its own unshare below — a "transaction" tombstone under an
+        // asset: id would be refused by the server as a kind mismatch anyway.
+        if (publication.sourceKind == "category" || publication.sourceKind == "asset") continue
+        if (publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
         val deleted = publication.copy(contentHash = "", updatedAt = updatedAt, deleted = true)
         outgoing += PreparedRecord(
@@ -665,6 +765,45 @@ private suspend fun outgoingRecords(
         )
     }
 
+    // دارایی is one record per person, replaced wholesale: prices move every day, so it is
+    // republished whenever its content hash moves and tombstoned the sync after sharing stops.
+    val assetId = assetRecordId(session.member)
+    val assetPublication = publications[assetId]
+    if (assets != null) {
+        // The same 64-item ceiling the receivers hold; past it the payload is a parse gone
+        // wrong, and a record that outgrows the server's body cap would wedge the whole push.
+        val shared = safeAssetShareItems(assets)
+        val payload = SYNC_JSON.encodeToString(
+            SyncAssetPayload(
+                memberId = session.member,
+                totalToman = shared.sumOf { it.toman },
+                items = shared,
+            )
+        )
+        val contentHash = sha256Hex(payload)
+        if (assetPublication == null || assetPublication.deleted || assetPublication.contentHash != contentHash) {
+            val updatedAt = nextStamp(assetPublication?.updatedAt, now)
+            outgoing += PreparedRecord(
+                wireRecord(session, assetId, "asset", session.member, updatedAt, payload),
+                SyncPublication(assetId, "asset", contentHash, updatedAt, deleted = false),
+            )
+        }
+    } else if (assetPublication != null && !assetPublication.deleted) {
+        val updatedAt = nextStamp(assetPublication.updatedAt, now)
+        outgoing += PreparedRecord(
+            wireRecord(
+                session,
+                assetId,
+                "asset",
+                session.member,
+                updatedAt,
+                SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = assetId, deleted = true)),
+                deleted = true,
+            ),
+            assetPublication.copy(contentHash = "", updatedAt = updatedAt, deleted = true),
+        )
+    }
+
     val entriesByRef = ledger.entries.associateBy { it.txn.ref }
     for (decision in categoryDecisions) {
         if (decision.deleted) continue
@@ -675,6 +814,9 @@ private suspend fun outgoingRecords(
             (transaction?.sourceKind == "sms" || decision.ref.startsWith("s:")) &&
             !shareSms
         ) continue
+        // The same gate the transaction itself rides: a category record for a row an excluded
+        // bank keeps home would name a transaction the family cannot see.
+        if (transaction != null && transaction.familyRef.isBlank() && transaction.bank in excludedBanks) continue
         val target = decision.familyRef.ifBlank {
             transaction?.familyRef?.takeIf(String::isNotBlank)
                 ?: familyTxnId(session.member, decision.ref)
@@ -908,6 +1050,54 @@ private suspend fun applyCategory(
     return true
 }
 
+/**
+ * Somebody's shared دارایی, kept as sent: their names, their prices. Validated the way every
+ * other record is — the id, the envelope owner and the sealed payload must all name the same
+ * person, and that person must not be this phone's own member.
+ */
+private suspend fun applyAsset(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+    payload: SyncAssetPayload,
+): Boolean {
+    val memberId = record.id.removePrefix("asset:")
+    if (!isValidSyncIdentity(memberId) || memberId == session.member) return false
+    if (record.ownerMemberId != memberId || payload.memberId != memberId) return false
+    val existing = durable.familyAssets().get(memberId)
+    if (existing != null && existing.updatedAt > record.updatedAt) return false
+    val items = payload.items.take(64)
+        .map { AssetShareItem(safeSyncedText(it.name, 60, "دارایی"), it.toman) }
+        .filter { it.toman.isFinite() && it.toman in 0.0..MAX_PLAUSIBLE_RIAL.toDouble() }
+    ensureMemberPlaceholder(durable, memberId, record.updatedAt)
+    durable.familyAssets().put(
+        FamilyAsset(
+            memberId = memberId,
+            itemsJson = SYNC_JSON.encodeToString(items),
+            // Their figure where it is sane, the sum of what survived where it is not — a total
+            // out past ten trillion Toman is a corruption, not a fortune.
+            totalToman = payload.totalToman
+                .takeIf { it.isFinite() && it in 0.0..MAX_PLAUSIBLE_RIAL.toDouble() }
+                ?: items.sumOf { it.toman },
+            updatedAt = record.updatedAt,
+        )
+    )
+    return true
+}
+
+private suspend fun applyAssetTombstone(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+): Boolean {
+    val memberId = record.id.removePrefix("asset:")
+    if (!isValidSyncIdentity(memberId) || memberId == session.member) return false
+    val existing = durable.familyAssets().get(memberId) ?: return false
+    if (existing.updatedAt > record.updatedAt) return false
+    durable.familyAssets().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
+    return true
+}
+
 /** A verified tombstone for someone else's transaction: mark the local copy gone. */
 private suspend fun applyTransactionTombstone(
     durable: DurableDb,
@@ -964,6 +1154,7 @@ private suspend fun applyRecord(
         return when (record.kind) {
             "transaction" -> applyTransactionTombstone(durable, session, record)
             "member" -> applyMemberTombstone(durable, session, record)
+            "asset" -> applyAssetTombstone(durable, session, record)
             else -> false
         }
     }
@@ -972,6 +1163,8 @@ private suspend fun applyRecord(
             .getOrNull()?.let { applyMember(durable, record, it) } ?: false
         "category" -> runCatching { SYNC_JSON.decodeFromString<SyncCategoryPayload>(plain) }
             .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
+        "asset" -> runCatching { SYNC_JSON.decodeFromString<SyncAssetPayload>(plain) }
+            .getOrNull()?.let { applyAsset(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
             .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
         else -> false
@@ -1007,9 +1200,11 @@ suspend fun syncNow(
     derived: DerivedDb,
     session: SyncSession,
     now: Long = System.currentTimeMillis(),
+    /** This member's دارایی to share, or null when sharing is off. */
+    assets: List<AssetShareItem>? = null,
 ): SyncResult = withContext(Dispatchers.IO) {
     registerIdentity(session, durable)
-    val outgoing = outgoingRecords(durable, derived, session, now)
+    val outgoing = outgoingRecords(durable, derived, session, now, assets)
     var sent = 0
     for (chunk in outgoing.chunked(200)) {
         val response = request(
@@ -1046,6 +1241,9 @@ suspend fun syncNow(
                 if (applyRecord(durable, session, bounded, now)) applied++
             }
             durable.meta().put(DurableMeta(META_SYNC_SEQ, nextCursor.toString()))
+            if (pulled.primaryMemberId.isNotBlank()) {
+                durable.meta().put(DurableMeta(META_SYNC_PRIMARY, pulled.primaryMemberId))
+            }
             applied
         }
         cursor = nextCursor

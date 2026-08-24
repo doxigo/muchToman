@@ -41,9 +41,9 @@ import java.io.FileOutputStream
         SmsSource::class, DurableMeta::class, BalanceAnchor::class,
         Category::class, Rule::class, TxnDecision::class, LinkDecision::class,
         ManualTxn::class, Goal::class, FamilyMember::class, FamilyTxn::class,
-        SyncPublication::class,
+        SyncPublication::class, FamilyAsset::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class DurableDb : RoomDatabase() {
@@ -59,6 +59,7 @@ abstract class DurableDb : RoomDatabase() {
     abstract fun familyMembers(): FamilyMemberDao
     abstract fun familyTxns(): FamilyTxnDao
     abstract fun syncPublications(): SyncPublicationDao
+    abstract fun familyAssets(): FamilyAssetDao
 
     companion object {
         @Volatile private var instance: DurableDb? = null
@@ -222,6 +223,18 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        /** دارایی another member shared: their names, their prices, one row per person. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `family_asset` (`member_id` TEXT NOT NULL, " +
+                        "`items_json` TEXT NOT NULL, `total_toman` REAL NOT NULL, " +
+                        "`updated_at` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`member_id`))"
+                )
+            }
+        }
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: run {
                 // A staged restore is finished here, inside the one window where "durable.db is
@@ -242,7 +255,7 @@ abstract class DurableDb : RoomDatabase() {
                     // the database file rather than some export of it.
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7,
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
                     )
                     .build()
                     .also { instance = it }
@@ -349,6 +362,20 @@ data class SyncPublication(
     val deleted: Boolean = false,
 )
 
+/**
+ * Another member's دارایی, as they chose to share it: names and Toman values priced on their
+ * phone, never re-derived here. One row per member — the record replaces itself wholesale.
+ */
+@Entity(tableName = "family_asset")
+data class FamilyAsset(
+    @PrimaryKey @ColumnInfo(name = "member_id") val memberId: String,
+    /** Serialized list of [AssetShareItem]. */
+    @ColumnInfo(name = "items_json") val itemsJson: String,
+    @ColumnInfo(name = "total_toman") val totalToman: Double,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    val deleted: Boolean = false,
+)
+
 @Dao
 interface ManualTxnDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -405,6 +432,18 @@ interface SyncPublicationDao {
 
     @Query("SELECT * FROM sync_publication")
     suspend fun all(): List<SyncPublication>
+}
+
+@Dao
+interface FamilyAssetDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(row: FamilyAsset)
+
+    @Query("SELECT * FROM family_asset WHERE deleted = 0")
+    suspend fun all(): List<FamilyAsset>
+
+    @Query("SELECT * FROM family_asset WHERE member_id = :memberId LIMIT 1")
+    suspend fun get(memberId: String): FamilyAsset?
 }
 
 @Dao
@@ -508,6 +547,10 @@ interface DurableMetaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(row: DurableMeta)
+
+    /** Absence, not blank: [loadSession] treats any stored value as a session to resume. */
+    @Query("DELETE FROM durable_meta WHERE k = :key")
+    suspend fun delete(key: String)
 }
 
 /** How far back the ledger keeps messages it has read, in Jalali months. */

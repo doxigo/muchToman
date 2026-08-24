@@ -149,7 +149,7 @@ interface PushRecord {
   scope: string;
   updatedAt: number;
   device: string;
-  kind: 'legacy' | 'member' | 'transaction' | 'category';
+  kind: 'legacy' | 'member' | 'transaction' | 'category' | 'asset';
   ownerMemberId: string;
   authorMemberId?: string;
   deleted?: boolean;
@@ -175,7 +175,7 @@ function asRecords(value: unknown): PushRecord[] {
     if (!id || id.length > MAX_ID_CHARS) throw new SyncError('invalid_id', 400);
     if (!scope || scope.length > MAX_SCOPE_CHARS) throw new SyncError('invalid_scope', 400);
     if (!device || device.length > MAX_DEVICE_CHARS) throw new SyncError('invalid_device', 400);
-    if (!['legacy', 'member', 'transaction', 'category'].includes(kind)) {
+    if (!['legacy', 'member', 'transaction', 'category', 'asset'].includes(kind)) {
       throw new SyncError('invalid_kind', 400);
     }
     if (ownerMemberId.length > MAX_MEMBER_CHARS) throw new SyncError('invalid_member', 400);
@@ -285,6 +285,21 @@ export class Household extends DurableObject<Env> {
     this.sql.exec('INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (3)');
   }
 
+  /**
+   * The founder: the member who claimed the household. Recorded at claim; a household created
+   * before this existed backfills lazily from its oldest device row, which is the claimer's.
+   */
+  private primaryMember(): string {
+    const stored = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'primary_member')][0];
+    if (stored) return stored.v;
+    const oldest = [...this.sql.exec<{ member_id: string }>(
+      'SELECT member_id FROM device ORDER BY added_at ASC, id ASC LIMIT 1',
+    )][0];
+    const member = oldest && IDENTITY.test(oldest.member_id) ? oldest.member_id : '';
+    if (member) this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'primary_member', member);
+    return member;
+  }
+
   private device(secretHash: string): AuthorisedDevice | null {
     for (const row of this.sql.exec<{
       id: string; member_id: string; identity_locked: number; token_hash: string; scopes: string;
@@ -316,6 +331,8 @@ export class Household extends DurableObject<Env> {
       if (path === '/identity' && request.method === 'POST') return await this.setIdentity(request);
       if (path === '/pull' && request.method === 'GET') return await this.pull(request, url);
       if (path === '/push' && request.method === 'POST') return await this.push(request);
+      if (path === '/remove' && request.method === 'POST') return await this.remove(request);
+      if (path === '/leave' && request.method === 'POST') return await this.leave(request);
       if (path === '/revoke' && request.method === 'POST') return await this.revoke(request);
       if (path === '/rotate' && request.method === 'POST') return await this.rotate(request);
       return textResponse('not found\n', 404);
@@ -348,6 +365,7 @@ export class Household extends DurableObject<Env> {
       now,
       now,
     );
+    this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'primary_member', memberId);
     return jsonResponse({ secret, memberId, deviceId });
   }
 
@@ -486,7 +504,13 @@ export class Household extends DurableObject<Env> {
         body: row.body,
       });
     }
-    return jsonResponse({ seq: highest, records: rows, memberId: auth.memberId, deviceId: auth.id });
+    return jsonResponse({
+      seq: highest,
+      records: rows,
+      memberId: auth.memberId,
+      deviceId: auth.id,
+      primaryMemberId: this.primaryMember(),
+    });
   }
 
   private async push(request: Request): Promise<Response> {
@@ -507,20 +531,28 @@ export class Household extends DurableObject<Env> {
         const reservedKind = record.id.startsWith('member:') ? 'member'
           : record.id.startsWith('txn:') ? 'transaction'
             : record.id.startsWith('category:') ? 'category'
-              : null;
+              : record.id.startsWith('asset:') ? 'asset'
+                : null;
         if (reservedKind && record.kind !== reservedKind) throw new SyncError('invalid_kind', 400);
         if (record.kind === 'member') {
-          // A member record is normally written only by the person it describes. The one
-          // exception is a tombstone: removal happens after the described person's token is
-          // revoked, so someone else has to say it — and anyone who may revoke a device (any
-          // member) may say this too. Clients still refuse the tombstone unless its sealed body
-          // authenticates and names this very id, so this loosens routing, not truth.
-          const ownWrite = record.ownerMemberId === auth.memberId && record.id === `member:${auth.memberId}`;
-          const removal = record.deleted && record.id === `member:${record.ownerMemberId}`;
-          if (!ownWrite && !removal) throw new SyncError('forbidden_owner', 403);
+          // Member deletion changes household membership, so it never rides the general-purpose
+          // push path. Dedicated remove/leave operations validate and commit the profile
+          // tombstone together with token revocation.
+          const ownWrite = !record.deleted &&
+            record.ownerMemberId === auth.memberId &&
+            record.id === `member:${auth.memberId}`;
+          if (!ownWrite) throw new SyncError('forbidden_owner', 403);
         }
         if (record.kind === 'transaction') {
           if (record.ownerMemberId !== auth.memberId || !record.id.startsWith(`txn:${auth.memberId}:`)) {
+            throw new SyncError('forbidden_owner', 403);
+          }
+        }
+        if (record.kind === 'asset') {
+          // One assets record per person, written only by that person — tombstone included.
+          // Unlike a member row there is no removal ceremony to speak for: a removed member's
+          // assets simply stop being shown once their profile is buried.
+          if (record.ownerMemberId !== auth.memberId || record.id !== `asset:${auth.memberId}`) {
             throw new SyncError('forbidden_owner', 403);
           }
         }
@@ -536,9 +568,7 @@ export class Household extends DurableObject<Env> {
         if (
           existing &&
           existing.owner_member !== auth.memberId &&
-          // The member-tombstone exception again: replacing the removed person's profile row
-          // with their tombstone is the entire mechanism of telling the household they left.
-          (existing.kind === 'transaction' || (existing.kind === 'member' && !record.deleted))
+          (existing.kind === 'transaction' || existing.kind === 'asset' || existing.kind === 'member')
         ) throw new SyncError('forbidden_owner', 403);
         const storedAt = Math.min(record.updatedAt, maxStamp);
         if (storedAt !== record.updatedAt) clamped.push({ id: record.id, updatedAt: storedAt });
@@ -584,6 +614,78 @@ export class Household extends DurableObject<Env> {
     return jsonResponse({ seq, accepted: records.length, clamped });
   }
 
+  private memberTombstone(value: unknown, auth: AuthorisedDevice, targetMember: string): PushRecord {
+    const [record] = asRecords([value]);
+    if (
+      !IDENTITY.test(targetMember) ||
+      record.kind !== 'member' ||
+      !record.deleted ||
+      record.id !== `member:${targetMember}` ||
+      record.ownerMemberId !== targetMember ||
+      !auth.scopes.includes(record.scope)
+    ) {
+      throw new SyncError('invalid_member_tombstone', 400);
+    }
+    return record;
+  }
+
+  /** Writes the profile tombstone and cuts off the member as one SQLite transaction. */
+  private removeMember(auth: AuthorisedDevice, targetMember: string, record: PushRecord): Response {
+    const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
+    const seq = (head ? Number(head.v) : 0) + 1;
+    const existing = [...this.sql.exec<{ updated_at: number }>(
+      'SELECT updated_at FROM record WHERE id = ?',
+      record.id,
+    )][0];
+    // Leaving is authoritative. It must beat a previously clamped future profile stamp because
+    // the member will have no token left with which to retry a later tombstone.
+    const requestedAt = Math.min(record.updatedAt, Date.now() + MAX_STAMP_SKEW_MS);
+    const storedAt = Math.max(requestedAt, (existing?.updated_at ?? -1) + 1);
+    this.ctx.storage.transactionSync(() => {
+      this.sql.exec(
+        'INSERT OR REPLACE INTO record ' +
+          '(id, scope, seq, updated_at, device, kind, owner_member, author_member, deleted, nonce, body) ' +
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        record.id,
+        record.scope,
+        seq,
+        storedAt,
+        auth.id,
+        'member',
+        targetMember,
+        auth.memberId,
+        1,
+        record.nonce,
+        record.body,
+      );
+      this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'seq', String(seq));
+      this.sql.exec('DELETE FROM device WHERE member_id = ?', targetMember);
+      this.sql.exec('DELETE FROM pairing');
+    });
+    const clamped = storedAt === record.updatedAt ? [] : [{ id: record.id, updatedAt: storedAt }];
+    return jsonResponse({ revoked: targetMember, seq, clamped });
+  }
+
+  /** Removes another member, including their profile, or changes nothing. */
+  private async remove(request: Request): Promise<Response> {
+    const auth = await this.authorise(request);
+    const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const member = typeof body.member === 'string' ? body.member : '';
+    if (!member || member === auth.memberId) throw new SyncError('invalid_request', 400);
+    const primary = this.primaryMember();
+    if (primary && member === primary) throw new SyncError('forbidden_primary', 403);
+    const record = this.memberTombstone(body.record, auth, member);
+    return this.removeMember(auth, member, record);
+  }
+
+  /** Lets the caller leave and publishes that fact in the same transaction. */
+  private async leave(request: Request): Promise<Response> {
+    const auth = await this.authorise(request);
+    const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const record = this.memberTombstone(body.record, auth, auth.memberId);
+    return this.removeMember(auth, auth.memberId, record);
+  }
+
   /**
    * Immediate, because this object is the only thing that decides whether a token is good. There
    * is no cache anywhere to expire and no eventually-consistent store to catch up.
@@ -592,11 +694,21 @@ export class Household extends DurableObject<Env> {
    * is the request they can actually make. Revoking by member cuts every device that person has.
    */
   private async revoke(request: Request): Promise<Response> {
-    await this.authorise(request);
+    const auth = await this.authorise(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
     const device = typeof body.device === 'string' ? body.device : '';
     const member = typeof body.member === 'string' ? body.member : '';
-    if (!device && !member) throw new SyncError('invalid_request', 400);
+    if ((!device && !member) || (device && member)) throw new SyncError('invalid_request', 400);
+    // The founder is not removable by anyone else — a family survives its members falling out.
+    // Removing themselves stays their own right, which is also how anyone leaves: revoke your
+    // own member and walk.
+    const targetMember = member || ([...this.sql.exec<{ member_id: string }>(
+      'SELECT member_id FROM device WHERE id = ?', device,
+    )][0]?.member_id ?? '');
+    const primary = this.primaryMember();
+    if (primary && targetMember === primary && auth.memberId !== primary) {
+      throw new SyncError('forbidden_primary', 403);
+    }
     if (device) this.sql.exec('DELETE FROM device WHERE id = ?', device);
     if (member) this.sql.exec('DELETE FROM device WHERE member_id = ?', member);
     // Outstanding invite codes die with the revocation. A pairing row is not attributed to the
@@ -717,6 +829,8 @@ export default {
             : path === '/v1/invite' && request.method === 'POST' ? 'invite'
             : path === '/v1/pair' && request.method === 'POST' ? 'pair'
             : path === '/v1/identity' && request.method === 'POST' ? 'identity'
+            : path === '/v1/remove' && request.method === 'POST' ? 'remove'
+            : path === '/v1/leave' && request.method === 'POST' ? 'leave'
             : path === '/v1/revoke' && request.method === 'POST' ? 'revoke'
             : path === '/v1/rotate' && request.method === 'POST' ? 'rotate'
             : null;

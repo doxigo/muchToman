@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -133,8 +134,16 @@ fun CompanionScreen(
     onDismissRejoin: () -> Unit,
     onNameChange: (String) -> Unit,
     onShareSmsChange: (Boolean) -> Unit,
+    onShareAssetsChange: (Boolean) -> Unit,
+    /** The banks this phone tracks, for the set-aside chips. Enum names, not Persian. */
+    banks: List<String>,
+    onExcludedBankToggle: (String) -> Unit,
     onInvite: () -> Unit,
     onSync: () -> Unit,
+    /** Walks this phone out of the household. VM-side, because the cleanup needs a re-derive. */
+    onLeave: () -> Unit,
+    /** Re-keys the household. VM-side for the same re-derive; it ends with the fresh QR up. */
+    onRenew: () -> Unit,
     /** How many ledger entries each member id has put in, for the rows to report. */
     contributions: Map<String, Int>,
     bottomInset: androidx.compose.ui.unit.Dp,
@@ -145,11 +154,11 @@ fun CompanionScreen(
     }
     val cleanName = name.trim()
 
-    // Removal and renewal run from here rather than through the ViewModel: they are leaf
-    // actions — read the session, speak to the server, write the ledger — with nothing the
-    // ViewModel computes, and they finish by handing control back to the two callbacks this
-    // screen already has: onSync to re-read what the household looks like, onInvite to put the
-    // fresh QR up. That keeps the member list and the only things that shrink it in one file.
+    // Removal runs from here rather than through the ViewModel: it is a leaf action — read
+    // the session, speak to the server, write the ledger — with nothing the ViewModel
+    // computes, and it finishes by handing control back to onSync to re-read what the
+    // household looks like. That keeps the member list and the thing that shrinks it in one
+    // file; leaving and renewal live VM-side, because their cleanup needs a re-derive.
     val appContext = LocalContext.current.applicationContext
     val actionScope = rememberCoroutineScope()
     var acting by remember { mutableStateOf(false) }
@@ -237,16 +246,25 @@ fun CompanionScreen(
                             savedName = state.memberName,
                             contributions = contributions[state.memberId] ?: 0,
                             sharing = state.sharesSms,
+                            sharingAssets = state.sharesAssets,
+                            primary = state.memberId == state.primaryMemberId,
+                            banks = banks,
+                            excludedBanks = state.excludedBanks,
                             working = state.working,
                             onNameChange = { name = it.take(32) },
                             onSave = { onNameChange(cleanName) },
                             onSharingChange = onShareSmsChange,
+                            onSharingAssetsChange = onShareAssetsChange,
+                            onExcludedBankToggle = onExcludedBankToggle,
                             shape = bandShape(0, count),
                         )
                         others.forEachIndexed { index, member ->
                             FamilyMemberRow(
                                 member = member,
                                 contributions = contributions[member.id] ?: 0,
+                                // The founder's row carries no removal for anyone else — the
+                                // server would refuse it, so the button would be a lie.
+                                primary = member.id == state.primaryMemberId,
                                 shape = bandShape(index + 1, count),
                                 enabled = !state.working && !acting,
                                 onRemove = {
@@ -345,11 +363,33 @@ fun CompanionScreen(
             SectionHeading("حریم خصوصی")
             Spacer(Modifier.height(Space.s))
             Text(
-                "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.",
+                "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. " +
+                    "از دارایی‌ها هم فقط اسم و ارزش تومنی می‌ره؛ مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت نه. " +
+                    "خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.",
                 fontSize = 13.sp,
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (state.paired) {
+                Spacer(Modifier.height(Space.xxl))
+                SectionHeading("خروج از خانواده")
+                Spacer(Modifier.height(Space.s))
+                Text(
+                    "دسترسی همین گوشی قطع می‌شه و دفتر مشترک از روش پاک می‌شه؛ تراکنش‌های خودت سر جاشون می‌مونن. " +
+                        "چیزی که بقیه قبلاً دیدن پس گرفته نمی‌شه.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(Space.s))
+                ArmedAction(
+                    label = "خروج از خانواده",
+                    armedLabel = "مطمئنی؟ برای خروج دوباره بزن",
+                    enabled = !state.working && !acting,
+                    onConfirmed = onLeave,
+                )
+            }
 
             if (state.paired) {
                 Spacer(Modifier.height(Space.xxl))
@@ -371,14 +411,8 @@ fun CompanionScreen(
                     label = "نو کردن خانواده",
                     armedLabel = "مطمئنی؟ برای نو کردن دوباره بزن",
                     enabled = !state.working && !acting,
-                ) {
-                    familyAction(
-                        "نو نشد. اینترنتت رو چک کن.",
-                        // The fresh QR first, so the reason she did this is on screen; the sync
-                        // then re-pushes this phone's records under the new key.
-                        after = { onInvite(); onSync() },
-                    ) { _, durable -> renewHousehold(durable) }
-                }
+                    onConfirmed = onRenew,
+                )
             }
         }
     }
@@ -598,6 +632,8 @@ private fun MemberContribution(count: Int) {
 private fun FamilyMemberRow(
     member: FamilyMember,
     contributions: Int,
+    /** The founder. Their row wears the tag and carries no removal — the server refuses it. */
+    primary: Boolean,
     shape: Shape,
     enabled: Boolean,
     onRemove: () -> Unit,
@@ -614,30 +650,38 @@ private fun FamilyMemberRow(
             MemberAvatar(member.name)
             Spacer(Modifier.size(Space.m))
             Column(Modifier.weight(1f)) {
-                Text(
-                    member.name,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        member.name,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (primary) {
+                        Spacer(Modifier.size(Space.s))
+                        FounderTag()
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 MemberContribution(contributions)
             }
             Spacer(Modifier.size(Space.m))
             ShareStatus(member.sharesSms)
         }
-        TextButton(
-            onClick = { if (armed) { armed = false; onRemove() } else armed = true },
-            enabled = enabled,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            modifier = Modifier.align(Alignment.End),
-        ) {
-            Text(
-                if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف از خانواده",
-                fontSize = 13.sp,
-                fontWeight = if (armed) FontWeight.Bold else FontWeight.Normal,
-                // Announced, or the safeguard is invisible to TalkBack.
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
+        if (!primary) {
+            TextButton(
+                onClick = { if (armed) { armed = false; onRemove() } else armed = true },
+                enabled = enabled,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(
+                    if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف از خانواده",
+                    fontSize = 13.sp,
+                    fontWeight = if (armed) FontWeight.Bold else FontWeight.Normal,
+                    // Announced, or the safeguard is invisible to TalkBack.
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
         }
         if (armed) {
             Text(
@@ -665,10 +709,16 @@ private fun OwnMemberBlock(
     savedName: String,
     contributions: Int,
     sharing: Boolean,
+    sharingAssets: Boolean,
+    primary: Boolean,
+    banks: List<String>,
+    excludedBanks: Set<String>,
     working: Boolean,
     onNameChange: (String) -> Unit,
     onSave: () -> Unit,
     onSharingChange: (Boolean) -> Unit,
+    onSharingAssetsChange: (Boolean) -> Unit,
+    onExcludedBankToggle: (String) -> Unit,
     shape: Shape,
 ) {
     Column(
@@ -699,6 +749,10 @@ private fun OwnMemberBlock(
                             .background(MaterialTheme.colorScheme.primary)
                             .padding(horizontal = Space.s, vertical = 2.dp),
                     )
+                    if (primary) {
+                        Spacer(Modifier.size(Space.s))
+                        FounderTag()
+                    }
                 }
                 Spacer(Modifier.height(2.dp))
                 MemberContribution(contributions)
@@ -719,35 +773,108 @@ private fun OwnMemberBlock(
         }
 
         Spacer(Modifier.height(Space.l))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                // Concentric with the band it sits in: 28dp group radius less the 16dp
-                // of padding around it. Equal radii would make the inner surface look pinched.
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .toggleable(value = sharing, role = Role.Switch, onValueChange = onSharingChange)
-                .padding(Space.m),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "اشتراک تراکنش‌های پیامکی",
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (sharing) "موارد استخراج‌شده برای خانواده فرستاده می‌شن."
-                    else "پیامک‌های تو فقط روی همین گوشی می‌مونن.",
-                    fontSize = 12.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        ShareSwitch(
+            title = "اشتراک تراکنش‌های پیامکی",
+            caption = if (sharing) "موارد استخراج‌شده برای خانواده فرستاده می‌شن."
+            else "پیامک‌های تو فقط روی همین گوشی می‌مونن.",
+            checked = sharing,
+            onChange = onSharingChange,
+        )
+        Spacer(Modifier.height(Space.s))
+        ShareSwitch(
+            title = "اشتراک دارایی‌ها",
+            caption = if (sharingAssets) "فهرست دارایی‌هات با ارزش تومنی‌شون برای خانواده فرستاده می‌شه."
+            else "دارایی‌هات فقط روی همین گوشی می‌مونن.",
+            checked = sharingAssets,
+            onChange = onSharingAssetsChange,
+        )
+
+        // The set-aside banks, only while something is being shared for them to be set aside
+        // from. One veto for both directions: an excluded bank's transactions and its balance
+        // stay home together.
+        if (banks.isNotEmpty() && (sharing || sharingAssets)) {
+            Spacer(Modifier.height(Space.l))
+            Text(
+                "بانک‌های کنارگذاشته",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                "تراکنش‌ها و موجودی بانکی که علامت بزنی هیچ‌وقت فرستاده نمی‌شن.",
+                fontSize = 12.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.m))
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
+                verticalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                banks.forEach { bank ->
+                    FilterCategoryChip(
+                        name = bankNameOf(bank),
+                        chosen = bank in excludedBanks,
+                        onToggle = { onExcludedBankToggle(bank) },
+                    )
+                }
             }
-            Spacer(Modifier.size(Space.m))
-            Switch(checked = sharing, onCheckedChange = null)
         }
+    }
+}
+
+/** «سرپرست» — the founder's mark, on their row wherever it appears. */
+@Composable
+private fun FounderTag() {
+    Text(
+        "سرپرست",
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f))
+            .padding(horizontal = Space.s, vertical = 2.dp),
+    )
+}
+
+/** One sharing switch, said the way the block's first one always said it. */
+@Composable
+private fun ShareSwitch(
+    title: String,
+    caption: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // Concentric with the band it sits in: 28dp group radius less the 16dp
+            // of padding around it. Equal radii would make the inner surface look pinched.
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                caption,
+                fontSize = 12.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.size(Space.m))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -771,8 +898,15 @@ data class FamilyState(
     val memberName: String = "",
     val members: List<FamilyMember> = emptyList(),
     val sharesSms: Boolean = false,
+    val sharesAssets: Boolean = false,
+    /** Banks kept out of sharing — transactions and balances both. */
+    val excludedBanks: Set<String> = emptySet(),
+    /** The founder, as the server names them. Nobody else can remove this member. */
+    val primaryMemberId: String = "",
     val pairingUrl: String? = null,
     val lastSync: String? = null,
     val working: Boolean = false,
+    /** A sync in flight, silent ones included — what the ledger's pull indicator watches. */
+    val syncing: Boolean = false,
     val error: String? = null,
 )

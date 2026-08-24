@@ -111,4 +111,87 @@ class FamilySyncTest {
         assertEquals(horizon, clampSyncStamp(horizon + 1, now))
         assertEquals(horizon, clampSyncStamp(Long.MAX_VALUE, now))
     }
+
+    @Test
+    fun `asset share prices with own rates and honours every veto`() {
+        val holdings = listOf(
+            Holding("usd", 100.0),
+            Holding("gold_18", 2.0, excluded = true), // set aside → stays home
+            Holding("mystery", 5.0), // no rate → left out, never shared as zero
+            Holding("car", 1_000.0, label = "ماشین من"), // Toman by definition, her own name
+        )
+        val accounts = listOf(
+            BankAccount("SAMAN", balance = 500.0, anchored = true),
+            BankAccount("BLU", balance = 200.0, anchored = true),
+            BankAccount("MELLI", balance = 900.0, anchored = false), // a guess, not a balance
+        )
+        val items = assetShareItems(
+            holdings = holdings,
+            rates = mapOf("usd" to 60.0, "gold_18" to 5_000.0) + TOMAN_BY_DEFINITION,
+            coins = emptyList(),
+            stocks = emptyList(),
+            smsEnabled = true,
+            bankAccounts = accounts,
+            disabledBanks = emptySet(),
+            familyExcluded = setOf("BLU"),
+        )
+
+        assertEquals(3, items.size)
+        assertTrue(items.any { it.name == "ماشین من" && it.toman == 1_000.0 })
+        assertTrue(items.any { it.toman == 6_000.0 }) // usd at this phone's rate
+        assertTrue(items.any { it.toman == 500.0 }) // the one bank that cleared both vetoes
+        assertTrue(items.none { it.toman == 200.0 }) // BLU, kept out of the family
+        assertEquals(7_500.0, items.sumOf { it.toman }, 0.001)
+
+        // No messages read means no bank rows to speak of, whatever the accounts list says.
+        val noSms = assetShareItems(
+            holdings = holdings,
+            rates = mapOf("usd" to 60.0) + TOMAN_BY_DEFINITION,
+            coins = emptyList(),
+            stocks = emptyList(),
+            smsEnabled = false,
+            bankAccounts = accounts,
+            disabledBanks = emptySet(),
+            familyExcluded = emptySet(),
+        )
+        assertTrue(noSms.none { it.toman == 500.0 })
+    }
+
+    @Test
+    fun `asset sharing drops non finite and overflowing values`() {
+        val items = assetShareItems(
+            holdings = listOf(
+                Holding("overflow", Double.MAX_VALUE),
+                Holding("valid", 2.0),
+            ),
+            rates = mapOf("overflow" to 2.0, "valid" to 50.0),
+            coins = emptyList(),
+            stocks = emptyList(),
+            smsEnabled = false,
+            bankAccounts = emptyList(),
+            disabledBanks = emptySet(),
+            familyExcluded = emptySet(),
+        )
+
+        assertEquals(1, items.size)
+        assertEquals(100.0, items.single().toman, 0.0)
+        assertTrue(items.all { it.toman.isFinite() })
+
+        val bounded = safeAssetShareItems(
+            listOf(
+                AssetShareItem("bad", Double.POSITIVE_INFINITY),
+                AssetShareItem("negative", -1.0),
+                AssetShareItem("first", MAX_PLAUSIBLE_RIAL.toDouble()),
+                AssetShareItem("would overflow total", 1.0),
+            )
+        )
+        assertEquals(listOf("first"), bounded.map { it.name })
+    }
+
+    @Test
+    fun `excluded banks survive the round trip through meta`() {
+        assertEquals(setOf("SAMAN", "BLU"), parseExcludedBanks(setOf("SAMAN", "BLU").joinToString(",")))
+        assertEquals(emptySet<String>(), parseExcludedBanks(""))
+        assertEquals(emptySet<String>(), parseExcludedBanks(null))
+    }
 }

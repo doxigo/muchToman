@@ -362,6 +362,10 @@ suspend fun derive(
     // Everything she has decided, loaded once. The two databases cannot be joined — that is the
     // point of them being two files — so the join happens here, in a map, keyed by the message.
     val pinned = durable.decisions().ofKind(DecisionKind.CATEGORY).associate { it.ref to it.value }
+    // A transaction she deleted. The message stays in sms_source — evidence is kept — but the
+    // row it derives is dropped here, at the one gate every screen, total, link and family
+    // publication reads through, so the delete also tombstones the family's copy on its own.
+    val hiddenByHer = durable.decisions().ofKind(DecisionKind.HIDE).mapTo(HashSet()) { it.ref }
     val rules = durable.rules().active()
     val verdicts = durable.linkDecisions().all()
 
@@ -373,14 +377,14 @@ suspend fun derive(
 
         val all = mutableListOf<Txn>()
         for (chunk in sources.chunked(500)) {
-            val rows = chunk.flatMap { parseToRows(it, extra, now) }
+            val rows = chunk.flatMap { parseToRows(it, extra, now) }.filterNot { it.ref in hiddenByHer }
             derived.txn().insertAll(rows)
             all += rows
             written += rows.size
         }
         // Typed in here, or on the iPhone and synced across. From this line down nothing
         // distinguishes them from a message — they classify, link and report identically.
-        val manual = durable.manual().all().map(::manualToRow)
+        val manual = durable.manual().all().map(::manualToRow).filterNot { it.ref in hiddenByHer }
         derived.txn().insertAll(manual)
         all += manual
         written += manual.size

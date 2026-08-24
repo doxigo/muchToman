@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.room.withTransaction
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
@@ -91,6 +94,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     private var ledgerJob: Job? = null
     private var familySyncJob: Job? = null
+    private val familySyncLock = Any()
+    private var queuedFamilySyncSilent: Boolean? = null
+    private var familyTransitioning = false
+
+    /**
+     * Whether the sync now in flight owes her a sentence when it lands. Raised by the ledger's
+     * pull and read by whichever sync finishes next — a field rather than a parameter so a pull
+     * that arrives while a silent sync is already running still gets its answer, exactly as the
+     * pull indicator attaches itself to the in-flight job.
+     */
+    @Volatile private var announceSync = false
 
     init {
         refresh()
@@ -791,6 +805,75 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Takes back any row of this phone's own — hers to delete because it is hers.
+     *
+     * A hand-entered row is tombstoned in place. A message-derived one cannot be: the message is
+     * evidence and stays in sms_source untouched — instead a [DecisionKind.HIDE] decision is
+     * written against it, and the derive gate drops the row it would have made. Either way the
+     * family's copy dies through the ordinary unshare sweep on the next sync. Rows that came
+     * from another member (`f:`) are not hers and are never offered.
+     */
+    fun deleteTxn(entry: LedgerEntry) {
+        val ref = entry.txn.ref
+        if (ref.startsWith("m:")) return deleteManualTxn(entry)
+        if (!ref.startsWith("s:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                val session = loadSession(durable)
+                // REPLACE lands on the (ref, kind) unique index, so this also revives a decision
+                // an earlier undo tombstoned — no read needed first.
+                durable.decisions().put(
+                    TxnDecision(
+                        id = uuid7(now),
+                        ref = ref,
+                        kind = DecisionKind.HIDE,
+                        value = "1",
+                        createdAt = now,
+                        updatedAt = now,
+                        memberId = session?.member.orEmpty(),
+                        familyRef = entry.txn.familyRef,
+                    )
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "deleteTxn failed: $it") }
+        }
+    }
+
+    /** The undo: the hide decision is buried, and the next derive brings the row back. */
+    fun restoreTxn(ref: String) {
+        if (ref.startsWith("m:")) return restoreManualTxn(ref)
+        if (!ref.startsWith("s:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                durable.decisions().put(
+                    TxnDecision(
+                        id = uuid7(now),
+                        ref = ref,
+                        kind = DecisionKind.HIDE,
+                        value = null,
+                        createdAt = now,
+                        updatedAt = now,
+                        deleted = true,
+                    )
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "restoreTxn failed: $it") }
+        }
+    }
+
+    /**
      * Takes back a row she typed in — tombstoned, never erased, so the other phones in the
      * household learn it is gone. Only ever offered on manual rows: a message is evidence, and
      * evidence is not deletable.
@@ -1014,8 +1097,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             ).also { durable.familyMembers().put(it) }
         }
         val members = if (session == null) emptyList() else durable.familyMembers().all()
+        val memberById = members.associateBy { it.id }
+        // دارایی rows ride the member list: one whose member is gone — removed, left, buried —
+        // simply stops being shown, which is the whole cleanup a removal needs.
+        val familyAssets = if (session == null) emptyList() else durable.familyAssets().all()
+            .mapNotNull { row ->
+                val member = memberById[row.memberId] ?: return@mapNotNull null
+                FamilyAssetView(row.memberId, member.name, decodeAssetItems(row.itemsJson), row.totalToman)
+            }
+            .sortedBy { it.name }
         _state.update {
             it.copy(
+                familyAssets = familyAssets,
                 family = it.family.copy(
                     paired = session != null,
                     pendingPairing = if (session != null) null else it.family.pendingPairing,
@@ -1023,6 +1116,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     memberName = own?.name.orEmpty(),
                     members = members,
                     sharesSms = own?.sharesSms ?: false,
+                    sharesAssets = session != null &&
+                        durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean(),
+                    excludedBanks = if (session == null) emptySet()
+                    else parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+                    primaryMemberId = if (session == null) ""
+                    else durable.meta().get(META_SYNC_PRIMARY).orEmpty(),
                     lastSync = note ?: it.family.lastSync,
                     error = error,
                     working = false,
@@ -1117,10 +1216,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
             // Her name walks with her: the old household's row, not a fresh ask.
             val name = loadSession(durable)?.let { durable.familyMembers().get(it.member)?.name }
                 .orEmpty().ifBlank { store.name }
-            runCatching { rejoinHousehold(link, durable, name) }
+            runCatching {
+                val session = rejoinHousehold(link, durable, name)
+                // The join buried the old household's rows; re-derive here, because the sync
+                // below only derives when something arrives — and a fresh household sends nothing.
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                session
+            }
                 .onSuccess { session ->
                     _state.update { it.copy(family = it.family.copy(pendingRejoin = null)) }
                     refreshFamily(session, note = "به خانواده جدید پیوستی.")
@@ -1174,6 +1281,103 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Whether this member's دارایی list rides along on the next sync. Off is a tombstone. */
+    fun setFamilyAssetSharing(enabled: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            durable.meta().put(DurableMeta(META_SYNC_SHARE_ASSETS, enabled.toString()))
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /** Banks kept out of sharing entirely: their transactions and their balances both. */
+    fun toggleFamilyExcludedBank(bank: String) {
+        if (bank.isBlank()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            durable.withTransaction {
+                val current = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS))
+                val next = if (bank in current) current - bank else current + bank
+                durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, next.sorted().joinToString(",")))
+            }
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /**
+     * The walk-out itself lives in Sync.kt; this wrapper owns what the screen cannot: the
+     * re-derive that takes the buried family rows off every screen right now rather than at the
+     * next message, and the state flip back to unpaired.
+     */
+    fun leaveFamily() {
+        if (_state.value.family.working) return
+        val app = getApplication<Application>()
+        val activeSync = synchronized(familySyncLock) {
+            if (familyTransitioning) return
+            familyTransitioning = true
+            // If leave fails, the sync being cancelled still has to be retried.
+            queueFamilySync(silent = true)
+            familySyncJob
+        }
+        announceSync = false
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            activeSync?.cancelAndJoin()
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            val session = loadSession(durable) ?: run {
+                refreshFamily(null)
+                finishFamilyTransition(resumeQueued = false)
+                return@launch
+            }
+            runCatching {
+                leaveFamily(session, durable)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onSuccess {
+                refreshFamily(null, note = "از خانواده خارج شدی.")
+                finishFamilyTransition(resumeQueued = false)
+            }.onFailure {
+                android.util.Log.w("muchtoman", "leave failed: $it")
+                refreshFamily(session, error = "خروج نشد. اینترنتت رو چک کن.")
+                finishFamilyTransition(resumeQueued = true)
+            }
+        }
+    }
+
+    /**
+     * The re-key itself lives in Sync.kt; this wrapper owns the same cleanup [leaveFamily]
+     * owns — the re-derive that takes the buried household's rows off every screen right now
+     * rather than at the next message — then finishes the way the button promises: the fresh
+     * QR first, and the sync re-pushes this phone's records under the new key.
+     */
+    fun renewFamily() {
+        if (_state.value.family.working) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                renewHousehold(durable)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onSuccess {
+                inviteDevice()
+                requestFamilySync(silent = false)
+            }.onFailure {
+                android.util.Log.w("muchtoman", "renew failed: $it")
+                refreshFamily(loadSession(durable), error = "نو نشد. اینترنتت رو چک کن.")
+            }
+        }
+    }
+
     /** A one-time code, shown as a QR. Ten minutes, one use. */
     fun inviteDevice() {
         val app = getApplication<Application>()
@@ -1189,35 +1393,148 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun syncFamily() = requestFamilySync(silent = false)
+    fun syncFamily(silent: Boolean = false) = requestFamilySync(silent)
+
+    /** The ledger's pull: a silent sync that answers out loud, once, when it lands. */
+    fun pullFamilySync() {
+        announceSync = true
+        requestFamilySync(silent = true)
+    }
+
+    /** One quiet line for a pull she made herself. Says nothing unless a pull is waiting on it. */
+    private suspend fun announcePull(message: String) {
+        if (!announceSync) return
+        announceSync = false
+        withContext(Dispatchers.Main) {
+            Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private fun requestFamilySync(silent: Boolean) {
-        if (familySyncJob?.isActive == true) return
-        val app = getApplication<Application>()
-        if (!silent) _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
-        familySyncJob = viewModelScope.launch(Dispatchers.Default) {
-            ledgerJob?.join()
-            val durable = DurableDb.get(app)
-            val derived = DerivedDb.get(app)
-            val session = loadSession(durable) ?: return@launch if (!silent) refreshFamily(null) else Unit
-            runCatching { syncNow(durable, derived, session) }
-                .onSuccess { result ->
-                    if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
-                    publishLedger(durable, derived)
-                    refreshFamily(
-                        session,
-                        // faNumber, not the Int: interpolated straight in, these were the only
-                        // Latin digits anywhere in the app.
-                        note = "${faNumber(result.sent.toDouble())} مورد فرستادیم، " +
-                            "${faNumber(result.received.toDouble())} مورد گرفتیم.",
-                    )
-                }
-                .onFailure {
-                    android.util.Log.w("muchtoman", "sync failed: $it")
-                    if (silent) refreshFamily(session)
-                    else refreshFamily(session, error = "اتصال نشد. تغییرات روی گوشی محفوظ موند.")
-                }
+        synchronized(familySyncLock) {
+            if (familyTransitioning) {
+                queueFamilySync(silent)
+                return
+            }
+            if (familySyncJob?.isActive == true) {
+                queueFamilySync(silent)
+                markFamilySync(silent)
+                return
+            }
+            markFamilySync(silent)
+            val job = viewModelScope.launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+                runFamilySyncLoop(silent)
+            }
+            familySyncJob = job
+            job.start()
         }
+    }
+
+    private fun queueFamilySync(silent: Boolean) {
+        queuedFamilySyncSilent = queuedFamilySyncSilent?.let { it && silent } ?: silent
+    }
+
+    private fun markFamilySync(silent: Boolean) {
+        // `syncing` moves with every sync, silent or not, before the launch so the pull
+        // indicator that just asked for one sees it in the same frame. `working` stays what it
+        // was: the labelled receipt of the family screen's own buttons.
+        _state.update {
+            it.copy(
+                family = if (silent) it.family.copy(syncing = true)
+                else it.family.copy(syncing = true, working = true, error = null)
+            )
+        }
+    }
+
+    private suspend fun runFamilySyncLoop(initiallySilent: Boolean) {
+        val ownJob = kotlin.coroutines.coroutineContext[Job]
+        var silent = initiallySilent
+        try {
+            while (true) {
+                runFamilySyncOnce(silent)
+                val next = synchronized(familySyncLock) {
+                    if (!familyTransitioning && queuedFamilySyncSilent != null) {
+                        queuedFamilySyncSilent.also { queuedFamilySyncSilent = null }
+                    } else {
+                        if (familySyncJob === ownJob) familySyncJob = null
+                        null
+                    }
+                } ?: break
+                silent = next
+                markFamilySync(silent)
+            }
+        } finally {
+            val anotherSyncIsActive = synchronized(familySyncLock) {
+                if (familySyncJob === ownJob) familySyncJob = null
+                familySyncJob?.isActive == true
+            }
+            if (!anotherSyncIsActive) {
+                _state.update { s -> s.copy(family = s.family.copy(syncing = false)) }
+            }
+        }
+    }
+
+    private suspend fun runFamilySyncOnce(silent: Boolean) {
+        val app = getApplication<Application>()
+        ledgerJob?.join()
+        val durable = DurableDb.get(app)
+        val derived = DerivedDb.get(app)
+        val session = loadSession(durable) ?: run {
+            // No household, nothing to say: a pull raced a leave, and the toast would be
+            // about a family this phone is no longer in.
+            announceSync = false
+            if (!silent) refreshFamily(null)
+            return
+        }
+        // Priced here, where the rates live, so the sync layer stays a courier: what goes out
+        // is exactly the hero's own arithmetic, minus the banks she keeps out of the family.
+        val snapshot = _state.value
+        val assets = if (durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean()) {
+            assetShareItems(
+                holdings = store.holdings.filterNot { it.id.startsWith(DEMO_PREFIX) },
+                rates = snapshot.effective,
+                coins = snapshot.coins,
+                stocks = snapshot.stocks,
+                smsEnabled = store.smsEnabled,
+                bankAccounts = store.bankAccounts,
+                disabledBanks = store.disabledBanks,
+                familyExcluded = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+            )
+        } else null
+        try {
+            val result = syncNow(durable, derived, session, assets = assets)
+            if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
+            publishLedger(durable, derived)
+            refreshFamily(
+                session,
+                note = "${faNumber(result.sent.toDouble())} مورد فرستادیم، " +
+                    "${faNumber(result.received.toDouble())} مورد گرفتیم.",
+            )
+            announcePull(
+                if (result.received == 0) "تراکنش تازه‌ای از خانواده نبود."
+                else "${faNumber(result.received.toDouble())} مورد تازه از خانواده گرفتیم."
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            android.util.Log.w("muchtoman", "sync failed: $error")
+            if (silent) refreshFamily(session)
+            else refreshFamily(session, error = "اتصال نشد. تغییرات روی گوشی محفوظ موند.")
+            announcePull("اتصال نشد. اینترنتت رو چک کن.")
+        }
+    }
+
+    private fun finishFamilyTransition(resumeQueued: Boolean) {
+        val next = synchronized(familySyncLock) {
+            familyTransitioning = false
+            if (resumeQueued && queuedFamilySyncSilent != null) {
+                queuedFamilySyncSilent.also { queuedFamilySyncSilent = null }
+            } else {
+                queuedFamilySyncSilent = null
+                null
+            }
+        }
+        if (next != null) requestFamilySync(next)
     }
 
     /**
@@ -1770,6 +2087,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
             updateTotalWidget(getApplication())
         }
+        if (_state.value.family.sharesAssets) requestFamilySync(silent = true)
     }
 }
 
@@ -1800,6 +2118,8 @@ data class UiState(
     val tse: TseSnapshot = TseSnapshot(),
     val ledger: LedgerView = LedgerView(),
     val family: FamilyState = FamilyState(),
+    /** دارایی the other members chose to share, ready for the asset tab's family band. */
+    val familyAssets: List<FamilyAssetView> = emptyList(),
     /** Where a tapped notification wants her, until the composition has taken her there. */
     val openTab: Tab? = null,
     /** Whether that notification wanted the review deck in particular. Same one-shot life. */

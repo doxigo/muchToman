@@ -87,6 +87,33 @@ async function pull(token: string, since = 0) {
   return { status: res.status, json: (await res.json()) as { seq: number; records: any[] } };
 }
 
+function memberTombstone(memberId: string, scope: string, updatedAt = 2000) {
+  return record({
+    id: `member:${memberId}`,
+    scope,
+    kind: 'member',
+    ownerMemberId: memberId,
+    updatedAt,
+    deleted: true,
+  });
+}
+
+async function removeMember(token: string, memberId: string, scope: string) {
+  return SELF.fetch('https://sync.test/v1/remove', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ member: memberId, record: memberTombstone(memberId, scope) }),
+  });
+}
+
+async function leave(token: string, memberId: string, scope: string) {
+  return SELF.fetch('https://sync.test/v1/leave', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ record: memberTombstone(memberId, scope) }),
+  });
+}
+
 describe('a household', () => {
   it('is claimed once and never again', async () => {
     const hid = '1'.repeat(32);
@@ -422,34 +449,47 @@ describe('revocation', () => {
     expect(paired.status).toBe(403);
   });
 
-  it('lets another member bury a removed member profile, but never rewrite it', async () => {
-    // Removal happens after the removed person's token is dead, so the tombstone has to come
-    // from someone else — the same set of people who could revoke the device in the first
-    // place. A live rewrite of somebody else's profile stays forbidden.
+  it('removes a member and their profile in one operation', async () => {
     const hid = 'd3'.repeat(16);
     const scope = 'family:d3';
-    const removed = 'd4'.repeat(16);
-    const owner = await claimDevice(hid, [scope], { memberId: removed, deviceId: 'd5'.repeat(16) });
-    const other = await pairDevice(owner.token, 'd6'.repeat(16), 'd7'.repeat(16));
-    await push(owner.token, [
-      record({ id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed }),
-    ]);
-
-    const rewrite = await push(other.token, [
-      record({ id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed, updatedAt: 2000 }),
-    ]);
-    expect(rewrite.status).toBe(403);
-
-    const tombstone = await push(other.token, [
+    const owner = await claimDevice(hid, [scope], {
+      memberId: 'd4'.repeat(16),
+      deviceId: 'd5'.repeat(16),
+    });
+    const removed = await pairDevice(owner.token, 'd6'.repeat(16), 'd7'.repeat(16));
+    await push(removed.token, [
       record({
-        id: `member:${removed}`, scope, kind: 'member', ownerMemberId: removed,
-        updatedAt: 2000, deleted: true,
+        id: `member:${removed.memberId}`,
+        scope,
+        kind: 'member',
+        ownerMemberId: removed.memberId,
       }),
     ]);
-    expect(tombstone.status).toBe(200);
-    const { json } = await pull(other.token);
-    const row = json.records.find((r) => r.id === `member:${removed}`);
+
+    const tombstone = memberTombstone(removed.memberId, scope);
+    expect((await push(owner.token, [tombstone])).status).toBe(403);
+    expect((await removeMember(owner.token, removed.memberId, scope)).status).toBe(200);
+    expect((await pull(removed.token)).status).toBe(401);
+
+    const { json } = await pull(owner.token);
+    const row = json.records.find((r) => r.id === `member:${removed.memberId}`);
     expect(row.deleted).toBe(true);
+  });
+
+  it('does not let a member tombstone the founder through sync', async () => {
+    const scope = 'family:de';
+    const founder = await claimDevice('de'.repeat(16), [scope], {
+      memberId: 'df'.repeat(16),
+      deviceId: 'e0'.repeat(16),
+    });
+    const other = await pairDevice(founder.token, 'e2'.repeat(16), 'e3'.repeat(16));
+    await push(founder.token, [
+      record({ id: `member:${founder.memberId}`, scope, kind: 'member', ownerMemberId: founder.memberId }),
+    ]);
+
+    expect((await push(other.token, [memberTombstone(founder.memberId, scope)])).status).toBe(403);
+    expect((await removeMember(other.token, founder.memberId, scope)).status).toBe(403);
+    expect((await pull(founder.token)).status).toBe(200);
   });
 
   it('does not extend the tombstone exception to another member\'s transactions', async () => {
@@ -465,6 +505,102 @@ describe('revocation', () => {
       record({ id, scope, kind: 'transaction', ownerMemberId: ownerMember, updatedAt: 2000, deleted: true }),
     ]);
     expect(buried.status).toBe(403);
+  });
+
+  it('never lets another member remove the founder, while leaving stays anyone\'s right', async () => {
+    const founder = await claimDevice('b1'.repeat(16), ['family:b1'], {
+      memberId: 'b2'.repeat(16),
+      deviceId: 'b3'.repeat(16),
+    });
+    const member = await pairDevice(founder.token, 'b4'.repeat(16), 'b5'.repeat(16));
+
+    const revoke = (token: string, body: Record<string, string>) =>
+      SELF.fetch('https://sync.test/v1/revoke', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+
+    // Neither the founder's member id nor their device id is a door.
+    expect((await revoke(member.token, { member: founder.memberId })).status).toBe(403);
+    expect((await revoke(member.token, { device: founder.deviceId })).status).toBe(403);
+    expect((await pull(founder.token)).status).toBe(200);
+
+    // Leaving writes the profile tombstone and revokes the caller together.
+    expect((await leave(member.token, member.memberId, 'family:b1')).status).toBe(200);
+    expect((await pull(member.token)).status).toBe(401);
+    const founderView = await pull(founder.token);
+    expect(founderView.json.records.find((r) => r.id === `member:${member.memberId}`).deleted).toBe(true);
+  });
+
+  it('rejects ambiguous revoke selectors before deleting either target', async () => {
+    const founder = await claimDevice('e4'.repeat(16), ['family:e4'], {
+      memberId: 'e5'.repeat(16),
+      deviceId: 'e6'.repeat(16),
+    });
+    const member = await pairDevice(founder.token, 'e7'.repeat(16), 'e8'.repeat(16));
+    const ambiguous = await SELF.fetch('https://sync.test/v1/revoke', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${member.token}` },
+      body: JSON.stringify({ device: founder.deviceId, member: member.memberId }),
+    });
+    expect(ambiguous.status).toBe(400);
+    expect((await pull(founder.token)).status).toBe(200);
+    expect((await pull(member.token)).status).toBe(200);
+  });
+
+  it('validates a removal tombstone before revoking the target', async () => {
+    const scope = 'family:e9';
+    const founder = await claimDevice('e9'.repeat(16), [scope], {
+      memberId: 'ea'.repeat(16),
+      deviceId: 'eb'.repeat(16),
+    });
+    const member = await pairDevice(founder.token, 'ec'.repeat(16), 'ed'.repeat(16));
+    const malformed = await SELF.fetch('https://sync.test/v1/remove', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${founder.token}` },
+      body: JSON.stringify({
+        member: member.memberId,
+        record: memberTombstone(founder.memberId, scope),
+      }),
+    });
+    expect(malformed.status).toBe(400);
+    expect((await pull(member.token)).status).toBe(200);
+  });
+
+  it('names the founder on every pull', async () => {
+    const founder = await claimDevice('b6'.repeat(16), ['family:b6'], {
+      memberId: 'b7'.repeat(16),
+      deviceId: 'b8'.repeat(16),
+    });
+    const member = await pairDevice(founder.token, 'b9'.repeat(16), 'ba'.repeat(16));
+    const seen = (await pull(member.token)).json as { primaryMemberId?: string };
+    expect(seen.primaryMemberId).toBe(founder.memberId);
+  });
+});
+
+describe('shared assets', () => {
+  it('keeps a member\'s asset record theirs alone, tombstone included', async () => {
+    const hid = 'c1'.repeat(16);
+    const scope = 'family:c1';
+    const owner = await claimDevice(hid, [scope], { memberId: 'bc'.repeat(16), deviceId: 'bd'.repeat(16) });
+    const other = await pairDevice(owner.token, 'be'.repeat(16), 'bf'.repeat(16));
+
+    const own = record({ id: `asset:${owner.memberId}`, scope, kind: 'asset', ownerMemberId: owner.memberId });
+    expect((await push(owner.token, [own])).status).toBe(200);
+
+    // Nobody else writes it, rewrites it, or buries it.
+    expect((await push(other.token, [{ ...own, updatedAt: 2000 }])).status).toBe(403);
+    expect((await push(other.token, [{ ...own, updatedAt: 2000, deleted: true }])).status).toBe(403);
+    // And the id prefix is reserved: it cannot ride in under another kind.
+    expect((await push(other.token, [record({ id: `asset:${owner.memberId}`, scope })])).status).toBe(400);
+
+    // Their own record and their own tombstone are theirs.
+    const theirs = record({ id: `asset:${other.memberId}`, scope, kind: 'asset', ownerMemberId: other.memberId });
+    expect((await push(other.token, [theirs])).status).toBe(200);
+    expect((await push(owner.token, [{ ...own, updatedAt: 3000, deleted: true }])).status).toBe(200);
+    const { json } = await pull(other.token);
+    expect(json.records.find((r) => r.id === `asset:${owner.memberId}`).deleted).toBe(true);
   });
 });
 
@@ -514,9 +650,9 @@ describe('abuse resistance', () => {
   });
 
   it('caps a household at sixteen devices', async () => {
-    const owner = await claimDevice('e2'.repeat(16), ['family:e2'], {
-      memberId: 'e3'.repeat(16),
-      deviceId: 'e4'.repeat(16),
+    const owner = await claimDevice('b2'.repeat(16), ['family:b2'], {
+      memberId: 'b3'.repeat(16),
+      deviceId: 'b4'.repeat(16),
     });
     for (let i = 0; i < 15; i++) {
       await pairDevice(
@@ -543,7 +679,7 @@ describe('abuse resistance', () => {
   it('clamps a far-future stamp and returns the value it stored', async () => {
     // Without the bound, one device with a wrong clock — or a griefer — pins a record for
     // ever: nothing honest could ever outbid a stamp from the year 3000.
-    const token = await claim('e5'.repeat(16), ['personal:her']);
+    const token = await claim('b5'.repeat(16), ['personal:her']);
     const farFuture = Date.now() + 365 * 24 * 60 * 60 * 1000;
     const res = await push(token, [record({ updatedAt: farFuture })]);
     expect(res.status).toBe(200);

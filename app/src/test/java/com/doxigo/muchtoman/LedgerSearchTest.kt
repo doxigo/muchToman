@@ -23,6 +23,8 @@ class LedgerSearchTest {
         bank: String = "SAMAN",
         transfer: Boolean = false,
         sourceKind: String = "sms",
+        ownerName: String = "",
+        refNo: String = "",
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
@@ -33,12 +35,13 @@ class LedgerSearchTest {
                 direction = signed?.let { if (it > 0) "in" else "out" },
                 amountRial = signed?.let { kotlin.math.abs(it) }, signedRial = signed,
                 balanceRial = null, feeRial = null, mask = "", instrument = "unknown",
-                merchant = merchant, merchantNorm = "", refNo = "", printedAt = "",
+                merchant = merchant, merchantNorm = "", refNo = refNo, printedAt = "",
                 channel = "unknown", unitPrinted = "none", inferred = false,
                 parserVer = PARSER_VERSION, sourceKind = sourceKind,
             ),
             categoryId = "cat_x", categoryFa = category, confidence = 95,
             needsReview = false, duplicate = false, transfer = transfer,
+            ownerName = ownerName,
             note = note,
         )
     }
@@ -156,5 +159,33 @@ class LedgerSearchTest {
         // other way around — the fold is one function, applied twice.
         val row = entry(merchant = "كافه 24")
         assertTrue(matchesLedgerSearch(row, "کافه ۲۴"))
+    }
+
+    @Test
+    fun `the bank answers even when a merchant took the title`() {
+        val row = entry(merchant = "کافه دنج", bank = "SAMAN")
+        assertTrue(matchesLedgerSearch(row, "سامان"))
+        assertFalse(matchesLedgerSearch(row, "ملت"))
+        // A hand-entered row has no bank behind it: its "MANUAL" placeholder must not answer
+        // to whatever name the enum falls back to.
+        val manual = entry(merchant = "کافه دنج", bank = "MANUAL", sourceKind = "manual")
+        assertFalse(matchesLedgerSearch(manual, bankNameOf("MANUAL")))
+    }
+
+    @Test
+    fun `the owner answers, because the row prints who it belongs to`() {
+        val row = entry(merchant = "کافه دنج", ownerName = "مریم")
+        assertTrue(matchesLedgerSearch(row, "مریم"))
+        assertFalse(matchesLedgerSearch(row, "سهیل"))
+        // No owner printed, nothing to answer — and never a crash on the blank.
+        assertFalse(matchesLedgerSearch(entry(merchant = "کافه دنج"), "مریم"))
+    }
+
+    @Test
+    fun `the reference number answers, typed on any keyboard`() {
+        val row = entry(merchant = "کافه دنج", refNo = "784512")
+        assertTrue(matchesLedgerSearch(row, "784512"))
+        assertTrue(matchesLedgerSearch(row, "۷۸۴۵۱۲"))
+        assertFalse(matchesLedgerSearch(row, "999999"))
     }
 }

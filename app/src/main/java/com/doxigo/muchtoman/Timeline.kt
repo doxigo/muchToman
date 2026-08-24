@@ -47,6 +47,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -240,9 +243,11 @@ internal fun ledgerCategoryFa(entry: LedgerEntry): String =
 /**
  * Does this row answer to what she typed? Searched over what the row actually shows — the title
  * ([txnTitleFa], so a merchantless row is findable by its bank's name), the category line, her
- * note — and over the amount's digits, because «۲۵۰» is how she remembers a purchase she cannot
- * name. The amount is matched in Rial digits, which contain the Toman digits as a prefix, so
- * either way she thinks of the figure lands. A blank query narrows nothing.
+ * note, the bank behind the row even when a merchant took the title, who it belongs to (the row
+ * prints «از مریم», so مریم finds her rows), the bank's own reference number — and over the
+ * amount's digits, because «۲۵۰» is how she remembers a purchase she cannot name. The amount is
+ * matched in Rial digits, which contain the Toman digits as a prefix, so either way she thinks
+ * of the figure lands. A blank query narrows nothing.
  */
 internal fun matchesLedgerSearch(entry: LedgerEntry, query: String): Boolean {
     val q = searchFold(query)
@@ -250,6 +255,11 @@ internal fun matchesLedgerSearch(entry: LedgerEntry, query: String): Boolean {
     if (q in searchFold(txnTitleFa(entry.txn))) return true
     if (q in searchFold(ledgerCategoryFa(entry))) return true
     if (entry.note.isNotBlank() && q in searchFold(entry.note)) return true
+    // Not on manual rows: their bank column is the "MANUAL" placeholder, and matching whatever
+    // [bankNameOf] falls back to would sweep every hand-entered row into an unrelated search.
+    if (entry.txn.sourceKind != "manual" && q in searchFold(bankNameOf(entry.txn.bank))) return true
+    if (entry.ownerName.isNotBlank() && q in searchFold(entry.ownerName)) return true
+    if (entry.txn.refNo.isNotBlank() && q in searchFold(entry.txn.refNo)) return true
     val digits = q.filter { it in '0'..'9' }
     return digits.isNotEmpty() && entry.txn.amountRial?.toString()?.contains(digits) == true
 }
@@ -265,6 +275,10 @@ fun TimelineScreen(
     onOpen: (LedgerEntry) -> Unit,
     /** A transaction no message will ever report, typed in by hand. */
     onAddTxn: (() -> Unit)? = null,
+    /** True while a family sync is in flight — see [FamilyState.syncing]. */
+    syncing: Boolean = false,
+    /** Pull-down asks the household what is new. Null on a phone that is not in one. */
+    onSync: (() -> Unit)? = null,
 ) {
     val today = rememberTehranDay()
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
@@ -311,6 +325,28 @@ fun TimelineScreen(
     LaunchedEffect(lens, catFilter, query) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        // Pulling the list down asks the family server what the others added — the same sync
+        // the app already runs on its own at open and foreground, here on her own say-so. The
+        // indicator answers the pull alone, exactly as on the home tab: those silent syncs also
+        // raise [syncing], and ungated they would drop uninvited spinners over the دفتر.
+        var pulled by remember { mutableStateOf(false) }
+        LaunchedEffect(syncing) { if (!syncing) pulled = false }
+        val pullState = rememberPullToRefreshState()
+        PullToRefreshBox(
+            isRefreshing = syncing && pulled,
+            onRefresh = { if (onSync != null) { pulled = true; onSync() } },
+            state = pullState,
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = syncing && pulled,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding(),
+                )
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) {
         // statusBars only: the tab bar below owns the bottom, and taking systemBars here
         // would leave a gap the width of the navigation bar above it.
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -432,6 +468,7 @@ fun TimelineScreen(
                     }
                 }
             }
+        }
         }
     }
 
@@ -1240,10 +1277,12 @@ fun TransactionScreen(
                 }
             }
 
-            // Only on a row she typed in: a message is evidence, and evidence is not deletable.
-            // The two-tap confirm is the budget sheet's own, because one stray touch down here
-            // must not erase a transaction.
-            if (onDelete != null && txn.sourceKind == "manual") {
+            // Only on this phone's own rows — `m:` typed in, `s:` read from a message; a row
+            // another member shared (`f:`) is theirs to delete, not ours. The message itself
+            // stays in the archive either way: deleting an SMS row hides what was made of it,
+            // it does not destroy evidence. The two-tap confirm is the budget sheet's own,
+            // because one stray touch down here must not erase a transaction.
+            if (onDelete != null && (txn.ref.startsWith("m:") || txn.ref.startsWith("s:"))) {
                 item(key = "delete") {
                     Column(gutter) {
                         Spacer(Modifier.height(Space.xl))

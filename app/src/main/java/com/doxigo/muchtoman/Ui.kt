@@ -596,8 +596,13 @@ private fun AppScreens(
             onDismissRejoin = vm::dismissRejoin,
             onNameChange = vm::setFamilyName,
             onShareSmsChange = vm::setFamilySmsSharing,
+            onShareAssetsChange = vm::setFamilyAssetSharing,
+            banks = remember(state.bankAccounts) { state.bankAccounts.map { it.bank }.distinct() },
+            onExcludedBankToggle = vm::toggleFamilyExcludedBank,
             onInvite = vm::inviteDevice,
             onSync = vm::syncFamily,
+            onLeave = vm::leaveFamily,
+            onRenew = vm::renewFamily,
             contributions = remember(state.ledger.entries) {
                 state.ledger.entries.filterNot { it.duplicate }
                     .groupingBy { it.ownerMemberId }
@@ -661,10 +666,10 @@ private fun AppScreens(
                 categoryUse = state.ledger.categoryUse,
                 onNote = vm::setNote,
                 onDelete = { entry ->
-                    vm.deleteManualTxn(entry)
+                    vm.deleteTxn(entry)
                     // The undo is a second net under the two-tap arming, not a replacement.
                     val deletedRef = entry.txn.ref
-                    notices.show("تراکنش پاک شد", "برگردون") { vm.restoreManualTxn(deletedRef) }
+                    notices.show("تراکنش پاک شد", "برگردون") { vm.restoreTxn(deletedRef) }
                 },
                 onCreateCategory = vm::addCategory,
             )
@@ -746,6 +751,11 @@ private fun AppScreens(
             onAskNotify = askNotify,
             onOpen = { transactionRef = it.txn.ref },
             onAddTxn = { addingTxn = true },
+            syncing = state.family.syncing,
+            // Silent for the family screen's state, but the pull itself answers with one toast —
+            // nothing new, n new, or no connection — because an empty result and a dead network
+            // would otherwise both look like the spinner going away.
+            onSync = ({ vm.pullFamilySync() }).takeIf { state.family.paired },
           )
         }
         return@Scaffold
@@ -1076,6 +1086,23 @@ private fun AppScreens(
 
             if (portfolio && state.totals.missing.isNotEmpty()) {
                 item { MissingNote(state.totals.missing, state.coins, state.stocks) }
+            }
+
+            // What the family shares back, under her own inventory: one band per member, their
+            // names and their prices exactly as sent. Absent entirely until somebody shares.
+            if (portfolio && state.familyAssets.isNotEmpty()) {
+                state.familyAssets.forEach { shared ->
+                    item(key = "family_asset_head_${shared.memberId}") {
+                        SectionHead(
+                            title = "دارایی ${shared.name}",
+                            subtotal = shared.totalToman.takeIf { shared.items.size > 1 },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                    item(key = "family_asset_${shared.memberId}") {
+                        FamilyAssetBand(shared, Modifier.animateItem())
+                    }
+                }
             }
         }
         }
@@ -2651,6 +2678,46 @@ private fun HoldingRow(
  * time this hint is, and two identical green pills one above the other read as a mistake —
  * the reader's question becomes which of them is the real one.
  */
+@Composable
+private fun FamilyAssetBand(shared: FamilyAssetView, modifier: Modifier = Modifier) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    // One band per member, rows inside — the same construction her own holdings wear. Nothing
+    // here is tappable: the figures are the owner's to edit, on the owner's phone. The names
+    // and the prices arrive as sent; this phone never re-derives someone else's money.
+    Column(
+        modifier
+            .padding(edge)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        if (shared.items.isEmpty()) {
+            Text(
+                "فعلاً چیزی برای نمایش نفرستاده.",
+                fontSize = 13.sp,
+                color = muted,
+                modifier = Modifier.padding(Space.l),
+            )
+        }
+        shared.items.forEachIndexed { i, item ->
+            Row(
+                Modifier.padding(horizontal = Space.l, vertical = Space.m),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RowTitle(item.name, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(Space.s))
+                RowAmount(item.toman, color = MaterialTheme.colorScheme.onSurface, unit = "تومان")
+            }
+            if (i < shared.items.lastIndex) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = Space.l),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun EmptyHint() {
     Column(

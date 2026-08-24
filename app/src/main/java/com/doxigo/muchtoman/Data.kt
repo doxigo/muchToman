@@ -216,6 +216,53 @@ fun listHoldings(
 }
 
 /**
+ * دارایی as this member shares it with the family: her holdings priced with this phone's rates,
+ * then one line per bank balance. It mirrors the hero total's own rules — a set-aside holding
+ * stays home, an unpriced one is left out rather than shared as zero, a switched-off bank is out
+ * of her total and out of the share alike — with [familyExcluded] as the family-only veto on top.
+ * Pure, so the sharing rules can be tested without a device.
+ */
+fun assetShareItems(
+    holdings: List<Holding>,
+    rates: Map<String, Double>,
+    coins: List<Coin>,
+    stocks: List<Stock>,
+    smsEnabled: Boolean,
+    bankAccounts: List<BankAccount>,
+    disabledBanks: Set<String>,
+    familyExcluded: Set<String>,
+): List<AssetShareItem> {
+    val own = holdings.filterNot { it.excluded }.mapNotNull { h ->
+        val rate = rates[h.typeId] ?: return@mapNotNull null
+        AssetShareItem(h.nameOr(resolveType(h.typeId, coins, stocks).fa), h.amount * rate)
+    }
+    if (!smsEnabled) return safeAssetShareItems(own)
+    val banks = bankAccounts
+        .filter { it.anchored && it.bank !in disabledBanks && it.bank !in familyExcluded }
+        .map { AssetShareItem("بانک ${bankNameOf(it.bank)}", it.balance) }
+    return safeAssetShareItems(own + banks)
+}
+
+/** Keeps malformed or overflowing values out of the JSON serializer and the receiving ledger. */
+internal fun safeAssetShareItems(items: Iterable<AssetShareItem>): List<AssetShareItem> {
+    val safe = ArrayList<AssetShareItem>(64)
+    var total = 0.0
+    for (item in items) {
+        if (safe.size == 64) break
+        val next = total + item.toman
+        if (
+            !item.toman.isFinite() ||
+            item.toman !in 0.0..MAX_PLAUSIBLE_RIAL.toDouble() ||
+            !next.isFinite() ||
+            next > MAX_PLAUSIBLE_RIAL.toDouble()
+        ) continue
+        safe += item
+        total = next
+    }
+    return safe
+}
+
+/**
  * Today's history entry, but only a total worth remembering: something on the list, every
  * holding priced, rates younger than a day. A partial or stale total drawn into the chart
  * would look like a crash that never happened. Null means leave the history as it is.
