@@ -290,10 +290,15 @@ fun InsightGrid(insights: List<Insight>, modifier: Modifier = Modifier) {
 
 /** Before there is any history, say so plainly rather than showing a zero. */
 @Composable
-fun QuietStart(smsEnabled: Boolean, modifier: Modifier = Modifier) {
+fun QuietStart(
+    smsEnabled: Boolean,
+    modifier: Modifier = Modifier,
+    /** The window the claim is about — home's is the month, the report's is whatever it reads. */
+    named: String = "این ماه",
+) {
     Panel(modifier) {
         Text(
-            if (smsEnabled) "هنوز برای این ماه تراکنشی ثبت نشده" else "پیامک‌های بانکی خاموشن",
+            if (smsEnabled) "هنوز برای $named تراکنشی ثبت نشده" else "پیامک‌های بانکی خاموشن",
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )

@@ -18,7 +18,9 @@ are spelled out in words as a guard against misreading by a factor of ten.
 
 ## Platform
 
-Native Android, Jetpack Compose, Material 3. minSdk 24. Two flavours (full / lite) × dev
+android
+
+Material 3, as Jetpack Compose renders it. minSdk 24. Two flavours (full / lite) × dev
 sandbox build type. One typeface: Modam variable (wght 200–900, wdth 70–100) — the only face
 with the required Persian coverage; tightness comes off the width axis, never tracking.
 

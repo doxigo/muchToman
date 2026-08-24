@@ -256,11 +256,15 @@ fun snapshotHistory(
  * shrinks the denominator too and reads a quiet +3% month as +35%. It also undoes itself, so
  * setting an asset aside and thinking better of it leaves the history where it started.
  *
- * Refused when either basis is partial or not positive: a total missing a price is not a
- * measurement, and a zero can never be scaled back if she changes her mind.
+ * Refused when the toggle itself changed what is missing, or when either basis is not positive:
+ * a step whose size is hidden inside an unpriced holding cannot be scaled away, and a zero can
+ * never be scaled back if she changes her mind. The *same* holding unpriced on both sides does
+ * not refuse — she set one asset aside, some other asset happens to have no rate today, and
+ * declining to rebase for that would put the very step on the chart this function exists to
+ * prevent.
  */
 fun rebaseHistory(history: Map<Long, Double>, before: Totals, after: Totals): Map<Long, Double> {
-    if (before.missing.isNotEmpty() || after.missing.isNotEmpty()) return history
+    if (before.missing != after.missing) return history
     if (before.toman <= 0.0 || after.toman <= 0.0) return history
     val factor = after.toman / before.toman
     if (!factor.isFinite() || factor == 1.0) return history

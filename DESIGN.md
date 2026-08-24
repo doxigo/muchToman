@@ -69,6 +69,12 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
 
 - Money that *is* somewhere — assets, budgets, goals, settings — sits in **bands**
   (`bandShape`: one grouped object, hairline-divided rows, the «+» row built in).
+- **تنظیمات is an index; its settings are rooms.** The page is her card and three bands of
+  doors — دفترت, برنامه, نگهداری — and every switch, and every paragraph that qualifies one,
+  lives on the page its door opens ([Settings.kt](app/src/main/java/com/doxigo/muchtoman/Settings.kt)).
+  One rule keeps the two legible: a **`primaryContainer` disc is a door**, a neutral
+  **`surfaceContainerHighest` disc is a control**. It is the quiet chip, never `Cta` — «press
+  this» keeps meaning one thing.
 - Activity — the ledger — is **container-less**: day heading (13sp bold muted + the day's
   net), then plain rows on the paper. Each row leads with a 44dp circle in the category's
   hue at 16% behind its glyph; merchant 16sp SemiBold; category line under; amount at the

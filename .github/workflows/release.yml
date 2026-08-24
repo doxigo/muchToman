@@ -252,12 +252,22 @@ jobs:
             muchtoman-${{ github.ref_name }}.apk
             muchtoman-lite-${{ github.ref_name }}.apk
       - run: |
+          # A second copy of each APK under a name that never changes, so
+          # releases/latest/download/muchtoman-latest.apk is a link the landing page can
+          # print once and never touch again. Same bytes as the versioned file, so the
+          # attestation above verifies either copy by digest. Listed after the versioned
+          # full APK on purpose: the rates Worker's /download picks the first .apk in the
+          # release, and that must stay the versioned full one.
+          cp "muchtoman-${GITHUB_REF_NAME}.apk" muchtoman-latest.apk
+          cp "muchtoman-lite-${GITHUB_REF_NAME}.apk" muchtoman-lite-latest.apk
           gh release create "$GITHUB_REF_NAME" \
             "muchtoman-${GITHUB_REF_NAME}.apk" \
             "muchtoman-${GITHUB_REF_NAME}-mapping.txt" \
             "muchtoman-lite-${GITHUB_REF_NAME}.apk" \
             "muchtoman-lite-${GITHUB_REF_NAME}-mapping.txt" \
             "muchtoman-${GITHUB_REF_NAME}-sha256sums.txt" \
+            muchtoman-latest.apk \
+            muchtoman-lite-latest.apk \
             --notes-file notes.md --title "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY"
         env:

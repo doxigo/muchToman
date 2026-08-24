@@ -102,6 +102,17 @@ class SnapshotTest {
     }
 
     @Test
+    fun `an unpriced bystander does not veto the rebase`() {
+        // She sets one asset aside while another happens to have no rate today. The step is
+        // still exactly the asset she set aside — refusing to rebase for the bystander is what
+        // used to put the very step on the chart this function exists to prevent.
+        val history = mapOf(90L to 8_000.0)
+        val before = Totals(8_000.0, listOf("btc"))
+        val after = Totals(1_000.0, listOf("btc"))
+        assertEquals(1_000.0, rebaseHistory(history, before, after).getValue(90L), 1e-9)
+    }
+
+    @Test
     fun `switching messages off removes the bank row`() {
         val holdings = listOf(Holding("usd", 1.0))
         val list = listHoldings(holdings, false, listOf(anchored("SAMAN", 300.0)), emptySet())

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -85,6 +86,7 @@ import kotlinx.coroutines.launch
  * statements shows. Deposits count as growth here, exactly as they do at the bank.
  */
 private val WINDOWS: List<Pair<String, Int?>> = listOf(
+    "۱ هفته" to 7,
     "۱ ماه" to 30,
     "۳ ماه" to 91,
     "۶ ماه" to 182,
@@ -126,8 +128,12 @@ fun ReportScreen(
     smsEnabled: Boolean,
     mode: ReportMode,
     onMode: (ReportMode) -> Unit,
-    /** The window دخل و خرج should read: the month it ends at, and how far back it reaches. */
-    onWindow: (ReportMonth, ReportSpan) -> Unit,
+    /**
+     * The window دخل و خرج should read: the day it is anchored on, and how far back it reaches.
+     * A day rather than a month, because the anchor has to be able to name a week as well as a
+     * month — [buildCashFlow] reads the month out of it for every month-made span.
+     */
+    onWindow: (Long, ReportSpan) -> Unit,
     bottomInset: Dp,
     onBack: (() -> Unit)? = null,
     /** The live categories, for naming and choosing what دخل و خرج leaves out. */
@@ -245,7 +251,11 @@ private fun AssetReportContent(
     }
 
     var selected by remember {
-        mutableStateOf(WINDOWS.firstOrNull { available(it.second) }?.first ?: "همه")
+        // The shortest window that is at least a month: opening on «۱ هفته» would lead with the
+        // noisiest read of the money, and a week was never what the door was opened to ask.
+        mutableStateOf(
+            WINDOWS.firstOrNull { (_, days) -> days != 7 && available(days) }?.first ?: "همه",
+        )
     }
     val days = WINDOWS.first { it.first == selected }.second
 
@@ -409,20 +419,27 @@ private fun changeTone(change: Change): Color = when {
     else -> MaterialTheme.colorScheme.error
 }
 
-/** A window the history is too short to answer is dimmed, not hidden — its absence is data. */
+/**
+ * A window the history is too short to answer is dimmed, not hidden — its absence is data.
+ *
+ * The same chips, in the same place, as دخل و خرج's [SpanPicker]: it is the same question asked
+ * of the other half of her money, and it wore a full-width track while the cash report wore
+ * pills — two shapes for one control, met one tab apart. Chips also honour the two-tier rule
+ * here: the segment directly above is the report switcher, and slicers wear the small pill.
+ * Scrollable because six lengths outgrow a narrow phone; the row starts where the page reads.
+ */
 @Composable
 private fun WindowPicker(
     selected: String,
     available: (Int?) -> Boolean,
     onSelect: (String) -> Unit,
-) = SegmentedChoice(
+) = ChipChoice(
     options = WINDOWS.map { it.first },
     selected = selected,
     label = { it },
     enabled = { label -> available(WINDOWS.first { it.first == label }.second) },
     onSelect = onSelect,
-    role = Role.Tab,
-    fontSize = 14.sp,
+    modifier = Modifier.horizontalScroll(rememberScrollState()),
 )
 
 /**
@@ -607,7 +624,7 @@ private val INCOME_TINT: Color
 private fun CashFlowReportContent(
     cash: CashFlowReport,
     smsEnabled: Boolean,
-    onWindow: (ReportMonth, ReportSpan) -> Unit,
+    onWindow: (Long, ReportSpan) -> Unit,
     bottomInset: Dp,
     categories: List<Category> = emptyList(),
     excluded: Set<String> = emptySet(),
@@ -620,8 +637,12 @@ private fun CashFlowReportContent(
     val period = cash.period
     Column(modifier) {
         // How long a window, directly under which report — one control group, and the picker is
-        // the quieter half of it at 14sp against the mode segment's 15.
-        SpanPicker(cash) { onWindow(cash.selected, it) }
+        // the quieter half of it at 14sp against the mode segment's 15. The anchor handed over
+        // is the window's last day: for month spans that is a day of the month she is reading
+        // (so the anchor month stands still, as it always did), and for «۱ هفته» it is the day
+        // whose week she should land in — the report clamps a half-written month's future tail
+        // back to today on its own.
+        SpanPicker(cash) { onWindow(cash.range.endDay - 1, it) }
 
         // The window's name is the heading every figure below is filed under, so it takes the
         // section gap above it and the group gap below — the same rhythm as [AssetReportContent].
@@ -636,7 +657,8 @@ private fun CashFlowReportContent(
             // yet is a thing to do; a past one with nothing in it may simply be older than the
             // ledger, and printing zeros for it would report months nobody watched.
             if (cash.current) {
-                QuietStart(smsEnabled)
+                // The window's own name: an empty current week must not claim the month is empty.
+                QuietStart(smsEnabled, named = cash.range.recentFa)
             } else {
                 EmptyMonth(cash.range)
             }
@@ -693,12 +715,15 @@ private fun CashFlowReportContent(
 private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = ChipChoice(
     // Chips, not a second full-width track: the segment directly above this is the screen
     // switcher, and two identical tracks stacked read as one control drawn twice. Slicers wear
-    // the small pill; there is exactly one big track per screen.
+    // the small pill; there is exactly one big track per screen. Scrollable for the same
+    // reason the asset picker is — five lengths outgrow a 320dp phone before they outgrow
+    // their usefulness.
     options = ReportSpan.entries.toList(),
     selected = cash.span,
     label = { it.fa },
     enabled = { it in cash.spans },
     onSelect = onSelect,
+    modifier = Modifier.horizontalScroll(rememberScrollState()),
 )
 
 /**
@@ -726,9 +751,12 @@ private fun SpanPicker(cash: CashFlowReport, onSelect: (ReportSpan) -> Unit) = C
  * A step is one month even when the window is twelve. Stepping by the whole window would make
  * «قبل» jump a year at a time and put every month she wanted to look at in the middle of a
  * stride; a month at a time slides the year over the ledger, which is what the arrows are for.
+ * The one exception is the one span not made of months: over «۱ هفته» the arrows step the week,
+ * because a month-stride over a week-wide window would skip three of every four of them.
  */
 @Composable
-private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) -> Unit) {
+private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit) {
+    val weekly = cash.range.week != null
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -743,10 +771,11 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, Report
                 // window she cannot read the far end of. The floor is 16 rather than 13 now that
                 // the line has the width of the screen less one stepper to say itself in.
                 text = cash.range.fa,
-                // Two lines where there are two months to name: on a 320dp phone «شهریور ۱۴۰۴ تا
-                // مرداد ۱۴۰۵» does not fit on one at any size worth reading, and it breaks at
-                // «تا» — which is where it would be read aloud.
-                maxLines = if (cash.range.count == 1) 1 else 2,
+                // Two lines where there are two ends to name: on a 320dp phone «شهریور ۱۴۰۴ تا
+                // مرداد ۱۴۰۵» — or a week's «۳ تا ۹ شهریور ۱۴۰۵» — does not fit on one at any
+                // size worth reading, and it breaks at «تا», which is where it would be read
+                // aloud.
+                maxLines = if (cash.range.count == 1 && !weekly) 1 else 2,
                 autoSize = TextAutoSize.StepBased(minFontSize = 16.sp, maxFontSize = 26.sp),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
                 modifier = Modifier.semantics { heading() },
@@ -767,17 +796,27 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (ReportMonth, Report
         Spacer(Modifier.width(Space.m))
         StepButton(
             icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-            label = "ماه قبل",
+            label = if (weekly) "هفتهٔ قبل" else "ماه قبل",
             enabled = cash.canGoBack,
-            onClick = { onWindow(cash.selected.previous(), cash.span) },
+            onClick = {
+                onWindow(
+                    if (weekly) cash.range.startDay - 7 else cash.selected.previous().startDay,
+                    cash.span,
+                )
+            },
         )
         // The 48dp targets would otherwise touch, which is the one gap Android names a number for.
         Spacer(Modifier.width(Space.s))
         StepButton(
             icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            label = "ماه بعد",
+            label = if (weekly) "هفتهٔ بعد" else "ماه بعد",
             enabled = cash.canGoForward,
-            onClick = { onWindow(cash.selected.next(), cash.span) },
+            onClick = {
+                onWindow(
+                    if (weekly) cash.range.startDay + 7 else cash.selected.next().startDay,
+                    cash.span,
+                )
+            },
         )
     }
 }
@@ -1029,8 +1068,12 @@ private const val BAR_FLOOR = 0.03f
  * read out as twelve loose numbers are not a chart.
  */
 @Composable
-private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) -> Unit) {
+private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
+    // Over «۱ هفته» every column is a week, so everything month-shaped below — the heading, the
+    // selection test, the label, the spoken sentence — reads the week instead. Same chart, same
+    // scale rule, one unit down.
+    val weekly = cash.range.week != null
     val top = cash.series.maxOf { maxOf(it.incomeRial, it.spentRial) }.coerceAtLeast(1L)
     // A year of months is twice what this row was built for, so the bars thin out to keep twelve
     // of them on a narrow phone. Only the bars: the numerals below them fit a twelfth of a screen
@@ -1038,7 +1081,9 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
     val crowded = cash.series.size > 8
     val barWidth = if (crowded) 7.dp else 12.dp
     // Only worth marking where there is something outside the window to tell it apart from.
-    val markWindow = cash.series.size > cash.range.count
+    // Never over weeks: the window is exactly one of them, and that one is already the
+    // selection.
+    val markWindow = !weekly && cash.series.size > cash.range.count
 
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1046,7 +1091,7 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                 // Not «شش ماه اخیر»: the window is six *at most*, and near the start of the
                 // ledger it slides forward, so a heading counting months would be a caption
                 // that is only sometimes true.
-                "ماه به ماه",
+                if (weekly) "هفته به هفته" else "ماه به ماه",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier
@@ -1068,8 +1113,12 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                 // Read as one month, or read as part of a longer window. Only the first is a
                 // selection — at «۶ ماه» nothing here is selected, six months are simply
                 // being counted together, and telling a screen reader otherwise would make
-                // six bars announce themselves as six chosen tabs.
-                val only = cash.range.count == 1 && report.month == cash.selected
+                // six bars announce themselves as six chosen tabs. A week is compared by its
+                // own start day: several weeks share a month, so the month test that serves
+                // every other span would light half the row.
+                val only =
+                    if (weekly) report.range.startDay == cash.range.startDay
+                    else cash.range.count == 1 && report.month == cash.selected
                 val inWindow = report.month in cash.range
                 Column(
                     Modifier
@@ -1088,12 +1137,20 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                         .selectable(
                             selected = only,
                             role = Role.Tab,
-                            onClick = { onWindow(report.month, ReportSpan.MONTH) },
+                            // A week stays a week when tapped; every other span reads the
+                            // tapped month on its own, with the span dropping to «۱ ماه»
+                            // visibly, as it always has.
+                            onClick = {
+                                onWindow(
+                                    report.range.startDay,
+                                    if (weekly) ReportSpan.WEEK else ReportSpan.MONTH,
+                                )
+                            },
                         )
                         .heightIn(min = 48.dp)
                         .padding(vertical = Space.s)
                         .semantics(mergeDescendants = true) {
-                            contentDescription = "${report.month.fa}: " +
+                            contentDescription = "${if (weekly) report.range.fa else report.month.fa}: " +
                                 "درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، " +
                                 "خرج ${faCompact(tomanOf(report.spentRial))} تومان" +
                                 if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
@@ -1122,8 +1179,14 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (ReportMonth, ReportSpan) 
                     //
                     // Tabular figures, so «۱۰» and «۱۱» are the same width as each other and
                     // the row of numerals sits on one baseline grid rather than drifting.
+                    //
+                    // A week is named by the day of the month its شنبه falls on — «۳»، «۱۰»،
+                    // «۱۷» — which is how the two ends of the title above already speak.
                     Text(
-                        faNumber(report.month.month.toDouble()),
+                        faNumber(
+                            (if (weekly) jalaliOf(report.range.startDay).day
+                            else report.month.month).toDouble(),
+                        ),
                         style = figureStyle(
                             // Weight and a container, not a colour: the selected month has to
                             // be findable without seeing one.

@@ -3,9 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <!-- The top of the page is the top of the hero field, so this is `Hero.top`, not the bottom
-         of its gradient — a browser chrome in the darker green read as a seam across the field. -->
-    <meta name="theme-color" content="#0C544A" />
+    <!--
+      The hero is a card floating on the paper now, not a field running off the top, so the
+      browser chrome matches the *page* — white in the light, Wise's near-black in the dark.
+      One `theme-color` cannot say both, and a chrome in the card's forest over a white page
+      read as a slab someone forgot to finish.
+    -->
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <!-- Stated twice on purpose: the Worker sets the same policy as a header on every asset,
          and this copy survives in a saved page or a cache the header never reached. Inline
@@ -43,42 +48,68 @@
       }
 
       /*
-       * The palette, verbatim from `Theme.kt` — the hero's fixed greens and gold first, then the
-       * two Material schemes under the same role names. A colour that moves there is one line here.
+       * The palette, verbatim from `Theme.kt` — seed wise-fa-2026-08. The identity pair first,
+       * then the two Material schemes under the same role names. A colour that moves there is
+       * one line here. The teal-and-gold world this page used to wear is retired; DESIGN.md
+       * keeps it as anti-reference, and nothing below may reach for it again.
        */
       :root {
         color-scheme: light dark;
 
-        /* The hero is the same object in both themes: deep green field, gold number. */
-        --hero-top: #0c544a;
-        --hero-bottom: #03201c;
-        --gold: #f7c948;
-        --hero-muted: #93b7b0;   /* green-tinted secondary text, never flat grey */
-        --hero-strong: #eaf3f0;
-        --mint: #3be0a8;
-        --hero-warn: #ffb4a6;    /* the field's one warning colour; gold already means "act" */
-        --hero-well: rgba(255, 255, 255, 0.1);
-        --hero-hairline: rgba(255, 255, 255, 0.12);
+        /* The pair that carries the brand, fixed in both themes. */
+        --forest: #163300;
+        --bright: #9fe870;
 
-        /* Money coming in, fixed in both themes as in `MonthFlow` — in the dark scheme the
-           theme's own green is the one the hero speaks in. */
-        --gain: #2e9e5b;
+        /*
+         * `Cta` — every "press this" pill, bright green on forest ink in *both* themes. It is
+         * deliberately not `--primary`: selection uses the scheme's primary, so *press this*
+         * and *this one* stay two statements even when both of them are green.
+         */
+        --cta-fill: #9fe870;
+        --cta-ink: #163300;
 
-        --bg: #f4f1e9;                  /* warm paper, not clinical white */
-        --on-bg: #101a18;
-        --surface: #ffffff;
-        --on-surface: #101a18;
-        --surface-variant: #e4eae6;
-        --on-surface-variant: #4a5c57;
-        --primary: #0a423b;
-        --on-primary: #ffffff;
-        --outline-variant: #d5dcd8;
-        --error: #b3261e;
+        /* `Hero`: in the light it is Wise's forest with the answer in bright green. */
+        --hero-field: var(--forest);
+        --hero-accent: #9fe870;
+        --hero-muted: #a9c295;      /* green-tinted on forest, never flat grey */
+        --hero-strong: #f0f6e9;
+        --hero-mint: #9fe870;       /* growth — the same green, Wise's own rule */
+        --hero-warn: #ffb59f;       /* the card's one caution; bright green already means "act" */
+        --hero-well: rgba(255, 255, 255, 0.09);
+        --hero-hairline: rgba(255, 255, 255, 0.141);
+        /* The forest card on white paper holds its own edge; only the dark card needs one. */
+        --hero-border: transparent;
 
-        --r-field: 18px;
-        --r-card: 24px;
-        --r-group: 28px;
-        --r-hero: 36px;
+        --primary: #163300;
+        --on-primary: #9fe870;
+        --primary-container: #dcf2c0;
+        --on-primary-container: #12290a;
+
+        /* Gain, and only gain — the one Iranian-bank convention this app never trades. */
+        --gain: #1f7a40;
+
+        --bg: #ffffff;                  /* Wise daylight: real white, the cards carry the tint */
+        --on-bg: #131711;
+        --surface: #f3f5ee;             /* gray with a green whisper — the card colour */
+        --on-surface: #131711;
+        --surface-variant: #eaeee0;
+        --on-surface-variant: #59614f;  /* green-tinted muted text, never flat grey */
+        --surface-container: #eaede2;
+        --surface-container-high: #fcfdfa;
+        /* The fill a quiet pill wears on a `surfaceVariant` panel: it has to lift off the
+           panel, and which scheme role does that is not the same in both themes — raised
+           white here, a step up out of the dark there. */
+        --btn-tonal: #fcfdfa;
+        --outline: #6f7965;
+        --outline-variant: #dde2d2;
+        --error: #a8200d;
+
+        /* `Radius`: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞ */
+        --r-field: 14px;
+        --r-card: 18px;
+        --r-group: 22px;
+        --r-sheet: 28px;
+        --r-hero: 34px;
         --r-pill: 999px;
 
         /* One spacing scale, `Space`. Anything not on it is a decision someone has to defend. */
@@ -87,23 +118,45 @@
         --m: 12px;
         --l: 16px;
         --xl: 20px;
-        --xxl: 28px;
+        --xxl: 32px;
+        --huge: 48px;
 
         /* `Motion`: everything that enters decelerates hard from an already-visible state. */
         --enter: cubic-bezier(0.05, 0.7, 0.1, 1);
         --fast: 180ms;
+        --medium: 340ms;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #070c0b;
-          --on-bg: #e8eeec;
-          --surface: #121a18;
-          --on-surface: #e8eeec;
-          --surface-variant: #26302e;
-          --on-surface-variant: #a9bcb7;
-          --primary: #f2c64d;
-          --on-primary: #2c2004;
-          --outline-variant: #33403d;
+          /*
+           * Wise's dark is not the light theme dimmed — it is its own neutral room the green
+           * visits. The hero stops being forest here and becomes an elevated neutral card with
+           * a hairline, because a forest slab on near-black reads as olive mud; the app proved
+           * that twice before settling here. Only the answer stays bright green.
+           */
+          --hero-field: #272a24;
+          --hero-muted: #a8aaa6;
+          --hero-strong: #f2f3ef;
+          --hero-border: #383b35;
+
+          --primary: #9fe870;
+          --on-primary: #163300;
+          --primary-container: #2a3a1d;
+          --on-primary-container: #9fe870;
+
+          --gain: #9fe870;
+
+          --bg: #121511;
+          --on-bg: #f2f3ef;
+          --surface: #1c1f1a;
+          --on-surface: #f2f3ef;
+          --surface-variant: #262923;
+          --on-surface-variant: #a8aaa6;   /* Wise's neutral grey, not a green tint */
+          --surface-container: #22251f;
+          --surface-container-high: #272a24;
+          --btn-tonal: #30332c;
+          --outline: #7f827c;
+          --outline-variant: #383b35;
           --error: #ffb4ab;
         }
       }
@@ -117,41 +170,104 @@
         /* Big type beats density everywhere: this was built for a parent to read. */
         font-size: 17px;
         line-height: 1.6;
-        /* No safe-area padding out here on purpose: the field runs to the glass, exactly as it
-           does in the app, and every other block insets itself. */
+        /* Zero tracking, everywhere. Persian is a connected script and Material's own default
+           letter-spacing opens gaps between glyphs that are supposed to join — the app strips
+           it from every style for the same reason. Tightness comes off the width axis. */
+        letter-spacing: 0;
+        padding-bottom: calc(env(safe-area-inset-bottom) + var(--huge));
       }
+
+      /*
+       * The surfaces nobody draws still carry the design. Left alone these ship the browser's
+       * own blue, which belongs to no design system and is the cheapest tell that a page was
+       * assembled rather than built.
+       */
+      ::selection { background: var(--primary-container); color: var(--on-primary-container); }
+      input, textarea { caret-color: var(--primary); }
+      :root { accent-color: var(--primary); }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-thumb {
+        background: var(--outline-variant);
+        border-radius: var(--r-pill);
+      }
+      ::-webkit-scrollbar-track { background: transparent; }
+
       #app { max-width: 34rem; margin: 0 auto; }
+      /*
+       * `edge` — the one inset from the screen edge, `Space.xl`, applied by every item on the
+       * page. Unlike the retired field, nothing here runs to the glass any more: the hero is a
+       * card now, and a card that touches the bezel is not floating.
+       */
       .page {
-        padding: var(--xl) calc(env(safe-area-inset-right) + var(--xl))
-                 calc(env(safe-area-inset-bottom) + var(--xxl))
-                 calc(env(safe-area-inset-left) + var(--xl));
+        padding: 0 calc(env(safe-area-inset-right) + var(--xl))
+                 0 calc(env(safe-area-inset-left) + var(--xl));
       }
       .stack > * + * { margin-top: var(--m); }
+      /* A page with no top bar still has to clear the glass, and a heading wants air above it. */
+      .page > .title:first-child { margin-top: calc(env(safe-area-inset-top) + var(--xxl)); }
 
       /* Size containers, so the figures inside them can be sized off the width they actually
          get — see `.total`. Nothing else depends on it. */
       .hero, .panel { container-type: inline-size; }
 
       /*
-       * The reason the app exists, and the ground the page stands on rather than a card floating
-       * on it: a deep green field that runs off the top of the screen with the total in gold
-       * across it. The radial wash is the light hitting the top corner, as on a card.
+       * Her, and nothing to press: the app's greeting bar is the door to تنظیمات, and this page
+       * has no such room. The disc and the name still open the page, because a household ledger
+       * that never says whose it is has lost the one fact the sharing model turns on.
+       */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: var(--m);
+        min-height: 48px;
+        padding-top: calc(env(safe-area-inset-top) + var(--l));
+        margin-bottom: var(--l);
+      }
+      .topbar .who {
+        display: grid;
+        place-items: center;
+        flex: none;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--surface-variant);
+        color: var(--on-surface);
+      }
+      .topbar .name {
+        font-size: 1rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* The screen's name, in one display voice for every root page — `ScreenTitle`, 30sp Black. */
+      .title {
+        font-size: 1.75rem;
+        font-weight: 900;
+        line-height: 1.25;
+        margin: 0;
+        text-wrap: balance;
+      }
+      /* A sheet's question, in the same voice a size down — `SheetTitle`, 26sp Black. */
+      .sheet-title { font-size: 1.5rem; font-weight: 900; line-height: 1.3; margin: 0; text-wrap: balance; }
+
+      /*
+       * The answer's card. Flat, never a gradient — the retired world's radial wash is exactly
+       * what this replaced. It floats on the paper under the top bar with all four corners
+       * round, and it takes the gutter itself the way `HeroPanel` does.
        */
       .hero {
-        position: relative;
         color: var(--hero-strong);
-        border-end-start-radius: var(--r-hero);
-        border-end-end-radius: var(--r-hero);
-        background:
-          radial-gradient(circle at 88% -5%, rgba(247, 201, 72, 0.13), rgba(247, 201, 72, 0) 55%),
-          linear-gradient(180deg, var(--hero-top), var(--hero-bottom));
-        padding: calc(env(safe-area-inset-top) + var(--xl))
-                 calc(env(safe-area-inset-right) + var(--xl)) var(--xl)
-                 calc(env(safe-area-inset-left) + var(--xl));
+        background: var(--hero-field);
+        border: 1px solid var(--hero-border);
+        border-radius: var(--r-hero);
+        padding: var(--xl);
       }
-      .hero h1 { font-size: 1rem; font-weight: 700; color: var(--hero-muted); margin: 0; }
       .hero .muted { color: var(--hero-muted); }
-      .hero-label { font-size: .94rem; color: var(--hero-muted); margin: var(--m) 0 0; }
+      .hero-label { font-size: .94rem; color: var(--hero-muted); margin: 0; }
+      .hero p { margin: 0; }
+      .hero p + p { margin-top: var(--s); }
 
       /*
        * Every figure in the app, and the reason the width axis exists: tabular digits so an
@@ -167,51 +283,20 @@
        * The app steps this figure between 28 and 60sp so a long total never wraps and never
        * shrinks below reading size. CSS has no autosize and does not need one here: the digits
        * are tabular, so the figure's width is exactly its length — `--fit` is that width in ems,
-       * measured where the string is built, and the field divides its own width by it.
+       * measured where the string is built, and the card divides its own width by it.
        */
       .total {
-        font-size: max(1.5rem, min(3.5rem, calc(100cqi / var(--fit, 8))));
+        font-size: max(1.75rem, min(3.5rem, calc(100cqi / var(--fit, 8))));
         font-weight: 900;
         line-height: 1.15;
-        color: var(--gold);
+        color: var(--hero-accent);
         margin: var(--xs) 0 0;
         white-space: nowrap;
       }
       /* The unit is an aside, not a second headline — `heroFigure`, to the em. */
       .total .unit { font-size: .42em; font-weight: 700; opacity: .75; margin-inline-start: .2em; }
 
-      /* The things she might do next, directly under the number that prompts them. */
-      .hero-actions { display: flex; margin-top: var(--xl); }
-      .hero-action {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: var(--s);
-        width: auto;
-        min-height: 0;
-        padding: var(--s) 0;
-        border: 0;
-        border-radius: var(--r-card);
-        background: none;
-        color: var(--hero-muted);
-        font-size: .75rem;
-        font-weight: 500;
-      }
-      .hero-action .disc {
-        display: grid;
-        place-items: center;
-        width: 54px;
-        height: 54px;
-        border-radius: 50%;
-        background: var(--hero-well);
-        color: var(--hero-strong);
-        /* The give is what makes a 54px disc feel pushed rather than flashed. */
-        transition: transform var(--fast) var(--enter);
-      }
-      .hero-action:active .disc { transform: scale(.96); }
-
-      /* Below a hairline at the foot of the field: how fresh what she is reading is. */
+      /* Below a hairline at the foot of the card: how fresh what she is reading is. */
       .strip {
         display: flex;
         align-items: center;
@@ -229,18 +314,76 @@
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: var(--mint);
+        background: var(--hero-mint);
       }
       .strip.warn { color: var(--hero-warn); }
       .strip.warn::before { background: var(--hero-warn); }
 
+      /*
+       * `ActionCircle`: 56px `primaryContainer` discs with a label under them, in fixed cells
+       * clustered to the centre so one action keeps the same rhythm as three.
+       */
+      .actions {
+        display: flex;
+        justify-content: center;
+        margin: var(--xl) 0;
+      }
+      .action {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--s);
+        width: 108px;
+        min-height: 0;
+        padding: var(--s) 0;
+        border: 0;
+        border-radius: var(--r-card);
+        background: none;
+        color: var(--on-surface);
+        font-size: .8rem;
+        font-weight: 500;
+      }
+      .action .disc {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--primary-container);
+        color: var(--on-primary-container);
+        /* The give is what makes a flat disc feel pushed rather than flashed. */
+        transition: transform var(--fast) var(--enter);
+      }
+      .action:active .disc { transform: scale(.94); }
+      .action[aria-busy="true"] .disc svg { animation: spin 900ms linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* `Panel` — `surfaceVariant` at card radius, the app's one grouping box. */
       .panel { background: var(--surface-variant); border-radius: var(--r-card); padding: var(--l); }
+      p { text-wrap: pretty; }
       .panel p { margin: 0; }
       .panel p + p { margin-top: var(--xs); }
-      /* A control that answers for the field above it, rather than one floating beside it. */
-      :where(.panel, form) > button { margin-top: var(--l); }
+      .panel-title { font-size: 1rem; font-weight: 700; margin: 0 0 var(--s); color: var(--on-surface); }
       .muted { color: var(--on-surface-variant); font-size: .85rem; }
-      .error { color: var(--error); margin: 0; }
+      .error:not(:empty) { color: var(--error); margin: var(--m) 0 0; font-size: .9rem; }
+
+      /*
+       * The fork, said as a rule rather than as a stray line of grey text: a hairline with the
+       * word sitting in the gap it leaves. Two ways in are a choice, and a choice needs an axis.
+       */
+      .or {
+        display: flex;
+        align-items: center;
+        gap: var(--m);
+        margin: var(--xl) 0;
+        color: var(--on-surface-variant);
+        font-size: .85rem;
+      }
+      .or::before, .or::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid var(--outline-variant);
+      }
 
       /* What came in against what went out, as one object: two lengths off the same baseline. */
       .flow { display: flex; flex-wrap: wrap; gap: var(--m); }
@@ -268,6 +411,7 @@
       .bar .in { background: var(--gain); }
       .bar .out { background: var(--on-surface-variant); }
 
+      /* More air above a heading than below it, everywhere. */
       .section { display: flex; align-items: baseline; gap: var(--s); padding: var(--xxl) var(--xs) var(--m); }
       .section h2 { flex: 1; font-size: 1rem; font-weight: 700; margin: 0; }
 
@@ -290,39 +434,70 @@
       .amount { font-weight: 700; color: var(--on-surface); }
       .amount.in { color: var(--gain); }
 
+      /*
+       * An empty state that teaches the interface rather than reporting that it is empty: the
+       * drawn glyph on a `primaryContainer` disc, the app's own device. No emoji anywhere.
+       */
+      .empty { text-align: center; padding: var(--xxl) var(--l); }
+      .empty .disc {
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        margin: 0 auto var(--l);
+        border-radius: 50%;
+        background: var(--primary-container);
+        color: var(--on-primary-container);
+      }
+      .empty p { margin: 0; }
+      .empty p + p { margin-top: var(--xs); }
+
       label { display: block; margin: var(--m) 0 var(--xs); font-size: .8rem; font-weight: 600; color: var(--on-surface-variant); }
       input, select, textarea {
         font: inherit;
         font-family: inherit;
         width: 100%;
         color: var(--on-surface);
-        background: var(--surface);
+        background: var(--bg);
         border: 1px solid var(--outline-variant);
         border-radius: var(--r-field);
         padding: .6rem .9rem;
         min-height: 48px;
+        transition: border-color var(--fast) var(--enter);
       }
-      textarea { min-height: 5.5rem; resize: vertical; }
-      :focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+      ::placeholder { color: var(--on-surface-variant); opacity: 1; }
+      input:hover, select:hover, textarea:hover { border-color: var(--outline); }
+      textarea { min-height: 5.5rem; resize: vertical; line-height: 1.6; }
+      /* The ring is the scheme's primary, not the browser's blue — and it clears the field's
+         own hairline so the two never read as one thick border. */
+      :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
       button {
         font: inherit;
         font-weight: 700;
         width: 100%;
         /* 44px minimum, because a deck answered one-handed is the point of the deck. */
-        min-height: 52px;
-        padding: .7rem 1.25rem;
-        /* Raised, not tonal: a panel is already `surface-variant`, so a tonal button on one is
-           a button-shaped hole. This is the same surface and hairline its inputs wear. */
-        border: 1px solid var(--outline-variant);
+        min-height: 44px;
+        padding: .7rem var(--l);
+        border: 0;
+        /* Pills, flat colour, no gloss: `PillButton`. TONAL is the default voice — the quiet
+           sibling that answers for the panel it sits in. */
         border-radius: var(--r-pill);
-        background: var(--surface);
+        background: var(--btn-tonal);
         color: var(--on-surface);
         cursor: pointer;
-        transition: transform var(--fast) var(--enter);
+        /* The give under the thumb, from the frame the finger lands. Nothing overshoots. */
+        transition: transform var(--fast) var(--enter), opacity var(--fast) var(--enter);
       }
-      button:active { transform: scale(.98); }
-      button.primary { background: var(--primary); color: var(--on-primary); border-color: transparent; font-weight: 800; }
+      button:active { transform: scale(.97); }
+      button:disabled { opacity: .45; cursor: not-allowed; }
+      button:disabled:active { transform: none; }
+      /* The one loud button, fixed across both themes like the hero — `Cta`. */
+      button.primary { background: var(--cta-fill); color: var(--cta-ink); font-weight: 800; }
+      /* Inside the hero card, where the scheme's surfaces do not exist — `ButtonVoice.HERO`. */
+      button.on-hero { background: var(--hero-well); color: var(--hero-strong); }
+      /* A control that answers for the block above it, rather than one floating beside it. */
+      :where(.panel, form) > button { margin-top: var(--l); }
 
       @media (prefers-reduced-motion: reduce) {
         * { animation: none !important; transition: none !important; }
@@ -331,7 +506,7 @@
   </head>
   <body>
     <main id="app">
-      <p class="page muted">داره آماده می‌شه...</p>
+      <div class="page"><p class="muted" style="padding-top:var(--xxl)">داره آماده می‌شه...</p></div>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

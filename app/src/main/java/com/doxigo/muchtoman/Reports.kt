@@ -67,14 +67,19 @@ data class ReportMonth(val year: Int, val month: Int) : Comparable<ReportMonth> 
 
 /**
  * A run of whole Jalali months, [first] through [last] inclusive — the window a report covers.
+ * Or, when [week] is set, one whole Iranian week, شنبه through جمعه.
  *
- * Whole months, never «the last ninety days». The asset report can slice by day because a
- * balance exists on every one of them; دخل و خرج cannot, because half of فروردین against half of
- * اردیبهشت is a comparison of two things that are each missing a rent payment. Everything below
- * still runs `startDay until endDay`, so a range cannot cite a transaction from outside itself
- * any more than a single month could.
+ * Whole months or whole weeks, never «the last ninety days». The asset report can slice by any
+ * day because a balance exists on every one of them; دخل و خرج cannot, because half of فروردین
+ * against half of اردیبهشت is a comparison of two things that are each missing a rent payment.
+ * A week is a whole unit the same way a month is — it is compared against the whole week before
+ * it, never against a fraction of anything. Everything below still runs `startDay until endDay`,
+ * so a range cannot cite a transaction from outside itself any more than a single month could.
+ *
+ * Build week ranges through [weekRange], which pins [first]/[last] to the month the week starts
+ * in — the month every month-shaped consumer (the category trend, the span picker) reads.
  */
-data class ReportRange(val first: ReportMonth, val last: ReportMonth) {
+data class ReportRange(val first: ReportMonth, val last: ReportMonth, val week: Long? = null) {
     init {
         require(first <= last) { "range runs backwards: ${first.fa} → ${last.fa}" }
     }
@@ -82,8 +87,8 @@ data class ReportRange(val first: ReportMonth, val last: ReportMonth) {
     /** How many months it holds. One, for the report that is still about a single month. */
     val count: Int get() = (last.year * 12 + last.month) - (first.year * 12 + first.month) + 1
 
-    val startDay: Long get() = first.startDay
-    val endDay: Long get() = last.endDay
+    val startDay: Long get() = week ?: first.startDay
+    val endDay: Long get() = week?.plus(7) ?: last.endDay
 
     val months: List<ReportMonth>
         get() = generateSequence(first) { if (it < last) it.next() else null }.toList()
@@ -99,7 +104,24 @@ data class ReportRange(val first: ReportMonth, val last: ReportMonth) {
      * The year is said once where both ends share it, because «خرداد ۱۴۰۵ تا مرداد ۱۴۰۵» is the
      * same year read twice and the eye has to check that it is the same year.
      */
-    val fa: String get() = when {
+    val fa: String get() = week?.let { w ->
+        // The two ends written like a person would: «۳ تا ۹ شهریور ۱۴۰۵», and the month or the
+        // year said once unless the week actually crosses it — the same say-it-once rule the
+        // month ranges below follow.
+        val a = jalaliOf(w)
+        val b = jalaliOf(w + 6)
+        when {
+            a.year != b.year ->
+                "${faNumber(a.day.toDouble())} ${MONTHS[a.month - 1]} ${faYearDigits(a.year)} تا " +
+                    "${faNumber(b.day.toDouble())} ${MONTHS[b.month - 1]} ${faYearDigits(b.year)}"
+            a.month != b.month ->
+                "${faNumber(a.day.toDouble())} ${MONTHS[a.month - 1]} تا " +
+                    "${faNumber(b.day.toDouble())} ${MONTHS[b.month - 1]} ${faYearDigits(a.year)}"
+            else ->
+                "${faNumber(a.day.toDouble())} تا ${faNumber(b.day.toDouble())} " +
+                    "${MONTHS[a.month - 1]} ${faYearDigits(a.year)}"
+        }
+    } ?: when {
         first == last -> last.fa
         first.year == last.year -> "${MONTHS[first.month - 1]} تا ${last.fa}"
         else -> "${first.fa} تا ${last.fa}"
@@ -109,32 +131,47 @@ data class ReportRange(val first: ReportMonth, val last: ReportMonth) {
      * What to call it when it ends at the month she is standing in — «۳ ماه گذشته» rather than
      * a pair of month names, because a window she is inside is described by its length.
      */
-    val recentFa: String get() = when (count) {
-        1 -> "این ماه"
-        12 -> "یک سال گذشته"
+    val recentFa: String get() = when {
+        week != null -> "این هفته"
+        count == 1 -> "این ماه"
+        count == 12 -> "یک سال گذشته"
         else -> "${faNumber(count.toDouble())} ماه گذشته"
     }
 
     /** The name to use in a sentence, given whether the window reaches today. */
     fun nameFa(current: Boolean): String = if (current) recentFa else fa
 
-    /** «ماه قبل» over one month, «دورهٔ قبل» over more — what the comparison reaches back to. */
-    val beforeFa: String get() = if (count == 1) "ماه قبل" else "دورهٔ قبل"
+    /** «هفتهٔ قبل» over a week, «ماه قبل» over one month, «دورهٔ قبل» over more. */
+    val beforeFa: String get() = when {
+        week != null -> "هفتهٔ قبل"
+        count == 1 -> "ماه قبل"
+        else -> "دورهٔ قبل"
+    }
 
     /** The window of the same length immediately before this one. */
-    fun before(): ReportRange = ReportRange(first.back(count), first.previous())
+    fun before(): ReportRange =
+        week?.let { weekRange(it - 7) } ?: ReportRange(first.back(count), first.previous())
 }
+
+/** The week beginning at [start] — a شنبه, as [weekStart] hands out — as a report window. */
+fun weekRange(start: Long): ReportRange =
+    reportMonthOf(start).let { ReportRange(it, it, week = start) }
 
 /**
  * How much of the ledger دخل و خرج is reading, as offered at the top of the report.
  *
- * The same four lengths گزارش دارایی offers, and for the same reason: «بیشتر شده یا کمتر؟» over
- * one month is a question about a month, and over a year it is a question about a household.
- * There is no «همه» here, though — the asset chart can draw every day it has, while a cash-flow
- * report over an unbounded number of months would put a bar chart on screen with no fixed scale
- * and a savings rate averaged over years of different incomes.
+ * The same lengths گزارش دارایی offers, and for the same reason: «بیشتر شده یا کمتر؟» over a
+ * week is a question about a habit, over one month a question about a month, and over a year a
+ * question about a household. There is no «همه» here, though — the asset chart can draw every
+ * day it has, while a cash-flow report over an unbounded number of months would put a bar chart
+ * on screen with no fixed scale and a savings rate averaged over years of different incomes.
+ *
+ * [WEEK] is the one sub-month length, and it is still a whole unit: the Iranian week, شنبه تا
+ * جمعه, stepped and compared week against week — never «the last seven days», which would end
+ * mid-week and compare against another fraction. Zero months, because it is not made of any.
  */
 enum class ReportSpan(val months: Int, val fa: String) {
+    WEEK(0, "۱ هفته"),
     MONTH(1, "۱ ماه"),
     QUARTER(3, "۳ ماه"),
     HALF(6, "۶ ماه"),
@@ -609,7 +646,7 @@ fun quietWins(
             // back, so "the first month ever" was a claim about a history it had never read.
             // What it can prove is that this window turned, and that is what it now says.
             if (current && now.range.count == 1) {
-                "درآمد این ماه از خرجت بیشتر شد."
+                "درآمد $named از خرجت بیشتر شد."
             } else {
                 "در $named درآمدت از خرجت بیشتر شد."
             },
@@ -670,10 +707,15 @@ data class CashFlowReport(
     val bufferDays: Int?,
     /** Whether the window reaches the month containing today — the one allowed to say «این ماه». */
     val current: Boolean,
+    /**
+     * Whether the arrows have anywhere to go. Worked out by [buildCashFlow] rather than off
+     * [available], because the step is a month for every month-made span and a week for
+     * [ReportSpan.WEEK] — and only the builder knows which floor the weekly walk stands on.
+     */
+    val canGoBack: Boolean,
+    val canGoForward: Boolean,
 ) {
     val range: ReportRange get() = period.range
-    val canGoBack: Boolean get() = selected > available.first()
-    val canGoForward: Boolean get() = selected < available.last()
 }
 
 fun buildCashFlow(
@@ -686,7 +728,16 @@ fun buildCashFlow(
     countPassThrough: Boolean = false,
     /** Categories she has told the report to leave out — see [periodReport]. */
     excluded: Set<String> = emptySet(),
+    /**
+     * The day the window is anchored on, for the one span months cannot carry: [ReportSpan.WEEK]
+     * reads the week containing this day. Month spans read [selected] and ignore it, so every
+     * caller that thinks in months keeps working unchanged; null anchors the week at [today].
+     */
+    anchorDay: Long? = null,
 ): CashFlowReport {
+    if (span == ReportSpan.WEEK) {
+        return buildWeekly(entries, liquidRial, today, anchorDay, countPassThrough, excluded)
+    }
     val available = availableReportMonths(entries, today)
     val here = reportMonthOf(today)
     // A month she can no longer reach — a selection restored from a state older than the ledger
@@ -734,6 +785,75 @@ fun buildCashFlow(
         wins = quietWins(report, had, buffer, current),
         bufferDays = buffer,
         current = current,
+        canGoBack = month > available.first(),
+        canGoForward = month < available.last(),
+    )
+}
+
+/** How many weeks the weekly chart lines up — the same six the month chart draws. */
+private const val WEEK_BARS = 6
+
+/**
+ * [buildCashFlow] for the one span that is not made of months: one Iranian week, compared
+ * against the whole week before it, with the recent weeks beside it on one scale.
+ *
+ * The same walk with the month swapped for the week everywhere the month was a *unit*, and kept
+ * everywhere it is a *place*: [CashFlowReport.selected] still names the month the week starts
+ * in, so the span picker's dimming and a switch back to a month-made span land where she is
+ * standing rather than at some remembered elsewhere.
+ */
+private fun buildWeekly(
+    entries: List<LedgerEntry>,
+    liquidRial: Long,
+    today: Long,
+    anchorDay: Long?,
+    countPassThrough: Boolean,
+    excluded: Set<String>,
+): CashFlowReport {
+    val thisWeek = weekStart(today)
+    // The earliest week the ledger recorded anything in — the weekly walk's own floor, playing
+    // the part [availableReportMonths] plays for months. A row dated in the future must not
+    // open weeks after this one, hence the same clamp months get.
+    val floor = spendable(entries).minOfOrNull { weekStart(it.txn.day) }
+        ?.coerceAtMost(thisWeek) ?: thisWeek
+    val week = weekStart(anchorDay ?: today).coerceIn(floor, thisWeek)
+    val range = weekRange(week)
+    val current = week == thisWeek
+    val report = periodReport(entries, range, countPassThrough, excluded)
+    val previous = periodReport(entries, range.before(), countPassThrough, excluded)
+    // Refused for a past week for the reason [buildCashFlow] refuses it for a past month: the
+    // runway is today's cash against today's habits.
+    val buffer = if (current) {
+        bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough, excluded = excluded)
+    } else {
+        null
+    }
+    // A whole watched week, or no comparison — the month rule at the week's scale.
+    val had = previous.takeIf { it.transactions > 0 && range.before().startDay >= floor }
+    // The month selector's world, kept warm so the picker above the weekly report can still dim
+    // the lengths this ledger cannot fill, exactly as it does over every other span.
+    val available = availableReportMonths(entries, today)
+    val month = reportMonthOf(week).let { if (it in available) it else available.last() }
+    val spans = ReportSpan.entries.filter { it.months <= available.indexOf(month) + 1 }
+    return CashFlowReport(
+        selected = month,
+        span = ReportSpan.WEEK,
+        available = available,
+        spans = spans,
+        period = report,
+        previous = previous,
+        // Six bars ending at the window, like the month chart — minus only the weeks from
+        // before the ledger existed, which would draw as empty months nobody watched.
+        series = ((WEEK_BARS - 1) downTo 0)
+            .map { back -> week - 7L * back }
+            .filter { it >= floor }
+            .map { periodReport(entries, weekRange(it), countPassThrough, excluded) },
+        insights = narrate(report, had, entries, buffer, current),
+        wins = quietWins(report, had, buffer, current),
+        bufferDays = buffer,
+        current = current,
+        canGoBack = week > floor,
+        canGoForward = week < thisWeek,
     )
 }
 

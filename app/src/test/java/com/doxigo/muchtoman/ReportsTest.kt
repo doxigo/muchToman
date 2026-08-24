@@ -763,7 +763,7 @@ class ReportsTest {
         val rows = (0..3).map { entry(here.back(it).startDay + 1, -1_000_000) }
         val cash = buildCashFlow(rows, 0, first + 20, here, ReportSpan.HALF)
 
-        assertEquals(listOf(ReportSpan.MONTH, ReportSpan.QUARTER), cash.spans)
+        assertEquals(listOf(ReportSpan.WEEK, ReportSpan.MONTH, ReportSpan.QUARTER), cash.spans)
         // Asked for six, given the longest it can actually answer rather than a mislabelled four.
         assertEquals(ReportSpan.QUARTER, cash.span)
         assertEquals(3, cash.range.count)
@@ -874,5 +874,100 @@ class ReportsTest {
         // describing — that is what «این ماه» means and what a dated line would contradict.
         assertTrue(story.insights.isNotEmpty())
         assertTrue(story.insights.none { it.text.contains("مرداد ۱۴۰۵") })
+    }
+
+    // ─────────────────────────── «۱ هفته» ───────────────────────────
+
+    @Test
+    fun `«۱ هفته» reads one whole week and compares it with the whole week before`() {
+        val today = first + 20
+        val week = weekStart(today)
+        val rows = listOf(
+            entry(week - 7, -40_000_000), // the whole of last week…
+            entry(week - 1, -10_000_000), // …through its own جمعه
+            entry(week, 60_000_000),
+            entry(today, -30_000_000),
+        )
+        val cash = buildCashFlow(rows, 0, today, here, ReportSpan.WEEK)
+
+        assertEquals(ReportSpan.WEEK, cash.span)
+        assertEquals(week, cash.range.startDay)
+        assertEquals(week + 7, cash.range.endDay)
+        assertTrue(cash.current)
+        assertEquals(60_000_000L, cash.period.incomeRial)
+        assertEquals(30_000_000L, cash.period.spentRial)
+        // Both of last week's days, and neither of this week's.
+        assertEquals(50_000_000L, cash.previous.spentRial)
+        assertTrue("this week has no week after it", !cash.canGoForward)
+        assertTrue(cash.canGoBack)
+        // The words are the week's, not a month's.
+        val text = (cash.insights + cash.wins).joinToString(" ") { it.text }
+        assertTrue(text.contains("این هفته"))
+        assertTrue(!text.contains("این ماه"))
+    }
+
+    @Test
+    fun `a week anchor lands on that week, and the walk stops at the ledger's first`() {
+        val today = first + 20
+        val week = weekStart(today)
+        val rows = listOf(
+            entry(week - 14, -10_000_000),
+            entry(today, -30_000_000),
+        )
+        val past = buildCashFlow(rows, 0, today, here, ReportSpan.WEEK, anchorDay = week - 14)
+        assertEquals(week - 14, past.range.startDay)
+        assertTrue(!past.current)
+        assertTrue("the ledger's first week has nothing before it", !past.canGoBack)
+        assertTrue(past.canGoForward)
+        // No comparison against a week nobody watched.
+        assertTrue(past.insights.none { it.text.contains("هفتهٔ قبل") })
+
+        // An anchor restored from after today cannot open a future week.
+        val future = buildCashFlow(rows, 0, today, here, ReportSpan.WEEK, anchorDay = today + 40)
+        assertEquals(week, future.range.startDay)
+    }
+
+    @Test
+    fun `the weekly chart lines up the recent weeks and none from before the ledger`() {
+        val today = first + 20
+        val week = weekStart(today)
+        val rows = listOf(
+            entry(week - 7, -10_000_000),
+            entry(week, -20_000_000),
+        )
+        val cash = buildCashFlow(rows, 0, today, here, ReportSpan.WEEK)
+        // Two watched weeks, not six bars three of which nobody recorded.
+        assertEquals(listOf(week - 7, week), cash.series.map { it.range.startDay })
+        assertTrue(cash.series.all { it.range.week != null })
+        // And the window's own bar is the same arithmetic as the figures above it.
+        assertEquals(cash.period, cash.series.last())
+    }
+
+    @Test
+    fun `«۱ هفته» is offered however young the ledger is`() {
+        val rows = listOf(entry(first + 20, -1_000_000))
+        val cash = buildCashFlow(rows, 0, first + 20, here)
+        assertEquals(listOf(ReportSpan.WEEK, ReportSpan.MONTH), cash.spans)
+    }
+
+    @Test
+    fun `a week names its two ends, and says the month and year once where it can`() {
+        // Inside one month: «۳ تا ۹ شهریور ۱۴۰۵».
+        val inside = weekRange(jalaliDay(1405, 6, 3))
+        assertEquals("۳ تا ۹ شهریور ۱۴۰۵", inside.fa)
+        assertEquals("این هفته", inside.recentFa)
+        assertEquals("هفتهٔ قبل", inside.beforeFa)
+        assertEquals(inside.startDay - 7, inside.before().startDay)
+
+        // Across a month: the month said for each end, the year once.
+        assertEquals("۲۹ شهریور تا ۴ مهر ۱۴۰۵", weekRange(jalaliDay(1405, 6, 29)).fa)
+
+        // Across نوروز: nothing shared, so both ends say themselves in full.
+        val esfand = jalaliMonthLength(1404, 12)
+        val cross = weekRange(jalaliDay(1404, 12, esfand - 2))
+        assertEquals(
+            "${faNumber((esfand - 2).toDouble())} اسفند ۱۴۰۴ تا ۴ فروردین ۱۴۰۵",
+            cross.fa,
+        )
     }
 }

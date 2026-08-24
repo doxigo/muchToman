@@ -9,7 +9,18 @@
   // the whole domain is DNS-poisoned to 10.10.34.36 — and Iran is where the users are. An
   // ordinary domain carries no such reputation. The workers.dev address keeps working for
   // builds already installed; nothing has to be retired for this to take effect.
-  "routes": [{ "pattern": "rates.muchtoman.com", "custom_domain": true }],
+  // The apex rides on the same Worker as the rates: both are public, cacheable and stateless,
+  // which is the property the sync Worker was split off to protect — a landing page has no
+  // private data to keep away from a public code path. Deploying creates the apex DNS record.
+  "routes": [
+    { "pattern": "rates.muchtoman.com", "custom_domain": true },
+    { "pattern": "muchtoman.com", "custom_domain": true }
+  ],
+
+  // The landing page. Assets answer first, so `/` is the page and `/img/...` are its pictures,
+  // while `/rates`, `/download`, `/coin-icon` and `/wallet-balance` — none of which exist as
+  // files — keep falling through to the code below exactly as before.
+  "assets": { "directory": "./public" },
   // Declaring `routes` switches the workers.dev subdomain OFF unless this says otherwise,
   // which took the only working endpoint down with it the first time. It stays on: builds
   // already installed point at it, and it is the fallback if the custom domain ever fails

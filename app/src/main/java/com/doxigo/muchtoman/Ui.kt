@@ -622,7 +622,6 @@ private fun AppScreens(
             smsEnabled = state.smsEnabled,
             bankAccounts = state.bankAccounts,
             disabledBanks = state.disabledBanks,
-            categories = state.ledger.categories,
             family = state.family,
             activity = activity,
             onCompanion = { companion = true },
@@ -797,6 +796,9 @@ private fun AppScreens(
                 // default rather than through a second mechanism of their own.
                 countPassThrough = true,
                 excluded = state.reportExcluded,
+                // The same remembered day the month above was read from — «۱ هفته» is the one
+                // span that needs the day itself.
+                anchorDay = reportMonth,
             )
         }
         // Her «می‌ارزید؟» answers, over exactly the window the rest of the report reads — a
@@ -817,7 +819,7 @@ private fun AppScreens(
             smsEnabled = state.smsEnabled,
             mode = reportMode,
             onMode = { reportMode = it },
-            onWindow = { month, span -> reportMonth = month.startDay; reportSpan = span },
+            onWindow = { day, span -> reportMonth = day; reportSpan = span },
             bottomInset = pad.calculateBottomPadding(),
             categories = state.ledger.categories,
             excluded = state.reportExcluded,

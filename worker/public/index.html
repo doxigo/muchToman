@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- No scripts anywhere on this page, and the policy says so. Styles are the one inline
+         <style> below; images and the font come from this origin and nowhere else. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>چقدر تومن · همه‌ی پولت، یک عدد</title>
+    <meta
+      name="description"
+      content="اپ اندرویدی که به یک سؤال جواب می‌ده: همهٔ پولم چقدر تومنه؟ موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو به نرخ آزاد. بدون حساب، بدون تبلیغ، متن‌باز."
+    />
+    <link rel="canonical" href="https://muchtoman.com/" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="preload" href="/modam.woff2" as="font" type="font/woff2" crossorigin />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="fa_IR" />
+    <meta property="og:title" content="چقدر تومن · همه‌ی پولت، یک عدد" />
+    <meta
+      property="og:description"
+      content="موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو به نرخ آزاد. جمع همه یک عدد به تومن. بدون حساب، بدون تبلیغ، متن‌باز."
+    />
+    <meta property="og:url" content="https://muchtoman.com/" />
+    <meta property="og:image" content="https://muchtoman.com/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      /*
+       * The same Modam the app ships, both axes intact — `font-stretch: 90%` on a figure here
+       * is exactly `ModamFigures` there. Width, never letter-spacing: Persian is a connected
+       * script and negative tracking breaks the joins.
+       */
+      @font-face {
+        font-family: Modam;
+        src: url('/modam.woff2') format('woff2');
+        font-weight: 200 900;
+        font-stretch: 70% 100%;
+        font-display: swap;
+      }
+
+      /*
+       * The palette, verbatim from `Theme.kt` — seed wise-fa-2026-08. One pair carries the
+       * brand: forest #163300, bright green #9FE870. The rest is Wise daylight (real white,
+       * gray-green cards) and Wise dark (a neutral room the green visits).
+       */
+      :root {
+        color-scheme: light dark;
+
+        --forest: #163300;
+        --bright: #9fe870;
+
+        --cta-fill: #9fe870;
+        --cta-ink: #163300;
+
+        --bg: #ffffff;
+        --ink: #131711;
+        --heading: #163300;            /* forest headings on paper: 13.9:1, and the brand */
+        --muted: #59614f;              /* green-tinted, never flat grey */
+        --surface: #f3f5ee;
+        --surface-variant: #eaeee0;
+        --btn-tonal: #eaede2;          /* a quiet pill on the white page */
+        --outline-variant: #dde2d2;
+        --mint: #1f7a40;               /* gain-green, readable on paper */
+
+        --r-field: 14px;
+        --r-card: 18px;
+        --r-group: 22px;
+        --r-sheet: 28px;
+        --r-hero: 34px;
+        --r-pill: 999px;
+
+        --xs: 4px; --s: 8px; --m: 12px; --l: 16px; --xl: 20px; --xxl: 32px; --huge: 48px;
+
+        --enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+        --fast: 180ms;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121511;
+          --ink: #f2f3ef;
+          --heading: #f2f3ef;          /* forest vanishes on near-black; the room stays neutral */
+          --muted: #a8aaa6;
+          --surface: #1c1f1a;
+          --surface-variant: #262923;
+          --btn-tonal: #22251f;
+          --outline-variant: #383b35;
+          --mint: #9fe870;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Modam, system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+        /* Big type beats density everywhere — the audience of this page is the app's. */
+        font-size: 17px;
+        line-height: 1.8;
+        letter-spacing: 0;
+        text-rendering: optimizeLegibility;
+      }
+      ::selection { background: #dcf2c0; color: #12290a; }
+      @media (prefers-color-scheme: dark) {
+        ::selection { background: #2a3a1d; color: #9fe870; }
+      }
+
+      .wrap {
+        max-width: 66rem;
+        margin: 0 auto;
+        padding-inline: calc(env(safe-area-inset-right) + var(--xl))
+                        calc(env(safe-area-inset-left) + var(--xl));
+      }
+
+      a { color: inherit; }
+      p a, li a { text-decoration-thickness: 1px; text-underline-offset: 4px; }
+      :focus-visible { outline: 2px solid var(--heading); outline-offset: 2px; border-radius: 4px; }
+
+      /* ————— header: a wordmark and two doors. Nothing sticks, nothing follows. ————— */
+      .top {
+        display: flex;
+        align-items: center;
+        gap: var(--l);
+        padding-top: calc(env(safe-area-inset-top) + var(--xl));
+      }
+      .mark { display: flex; align-items: center; gap: var(--m); font-weight: 800; font-size: 1.06rem; }
+      .mark img { width: 28px; height: 28px; border-radius: 8px; display: block; }
+      .top nav { margin-inline-start: auto; display: flex; align-items: center; gap: var(--s); }
+      .top nav a { text-decoration: none; font-weight: 700; font-size: .94rem; }
+      .top .ghost { padding: .35rem .8rem; border-radius: var(--r-pill); color: var(--muted); }
+      .top .ghost:hover { color: var(--ink); }
+
+      /* ————— pills: `PillButton`, to the letter. Flat colour, give under the thumb. ————— */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        padding: .7rem 1.6rem;
+        border-radius: var(--r-pill);
+        background: var(--btn-tonal);
+        color: var(--ink);
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform var(--fast) var(--enter), background var(--fast) var(--enter);
+      }
+      .pill:not(.primary) { border: 1px solid var(--outline-variant); }
+      .pill:hover { background: var(--surface-variant); }
+      .pill:active { transform: scale(.97); }
+      .pill.primary { background: var(--cta-fill); color: var(--cta-ink); font-weight: 800; }
+      .pill.primary:hover { background: #8edd5f; }
+      .pill.small { min-height: 40px; padding: .3rem 1.1rem; font-size: .94rem; }
+
+      /* ————— hero ————— */
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        align-items: center;
+        gap: var(--huge);
+        padding-top: clamp(2.5rem, 8vw, 5.5rem);
+      }
+      h1 {
+        font-size: clamp(2.4rem, 6vw, 3.6rem);
+        font-weight: 900;
+        line-height: 1.25;
+        color: var(--heading);
+        margin: 0;
+        text-wrap: balance;
+      }
+      .lede {
+        font-size: 1.06rem;
+        max-width: 34rem;
+        margin: var(--l) 0 0;
+        text-wrap: pretty;
+      }
+      /* The whole thesis in one line: the number you can say against the number you cannot. */
+      .contrast {
+        margin: var(--xl) 0 0;
+        font-size: 1rem;
+      }
+      .contrast strong { font-weight: 800; color: var(--heading); }
+      .contrast .figure { white-space: nowrap; }
+      .muted { color: var(--muted); }
+      .figure { font-stretch: 90%; font-variant-numeric: tabular-nums; }
+
+      .ctas { display: flex; flex-wrap: wrap; gap: var(--m); margin-top: var(--xxl); }
+      .fineprint { margin: var(--l) 0 0; font-size: .85rem; }
+
+      /* ————— the phone: an honest frame — surface, hairline, air. No gloss, no notch. ————— */
+      .phone { margin: 0; justify-self: center; width: min(320px, 84vw); }
+      .phone .shell {
+        display: block;
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--outline-variant);
+        border-radius: 42px;
+      }
+      .phone img { display: block; width: 100%; height: auto; border-radius: 33px; }
+      .phone figcaption { margin-top: var(--m); text-align: center; font-size: .85rem; color: var(--muted); }
+
+      /* The one authored moment: the first screen settles into place. Decelerate hard,
+         nothing overshoots — `Motion.enter`. */
+      @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+      .hero .pitch { animation: rise .55s var(--enter) backwards; }
+      .hero .phone { animation: rise .55s var(--enter) .1s backwards; }
+
+      /* ————— bands: one claim, one screen, air around both. ————— */
+      section.band {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: center;
+        gap: var(--huge);
+        margin-top: clamp(4rem, 11vw, 7.5rem);
+      }
+      section.band.flip .pitch { grid-column: 2; grid-row: 1; }
+      section.band.flip .phone { grid-column: 1; grid-row: 1; }
+      h2 {
+        font-size: clamp(1.5rem, 3.2vw, 1.9rem);
+        font-weight: 900;
+        line-height: 1.35;
+        color: var(--heading);
+        margin: 0;
+        text-wrap: balance;
+      }
+      .pitch p { max-width: 32rem; margin: var(--l) 0 0; text-wrap: pretty; }
+      .pitch .aside { font-size: .9rem; margin-top: var(--m); }
+
+      /* ————— quiet panels: the app's own band-of-rows, hairline-divided. ————— */
+      .quiet {
+        margin-top: clamp(4rem, 11vw, 7.5rem);
+        background: var(--surface);
+        border-radius: var(--r-sheet);
+        padding: clamp(var(--xl), 4vw, var(--huge));
+      }
+      .rows { margin: var(--xl) 0 0; padding: 0; list-style: none; }
+      .rows li { position: relative; display: flex; gap: var(--m); padding: var(--l) var(--xs); }
+      .rows li + li { border-top: 1px solid var(--outline-variant); }
+      .rows li::before {
+        /* The freshness dot, standing for "this holds": colour confirms what the words say. */
+        content: "";
+        flex: none;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+        margin-top: .8em;
+      }
+      .rows p { margin: 0; max-width: 42rem; text-wrap: pretty; }
+      .rows strong { font-weight: 800; }
+      .quiet.bare { background: none; padding-inline: 0; }
+
+      /* ————— install: two builds, side by side, each with its own door. ————— */
+      .builds { margin-top: var(--xl); display: grid; gap: var(--m); }
+      .build {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--l);
+        background: var(--surface);
+        border-radius: var(--r-group);
+        padding: var(--xl);
+      }
+      .build .grow { flex: 1 1 16rem; min-width: 0; }
+      .build .name { font-weight: 800; font-size: 1.06rem; }
+      .build p { margin: var(--xs) 0 0; font-size: .94rem; }
+      .aftermath { margin: var(--xl) var(--xs) 0; font-size: .9rem; max-width: 44rem; text-wrap: pretty; }
+
+      /* ————— footer ————— */
+      footer {
+        margin-top: clamp(4rem, 11vw, 7.5rem);
+        border-top: 1px solid var(--outline-variant);
+        padding: var(--xxl) 0 calc(env(safe-area-inset-bottom) + var(--huge));
+      }
+      footer .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--l); }
+      footer .muted { font-size: .9rem; }
+      footer nav { margin-inline-start: auto; display: flex; gap: var(--xl); font-size: .9rem; }
+
+      @media (max-width: 860px) {
+        .hero, section.band { grid-template-columns: minmax(0, 1fr); gap: var(--xxl); }
+        section.band.flip .pitch { grid-column: 1; grid-row: 1; }
+        section.band.flip .phone { grid-column: 1; grid-row: 2; }
+        .hero { padding-top: var(--xxl); }
+        footer nav { margin-inline-start: 0; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="wrap top">
+      <span class="mark"><img src="/icon.svg" alt="" width="28" height="28" />چقدر تومن</span>
+      <nav aria-label="پیوندها">
+        <a class="ghost" href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
+        <a class="pill primary small" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="wrap hero">
+        <div class="pitch">
+          <h1>چقدر تومن داری؟</h1>
+          <p class="lede">
+            موجودی بانک‌ها از پیامک، طلا و سکه و دلار و کریپتو به نرخ آزاد، خونه و ماشین به
+            قیمتی که خودت می‌دونی. جمع همه‌ش یک عدد، به تومن، که با یک نگاه خونده می‌شه.
+          </p>
+          <p class="contrast">
+            <strong>«۴٫۷ میلیارد تومان»</strong>
+            <span class="muted">نه <span class="figure">۴٬۶۶۶٬۲۵۱٬۱۳۶</span>.</span>
+          </p>
+          <div class="ctas">
+            <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود مستقیم (APK)</a>
+            <a class="pill" href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
+          </div>
+          <p class="fineprint muted">اندروید ۷ به بالا · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
+        </div>
+        <figure class="phone">
+          <span class="shell">
+            <picture>
+              <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
+              <img
+                src="/img/home.webp"
+                alt="صفحهٔ خانه: جمع دارایی‌ها روی کارت سبز، به رقم و به حروف، با تغییر سی‌روزه"
+                width="720" height="1600" fetchpriority="high"
+              />
+            </picture>
+          </span>
+        </figure>
+      </section>
+
+      <div class="wrap">
+        <section class="band flip">
+          <div class="pitch">
+            <h2>پیامک بانک، خودش دفتر می‌شه</h2>
+            <p>
+              پیامک‌های موجودی همون‌جا روی گوشی خونده و پارس می‌شن. نه API بانکی در کاره و نه متن پیامک به سروری می‌رسه. هر تراکنش دسته می‌گیره، و هر چی نگرفت با یک مرور
+              سریع خودت جاش رو مشخص می‌کنی.
+            </p>
+            <p class="aside muted">
+              بلوبانک، سامان، ملت، ملی، صادرات، پاسارگاد، رسالت، پارسیان و چندتای دیگه.
+            </p>
+          </div>
+          <figure class="phone">
+            <span class="shell">
+              <picture>
+                <source srcset="/img/ledger-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/ledger.webp" loading="lazy"
+                  alt="صفحهٔ دفتر: تراکنش‌های هر روز با دسته و مبلغ، و جمع روز کنار تاریخ"
+                  width="720" height="1600"
+                />
+              </picture>
+            </span>
+          </figure>
+        </section>
+
+        <section class="band">
+          <div class="pitch">
+            <h2>یک دفتر، همهٔ خانواده</h2>
+            <p>
+              با یک QR یک‌بارمصرف عضو می‌شن و هر کس خودش انتخاب می‌کنه پیامک‌های بانکی‌ش به
+              اشتراک گذاشته بشه یا نه. هر مورد مشترک به اسم صاحبشه و دسته‌بندیش رو هر عضوی
+              می‌تونه درست کنه.
+            </p>
+            <p class="aside muted">
+              عضو بدون اندروید؟ با همون لینک دعوت توی مرورگر به دفتر می‌پیونده.
+            </p>
+          </div>
+          <figure class="phone">
+            <span class="shell">
+              <picture>
+                <source srcset="/img/family-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/family.webp" loading="lazy"
+                  alt="دفتر مشترک خانواده در مرورگر: هر تراکنش به اسم عضوش، سهیل یا مریم"
+                  width="720" height="1600"
+                />
+              </picture>
+            </span>
+            <figcaption>همراهِ مرورگر، روی گوشی عضو دعوت‌شده</figcaption>
+          </figure>
+        </section>
+
+        <section class="band flip">
+          <div class="pitch">
+            <h2>هر چی داری، به نرخ آزاد</h2>
+            <p>
+              طلای ۱۸ عیار به گرم و مثقال، سکه از امامی تا پارسیانِ صد سوتی، دلار و یورو و
+              درهم، ۲۵۰ کریپتوی اول بازار، سهام بورس، و خونه و ماشین به قیمتی که خودت می‌گی.
+              نرخ دولتی هیچ جای این اپ نیست.
+            </p>
+            <p class="aside muted">آخرین نرخ خوب روی گوشی می‌مونه. بی‌اینترنت هم جواب داری.</p>
+          </div>
+          <figure class="phone">
+            <span class="shell">
+              <picture>
+                <source srcset="/img/assets-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/assets.webp" loading="lazy"
+                  alt="صفحهٔ دارایی: جمع کل بالا، و ردیف‌های طلا و سکه با نرخ روز"
+                  width="720" height="1600"
+                />
+              </picture>
+            </span>
+          </figure>
+        </section>
+
+        <section class="band">
+          <div class="pitch">
+            <h2>بودجه و هدف، بدون بازی</h2>
+            <p>
+              برای هر دسته سقف بذار: هفتگی، ماهانه یا فصلی. اپ می‌گه چقدر رفته، چقدر مونده
+              و تا آخر ماه روزی چقدر جا داری. خبری از امتیاز و زنجیره و مقایسه با بقیه نیست. فقط عددها.
+            </p>
+            <p class="aside muted">
+              هشدارها همون روی گوشی ساخته می‌شن و به هیچ سروری نمی‌رسن. نه سقف، نه دسته، نه
+              حتی این که هشداری در کار بوده.
+            </p>
+          </div>
+          <figure class="phone">
+            <span class="shell">
+              <picture>
+                <source srcset="/img/budget-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/budget.webp" loading="lazy"
+                  alt="صفحهٔ آینده: بودجهٔ رستوران و کافه در ۹۸ درصد، با جای باقی‌ماندهٔ روزانه"
+                  width="720" height="1600"
+                />
+              </picture>
+            </span>
+          </figure>
+        </section>
+
+        <section class="quiet" aria-labelledby="privacy-h">
+          <h2 id="privacy-h">مال خودت می‌مونه</h2>
+          <ul class="rows">
+            <li><p><strong>نه حساب، نه لاگین، نه آنالیتیکس.</strong> همه‌چیز توی حافظهٔ خود اپ روی گوشیه.</p></li>
+            <li><p><strong>دفتر خانوادگی سر‌تا‌سر رمز شده.</strong> سرور فقط متنِ رمزشده می‌بینه. نه مبلغ، نه اسم، نه فروشنده.</p></li>
+            <li><p><strong>پشتیبان یک فایل رمزداره.</strong> فقط با عبارتی که خودت انتخاب کردی باز می‌شه. حتی خود اپ هم بدونش نمی‌تونه.</p></li>
+          </ul>
+        </section>
+
+        <section class="quiet bare" aria-labelledby="rules-h">
+          <h2 id="rules-h">قانون‌هایی که عوض نمی‌شن</h2>
+          <ul class="rows">
+            <li><p>عددی که می‌بینی هیچ‌وقت از عدد واقعی بزرگ‌تر نیست. رو به پایین گرد می‌شه.</p></li>
+            <li><p>دارایی بی‌نرخ هیچ‌وقت صفر حساب نمی‌شه. کنار گذاشته می‌شه و به اسمش گفته می‌شه.</p></li>
+            <li><p>هشدارها اول با کلمه می‌آن. رنگ فقط تأییدشون می‌کنه.</p></li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="install-h" style="margin-top: clamp(4rem, 11vw, 7.5rem);">
+          <h2 id="install-h">نصب</h2>
+          <div class="builds">
+            <div class="build">
+              <div class="grow">
+                <div class="name">چقدر تومن</div>
+                <p class="muted">نسخهٔ کامل: دفتر خانوادگی، بودجه و هدف، همراهِ مرورگر.</p>
+              </div>
+              <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود مستقیم</a>
+            </div>
+            <div class="build">
+              <div class="grow">
+                <div class="name">چقدر تومن دارم</div>
+                <p class="muted">نسخهٔ سبک: فقط دارایی. چی داری و امروز چند می‌ارزه.</p>
+              </div>
+              <a class="pill" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-lite-latest.apk">دانلود مستقیم</a>
+            </div>
+          </div>
+          <p class="aftermath muted">
+            نسخهٔ تازه به‌صورت یک خط زیر جمع دارایی‌هات پیدا می‌شه. برای خبردار شدن بدون باز
+            کردن اپ، ریپو رو به Obtainium اضافه کن. هر دو نسخه روی یک گوشی کنار هم جا می‌شن.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span class="muted">چقدر تومن · ساخته‌شده برای یک خانوادهٔ فارسی‌زبان.</span>
+        <nav aria-label="پانوشت">
+          <a href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
+          <a href="https://github.com/doxigo/muchToman/issues">گزارش مشکل</a>
+          <a href="https://github.com/doxigo/muchToman/blob/main/LICENSE">مجوز MIT</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

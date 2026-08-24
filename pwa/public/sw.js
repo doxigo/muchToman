@@ -15,7 +15,7 @@
 // deploy — and nothing else ever removes an entry, so without a bump the old builds pile up for
 // ever. Bump it whenever the shell's shape changes; activate deletes every cache that is not
 // this one.
-const SHELL = 'muchtoman-shell-v2';
+const SHELL = 'muchtoman-shell-v3';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
