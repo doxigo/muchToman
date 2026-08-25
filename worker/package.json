@@ -10,7 +10,7 @@
     "check": "npm run typecheck && npm run test && wrangler deploy --dry-run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260804.1",
+    "@cloudflare/workers-types": "^5.20260820.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.0",
     "wrangler": "^4.124.0"
