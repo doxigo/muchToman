@@ -16,7 +16,7 @@ room = "2.8.4"
 ksp = "2.3.11"
 # Pure-Java QR *encoder*. The one new runtime dependency in the ledger work, and it exists
 # because pairing shows a code rather than typing one: the scope key is 32 bytes.
-zxing = "3.5.3"
+zxing = "3.5.4"
 # Test-only: what lets the durable migrations run on the JVM against the committed schemas,
 # instead of being found out about on someone's phone.
 robolectric = "4.16.1"
