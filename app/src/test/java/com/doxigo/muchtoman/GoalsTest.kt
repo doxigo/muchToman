@@ -24,6 +24,7 @@ class GoalsTest {
         categoryId: String = "cat_shopping",
         review: Boolean = false,
         merchant: String = "جایی",
+        owner: String = "",
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
@@ -36,7 +37,7 @@ class GoalsTest {
                 balanceRial = null, feeRial = null, mask = "", instrument = "unknown",
                 merchant = merchant, merchantNorm = merchant, refNo = "", printedAt = "",
                 channel = "unknown", unitPrinted = "none", inferred = false,
-                parserVer = PARSER_VERSION,
+                parserVer = PARSER_VERSION, ownerMemberId = owner,
             ),
             categoryId = categoryId, categoryFa = "خرید", confidence = 95,
             needsReview = review, duplicate = false, transfer = false,
@@ -179,6 +180,17 @@ class GoalsTest {
         val settled = entry(first, -90_000_000)
         assertEquals(1, worthItCandidates(listOf(settled), emptySet(), first, 1).size)
         assertTrue(worthItCandidates(listOf(settled), setOf(settled.txn.ref), first, 1).isEmpty())
+    }
+
+    @Test
+    fun `only the person who spent it is asked about it`() {
+        // A household ledger holds her partner's rows too, and both phones were being handed the
+        // same two purchases — the one who did not make them being asked about a card that is
+        // not hers.
+        val hers = entry(first, -90_000_000)
+        val his = entry(first, -95_000_000, owner = "m_partner")
+        val asked = worthItCandidates(listOf(hers, his), emptySet(), first, 1)
+        assertEquals(listOf(hers.txn.ref), asked.map { it.txn.ref })
     }
 
     @Test

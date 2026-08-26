@@ -216,6 +216,13 @@ object WorthIt {
  *
  * Rent, bills, fees and cash withdrawals are never asked about — "was it worth it" is not a
  * question about the electricity bill, and asking it would read as the app being smug.
+ *
+ * Only her own spending is asked about. A household ledger holds her partner's rows too, and
+ * this question is not one anybody can answer for somebody else: in a family of two both phones
+ * were handed the same two purchases, and the one who did not make them was being asked to have
+ * an opinion about a card that is not hers. `txn.ownerMemberId` is blank exactly when the row was
+ * read on this phone — see [LedgerEntry.ownerMemberId], which is filled in with the local member
+ * and therefore never blank.
  */
 private val NEVER_ASKED = setOf(CAT_TRANSFER, CAT_FEES, CAT_INCOME, "cat_bills", CAT_CASH)
 
@@ -234,6 +241,7 @@ fun worthItCandidates(
                 it.txn.direction == "out" &&
                 (it.txn.amountRial ?: 0L) >= threshold &&
                 it.categoryId !in NEVER_ASKED &&
+                it.txn.ownerMemberId.isBlank() &&
                 it.txn.ref !in answered &&
                 !it.needsReview // settle what it *is* before asking how she felt about it
         }
