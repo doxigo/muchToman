@@ -912,6 +912,7 @@ private fun AppScreens(
                         usdRate = effective["usd"],
                         onReport = { openReport(it) },
                         portfolio = portfolio,
+                        onFamilyTotal = vm::setFamilyTotal,
                     )
                 }
             }
@@ -1301,8 +1302,14 @@ internal fun HeroCard(
     onReport: (ReportMode) -> Unit,
     /** Which screen this card is heading — it decides the door shown when there is no pill. */
     portfolio: Boolean,
+    onFamilyTotal: (Boolean) -> Unit,
 ) {
-    val total = state.totals.toman
+    // What the family shares in is on this screen but never in [UiState.totals]: her figure
+    // stays hers everywhere else — the widget, the daily snapshot, the report. The household
+    // total is a reading of the card, not a second total in the state.
+    val familyMode = state.familyTotal && state.familyAssets.isNotEmpty()
+    val total = state.totals.toman +
+        (if (familyMode) state.familyAssets.sumOf { it.totalToman } else 0.0)
 
     // The same money in the one other unit everyone here already thinks in. It comes from the
     // *effective* dollar rate, so a hand-typed override moves this figure with everything else,
@@ -1325,24 +1332,35 @@ internal fun HeroCard(
 
     // A month is the shortest window the daily snapshots can answer honestly, and the one she
     // is most likely to be asking about. Absent — not zeroed — until there is a snapshot that
-    // old to compare against.
-    val change = remember(state.history, total) {
-        changeOver(state.history, System.currentTimeMillis() / DAY_MS, 30, total)
-    }
+    // old to compare against. Always against her own total: the history only ever recorded
+    // hers, so on the household figure the pill has nothing honest to say and stays away.
+    val change = remember(state.history, state.totals.toman) {
+        changeOver(state.history, System.currentTimeMillis() / DAY_MS, 30, state.totals.toman)
+    }.takeUnless { familyMode }
 
     HeroPanel {
             // Label and dollar figure share a line, so the top of the card reads as one
             // sentence — "جمع دارایی‌هات ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather
             // than a second headline.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "جمع دارایی‌هات",
-                    fontSize = 15.sp,
-                    color = Hero.muted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                if (state.familyAssets.isEmpty()) {
+                    Text(
+                        "جمع دارایی‌هات",
+                        fontSize = 15.sp,
+                        color = Hero.muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    // Once the family shares in, the label becomes the question it always
+                    // quietly answered: whose money is this figure. Same slot, same line.
+                    HeroScopeToggle(
+                        family = familyMode,
+                        onSelect = onFamilyTotal,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 usd?.let {
                     // The isolate keeps the number one opaque run; the "$" sits outside it so
                     // bidi puts it on the reading side of the figure whether faRate returns
@@ -1468,6 +1486,44 @@ internal fun HeroCard(
                     modifier = Modifier.padding(top = Space.xs),
                 )
             }
+    }
+}
+
+/**
+ * Whose money the headline counts: hers, or the household's — hers plus everything the family
+ * shares in. It stands in the label's own slot and speaks in the field's colours: the active
+ * chip on [Hero.well], the idle one bare, because up here the bright green is spoken for by
+ * the figure itself. Small pills, not the full segmented track — the choice only slices the
+ * number below it.
+ */
+@Composable
+private fun HeroScopeToggle(
+    family: Boolean,
+    onSelect: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        listOf(false, true).forEach { option ->
+            val active = option == family
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(if (active) Hero.well else Color.Transparent)
+                    // Drawn ~31dp, touched 48dp: Compose extends any sub-48dp clickable to the
+                    // minimum touch target, and the card top must not grow a control's worth.
+                    .selectable(selected = active, role = Role.RadioButton) { onSelect(option) }
+                    .padding(horizontal = Space.m, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (option) "خانواده" else "دارایی‌هات",
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    color = if (active) Hero.strong else Hero.muted,
+                )
+            }
+        }
     }
 }
 

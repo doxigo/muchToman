@@ -747,6 +747,16 @@ class Store(context: Context) {
         get() = prefs.getBoolean("widgetLock", false)
         set(v) { prefs.edit().putBoolean("widgetLock", v).apply() }
 
+    /**
+     * Whether the hero total counts the household — hers plus what the family shares in — or
+     * just her own. A reading preference, deliberately off [EXPORTED_PREFS]: the family rows
+     * it folds in never ride a backup either, so on a restored phone it would point at money
+     * that is not there until she re-pairs.
+     */
+    var familyTotal: Boolean
+        get() = prefs.getBoolean("familyTotal", false)
+        set(v) { prefs.edit().putBoolean("familyTotal", v).apply() }
+
     /** Rates the user typed in by hand; these win over whatever the Worker says. */
     var overrides: Map<String, Double>
         get() = read("overrides", emptyMap())

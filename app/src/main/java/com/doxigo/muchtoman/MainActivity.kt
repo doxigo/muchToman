@@ -88,6 +88,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             strangeSenders = store.strangeSenders,
             dismissedUpdate = store.dismissedUpdate,
             reportExcluded = store.reportExcluded,
+            familyTotal = store.familyTotal,
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -473,6 +474,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         updateTotalWidget(getApplication())
     }
 
+    /** Whether the hero counts the household or just her — see [Store.familyTotal]. */
+    fun setFamilyTotal(on: Boolean) {
+        store.familyTotal = on
+        _state.update { it.copy(familyTotal = on) }
+    }
 
     /**
      * A category of her own, with the mark she picked for it.
@@ -1287,6 +1293,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             requestFamilySync(silent = true)
         }
     }
+
     fun setFamilySmsSharing(enabled: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
@@ -2143,6 +2150,8 @@ data class UiState(
     val family: FamilyState = FamilyState(),
     /** دارایی the other members chose to share, ready for the asset tab's family band. */
     val familyAssets: List<FamilyAssetView> = emptyList(),
+    /** Whether the hero total folds those in. Mirrored from [Store.familyTotal]. */
+    val familyTotal: Boolean = false,
     /** Where a tapped notification wants her, until the composition has taken her there. */
     val openTab: Tab? = null,
     /** Whether that notification wanted the review deck in particular. Same one-shot life. */
