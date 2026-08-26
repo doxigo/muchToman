@@ -1,10 +1,23 @@
 package com.doxigo.muchtoman
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.media.ThumbnailUtils
+import android.net.Uri
+import android.util.Base64
+import android.util.LruCache
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +35,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.inset
@@ -56,13 +71,17 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 fun qrBitmap(content: String, size: Int = 720): Bitmap {
     val hints = mapOf(
@@ -133,6 +152,8 @@ fun CompanionScreen(
     onRejoin: () -> Unit,
     onDismissRejoin: () -> Unit,
     onNameChange: (String) -> Unit,
+    /** The face I picked — blank, a stock emoji, or a `b64:` photo. See [FamilyMember.avatar]. */
+    onAvatarChange: (String) -> Unit,
     onShareSmsChange: (Boolean) -> Unit,
     onShareAssetsChange: (Boolean) -> Unit,
     /** The banks this phone tracks, for the set-aside chips. Enum names, not Persian. */
@@ -253,6 +274,7 @@ fun CompanionScreen(
                             working = state.working,
                             onNameChange = { name = it.take(32) },
                             onSave = { onNameChange(cleanName) },
+                            onAvatarChange = onAvatarChange,
                             onSharingChange = onShareSmsChange,
                             onSharingAssetsChange = onShareAssetsChange,
                             onExcludedBankToggle = onExcludedBankToggle,
@@ -556,8 +578,20 @@ private fun RejoinCard(
 }
 
 /**
- * Whose it is, at a glance. The initial, not a photo: there is no avatar anywhere in this app
- * and a family of four does not need four downloads to tell itself apart.
+ * Decoded photo thumbnails, keyed by their base64 — a handful of members whose faces sit on
+ * thousands of ledger rows, so the bytes are decoded once, not once per row scrolled in.
+ * 16 slots: the server refuses a household a seventeenth device before this can overflow.
+ */
+private val faceCache = LruCache<String, ImageBitmap>(16)
+
+/**
+ * Whose it is, at a glance: the face they picked, or the initial when they never picked one.
+ *
+ * The initial was the whole design once — no avatar anywhere in the app — until the household
+ * asked to tell rows apart faster than a letter can. So three shapes now, in [FamilyMember.avatar]:
+ * blank falls to the initial, an emoji is drawn as text (a stock face costs no drawing and no
+ * download), and a `b64:` photo is a thumbnail small enough to ride the same encrypted record
+ * the name does. Bytes that fail to decode fall back to the initial, which is never wrong.
  *
  * Every disc is the same colour, including mine. Gold in this app means the action or the
  * answer, and an accent disc the size of a thumb sat next to the accent «من» chip, the accent
@@ -565,21 +599,106 @@ private fun RejoinCard(
  * had come to press. Identity is not an action; the chip says which row is mine in a word.
  */
 @Composable
-private fun MemberAvatar(name: String) {
+internal fun MemberFace(name: String, avatar: String, size: Dp = 44.dp, fontSize: TextUnit = 18.sp) {
     Box(
         Modifier
-            .size(44.dp)
+            .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            name.trim().firstOrNull()?.toString().orEmpty(),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        val photo = if (avatar.startsWith(AVATAR_PHOTO_PREFIX)) {
+            remember(avatar) {
+                faceCache.get(avatar) ?: runCatching {
+                    val bytes = Base64.decode(avatar.removePrefix(AVATAR_PHOTO_PREFIX), Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }.getOrNull()?.also { faceCache.put(avatar, it) }
+            }
+        } else {
+            null
+        }
+        when {
+            photo != null -> Image(
+                bitmap = photo,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            avatar.isNotBlank() && !avatar.startsWith(AVATAR_PHOTO_PREFIX) -> Text(avatar, fontSize = fontSize)
+            else -> Text(
+                name.trim().firstOrNull()?.toString().orEmpty(),
+                fontSize = fontSize,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
+}
+
+/**
+ * A picked photo, shrunk to the one size any screen ever draws it and packed into
+ * [FamilyMember.avatar]'s `b64:` shape — small enough that the member record carrying it stays
+ * far under the sync server's body cap. Null when the picked file is not an image.
+ *
+ * Sampled decode first, so a twelve-megapixel camera roll photo never materialises; then
+ * turned upright by its EXIF flag, because a selfie stored sideways would crop sideways; then
+ * centre-cropped square, which is what the circle mask shows of it anyway.
+ */
+fun avatarThumbnail(context: Context, uri: Uri): String? = runCatching {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= AVATAR_PX) sample *= 2
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    val raw = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        ?: return null
+    val turn = resolver.openInputStream(uri)?.use { stream ->
+        when (
+            @Suppress("DEPRECATION")
+            ExifInterface(stream)
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        ) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    } ?: 0f
+    val upright = if (turn == 0f) raw else Bitmap.createBitmap(
+        raw, 0, 0, raw.width, raw.height, Matrix().apply { postRotate(turn) }, true
+    )
+    val square = ThumbnailUtils.extractThumbnail(upright, AVATAR_PX, AVATAR_PX)
+    val bytes = ByteArrayOutputStream()
+        .also { square.compress(Bitmap.CompressFormat.JPEG, 78, it) }
+        .toByteArray()
+    (AVATAR_PHOTO_PREFIX + Base64.encodeToString(bytes, Base64.NO_WRAP))
+        .takeIf { it.length <= AVATAR_B64_MAX }
+}.getOrNull()
+
+/**
+ * One face on the picker row. A radio, not a button: the four choices are one exclusive set,
+ * and TalkBack should say which one is in use, not just that four discs are pressable.
+ */
+@Composable
+private fun FaceChoice(
+    selected: Boolean,
+    label: String,
+    onPick: () -> Unit,
+    face: @Composable () -> Unit,
+) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .then(
+                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                else Modifier
+            )
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onPick)
+            .padding(3.dp)
+            .semantics { contentDescription = label },
+    ) { face() }
 }
 
 /**
@@ -647,7 +766,7 @@ private fun FamilyMemberRow(
             .padding(Space.l),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MemberAvatar(member.name)
+            MemberFace(member.name, member.avatar)
             Spacer(Modifier.size(Space.m))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -716,11 +835,24 @@ private fun OwnMemberBlock(
     working: Boolean,
     onNameChange: (String) -> Unit,
     onSave: () -> Unit,
+    onAvatarChange: (String) -> Unit,
     onSharingChange: (Boolean) -> Unit,
     onSharingAssetsChange: (Boolean) -> Unit,
     onExcludedBankToggle: (String) -> Unit,
     shape: Shape,
 ) {
+    val appContext = LocalContext.current.applicationContext
+    val photoScope = rememberCoroutineScope()
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            photoScope.launch {
+                withContext(Dispatchers.IO) { avatarThumbnail(appContext, uri) }
+                    ?.let(onAvatarChange)
+            }
+        }
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -729,7 +861,7 @@ private fun OwnMemberBlock(
             .padding(Space.l),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MemberAvatar(name.ifBlank { member?.name.orEmpty() })
+            MemberFace(name.ifBlank { member?.name.orEmpty() }, member?.avatar.orEmpty())
             Spacer(Modifier.size(Space.m))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -770,6 +902,51 @@ private fun OwnMemberBlock(
                 enabled = !working,
                 modifier = Modifier.align(Alignment.End),
             ) { Text("ذخیره اسم") }
+        }
+
+        Spacer(Modifier.height(Space.l))
+        // The face choices, on my row only: everyone picks their own on their own phone, the
+        // way everyone types their own name. Four discs, not a sheet — the whole space of
+        // choices fits on one line, and the one in use wears the ring.
+        Text(
+            "چهره",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            "کنار تراکنش‌هات و توی دفتر مشترک دیده می‌شه.",
+            fontSize = 12.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Space.m))
+        val avatar = member?.avatar.orEmpty()
+        val display = name.ifBlank { member?.name.orEmpty() }
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+            FaceChoice(selected = avatar.isBlank(), label = "حرف اول اسم", onPick = { onAvatarChange("") }) {
+                MemberFace(display, "")
+            }
+            FaceChoice(selected = avatar == AVATAR_MAN, label = "مرد", onPick = { onAvatarChange(AVATAR_MAN) }) {
+                MemberFace(display, AVATAR_MAN)
+            }
+            FaceChoice(selected = avatar == AVATAR_WOMAN, label = "زن", onPick = { onAvatarChange(AVATAR_WOMAN) }) {
+                MemberFace(display, AVATAR_WOMAN)
+            }
+            FaceChoice(
+                selected = avatar.startsWith(AVATAR_PHOTO_PREFIX),
+                label = "انتخاب عکس از گالری",
+                onPick = {
+                    photoPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+            ) {
+                // The slot shows the photo in use, or the camera as the invitation to pick one.
+                if (avatar.startsWith(AVATAR_PHOTO_PREFIX)) MemberFace(display, avatar)
+                else MemberFace("", "📷")
+            }
         }
 
         Spacer(Modifier.height(Space.l))

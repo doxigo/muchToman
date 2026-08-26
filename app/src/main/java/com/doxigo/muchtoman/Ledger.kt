@@ -43,7 +43,7 @@ import java.io.FileOutputStream
         ManualTxn::class, Goal::class, FamilyMember::class, FamilyTxn::class,
         SyncPublication::class, FamilyAsset::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class DurableDb : RoomDatabase() {
@@ -235,6 +235,15 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        /** The face a member picked — an emoji, or a photo thumbnail small enough to sync. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "ALTER TABLE `family_member` ADD COLUMN `avatar` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: run {
                 // A staged restore is finished here, inside the one window where "durable.db is
@@ -255,7 +264,7 @@ abstract class DurableDb : RoomDatabase() {
                     // the database file rather than some export of it.
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                     )
                     .build()
                     .also { instance = it }
@@ -323,12 +332,35 @@ data class ManualTxn(
     val deleted: Boolean = false,
 )
 
+/** [FamilyMember.avatar]'s photo shape: this prefix, then base64 JPEG bytes. */
+const val AVATAR_PHOTO_PREFIX = "b64:"
+
+/** The two stock faces the picker offers. Plain emoji, so a stock face costs no drawing. */
+const val AVATAR_MAN = "👨"
+const val AVATAR_WOMAN = "👩"
+
+/** Thumbnail edge in pixels — 44dp at 3x density, the largest disc any screen draws. */
+const val AVATAR_PX = 128
+
+/**
+ * The longest photo avatar accepted, in base64 characters. [avatarThumbnail] produces ~6–8k
+ * for a 128px JPEG; the sync server refuses sealed bodies over 64k. Three-fold headroom on
+ * one side, two-fold on the other.
+ */
+const val AVATAR_B64_MAX = 24_000
+
 /** A person in the family. Names and sharing status are encrypted before synchronization. */
 @Entity(tableName = "family_member")
 data class FamilyMember(
     @PrimaryKey val id: String,
     val name: String,
     @ColumnInfo(name = "shares_sms") val sharesSms: Boolean = false,
+    /**
+     * The face they picked: blank for the initial, an emoji for a stock face, or
+     * `b64:`-prefixed JPEG bytes for a photo thumbnail — see [MemberFace]. Encrypted before
+     * synchronization like the name, because a face is at least as identifying as one.
+     */
+    val avatar: String = "",
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     val deleted: Boolean = false,
 )

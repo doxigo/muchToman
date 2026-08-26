@@ -595,6 +595,7 @@ private fun AppScreens(
             onRejoin = vm::confirmRejoin,
             onDismissRejoin = vm::dismissRejoin,
             onNameChange = vm::setFamilyName,
+            onAvatarChange = vm::setFamilyAvatar,
             onShareSmsChange = vm::setFamilySmsSharing,
             onShareAssetsChange = vm::setFamilyAssetSharing,
             banks = remember(state.bankAccounts) { state.bankAccounts.map { it.bank }.distinct() },

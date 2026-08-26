@@ -450,6 +450,8 @@ data class LedgerEntry(
     val transfer: Boolean,
     val ownerMemberId: String = "",
     val ownerName: String = "",
+    /** The owner's chosen face, for the rows that mark whose a line is — see [MemberFace]. */
+    val ownerAvatar: String = "",
     val categoryEditorName: String = "",
     /** Her own words about this transaction, or blank. A [DecisionKind.NOTE] decision. */
     val note: String = "",
@@ -576,6 +578,7 @@ suspend fun ledgerEntries(
             transfer = txn.ref in transfers || filed?.categoryId == CAT_TRANSFER,
             ownerMemberId = ownerMemberId,
             ownerName = members[ownerMemberId]?.name.orEmpty(),
+            ownerAvatar = members[ownerMemberId]?.avatar.orEmpty(),
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),
             note = notes[txn.ref].orEmpty(),
         )

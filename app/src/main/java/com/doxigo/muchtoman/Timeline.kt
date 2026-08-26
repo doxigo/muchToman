@@ -1034,13 +1034,36 @@ internal fun TimelineRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showIcon) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(hue.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center,
-            ) { CategoryIcon(categoryFa, hue, size = 22.dp, stroke = 1.8.dp) }
+            Box {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(hue.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) { CategoryIcon(categoryFa, hue, size = 22.dp, stroke = 1.8.dp) }
+                // Whose row, on the disc's corner — the face they picked ([MemberFace]),
+                // shrunk to a badge. A badge rather than a disc of its own because the disc's
+                // hue is the category and stays the first thing the eye reads; on a shared
+                // ledger *who* is the second question, and the corner answers it before the
+                // «از …» text is reached. Ringed in the background colour so it sits on the
+                // disc instead of bleeding into it. Absent on a ledger of one, like everything
+                // else that names an owner. Silent to TalkBack: the visible «از …» text
+                // already says the name in full, and a bare letter or face is noise.
+                if (entry.ownerName.isNotBlank()) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(1.5.dp)
+                            .clearAndSetSemantics {},
+                    ) {
+                        MemberFace(entry.ownerName, entry.ownerAvatar, size = 17.dp, fontSize = 10.sp)
+                    }
+                }
+            }
             Spacer(Modifier.width(Space.m))
         }
         Column(Modifier.weight(1f)) {

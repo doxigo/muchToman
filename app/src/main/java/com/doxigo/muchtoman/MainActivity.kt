@@ -473,6 +473,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         updateTotalWidget(getApplication())
     }
 
+
     /**
      * A category of her own, with the mark she picked for it.
      *
@@ -1264,6 +1265,28 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * The face she picked for her own row. Unlike [setFamilyName], blank is a valid answer —
+     * it is how a photo or emoji goes back to being the initial.
+     */
+    fun setFamilyAvatar(avatar: String) {
+        if (avatar.length > AVATAR_B64_MAX) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+            val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+            durable.familyMembers().put(
+                (previous ?: FamilyMember(session.member, store.name.trim().take(32).ifBlank { "من" }, updatedAt = now))
+                    .copy(avatar = avatar, updatedAt = now)
+            )
+            refreshFamily(session)
+            // The ledger rows carry the owner's face too; the queued sync's publishLedger is
+            // what re-reads them, the same way a renamed member reaches the rows.
+            requestFamilySync(silent = true)
+        }
+    }
     fun setFamilySmsSharing(enabled: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {

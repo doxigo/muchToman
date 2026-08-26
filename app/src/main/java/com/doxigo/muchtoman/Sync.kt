@@ -109,6 +109,8 @@ private data class SyncMemberPayload(
     val memberId: String,
     val name: String,
     val sharesSms: Boolean,
+    /** The face they picked — see [FamilyMember.avatar]. Defaulted, so old builds' records parse. */
+    val avatar: String = "",
 )
 
 /**
@@ -678,7 +680,12 @@ private suspend fun outgoingRecords(
     ).also { durable.familyMembers().put(it) }
 
     val profilePayload = SYNC_JSON.encodeToString(
-        SyncMemberPayload(memberId = member.id, name = member.name, sharesSms = member.sharesSms)
+        SyncMemberPayload(
+            memberId = member.id,
+            name = member.name,
+            sharesSms = member.sharesSms,
+            avatar = member.avatar,
+        )
     )
     val outgoing = mutableListOf(
         PreparedRecord(
@@ -858,6 +865,18 @@ private fun safeSyncedText(value: String, max: Int, fallback: String = ""): Stri
     value.filterNot(Char::isISOControl).trim().take(max).ifBlank { fallback }
 
 /**
+ * A face another phone chose, held to the two shapes this build renders: a short emoji, or a
+ * photo small enough that it was made by [avatarThumbnail]'s own cap. Anything else — a novel
+ * prefix, a photo blown past the cap — lands blank, and blank is the initial, which is never
+ * wrong. The bytes themselves are not decoded here; [MemberFace] decodes lazily and falls back
+ * to the initial itself if they turn out not to be an image.
+ */
+internal fun safeSyncedAvatar(value: String): String = when {
+    value.startsWith(AVATAR_PHOTO_PREFIX) -> value.takeIf { it.length <= AVATAR_B64_MAX }.orEmpty()
+    else -> value.filterNot(Char::isISOControl).trim().take(16)
+}
+
+/**
  * A mark another phone chose, kept only if this build draws it.
  *
  * Storing the name as sent would put a glyph from a newer edition in the database and leave the
@@ -903,6 +922,7 @@ private suspend fun applyMember(
             id = memberId,
             name = safeSyncedText(payload.name, 32, "عضو خانواده"),
             sharesSms = payload.sharesSms,
+            avatar = safeSyncedAvatar(payload.avatar),
             updatedAt = record.updatedAt,
             deleted = record.deleted,
         )

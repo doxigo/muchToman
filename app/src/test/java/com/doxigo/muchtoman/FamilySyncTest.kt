@@ -189,6 +189,22 @@ class FamilySyncTest {
     }
 
     @Test
+    fun `an arriving face is held to the shapes this build renders`() {
+        // The two stock faces and a small photo pass through untouched.
+        assertEquals(AVATAR_MAN, safeSyncedAvatar(AVATAR_MAN))
+        assertEquals(AVATAR_WOMAN, safeSyncedAvatar(AVATAR_WOMAN))
+        val photo = AVATAR_PHOTO_PREFIX + "a".repeat(8_000)
+        assertEquals(photo, safeSyncedAvatar(photo))
+
+        // A photo blown past the cap lands blank — blank is the initial, never wrong.
+        assertEquals("", safeSyncedAvatar(AVATAR_PHOTO_PREFIX + "a".repeat(AVATAR_B64_MAX + 1)))
+
+        // A non-photo string is bounded like every other synced text.
+        assertEquals("", safeSyncedAvatar(" "))
+        assertEquals(16, safeSyncedAvatar("x".repeat(500)).length)
+    }
+
+    @Test
     fun `excluded banks survive the round trip through meta`() {
         assertEquals(setOf("SAMAN", "BLU"), parseExcludedBanks(setOf("SAMAN", "BLU").joinToString(",")))
         assertEquals(emptySet<String>(), parseExcludedBanks(""))
