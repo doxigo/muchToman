@@ -12,7 +12,7 @@
         "5/8-10:04",
         "مرکزآواي نوين:02162740"
       ],
-      "why": "Real withdrawal. The unit is glued straight onto both figures with no space, the label is glued onto the balance too, and the last line names the terminal — «مرکزآواي نوين:02162740» — which is the merchant this message is carrying and which nothing reads yet.",
+      "why": "Real withdrawal. The unit is glued straight onto both figures with no space, the label is glued onto the balance too, and the last line — «مرکزآواي نوين:02162740» — is the bank signing its own call centre, not a merchant: it is on every message the bank sends, and reading it as one titled every اقتصاد نوین transaction «آوای نوین».",
       "expect": {
         "bank": "EGHTESAD_NOVIN",
         "direction": "out",
@@ -21,7 +21,7 @@
         "feeRial": null,
         "mask": "126-800-1026659-1",
         "instrument": "account",
-        "merchant": "آوای نوین",
+        "merchant": "",
         "refNo": "",
         "printedAt": "5/8-10:04",
         "channel": "unknown",

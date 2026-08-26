@@ -564,7 +564,10 @@ private val REF_WORDS = listOf("پیگیری", "رهگیری", "مرجع", "شم
 /** خاورمیانه prints its reference as "020/000016703" with no label at all. */
 private val SLASHED_REF = Regex("[0-9۰-۹٠-٩]{2,}/[0-9۰-۹٠-٩]{4,}")
 
-private val MERCHANT_WORDS = listOf("فروشگاه", "پذیرنده", "مرکز", "به نام", "بنام")
+// «مرکز» is deliberately not here: the only «مرکز» in the whole corpus is اقتصاد نوین signing
+// its own call centre — «مرکزآواي نوين:02162740» — on every message it sends, and reading that
+// as a merchant titled every one of the bank's transactions «آوای نوین» instead of the bank.
+private val MERCHANT_WORDS = listOf("فروشگاه", "پذیرنده", "به نام", "بنام")
 
 /**
  * A date the bank printed itself, matched verbatim and never parsed here.
@@ -695,7 +698,7 @@ private fun refIn(text: String): String {
 
 /**
  * The shop or terminal, where the bank names one. Cut at a colon, a line break or a digit run,
- * because "مرکزآواي نوين:02162740" is a name followed by a phone number.
+ * because a name is often followed by a phone number or a terminal code.
  *
  * "پایانه" is deliberately not a merchant word even though it introduces one on some banks: on
  * صادرات it is followed by "فروش", and the merchant would come out as the word "sale".
