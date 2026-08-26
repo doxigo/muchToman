@@ -679,6 +679,13 @@ private fun CashFlowReportContent(
             CategoryDetail(period, entries, onOpenEntry)
         }
 
+        // Only on a ledger the family actually shares — see [memberShares], which returns
+        // nothing when every row in the window belongs to the same person.
+        if (cash.members.isNotEmpty()) {
+            Spacer(Modifier.height(Space.xxl))
+            MemberDetail(cash.members, period.range.fa)
+        }
+
         // Under the categories it governs, and present even when the window is empty while an
         // exclusion stands — a report quietly missing a category with no way to see why is the
         // friendlier kind of lie this screen refuses everywhere else.
@@ -1321,6 +1328,115 @@ private fun CategoryDetail(
             onOpenEntry = onOpenEntry,
             onDismiss = { opened = null },
         )
+    }
+}
+
+/**
+ * The window split by who each row belongs to — the same figures as «دسته‌ها», grouped the
+ * other way, in the same two-lens construction so the two lists read as one chart asked two
+ * questions: «خرج» by who paid, «درآمد» by who it reached.
+ */
+@Composable
+private fun MemberDetail(members: List<MemberShare>, named: String) {
+    var side by rememberSaveable {
+        mutableStateOf(
+            if (members.all { it.spentRial <= 0L } && members.any { it.incomeRial > 0L }) {
+                LedgerLens.INCOME
+            } else {
+                LedgerLens.EXPENSE
+            },
+        )
+    }
+    val income = side == LedgerLens.INCOME
+    val rows = members
+        .map { it to if (income) it.incomeRial else it.spentRial }
+        .filter { it.second > 0L }
+        .sortedByDescending { it.second }
+    val total = rows.sumOf { it.second }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "اعضا",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f).semantics { heading() },
+            )
+            ChipChoice(
+                options = listOf(LedgerLens.EXPENSE, LedgerLens.INCOME),
+                selected = side,
+                label = { it.fa },
+                onSelect = { side = it },
+            )
+        }
+        Spacer(Modifier.height(Space.m))
+        if (rows.isEmpty() || total <= 0L) {
+            Text(
+                if (income) "در $named درآمدی از اعضا ثبت نشده." else "در $named خرجی از اعضا ثبت نشده.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = Space.m),
+            )
+        } else {
+            for ((member, rial) in rows) {
+                MemberShareRow(member, rial, total, if (income) INCOME_TINT else null)
+            }
+        }
+    }
+}
+
+/**
+ * One member, as an amount and as a share of that side — [CategoryShare]'s construction with
+ * the category disc swapped for the family's initial disc, so the row above and the row below
+ * state their figures on the same edges and the same scale.
+ */
+@Composable
+private fun MemberShareRow(member: MemberShare, rial: Long, total: Long, tint: Color?) {
+    val share = (rial.toFloat() / total).coerceIn(0f, 1f)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.s)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${member.name}: ${faCompact(tomanOf(rial))} تومان، " +
+                    "${faNumber(round(share * 100.0))} درصد"
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // The face they picked — the family screen's own disc, at the category disc's size.
+            MemberFace(member.name, member.avatar, size = 32.dp, fontSize = 14.sp)
+            Spacer(Modifier.width(Space.m))
+            Text(member.name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.width(Space.s))
+            Text(
+                bidi(faCompact(tomanOf(rial))),
+                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                fontSize = 14.sp,
+            )
+            Spacer(Modifier.width(Space.s))
+            Text(
+                "${faNumber(round(share * 100.0))}٪",
+                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                fontSize = 12.sp,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = 36.dp),
+            )
+        }
+        Spacer(Modifier.height(Space.xs))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(tint ?: MaterialTheme.colorScheme.primary),
+            )
+        }
     }
 }
 

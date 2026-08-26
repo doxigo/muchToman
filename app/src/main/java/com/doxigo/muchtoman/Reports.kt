@@ -479,6 +479,56 @@ fun categoryWindow(
     )
 }
 
+// ─────────────────────────── the members, side by side ───────────────────────────
+
+/** One member's slice of the window: what they spent, what reached them. */
+data class MemberShare(
+    val id: String,
+    val name: String,
+    /** The face they picked, for the row's disc — see [MemberFace]. */
+    val avatar: String = "",
+    val spentRial: Long,
+    val incomeRial: Long,
+)
+
+/**
+ * The window split by whose transaction each row is, biggest spender first — the same figures
+ * as [periodReport], grouped the other way. It walks through the same gates ([spendable], the
+ * range, the exclusions, the pass-through switch) so the members' rows always add up to the
+ * cards above them.
+ *
+ * Empty unless the window actually holds more than one member's rows: on an unshared ledger
+ * every row belongs to the same person, and a list where every bar wears one name answers no
+ * question.
+ */
+fun memberShares(
+    entries: List<LedgerEntry>,
+    range: ReportRange,
+    countPassThrough: Boolean = false,
+    excluded: Set<String> = emptySet(),
+): List<MemberShare> {
+    val inRange = spendable(entries).filter { it.txn.day in range && it.categoryId !in excluded }
+    val byOwner = inRange.groupBy { it.ownerMemberId }
+    if (byOwner.size < 2) return emptyList()
+    return byOwner.map { (id, rows) ->
+        var income = 0L
+        var spent = 0L
+        for (row in rows) {
+            val signed = row.txn.signedRial ?: continue
+            if (!countPassThrough && row.categoryId in PASS_THROUGH_CATEGORIES) continue
+            if (signed > 0) income += signed else spent += -signed
+        }
+        MemberShare(
+            id = id,
+            // A row can outlive its member's name — a member removed after their rows landed.
+            name = rows.first().ownerName.ifBlank { "عضو قبلی" },
+            avatar = rows.first().ownerAvatar,
+            spentRial = spent,
+            incomeRial = income,
+        )
+    }.sortedByDescending { it.spentRial }
+}
+
 // ─────────────────────────── the narrative ───────────────────────────
 
 /**
@@ -710,6 +760,8 @@ data class CashFlowReport(
     val series: List<PeriodReport>,
     val insights: List<Insight>,
     val wins: List<Insight>,
+    /** Who moved what, when the ledger is shared — see [memberShares]. Empty on a ledger of one. */
+    val members: List<MemberShare> = emptyList(),
     /** Cash runway, and only ever for a window she is standing in. */
     val bufferDays: Int?,
     /** Whether the window reaches the month containing today — the one allowed to say «این ماه». */
@@ -790,6 +842,7 @@ fun buildCashFlow(
             .map { monthReport(entries, it, countPassThrough, excluded) },
         insights = narrate(report, had, entries, buffer, current),
         wins = quietWins(report, had, buffer, current),
+        members = memberShares(entries, range, countPassThrough, excluded),
         bufferDays = buffer,
         current = current,
         canGoBack = month > available.first(),
@@ -857,6 +910,7 @@ private fun buildWeekly(
             .map { periodReport(entries, weekRange(it), countPassThrough, excluded) },
         insights = narrate(report, had, entries, buffer, current),
         wins = quietWins(report, had, buffer, current),
+        members = memberShares(entries, range, countPassThrough, excluded),
         bufferDays = buffer,
         current = current,
         canGoBack = week > floor,

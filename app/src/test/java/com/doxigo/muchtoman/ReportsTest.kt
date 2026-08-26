@@ -22,6 +22,8 @@ class ReportsTest {
         transfer: Boolean = false,
         duplicate: Boolean = false,
         review: Boolean = false,
+        ownerId: String = "",
+        ownerName: String = "",
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
@@ -38,6 +40,7 @@ class ReportsTest {
             ),
             categoryId = categoryId, categoryFa = category, confidence = if (review) 40 else 95,
             needsReview = review, duplicate = duplicate, transfer = transfer,
+            ownerMemberId = ownerId, ownerName = ownerName,
         )
     }
 
@@ -969,5 +972,32 @@ class ReportsTest {
             "${faNumber((esfand - 2).toDouble())} اسفند ۱۴۰۴ تا ۴ فروردین ۱۴۰۵",
             cross.fa,
         )
+    }
+
+    @Test
+    fun `member shares split the window by owner, through the same gates as the report`() {
+        val range = ReportRange(here, here)
+        val rows = listOf(
+            entry(first, -30_000_000, ownerId = "a", ownerName = "ندا"),
+            entry(first + 1, -10_000_000, ownerId = "b", ownerName = "امیر"),
+            entry(first + 2, 50_000_000, ownerId = "b", ownerName = "امیر"),
+            // Excluded rides the same gate as the report cards, so it counts in nobody's rows.
+            entry(first + 3, -99_000_000, category = "قرض", categoryId = CAT_LOAN, ownerId = "a", ownerName = "ندا"),
+            // Outside the window: next month's row must not reach back into this one.
+            entry(here.endDay, -70_000_000, ownerId = "b", ownerName = "امیر"),
+        )
+        val shares = memberShares(rows, range, countPassThrough = true, excluded = setOf(CAT_LOAN))
+        assertEquals(listOf("ندا", "امیر"), shares.map { it.name })
+        assertEquals(30_000_000L, shares[0].spentRial)
+        assertEquals(0L, shares[0].incomeRial)
+        assertEquals(10_000_000L, shares[1].spentRial)
+        assertEquals(50_000_000L, shares[1].incomeRial)
+
+        // The pass-through switch off keeps the قرض out of the sides without her excluding it.
+        val held = memberShares(rows, range, countPassThrough = false)
+        assertEquals(30_000_000L, held.first { it.id == "a" }.spentRial)
+
+        // One owner is no comparison: the section stays away from an unshared ledger.
+        assertTrue(memberShares(rows.filter { it.ownerMemberId == "a" }, range).isEmpty())
     }
 }
