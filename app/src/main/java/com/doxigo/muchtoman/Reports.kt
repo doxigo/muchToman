@@ -285,9 +285,16 @@ data class PeriodReport(
         get() = if (transactions > 0) handledAutomatically.toDouble() / transactions else null
 }
 
-/** Entries that count as money moving, with transfers and hidden duplicates left out. */
+/**
+ * Entries that count as money moving, with transfers and hidden duplicates left out.
+ *
+ * And مانده announcements: a row with no amount states a balance and nothing else, so it never
+ * moved a figure here — but it was still counted as a transaction, which put it in the
+ * denominator of [PeriodReport.automaticShare] and made the number the app is judged on worse
+ * for every balance message her bank sent.
+ */
 fun spendable(entries: List<LedgerEntry>): List<LedgerEntry> =
-    entries.filterNot { it.duplicate || it.transfer }
+    entries.filterNot { it.duplicate || it.transfer || it.txn.amountRial == null }
 
 /**
  * The window, both sides of it.

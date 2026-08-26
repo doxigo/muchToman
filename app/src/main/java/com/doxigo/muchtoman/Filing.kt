@@ -98,8 +98,8 @@ private const val FIRST_PASS_LIMIT = 3
  *
  * [entries] is the whole ledger and [review] the unfiled slice of it — passed separately rather
  * than re-filtered here, so «what needs review» keeps exactly one definition, [LedgerView.review].
- * The filed slice is taken from [entries] with review's own exclusions: a duplicate's second leg
- * and a settled transfer are not spends, and a note about either would report bookkeeping as news.
+ * The filed slice is [spendable] over [entries]: a duplicate's second leg, a settled transfer and
+ * a مانده announcement are not spends, and a note about any of them reports bookkeeping as news.
  *
  * [said] of zero means this phone has never looked, and it stays **silent** there unless the whole
  * ledger is [FIRST_PASS_LIMIT] rows or fewer: a rewind through the inbox or a first sync is a
@@ -118,9 +118,10 @@ fun filingNews(
     // clamp — a mark written off a poison stamp would silence every note until that date arrived.
     val mark = maxOf(said, entries.maxOfOrNull { it.txn.at } ?: 0L).coerceAtMost(now)
     val fresh = review.filter { it.txn.at > said }
-    val filed = entries.filter {
-        !it.needsReview && !it.duplicate && !it.transfer && it.txn.at > said
-    }
+    // [spendable] rather than the exclusions written out again: it is the same list plus the
+    // مانده rows, which have no amount and are not news — «یک تراکنش تازه از بانک اقتصاد نوین»
+    // about a message that only said what the account holds is an interruption for nothing.
+    val filed = spendable(entries).filter { !it.needsReview && it.txn.at > said }
     // A first pass over a ledger that already holds more than a handful is the rewind-or-sync
     // case: learn where it is and say nothing. Over a ledger holding only what just arrived, it
     // is a new phone's first spend, and that is worth saying.

@@ -64,6 +64,19 @@ class ClassifyTest {
     }
 
     @Test
+    fun `a balance-only message is never asked about`() {
+        // The row exists so its مانده can anchor the account; nothing moved, so there is nothing
+        // to file. A rule that says nothing about the amount would otherwise file it as a spend,
+        // and with no rule at all it would sit in the deck for ever asking an empty question.
+        val bank = Rule("r1", Priority.USER_OTHER, "cat_bills", pBank = "SAMAN")
+        assertEquals(CAT_UNCATEGORISED, classify(txn(balance = 5_000_000), listOf(bank)).categoryId)
+        assertTrue(!classify(txn(balance = 5_000_000), listOf(bank)).needsReview)
+        assertTrue(!classify(txn(balance = 5_000_000), emptyList()).needsReview)
+        // Hers still stands: she can file one from the transaction page, and this must not undo it.
+        assertEquals("cat_health", classify(txn(balance = 5_000_000), emptyList(), pinned = "cat_health").categoryId)
+    }
+
+    @Test
     fun `a decision she pinned to this transaction beats every rule`() {
         val rules = listOf(Rule("r1", Priority.USER_EXACT_MERCHANT, "cat_shopping", pChannel = "pos"))
         val c = classify(txn(signed = -1000, channel = "pos"), rules, pinned = "cat_health")

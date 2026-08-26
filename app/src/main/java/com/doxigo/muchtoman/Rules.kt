@@ -507,6 +507,13 @@ fun classify(
     if (txn.ref in transferRefs) {
         return TxnClass(txn.ref, CAT_TRANSFER, null, Confidence.USER_PINNED, needsReview = false)
     }
+    // Neither is a مانده announcement: no amount means no money moved, and the row is kept only
+    // because its balance is what anchors the account — see [deriveBalance]. There is nothing to
+    // file, and whatever she answered every total would still read it as zero, so the deck must
+    // not spend one of its cards asking. The timeline already says what it is: «مانده».
+    if (txn.amountRial == null) {
+        return TxnClass(txn.ref, CAT_UNCATEGORISED, null, Confidence.NONE, needsReview = false)
+    }
     val winner = rules
         .filter { it.matches(txn, addrKey) }
         .maxWithOrNull(
