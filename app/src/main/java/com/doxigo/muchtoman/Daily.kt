@@ -132,6 +132,11 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
  * this worker's whole output is «a budget of yours crossed a line» and «something landed that
  * nobody has filed», and [announceBudgets] and [announceFiling] are what decide whether either is
  * worth saying.
+ *
+ * On a phone that belongs to a household, one more thing: the family sync runs here too, so a
+ * spend reaches the rest of the family the minute its message lands rather than the next time
+ * this phone's owner happens to open the app — and whatever the family pushed while the app was
+ * closed is already in the ledger before she next looks.
  */
 class LedgerWatchWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
@@ -143,14 +148,17 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         // Every check before anything expensive. A phone with nothing to watch, or one where she
         // has turned the notifications off, must pay for this wakeup with a SQLite read and a
         // preference lookup — not with a rebuild of the ledger it was never going to say anything
-        // about.
+        // about. A household is its own reason to go on: the sync must not answer to the
+        // notification permission, or turning alerts off would silently stop her spends reaching
+        // the family.
         val budgets = durable.goals().active().any { it.kind == GoalKind.CAP }
-        if (!budgets && !store.smsEnabled) return Result.success()
-        if (!canNotify(app)) return Result.success()
+        val announce = (budgets || store.smsEnabled) && canNotify(app)
+        val session = loadSession(durable)
+        if (!announce && session == null) return Result.success()
 
-        return runCatching {
-            val derived = DerivedDb.get(app)
-            val extra = extraLookup(store.extraBankNumbers)
+        val derived = DerivedDb.get(app)
+        val extra = extraLookup(store.extraBankNumbers)
+        val watched = runCatching {
             // The same [ledgerGate] the app's publishLedger holds around its read → announce →
             // mark: the marks the announce helpers write are get-then-set on prefs, and this
             // worker interleaving with a foreground publish was an alert said twice or a mark
@@ -158,11 +166,13 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
             ledgerGate.withLock {
                 val added = ingestBankSms(app, durable, extra)
                 if (added > 0 || needsDerive(derived)) derive(durable, derived, extra)
-                // One read of the ledger for both. Two would be two walks over four thousand rows and,
-                // worse, two answers to «what is in the ledger right now».
-                val view = ledgerView(derived, durable)
-                announceBudgets(app, store, view.budgets)
-                announceFiling(app, store, view)
+                if (announce) {
+                    // One read of the ledger for both. Two would be two walks over four thousand rows
+                    // and, worse, two answers to «what is in the ledger right now».
+                    val view = ledgerView(derived, durable)
+                    announceBudgets(app, store, view.budgets)
+                    announceFiling(app, store, view)
+                }
             }
             Result.success()
         }.getOrElse {
@@ -171,6 +181,21 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
             android.util.Log.w("muchtoman", "ledger watch failed: $it")
             Result.retry()
         }
+
+        if (session != null) {
+            // Best effort, outside the gate — network I/O must not hold up a foreground publish —
+            // and outside the retry: offline here is normal, the rows are safe on this phone, and
+            // the next wakeup or app open sends them. No دارایی payload: prices live in the
+            // foreground state, and outgoingRecords leaves the shared record alone when the
+            // switch is on but no prices came.
+            runCatching {
+                val result = syncNow(durable, derived, session)
+                // Pulled rows sit in durable until a derive folds them in, and the foreground
+                // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
+                if (result.received > 0) derive(durable, derived, extra)
+            }.onFailure { android.util.Log.w("muchtoman", "background family sync failed: $it") }
+        }
+        return watched
     }
 }
 

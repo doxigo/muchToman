@@ -795,7 +795,13 @@ private suspend fun outgoingRecords(
                 SyncPublication(assetId, "asset", contentHash, updatedAt, deleted = false),
             )
         }
-    } else if (assetPublication != null && !assetPublication.deleted) {
+    } else if (
+        assetPublication != null && !assetPublication.deleted &&
+        !durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean()
+    ) {
+        // Only her switch unshares. A null with the switch still on is a caller with no prices
+        // to hand — the background worker — and must leave the shared record standing, not
+        // tombstone it and let the next app open flap it back.
         val updatedAt = nextStamp(assetPublication.updatedAt, now)
         outgoing += PreparedRecord(
             wireRecord(
