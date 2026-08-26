@@ -254,6 +254,30 @@ private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "م�
  */
 private val BALANCE_VETO = NOT_A_BALANCE + OPERATOR_WORDS
 
+/**
+ * Under this, a run of digits is not the amount of a transaction.
+ *
+ * An advert from a bank's own number reaches the parser exactly as its transactions do — the
+ * sender gate is the only gate, and the bank really did send it. What made one *a spend* was a
+ * direction word it happened to contain and the first digits after it: «... تا ۱ میلیون تومان
+ * تخفیف» is a «۱» followed within a few characters by «تومان», so the message arrived in the
+ * deck as a purchase of one Toman, asking her to file an advert.
+ *
+ * Refusing rather than multiplying the scale word is the point. Banks print amounts in full —
+ * "1,000,000" — and never in words, so a figure that needs «میلیون» to be money is prose. Read
+ * as ten million Rial it would be a *large* invented transaction instead of a trivial one, and
+ * an invented figure is worse the more plausible it looks.
+ *
+ * [feeIn] has had the same floor since the day پاسارگاد quoted «کارمزد پیامک بانکی ۶ ماهه» and
+ * six months became six Rial; this is that rule arriving on the amount, where the only reason
+ * it was not needed sooner is that the ledger is louder about spends than about fees.
+ *
+ * ponytail: a flat floor, in whatever unit the figure printed. Every real transaction is orders
+ * of magnitude above it — a thousand Rial is a hundred Toman — so nothing needs the exactness
+ * of comparing after conversion.
+ */
+private const val MIN_MONEY_FIGURE = 1000.0
+
 /** A run of digits with its separators, in any of the three digit sets. */
 private val NUMBER = Regex("[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]")
 
@@ -465,14 +489,16 @@ fun parseBankSms(
     val withdrawal = statesDirection(text, OUT_WORDS)
     val inWords = IN_WORDS.takeIf { deposit } ?: emptyList()
     val outWords = OUT_WORDS.takeIf { withdrawal } ?: emptyList()
-    val amount = figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
-        ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
-        ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
-        // Nothing after the direction word, so the figure it refers to is the one in front of
-        // it: Blu heads a deposit «دریافت پل», which names no direction at all, leaving «نشست»
-        // at the end of the sentence as the only word that says which way the money went.
-        ?: figureBefore(text, inWords)
-        ?: figureBefore(text, outWords)
+    val amount = (
+        figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
+            ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
+            ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
+            // Nothing after the direction word, so the figure it refers to is the one in front of
+            // it: Blu heads a deposit «دریافت پل», which names no direction at all, leaving «نشست»
+            // at the end of the sentence as the only word that says which way the money went.
+            ?: figureBefore(text, inWords)
+            ?: figureBefore(text, outWords)
+        )?.takeIf { it.value >= MIN_MONEY_FIGURE }
     val moved = amount?.let { it.value / (it.divisor ?: fallback) }
     val delta = when {
         moved == null -> null

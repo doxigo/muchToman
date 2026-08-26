@@ -47,6 +47,10 @@ import androidx.room.withTransaction
 // poison timestamp is clamped on the way through, so its money counts under an approximated day
 // instead of crashing the timeline it would sort on top of.
 const val PARSER_VERSION = 5
+// 6: a figure under a thousand is no longer an amount, and a مانده announcement is no longer a
+// question. Both only take effect by reading the stored messages again: an advert from a bank's
+// own number had been deriving as a one-Toman spend — «۱ میلیون تومان» is a «۱» with a unit
+// close behind it — and those rows are still sitting in the deck until this rebuild drops them.
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

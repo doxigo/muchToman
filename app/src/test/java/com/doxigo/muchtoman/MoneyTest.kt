@@ -720,6 +720,21 @@ class MoneyTest {
     }
 
     @Test
+    fun `an advert from the bank's own number is not a one-toman spend`() {
+        // The sender gate cannot help here — the bank really did send it. What made an advert a
+        // spend was a direction word and the first digits after it, and «۱ میلیون» is a «۱» with
+        // «تومان» near enough behind it to be read as its unit, so it arrived in the deck as a
+        // purchase of one Toman with a category grid under it.
+        assertNull(parseBankSms(BLU_NUM, "بلو\nبا خرید از فروشگاه‌های طرف قرارداد تا ۱ میلیون تومان تخفیف بگیر!", 1L))
+        assertNull(parseBankSms(BLU_NUM, "بلو\nقبض‌هاتو با بلو پرداخت کن و ۲ هزار تومان هدیه بگیر", 2L))
+        assertNull(parseBankSms(BLU_NUM, "بلو\nانتقال وجه بین‌بانکی حالا ۰ تومان کارمزد داره", 3L))
+        // And the real ones are untouched: a bank prints the whole figure, never the word, so
+        // every amount it has ever sent is orders of magnitude over the floor.
+        assertEquals(-2_500_000.0, parseBankSms(BLU_NUM, BLU_OUT, 4L)!!.delta!!, 0.01)
+        assertEquals(100_000_000.0, parseBankSms(BLU_NUM, BLU_IN, 5L)!!.delta!!, 0.01)
+    }
+
+    @Test
     fun `a real saman message reads as arabic letters, no space before the unit, and all`() {
         val m = parseBankSms(SAMAN_NUM, SAMAN_IN, 1L)!!
         assertEquals(Bank.SAMAN, m.bank)          // "بانك" with the Arabic kaf
