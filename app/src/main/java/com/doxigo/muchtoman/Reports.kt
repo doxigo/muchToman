@@ -567,6 +567,7 @@ fun memberWindow(
     row.ownerMemberId == member.id && row.categoryId !in excluded &&
         (countPassThrough || row.categoryId !in PASS_THROUGH_CATEGORIES)
 }
+
 // ─────────────────────────── the narrative ───────────────────────────
 
 /**
@@ -805,6 +806,12 @@ data class CashFlowReport(
     /** Whether the window reaches the month containing today — the one allowed to say «این ماه». */
     val current: Boolean,
     /**
+     * The Tehran day this report was built on. Carried rather than read again at the screen,
+     * because a second clock is a second answer: the line that names today and the tap that
+     * walks the window back to it have to mean the same day the figures were worked out for.
+     */
+    val today: Long,
+    /**
      * Whether the arrows have anywhere to go. Worked out by [buildCashFlow] rather than off
      * [available], because the step is a month for every month-made span and a week for
      * [ReportSpan.WEEK] — and only the builder knows which floor the weekly walk stands on.
@@ -883,6 +890,7 @@ fun buildCashFlow(
         members = memberShares(entries, range, countPassThrough, excluded),
         bufferDays = buffer,
         current = current,
+        today = today,
         canGoBack = month > available.first(),
         canGoForward = month < available.last(),
     )
@@ -951,6 +959,7 @@ private fun buildWeekly(
         members = memberShares(entries, range, countPassThrough, excluded),
         bufferDays = buffer,
         current = current,
+        today = today,
         canGoBack = week > floor,
         canGoForward = week < thisWeek,
     )

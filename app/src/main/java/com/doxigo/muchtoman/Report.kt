@@ -768,7 +768,30 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(
+            Modifier
+                .weight(1f)
+                // The title is the way back. Walking home from خرداد is otherwise four taps of
+                // an arrow she has to count, and the one thing on the screen that always names
+                // where she is, is the thing she is already looking at when she wants to leave.
+                // Clipped before the click so the ripple wears the screen's own rounding, and
+                // inert where she is already standing in the window.
+                .clip(RoundedCornerShape(Radius.field))
+                .then(
+                    if (cash.current) {
+                        Modifier
+                    } else {
+                        Modifier.clickable(
+                            role = Role.Button,
+                            onClickLabel = if (weekly) "برگشت به این هفته" else "برگشت به این ماه",
+                            // The day, not the month: «۱ هفته» anchors on it, and the first of
+                            // the month would land her in a week she is not in.
+                            onClick = { onWindow(cash.today, cash.span) },
+                        )
+                    },
+                )
+                .padding(vertical = Space.xs),
+        ) {
             BasicText(
                 // The window's own name, never the span's: «خرداد تا مرداد ۱۴۰۵» is the thing
                 // every figure below is about, and «۳ ماه» is already said by the picker above.
@@ -788,15 +811,30 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
                 modifier = Modifier.semantics { heading() },
             )
             // The month she is standing in is half-written. Saying so is the difference between
-            // a small month and a month that is not over.
-            if (cash.current) {
-                Text(
-                    "تا امروز",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
+            // a small month and a month that is not over — and it says *how much* of it is
+            // written, because «تا امروز» over a title that reads شهریور ۱۴۰۵ is the one line on
+            // the screen that names a day without ever saying which one.
+            //
+            // Off that window the same line carries the way back instead, in the accent every
+            // other tappable word on the screen wears: a title that can be tapped has to say so
+            // somewhere, and this is the line directly under it that is otherwise empty.
+            val at = jalaliOf(cash.today)
+            Text(
+                if (cash.current) {
+                    "تا امروز ${faNumber(at.day.toDouble())} ${MONTHS[at.month - 1]}"
+                } else if (weekly) {
+                    "برگشت به این هفته"
+                } else {
+                    "برگشت به این ماه"
+                },
+                fontSize = 12.sp,
+                color = if (cash.current) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         // Clear of the longest month name before the stepper starts, so a two-line range and the
         // buttons never look like one run-on object.
