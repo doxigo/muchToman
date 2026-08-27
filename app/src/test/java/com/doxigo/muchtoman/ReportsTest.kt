@@ -1000,4 +1000,37 @@ class ReportsTest {
         // One owner is no comparison: the section stays away from an unshared ledger.
         assertTrue(memberShares(rows.filter { it.ownerMemberId == "a" }, range).isEmpty())
     }
+
+    @Test
+    fun `a member's window holds the rows behind their own bar, and only those`() {
+        val range = ReportRange(here, here)
+        val rows = listOf(
+            entry(first, -30_000_000, ownerId = "b", ownerName = "امیر"),
+            entry(first + 1, -10_000_000, ownerId = "b", ownerName = "امیر"),
+            entry(first + 2, 50_000_000, ownerId = "b", ownerName = "امیر"),
+            entry(first + 3, -20_000_000, ownerId = "a", ownerName = "ندا"),
+            entry(first + 4, -99_000_000, category = "قرض", categoryId = CAT_LOAN, ownerId = "b", ownerName = "امیر"),
+            entry(here.endDay, -70_000_000, ownerId = "b", ownerName = "امیر"),
+        )
+        val shares = memberShares(rows, range)
+        val amir = shares.first { it.id == "b" }
+
+        // The sheet's figure is the bar's figure: same rows, same gates, nobody else's.
+        val spent = memberWindow(rows, amir, income = false, range, sideRial = amir.spentRial)
+        assertEquals(amir.spentRial, spent.totalRial)
+        assertEquals(listOf(-10_000_000L, -30_000_000L), spent.rows.map { it.txn.signedRial })
+
+        // The other side of the same member, and the قرض the switch is holding out of both.
+        val earned = memberWindow(rows, amir, income = true, range, sideRial = amir.incomeRial)
+        assertEquals(amir.incomeRial, earned.totalRial)
+        assertTrue(spent.rows.none { it.categoryId == CAT_LOAN })
+        assertEquals(
+            memberShares(rows, range, countPassThrough = true).first { it.id == "b" }.spentRial,
+            memberWindow(rows, amir, income = false, range, 0L, countPassThrough = true).totalRial,
+        )
+
+        // And a category she excluded from the report is out of her members' sheets too.
+        val without = memberWindow(rows, amir, income = false, range, 0L, excluded = setOf("cat_x"))
+        assertEquals(0L, without.totalRial)
+    }
 }

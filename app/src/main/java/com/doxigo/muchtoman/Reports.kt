@@ -441,6 +441,12 @@ data class CategoryWindow(
     val trend: List<Pair<ReportMonth, Long>>,
     /** The rows behind [totalRial], newest first. */
     val rows: List<LedgerEntry>,
+    /**
+     * The face on the header disc when this window is a member rather than a category — blank
+     * for a member who has picked none, null for a category, which wears its own mark. See
+     * [memberWindow].
+     */
+    val face: String? = null,
 ) {
     val share: Double? get() = if (sideRial > 0) totalRial.toDouble() / sideRial else null
 }
@@ -456,10 +462,13 @@ fun categoryWindow(
     range: ReportRange,
     sideRial: Long,
     trendMonths: Int = 6,
+    face: String? = null,
+    /** Which rows this window is made of — the category's own, unless [memberWindow] says otherwise. */
+    matches: (LedgerEntry) -> Boolean = { it.categoryFa == name },
 ): CategoryWindow {
     val side = spendable(entries).filter {
         val signed = it.txn.signedRial ?: return@filter false
-        it.categoryFa == name && (if (income) signed > 0 else signed < 0)
+        matches(it) && (if (income) signed > 0 else signed < 0)
     }
     val inRange = side.filter { it.txn.day in range }
     val months = (trendMonths - 1 downTo 0).map { back -> range.last.back(back) }
@@ -476,6 +485,7 @@ fun categoryWindow(
         sideRial = sideRial,
         trend = trend,
         rows = inRange.sortedByDescending { it.txn.at },
+        face = face,
     )
 }
 
@@ -529,6 +539,34 @@ fun memberShares(
     }.sortedByDescending { it.spentRial }
 }
 
+/**
+ * One member's rows out of the window, in [categoryWindow]'s own shape — so the sheet a member
+ * opens is the sheet a category opens, asked the other question.
+ *
+ * It walks the gates [memberShares] counted through, because the figure the sheet states has to
+ * be the figure on the bar she tapped to reach it: a قرض the pass-through switch is holding out,
+ * or a category she excluded from the report, is out of both or the sheet contradicts the row
+ * that opened it.
+ */
+fun memberWindow(
+    entries: List<LedgerEntry>,
+    member: MemberShare,
+    income: Boolean,
+    range: ReportRange,
+    sideRial: Long,
+    countPassThrough: Boolean = false,
+    excluded: Set<String> = emptySet(),
+): CategoryWindow = categoryWindow(
+    entries = entries,
+    name = member.name,
+    income = income,
+    range = range,
+    sideRial = sideRial,
+    face = member.avatar,
+) { row ->
+    row.ownerMemberId == member.id && row.categoryId !in excluded &&
+        (countPassThrough || row.categoryId !in PASS_THROUGH_CATEGORIES)
+}
 // ─────────────────────────── the narrative ───────────────────────────
 
 /**

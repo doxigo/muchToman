@@ -683,7 +683,7 @@ private fun CashFlowReportContent(
         // nothing when every row in the window belongs to the same person.
         if (cash.members.isNotEmpty()) {
             Spacer(Modifier.height(Space.xxl))
-            MemberDetail(cash.members, period.range.fa)
+            MemberDetail(cash.members, period, entries, excluded, onOpenEntry)
         }
 
         // Under the categories it governs, and present even when the window is empty while an
@@ -1337,7 +1337,14 @@ private fun CategoryDetail(
  * questions: «خرج» by who paid, «درآمد» by who it reached.
  */
 @Composable
-private fun MemberDetail(members: List<MemberShare>, named: String) {
+private fun MemberDetail(
+    members: List<MemberShare>,
+    period: PeriodReport,
+    entries: List<LedgerEntry>,
+    excluded: Set<String>,
+    onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+) {
+    val named = period.range.fa
     var side by rememberSaveable {
         mutableStateOf(
             if (members.all { it.spentRial <= 0L } && members.any { it.incomeRial > 0L }) {
@@ -1353,6 +1360,9 @@ private fun MemberDetail(members: List<MemberShare>, named: String) {
         .filter { it.second > 0L }
         .sortedByDescending { it.second }
     val total = rows.sumOf { it.second }
+    // The member she has opened up, by id — the one thing about a member that outlives a name.
+    var opened by rememberSaveable { mutableStateOf<String?>(null) }
+
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -1378,8 +1388,28 @@ private fun MemberDetail(members: List<MemberShare>, named: String) {
             )
         } else {
             for ((member, rial) in rows) {
-                MemberShareRow(member, rial, total, if (income) INCOME_TINT else null)
+                MemberShareRow(member, rial, total, if (income) INCOME_TINT else null) {
+                    opened = member.id
+                }
             }
+        }
+    }
+
+    // Her rows, on the side she is reading, in the sheet the category rows open — because «هر
+    // عددی به یک تراکنش برمی‌گرده» is as true of a member's bar as of a category's.
+    opened?.let { id ->
+        members.firstOrNull { it.id == id }?.let { member ->
+            val window = remember(member, income, entries, period, excluded) {
+                memberWindow(
+                    entries, member, income, period.range, total,
+                    period.countedPassThrough, excluded,
+                )
+            }
+            CategorySheet(
+                window = window,
+                onOpenEntry = onOpenEntry,
+                onDismiss = { opened = null },
+            )
         }
     }
 }
@@ -1390,11 +1420,29 @@ private fun MemberDetail(members: List<MemberShare>, named: String) {
  * state their figures on the same edges and the same scale.
  */
 @Composable
-private fun MemberShareRow(member: MemberShare, rial: Long, total: Long, tint: Color?) {
+private fun MemberShareRow(
+    member: MemberShare,
+    rial: Long,
+    total: Long,
+    tint: Color?,
+    onOpen: (() -> Unit)? = null,
+) {
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
     Column(
         Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .then(
+                if (onOpen != null) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = "تراکنش‌های ${member.name}",
+                        onClick = onOpen,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
                 contentDescription = "${member.name}: ${faCompact(tomanOf(rial))} تومان، " +
@@ -1420,6 +1468,14 @@ private fun MemberShareRow(member: MemberShare, rial: Long, total: Long, tint: C
                 textAlign = TextAlign.End,
                 modifier = Modifier.widthIn(min = 36.dp),
             )
+            if (onOpen != null) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
         Spacer(Modifier.height(Space.xs))
         Box(
@@ -1567,7 +1623,14 @@ private fun CategorySheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
-    val hue = categoryHue(window.name)
+    // A member has no category hue to borrow — a person's name through [categoryHue] would pick
+    // a colour that means «خوراک» somewhere else on the screen — so the side she is reading
+    // colours the sheet instead, which is the colour her bar already wore.
+    val hue = when {
+        window.face == null -> categoryHue(window.name)
+        window.income -> INCOME_TINT
+        else -> MaterialTheme.colorScheme.primary
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1581,13 +1644,17 @@ private fun CategorySheet(
         ) {
             item(key = "head") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(hue.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center,
-                    ) { CategoryIcon(window.name, hue, size = 24.dp) }
+                    if (window.face != null) {
+                        MemberFace(window.name, window.face)
+                    } else {
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(hue.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center,
+                        ) { CategoryIcon(window.name, hue, size = 24.dp) }
+                    }
                     Spacer(Modifier.width(Space.m))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -1643,9 +1710,12 @@ private fun CategorySheet(
                             .clip(bandShape(i, window.rows.size))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
-                        // Every row here is the same category, so the repeated disc would be
-                        // noise — the sheet's own header already wears the mark once.
-                        TimelineRow(e, showIcon = false) {
+                        // A category's rows are all the one category, so the repeated disc
+                        // would be noise there — the header wears that mark once. A member's
+                        // rows are not: the disc is the only thing on the line saying which
+                        // category each one went to, which is the question a member's sheet is
+                        // open for.
+                        TimelineRow(e, showIcon = window.face != null) {
                             if (onOpenEntry != null) close { onDismiss(); onOpenEntry(e) }
                         }
                     }
