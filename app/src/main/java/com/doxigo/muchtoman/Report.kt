@@ -1403,7 +1403,7 @@ private fun MemberShareRow(member: MemberShare, rial: Long, total: Long, tint: C
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // The face they picked — the family screen's own disc, at the category disc's size.
-            MemberFace(member.name, member.avatar, size = 32.dp, fontSize = 14.sp)
+            MemberFace(member.name, member.avatar, size = 32.dp)
             Spacer(Modifier.width(Space.m))
             Text(member.name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.width(Space.s))

@@ -1054,13 +1054,13 @@ internal fun TimelineRow(
                     Box(
                         Modifier
                             .align(Alignment.BottomStart)
-                            .size(20.dp)
+                            .size(24.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.background)
                             .padding(1.5.dp)
                             .clearAndSetSemantics {},
                     ) {
-                        MemberFace(entry.ownerName, entry.ownerAvatar, size = 17.dp, fontSize = 10.sp)
+                        MemberFace(entry.ownerName, entry.ownerAvatar, size = 21.dp)
                     }
                 }
             }

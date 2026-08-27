@@ -69,9 +69,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
@@ -599,7 +601,7 @@ private val faceCache = LruCache<String, ImageBitmap>(16)
  * had come to press. Identity is not an action; the chip says which row is mine in a word.
  */
 @Composable
-internal fun MemberFace(name: String, avatar: String, size: Dp = 44.dp, fontSize: TextUnit = 18.sp) {
+internal fun MemberFace(name: String, avatar: String, size: Dp = 44.dp) {
     Box(
         Modifier
             .size(size)
@@ -624,16 +626,53 @@ internal fun MemberFace(name: String, avatar: String, size: Dp = 44.dp, fontSize
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            avatar.isNotBlank() && !avatar.startsWith(AVATAR_PHOTO_PREFIX) -> Text(avatar, fontSize = fontSize)
+            avatar.isNotBlank() && !avatar.startsWith(AVATAR_PHOTO_PREFIX) -> Text(
+                avatar,
+                style = faceGlyphStyle(size * 0.62f),
+            )
             else -> Text(
                 name.trim().firstOrNull()?.toString().orEmpty(),
-                fontSize = fontSize,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = faceGlyphStyle(size * 0.66f).copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
             )
         }
     }
 }
+
+/**
+ * One glyph, actually centred in its disc and actually filling it.
+ *
+ * Both halves are things a plain [Text] gets wrong inside a circle.
+ *
+ * Centring first, because it was the worse of the two: a bare `Text` inherits the theme's line
+ * height, and that is a fixed `sp` figure sized for a paragraph. A ten-point initial was being
+ * laid out in a twenty-four-point line box and then centred *as that box* inside a
+ * seventeen-point disc, which is why the letter sat high and looked adrift. The box is pinned to
+ * the glyph here instead — the font's own padding off, the leading trimmed at both ends — so
+ * what gets centred is the ink. The line height stays above the glyph's own ascent and descent
+ * on purpose: trimming is what shrinks the box, and a line height *below* them would be a
+ * descender clipped by the disc, which is a worse bug than the one being fixed.
+ *
+ * Size second: a caller-chosen `sp` bore no relation to the disc it sat in, so one face filled
+ * two fifths of the family row and another three fifths of the ledger badge. The fraction of the
+ * diameter is the thing that should be constant. The letter takes the larger fraction of the two
+ * because it inks only the middle of its em box where an emoji inks the whole of one — equal
+ * fractions would have drawn the letter half the size of the face beside it.
+ *
+ * Both come off `Dp` rather than scaling with the reader's font setting: the disc does not grow
+ * with it, and a glyph that did would spill out of the circle it names.
+ */
+private fun faceGlyphStyle(glyph: Dp) = TextStyle(
+    fontSize = glyph.value.sp,
+    lineHeight = (glyph.value * 1.4f).sp,
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.Both,
+    ),
+)
 
 /**
  * A picked photo, shrunk to the one size any screen ever draws it and packed into
