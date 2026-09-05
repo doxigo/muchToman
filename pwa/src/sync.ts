@@ -103,9 +103,12 @@ export async function save(
 ): Promise<void> {
   const id = familyTxnId(session.member, `m:${localId}`);
   const existing = await getRecord(id);
+  const existing = await getRecord(id, partition(session));
+  if (recordId && (!existing || existing.ownerMemberId !== session.member || existing.scope !== session.scope)) throw new Error('فقط تراکنش خودت رو می‌تونی ویرایش کنی.');
   const updatedAt = nextStamp(existing?.updatedAt, Date.now());
   const value: Entry = {
     ...entry,
+    merchant: entry.merchant.trim().slice(0, 120),
     kind: 'transaction',
     ownerMemberId: session.member,
     sourceKind: 'manual',
@@ -116,12 +119,12 @@ export async function save(
     id, scope: session.scope, updatedAt, device: session.device,
     kind: 'transaction', ownerMemberId: session.member,
     deleted: false, value, nonce, body,
-  });
+  }, partition(session));
 }
 
 export async function saveProfile(session: Session, sharesSms = false): Promise<void> {
   const id = `member:${session.member}`;
-  const existing = await getRecord(id);
+  const existing = await getRecord(id, partition(session));
   const previous = existing?.value as MemberProfile | undefined;
   if (previous?.name === session.name && previous.sharesSms === sharesSms) return;
   const updatedAt = nextStamp(existing?.updatedAt, Date.now());
@@ -133,12 +136,13 @@ export async function saveProfile(session: Session, sharesSms = false): Promise<
     id, scope: session.scope, updatedAt, device: session.device,
     kind: 'member', ownerMemberId: session.member,
     deleted: false, value, nonce, body,
-  });
+  }, partition(session));
 }
 
 export async function remove(session: Session, id: string): Promise<void> {
-  const existing = (await allRecords()).find((r) => r.id === id);
-  if (!existing) return;
+  const existing = await getRecord(id, partition(session));
+  if (!existing || existing.deleted) return;
+  if (existing.ownerMemberId !== session.member || existing.scope !== session.scope) throw new Error('فقط تراکنش خودت رو می‌تونی حذف کنی.');
   const updatedAt = nextStamp(existing.updatedAt, Date.now());
   // The record's id, sealed in: receivers only believe a delete whose ciphertext authenticates
   // and names the record it arrived on, so a compromised server cannot mint or re-aim one.
@@ -151,25 +155,26 @@ export async function remove(session: Session, id: string): Promise<void> {
     value,
     nonce,
     body,
-  });
+  }, partition(session));
 }
 
 async function request(session: Session, path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${session.base}${path}`, {
     ...init,
-    headers: { ...(init?.headers ?? {}), authorization: `Bearer ${session.token}` },
+    signal: AbortSignal.timeout(20_000),
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}), authorization: `Bearer ${session.token}` },
   });
 }
 
 async function registerIdentity(session: Session): Promise<void> {
   const identityKey = `sync_identity_ok:${session.member}:${session.device}`;
-  if (await getMeta<boolean>(identityKey)) return;
+  if (await getMeta<boolean>(identityKey, partition(session))) return;
   const res = await request(session, '/v1/identity', {
     method: 'POST',
     body: JSON.stringify({ memberId: session.member, deviceId: session.device }),
   });
   if (!res.ok) throw new Error(`identity failed: ${res.status}`);
-  await setMeta(identityKey, true);
+  await setMeta(identityKey, true, partition(session));
 }
 
 export async function pull(session: Session): Promise<number> {
@@ -228,6 +233,8 @@ export async function push(session: Session): Promise<number> {
   for (const clamp of ack.clamped ?? []) {
     const row = await getRecord(clamp.id);
     if (row) await putRecords([{ ...row, updatedAt: clamp.updatedAt }]);
+  const space = partition(session);
+  const pending = await outbox(space);
   }
   await clearOutbox(pending.map((r) => r.id));
   return pending.length;

@@ -1,8 +1,9 @@
 import { importKey, readPairing } from './crypto';
 import type { Pairing } from './crypto';
-import { allRecords, getMeta, setMeta } from './db';
-import { inJalaliMonth, memberId, save, saveProfile, syncNow } from './sync';
-import type { CategoryDecision, Entry, MemberProfile, Session } from './sync';
+import { activateSession, decisionsFor, getMeta, partition, pendingCount, recordPage, recordsBetween, recordsOfKind, savedSessions, setMeta } from './db';
+import type { PageCursor, StoredRecord } from './db';
+import { inJalaliMonth, memberId, remove, save, saveProfile, syncNow, uuid7 } from './sync';
+import type { CategoryDecision, Entry, MemberProfile, NoteDecision, Session } from './sync';
 import { parsePasted } from './paste';
 
 const app = document.getElementById('app')!;
@@ -156,6 +157,7 @@ function renderJoin(pairing: Pairing, originalHash: string): void {
         </p>
         <button id="open-native" class="primary" type="button">باز کردن در اپ اندروید</button>
         <p class="or">یا</p>
+        ${previous ? '<p class="muted">با پیوستن، دفتر قبلی و تغییرات نفرستاده‌اش روی این مرورگر می‌مونن. از «خانواده‌ها» می‌تونی برگردی.</p><button id="cancel-join" type="button">برگشت به خانواده قبلی</button>' : ''}
         <form id="join" class="panel" novalidate>
           <p class="panel-title">ادامه در همین مرورگر</p>
           <p class="muted">این اسم کنار تراکنش‌های تو دیده می‌شه.</p>
@@ -168,13 +170,15 @@ function renderJoin(pairing: Pairing, originalHash: string): void {
       </div>
     `),
   );
+  app.querySelector('#cancel-join')?.addEventListener('click', () => { if (previous) void renderLedger(previous); });
+  let joining = false;
   const name = app.querySelector<HTMLInputElement>('#name')!;
   const submit = app.querySelector<HTMLButtonElement>('#join-submit')!;
   const failure = app.querySelector<HTMLParagraphElement>('#join-error')!;
   // `enabled = name.isNotBlank() && !working`, exactly as the app arms the same button: an
   // answer she cannot give yet should not look pressable.
   name.addEventListener('input', () => {
-    submit.disabled = !name.value.trim();
+    submit.disabled = joining || !name.value.trim();
     failure.textContent = '';
   });
   app.querySelector<HTMLButtonElement>('#open-native')!.addEventListener('click', () => {
@@ -183,7 +187,8 @@ function renderJoin(pairing: Pairing, originalHash: string): void {
   app.querySelector<HTMLFormElement>('#join')!.addEventListener('submit', async (event) => {
     event.preventDefault();
     const her = name.value.trim();
-    if (!her || submit.disabled) return;
+    if (!her || joining) return;
+    joining = true; name.disabled = true;
     submit.disabled = true;
     submit.textContent = 'در حال پیوستن...';
     failure.textContent = '';
@@ -196,7 +201,7 @@ function renderJoin(pairing: Pairing, originalHash: string): void {
       submit.disabled = false;
       submit.textContent = 'پیوستن';
       name.focus();
-    }
+    } finally { joining = false; name.disabled = false; submit.disabled = !name.value.trim(); }
   });
 }
 
@@ -206,11 +211,20 @@ function isEntry(value: unknown): value is Entry {
   return typeof row.at === 'number' && Number.isFinite(row.at) && Number.isSafeInteger(row.amountRial) && Number(row.amountRial) > 0 && (row.direction === 'in' || row.direction === 'out');
 }
 
+interface Draft { localId?: string; amount: string; direction: string; merchant: string; paste: string; editing?: string; at?: number; pastedRial?: number; pastedAmount?: string }
+const drafts = new Map<string, Draft>();
+const submitting = new Set<string>();
+const syncing = new Set<string>();
+const pages = new Map<string, PageCursor[]>();
+let activeSpace = '';
 async function renderLedger(session: Session, note?: string, warn = false): Promise<void> {
   const records = await allRecords();
+    recordPage(space, 50, stack.at(-1)),
+    recordsBetween(space, now - 32 * 86_400_000, now + 32 * 86_400_000),
   const profiles = new Map<string, MemberProfile>();
   const decisions = new Map<string, CategoryDecision>();
   for (const record of records) {
+  for (const record of contextRecords) {
     if (record.value == null || typeof record.value !== 'object') continue;
     const value = record.value as Record<string, unknown>;
     const recordKind = record.kind ?? 'legacy';
@@ -310,13 +324,13 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
             <label for="merchant">بابت چه چیزی؟</label>
             <input id="merchant" enterkeyhint="done" />
             <button class="primary" type="submit">ثبت</button>
+            <p id="save-error" class="error" role="alert"></p>
           </form>
         </div>
         <div class="section">
           <h2>تراکنش‌ها</h2>
-          ${rows.length ? `<span class="muted">${fa(rows.length)} مورد</span>` : ''}
+          ${visibleRows.length ? `<span class="muted">${fa(visibleRows.length)} مورد در این صفحه</span>` : ''}
         </div>
-        ${rows.length ? `
           <div class="band" id="rows">
             ${rows.map((r) => `
               <div class="row">
@@ -379,15 +393,17 @@ async function trySync(session: Session, loud = false): Promise<void> {
   // re-renders, and a disc left spinning is a page that looks stuck.
   const disc = app.querySelector<HTMLButtonElement>('#sync');
   disc?.setAttribute('aria-busy', 'true');
+  const button = app.querySelector<HTMLButtonElement>('#sync');
   try {
     const { sent, received } = await syncNow(session);
     if (loud || received > 0) {
       await renderLedger(session, loud ? `${fa(sent)} مورد فرستادیم، ${fa(received)} مورد گرفتیم.` : undefined);
     }
   } catch {
-    if (loud) await renderLedger(session, 'اتصال نشد. تغییرات ذخیره شدن و بعداً فرستاده می‌شن.', true);
+    message = 'اتصال نشد. تغییرات روی این مرورگر ذخیره شدن و بعداً فرستاده می‌شن.'; warn = true;
   } finally {
-    disc?.removeAttribute('aria-busy');
+    syncing.delete(space);
+    if (activeSpace === space && app.querySelector('#manual')) await renderLedger(session, message, warn);
   }
 }
 
@@ -398,7 +414,7 @@ async function start(): Promise<void> {
     if (pairing) {
       const originalHash = location.hash;
       history.replaceState(null, '', location.pathname);
-      renderJoin(pairing, originalHash);
+      renderJoin(pairing, originalHash, await loadSession());
       return;
     }
     const session = await loadSession();
@@ -414,4 +430,5 @@ async function start(): Promise<void> {
   }
 }
 
+window.addEventListener('online', () => { void loadSession().then((session) => { if (session && partition(session) === activeSpace) void trySync(session); }); });
 void start();
