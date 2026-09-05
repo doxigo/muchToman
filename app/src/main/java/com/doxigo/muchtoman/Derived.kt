@@ -57,10 +57,12 @@ import kotlinx.coroutines.sync.withLock
 // titled every one of that bank's rows with it instead of the bank's name. The wrong merchant
 // is sitting in every stored row until this rebuild reads them again.
 const val PARSER_VERSION = 7
+const val PARSER_VERSION = 8
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
 private const val META_DERIVE_MS = "derive_ms"
+private const val META_APPLIED_FAMILY_REVISION = "applied_family_revision"
 private val derivationGate = Mutex()
 
 /**
@@ -365,6 +367,7 @@ suspend fun derive(
     now: Long = System.currentTimeMillis(),
 ): Int = derivationGate.withLock {
     val started = System.currentTimeMillis()
+    val familyRevision = durable.meta().get(META_SYNC_DERIVE_REVISION) ?: "0"
     val sources = durable.smsSource().allOldestFirst()
     // The frozen sender key of each message, for sender-keyed rules: it lives on the message
     // and not on the row, so it rides across in a map the way every durable→derived join does.
@@ -400,7 +403,8 @@ suspend fun derive(
         all += manual
         written += manual.size
 
-        val family = durable.familyTxns().all().map(::familyToRow)
+        val familyRecords = durable.familyTxns().all()
+        val family = familyRecords.map(::familyToRow)
         derived.txn().insertAll(family)
         all += family
         written += family.size
@@ -408,15 +412,16 @@ suspend fun derive(
         val links = findLinks(all, verdicts)
         derived.links().putAll(links)
 
-        val transfers = transferRefs(links)
+        val transfers = transferRefs(links) + familyRecords.filter { it.transfer }.map { familyLocalRef(it.id) }
         derived.classes().putAll(
             all.map { classify(it, rules, pinned[it.ref], transfers, addrKeys[it.srcHash]) }
         )
+        derived.meta().put(LedgerMeta(META_APPLIED_FAMILY_REVISION, familyRevision))
     }
     derived.meta().put(LedgerMeta(META_PARSER_VER, PARSER_VERSION.toString()))
     derived.meta().put(LedgerMeta(META_DERIVED_AT, now.toString()))
     derived.meta().put(LedgerMeta(META_DERIVE_MS, (System.currentTimeMillis() - started).toString()))
-    return written
+    written
 }
 
 /**
@@ -425,8 +430,13 @@ suspend fun derive(
  * True when the parser has moved on, and true when this database was rebuilt from scratch —
  * which is the same question, because the marker lives here and dies with the rows.
  */
-suspend fun needsDerive(derived: DerivedDb): Boolean =
-    derived.meta().get(META_PARSER_VER)?.toIntOrNull() != PARSER_VERSION
+suspend fun needsDerive(derived: DerivedDb, durable: DurableDb? = null): Boolean {
+    if (derived.meta().get(META_PARSER_VER)?.toIntOrNull() != PARSER_VERSION) return true
+    if (durable == null) return false
+    val required = durable.meta().get(META_SYNC_DERIVE_REVISION) ?: "0"
+    val applied = derived.meta().get(META_APPLIED_FAMILY_REVISION) ?: "0"
+    return required != applied
+}
 
 /**
  * Put the shipped categories and rules in place, and keep them current.
@@ -458,6 +468,8 @@ data class LedgerEntry(
     val categoryEditorName: String = "",
     /** Her own words about this transaction, or blank. A [DecisionKind.NOTE] decision. */
     val note: String = "",
+    /**
+     * Who wrote [note], when that was somebody else. Blank for her own, which needs no byline.
 )
 
 /** Everything the ledger screens need, read in one pass. */

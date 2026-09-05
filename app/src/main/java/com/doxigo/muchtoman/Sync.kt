@@ -884,10 +884,6 @@ private suspend fun outgoingRecords(
     }
 
     for (publication in publications.values) {
-        // Only transaction publications sweep here: category records answer to their decisions,
-        // and the asset record has its own unshare below — a "transaction" tombstone under an
-        // asset: id would be refused by the server as a kind mismatch anyway.
-        if (publication.sourceKind == "category" || publication.sourceKind == "asset") continue
         // Only transaction publications sweep here: category and note records answer to their
         // own decisions, and the asset and goal records have their own unshare below — a
         // "transaction" tombstone under an asset: id would be refused by the server as a kind
@@ -916,6 +912,7 @@ private suspend fun outgoingRecords(
     // republished whenever its content hash moves and tombstoned the sync after sharing stops.
     val assetId = assetRecordId(session.member)
     val assetPublication = publications[assetId]
+    val shareAssets = durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean()
     if (assets != null && shareAssets) {
         // The same 64-item ceiling the receivers hold; past it the payload is a parse gone
         // wrong, and a record that outgrows the server's body cap would wedge the whole push.
@@ -1000,6 +997,10 @@ private suspend fun outgoingRecords(
                     deleted = true,
                 ),
                 previous.copy(contentHash = "", updatedAt = updatedAt, deleted = true),
+            )
+        }
+    }
+
     val entriesByRef = ledger.entries.associateBy { it.txn.ref }
     for (decision in categoryDecisions) {
         if (decision.deleted) continue
@@ -1752,16 +1753,20 @@ suspend fun syncNow(
                 // The client half of the skew bound, in one choke point: everything downstream
                 // compares and stores the clamped stamp.
                 val bounded = record.copy(updatedAt = clampSyncStamp(record.updatedAt, now))
-                if (applyRecord(durable, session, bounded, now)) applied++
+                if (applyRecord(durable, active, bounded, now)) applied++
             }
             durable.meta().put(DurableMeta(META_SYNC_SEQ, nextCursor.toString()))
+            if (applied > 0) {
+                val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)?.toLongOrNull() ?: 0L
+                durable.meta().put(DurableMeta(META_SYNC_DERIVE_REVISION, (revision + 1).toString()))
+            }
             if (pulled.primaryMemberId.isNotBlank()) {
                 durable.meta().put(DurableMeta(META_SYNC_PRIMARY, pulled.primaryMemberId))
             }
             applied
         }
         cursor = nextCursor
-        val more = pulled.records.size >= 1000 && cursor > previous
+        val more = (pulled.hasMore ?: (pulled.records.size >= 1000)) && cursor > previous
     } while (more)
     if (canRotate) rotateTokenIfStale(durable, active, now)
     SyncResult(sent, received)
