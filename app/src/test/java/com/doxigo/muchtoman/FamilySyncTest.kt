@@ -50,6 +50,22 @@ class FamilySyncTest {
         assertEquals("family:member-a:SAMAN", row.accountId)
     }
 
+     * Two people writing on the same row in the same instant. One of them wins, and both phones
+     * have to agree on which — see [syncedEditWins].
+     */
+    @Test
+    fun `the later note wins, and a tie is broken the same way on both phones`() {
+        assertTrue(syncedEditWins(null, "", 0L, "member-a"))
+        assertTrue(syncedEditWins(100L, "member-a", 101L, "member-b"))
+        assertFalse(syncedEditWins(101L, "member-a", 100L, "member-b"))
+
+        // The same millisecond, from both sides: exactly one of the two answers is «yes».
+        assertTrue(syncedEditWins(100L, "member-a", 100L, "member-b"))
+        assertFalse(syncedEditWins(100L, "member-b", 100L, "member-a"))
+
+        // And a note arriving back at the phone that wrote it changes nothing.
+        assertFalse(syncedEditWins(100L, "member-a", 100L, "member-a"))
+    }
     @Test
     fun `automatic category refresh cannot overwrite a member edit`() {
         assertTrue(categoryUpdateWins(0L, "owner", 0L, "owner"))

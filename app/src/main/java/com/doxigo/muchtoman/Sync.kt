@@ -901,6 +901,7 @@ private suspend fun outgoingRecords(
 private fun safeSyncedText(value: String, max: Int, fallback: String = ""): String =
     value.filterNot(Char::isISOControl).trim().take(max).ifBlank { fallback }
 
+
 /**
  * A face another phone chose, held to the two shapes this build renders: a short emoji, or a
  * photo small enough that it was made by [avatarThumbnail]'s own cap. Anything else — a novel
@@ -922,6 +923,23 @@ internal fun safeSyncedAvatar(value: String): String = when {
  */
 private fun safeSyncedGlyph(value: String): String =
     glyphNamed(value.filterNot(Char::isISOControl).trim())?.name.orEmpty()
+
+/**
+ * Whether an answer arriving from another phone replaces the one this phone already holds.
+ *
+ * Last write wins, with the editor's id breaking a same-millisecond tie so two people who
+ * disagree in the same instant converge on one answer instead of overwriting each other for
+ * ever. The same rule the server applies to the record, one level down — to the decision inside
+ * it — and shared by the category and the note because «who wrote this last» is one question.
+ */
+internal fun syncedEditWins(
+    existingAt: Long?,
+    existingEditor: String,
+    incomingAt: Long,
+    incomingEditor: String,
+): Boolean = existingAt == null ||
+    existingAt < incomingAt ||
+    (existingAt == incomingAt && existingEditor < incomingEditor)
 
 fun categoryUpdateWins(
     existingAt: Long?,
@@ -996,6 +1014,7 @@ private suspend fun applyTransaction(
             amountRial = if (payload.direction == "in") payload.amountRial else -payload.amountRial,
             bank = safeSyncedText(payload.bank, 40, "MANUAL"),
             merchant = safeSyncedText(payload.merchant, 120),
+            transfer = payload.transfer,
             updatedAt = record.updatedAt,
         )
     )
@@ -1086,11 +1105,7 @@ private suspend fun applyCategory(
     }
     val existing = durable.decisions().forRef(localRef).firstOrNull { it.kind == DecisionKind.CATEGORY }
     val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
-    if (
-        existing != null &&
-        (existing.updatedAt > record.updatedAt ||
-            (existing.updatedAt == record.updatedAt && existing.memberId >= editor))
-    ) return false
+    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
     durable.decisions().put(
         TxnDecision(
             id = existing?.id ?: categoryRecordId(payload.target),
@@ -1107,6 +1122,7 @@ private suspend fun applyCategory(
     return true
 }
 
+    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
 /**
  * Somebody's shared دارایی, kept as sent: their names, their prices. Validated the way every
  * other record is — the id, the envelope owner and the sealed payload must all name the same

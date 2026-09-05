@@ -150,7 +150,7 @@ interface PushRecord {
   scope: string;
   updatedAt: number;
   device: string;
-  kind: 'legacy' | 'member' | 'transaction' | 'category' | 'asset';
+  kind: 'legacy' | 'member' | 'transaction' | 'category' | 'asset' | 'note' | 'goal';
   ownerMemberId: string;
   authorMemberId?: string;
   deleted?: boolean;
@@ -176,7 +176,7 @@ function asRecords(value: unknown): PushRecord[] {
     if (!id || id.length > MAX_ID_CHARS) throw new SyncError('invalid_id', 400);
     if (!scope || scope.length > MAX_SCOPE_CHARS) throw new SyncError('invalid_scope', 400);
     if (!device || device.length > MAX_DEVICE_CHARS) throw new SyncError('invalid_device', 400);
-    if (!['legacy', 'member', 'transaction', 'category', 'asset'].includes(kind)) {
+    if (!['legacy', 'member', 'transaction', 'category', 'asset', 'note', 'goal'].includes(kind)) {
       throw new SyncError('invalid_kind', 400);
     }
     if (ownerMemberId.length > MAX_MEMBER_CHARS) throw new SyncError('invalid_member', 400);
@@ -532,6 +532,7 @@ export class Household extends DurableObject<Env> {
       seq: highest,
       records: rows,
       hasMore,
+      rotationClientSecret: true,
       memberId: auth.memberId,
       deviceId: auth.id,
       primaryMemberId: this.primaryMember(),
@@ -557,7 +558,9 @@ export class Household extends DurableObject<Env> {
           : record.id.startsWith('txn:') ? 'transaction'
             : record.id.startsWith('category:') ? 'category'
               : record.id.startsWith('asset:') ? 'asset'
-                : null;
+                : record.id.startsWith('note:') ? 'note'
+                  : record.id.startsWith('goal:') ? 'goal'
+                    : null;
         if (reservedKind && record.kind !== reservedKind) throw new SyncError('invalid_kind', 400);
         if (record.kind === 'member') {
           // Member deletion changes household membership, so it never rides the general-purpose
@@ -584,10 +587,13 @@ export class Household extends DurableObject<Env> {
         if (record.kind === 'category' && !record.id.startsWith('category:')) {
           throw new SyncError('invalid_id', 400);
         }
+        // A note is written by whoever is reading the row, not by whose row it is, so — exactly
+        // like a category — it carries no owner check. The id namespace is all that is fenced.
+        if (record.kind === 'note' && !record.id.startsWith('note:')) {
         const existing = [...this.sql.exec<{
-          updated_at: number; device: string; kind: PushRecord['kind']; owner_member: string;
+          updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string;
         }>(
-          'SELECT updated_at, device, kind, owner_member FROM record WHERE id = ?',
+          'SELECT updated_at, author_member, kind, owner_member FROM record WHERE id = ?',
           record.id,
         )][0];
         if (
@@ -597,7 +603,7 @@ export class Household extends DurableObject<Env> {
         ) throw new SyncError('forbidden_owner', 403);
         const storedAt = Math.min(record.updatedAt, maxStamp);
         if (storedAt !== record.updatedAt) clamped.push({ id: record.id, updatedAt: storedAt });
-        // Last write wins, with the device id breaking a tie so two phones that disagree at the
+        // Last write wins, with the member id breaking a tie so two phones that disagree at the
         // same millisecond still converge on the same answer rather than flapping.
         //
         // Ceiling, named: two people editing one transaction's category in the same second — one
@@ -605,7 +611,7 @@ export class Household extends DurableObject<Env> {
         if (
           existing &&
           (existing.updated_at > storedAt ||
-            (existing.updated_at === storedAt && existing.device >= auth.id))
+            (existing.updated_at === storedAt && existing.author_member >= auth.memberId))
         ) {
           continue;
         }

@@ -783,6 +783,33 @@ describe('bounded resumable pulls', () => {
     expect(new Set([...page.records, ...remainder.records].map(r => r.id)).size).toBe(20);
   });
 });
+
+describe('shared conflict ordering', () => {
+  it('uses member ordering even when device ordering is reversed, regardless of arrival order', async () => {
+    const first = await claimDevice('e104'.repeat(8), ['family:home'], {
+      memberId: '1'.repeat(32), deviceId: 'f'.repeat(32),
+    });
+    const second = await pairDevice(first.token, 'f'.repeat(32), '1'.repeat(32));
+    for (const kind of ['category', 'note', 'goal']) {
+      for (const reversed of [false, true]) {
+        const id = `${kind}:${reversed}`;
+        const low = record({ id, scope: 'family:home', kind, body: 'low-member' });
+        const high = record({ id, scope: 'family:home', kind, body: 'high-member' });
+        const writes = reversed
+          ? [[second.token, high], [first.token, low]] as const
+          : [[first.token, low], [second.token, high]] as const;
+        for (const [token, row] of writes) expect((await push(token, [row])).status).toBe(200);
+      }
+    }
+    const result = await pull(first.token);
+    expect(result.json.records).toHaveLength(6);
+    for (const row of result.json.records) {
+      expect(row.body).toBe('high-member');
+      expect(row.authorMemberId).toBe(second.memberId);
+    }
+  });
+});
+
 describe('recoverable token rotation', () => {
   it('allows only one replacement when the old credential rotates concurrently', async () => {
     const token = await claim('e107'.repeat(8), ['personal:her']);
