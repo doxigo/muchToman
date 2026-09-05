@@ -13,6 +13,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Which reading produced a row. Bump it whenever [parseBankSms] changes what it makes of a
@@ -59,6 +61,7 @@ const val PARSER_VERSION = 7
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
 private const val META_DERIVE_MS = "derive_ms"
+private val derivationGate = Mutex()
 
 /**
  * `derived.db` — everything a parser computed, and nothing else.
@@ -360,7 +363,7 @@ suspend fun derive(
     derived: DerivedDb,
     extra: Map<String, Bank>,
     now: Long = System.currentTimeMillis(),
-): Int {
+): Int = derivationGate.withLock {
     val started = System.currentTimeMillis()
     val sources = durable.smsSource().allOldestFirst()
     // The frozen sender key of each message, for sender-keyed rules: it lives on the message
