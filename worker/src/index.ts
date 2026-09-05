@@ -935,7 +935,7 @@ async function fetchCoinIcon(url: URL): Promise<Response> {
  * top of the /rates cache, which is the longest a new release can take to start showing up.
  */
 async function fetchLatestRelease(): Promise<
-  { name: string; url: string; asset: string | null; notes: string[] }
+  { name: string; url: string; asset: string | null; assetLite: string | null; notes: string[] }
 > {
   const res = await fetchWithTimeout(`https://api.github.com/repos/${REPO}/releases/latest`, {
     headers: { 'user-agent': UA, accept: 'application/vnd.github+json' },
@@ -953,25 +953,31 @@ async function fetchLatestRelease(): Promise<
   const tag = typeof body.tag_name === 'string' ? body.tag_name : '';
   if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$/.test(tag)) throw new Error('no usable tag_name');
 
-  // Only this repository's own release downloads. Anything else in browser_download_url would
-  // make /download an open proxy for whatever that field happened to say.
-  const asset = asArray(body.assets)
-    .map(asRecord)
-    .find((a) =>
-      typeof a.name === 'string' &&
-      a.name.toLowerCase().endsWith('.apk') &&
-      typeof a.browser_download_url === 'string' &&
-      a.browser_download_url.startsWith(`https://github.com/${REPO}/releases/download/`)
-    );
-
   return {
     name: tag.replace(/^v/, ''),
     url: typeof body.html_url === 'string'
       ? body.html_url
       : `https://github.com/${REPO}/releases/latest`,
-    asset: asset == null ? null : asset.browser_download_url as string,
+    asset: releaseAsset(body.assets, tag, false),
+    assetLite: releaseAsset(body.assets, tag, true),
     notes: releaseNotesFa(body.body),
   };
+}
+
+export function releaseAsset(value: unknown, tag: string, lite: boolean): string | null {
+  const stem = lite ? 'muchtoman-lite' : 'muchtoman';
+  const assets = asArray(value).map(asRecord);
+  for (const name of [`${stem}-${tag}.apk`, `${stem}-latest.apk`]) {
+    const asset = assets.find((item) => item.name === name);
+    if (typeof asset?.browser_download_url !== 'string') continue;
+    let url: URL;
+    try { url = new URL(asset.browser_download_url); } catch { continue; }
+    if (url.origin === 'https://github.com' && !url.username && !url.password &&
+        url.pathname.startsWith(`/${REPO}/releases/download/`) && !url.search && !url.hash) {
+      return url.toString();
+    }
+  }
+  return null;
 }
 
 /** ۱٬۲۳۴ — the same digits and separator every figure on the page already uses. */
@@ -1061,19 +1067,20 @@ function releaseNotesFa(body: unknown): string[] {
  * objects.githubusercontent.com, and a redirect only moves the unreachable half of the problem
  * onto the phone.
  */
-async function fetchApk(ctx: ExecutionContext): Promise<Response> {
+async function fetchApk(ctx: ExecutionContext, lite: boolean): Promise<Response> {
   const release = await fetchLatestRelease();
-  if (release.asset == null) return textResponse('No APK in the latest release', 502);
+  const asset = lite ? release.assetLite : release.asset;
+  if (asset == null) return textResponse('No APK for this edition in the latest release', 502);
 
   // The bytes behind a tag never change, so nothing has to expire: a new build is a new tag and
   // therefore a new key. The /rates cache in front of this holds the version name for far less.
   const cache = caches.default;
   const key = new Request(
-    `${PUBLIC_ORIGIN}/__cache/apk/${encodeURIComponent(release.name)}`,
+    `${PUBLIC_ORIGIN}/__cache/apk-v2/${lite ? 'lite' : 'full'}/${encodeURIComponent(release.name)}`,
     { method: 'GET' },
   );
   const hit = await cache.match(key);
-  if (hit) return hit;
+  if (hit) return mutableDownload(hit);
 
   // The deadline covers time-to-headers only and is disarmed the moment GitHub answers. An
   // AbortSignal.timeout here used to run for the whole streamed body, which cut every slow
@@ -1086,7 +1093,7 @@ async function fetchApk(ctx: ExecutionContext): Promise<Response> {
   );
   let upstream: Response;
   try {
-    upstream = await fetch(release.asset, {
+    upstream = await fetch(asset, {
       headers: { 'user-agent': UA, accept: 'application/octet-stream' },
       signal: control.signal,
     });
@@ -1108,7 +1115,7 @@ async function fetchApk(ctx: ExecutionContext): Promise<Response> {
   const headers = {
     'content-type': 'application/vnd.android.package-archive',
     'content-length': String(declared),
-    'content-disposition': `attachment; filename="muchtoman-${release.name}.apk"`,
+    'content-disposition': `attachment; filename="muchtoman-${lite ? 'lite-' : ''}${release.name}.apk"`,
     'cache-control': 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
   };
@@ -1119,7 +1126,13 @@ async function fetchApk(ctx: ExecutionContext): Promise<Response> {
   ctx.waitUntil(cache.put(key, new Response(cacheBody, { headers })).catch((error) => {
     console.error(JSON.stringify({ message: 'apk cache write failed', error: errorMessage(error) }));
   }));
-  return new Response(clientBody, { headers });
+  return mutableDownload(new Response(clientBody, { headers }));
+}
+
+function mutableDownload(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set('cache-control', 'no-store');
+  return new Response(response.body, { status: response.status, headers });
 }
 
 async function buildRates(): Promise<Response> {
@@ -1289,6 +1302,7 @@ async function buildRates(): Promise<Response> {
         name: release.value.name,
         url: release.value.url,
         apk: release.value.asset == null ? '' : `${PUBLIC_ORIGIN}${APK_PATH}`,
+        apkLite: release.value.assetLite == null ? '' : `${PUBLIC_ORIGIN}${APK_PATH}/lite`,
         notes: release.value.notes,
       }
       : null,
@@ -1353,12 +1367,12 @@ export default {
       return fetchCoinIcon(url);
     }
 
-    if (url.pathname === APK_PATH) {
+    if (url.pathname === APK_PATH || url.pathname === `${APK_PATH}/lite`) {
       if (request.method !== 'GET') {
         return textResponse('Method not allowed', 405, 'GET');
       }
       try {
-        return await fetchApk(ctx);
+        return await fetchApk(ctx, url.pathname.endsWith('/lite'));
       } catch (error) {
         console.error(JSON.stringify({ message: 'apk proxy failed', error: errorMessage(error) }));
         return textResponse('Download unavailable', 502);
