@@ -13,8 +13,8 @@ import org.junit.Test
  * millisecond stamp, so all of it is checked here. The things that would be silently wrong on a
  * phone and are checked hardest: that a first run cannot ambush her with a backlog she has been
  * living with, that a receipt she left unfiled on purpose stays quiet, that a row the rules filed
- * is reported once and never again, and that nothing about an *unfiled* row answers the question
- * it is asking her.
+ * is reported once and never again, that nothing about an *unfiled* row answers the question it is
+ * asking her, and that two transactions produce two notes rather than one that overwrote the other.
  */
 class FilingTest {
 
@@ -123,6 +123,61 @@ class FilingTest {
         assertNull(filingNews(many, many, said = 0L).alert)
     }
 
+    // ─────────────────────────── one note each ───────────────────────────
+
+    @Test
+    fun `every transaction that landed gets its own note`() {
+        // The bug this replaced: two spends five minutes apart produced one line, because the
+        // second note was posted at the id the first one was already standing at.
+        val first = waiting(at = 500L)
+        val second = filed(at = 900L)
+        val news = filingNews(listOf(first, second), listOf(first), said = 400L)
+        assertEquals(2, news.landed.size)
+        // Newest first — that is the order they matter in and the order the cap trims from.
+        assertEquals(listOf(second.txn.ref, first.txn.ref), news.landed.map { it.txn.ref })
+    }
+
+    @Test
+    fun `nothing new means no notes at all, not an empty stack under a summary`() {
+        val review = listOf(waiting(at = 500L), waiting(at = 900L))
+        val news = filingNews(review, review, said = 900L)
+        assertNull(news.alert)
+        assertTrue(news.landed.isEmpty())
+    }
+
+    @Test
+    fun `a seeding pass posts nothing, so the silence is complete`() {
+        // The alert being null was the whole guard before. With one note each, a list that was
+        // still populated here would announce a year of the inbox one note at a time.
+        val many = (1..67L).map { waiting(at = 1_000L * it) }
+        val news = filingNews(many, many, said = 0L)
+        assertNull(news.alert)
+        assertTrue(news.landed.isEmpty())
+    }
+
+    @Test
+    fun `a burst is capped at what the shade can hold, and the summary still counts all of it`() {
+        val old = (1..20L).map { waiting(at = 100L * it) }
+        val burst = (1..12L).map { waiting(at = 10_000L + it) }
+        val news = filingNews(old + burst, old + burst, said = 5_000L)
+        assertEquals(LANDED_NOTE_LIMIT, news.landed.size)
+        // The newest survive the cap: the oldest of a burst is the one she can least still place.
+        assertEquals(10_012L, news.landed.first().txn.at)
+        assertEquals(10_005L, news.landed.last().txn.at)
+        // The batch is still twelve, whatever the shade was given.
+        val alert = news.alert!!
+        assertEquals(12, alert.fresh)
+        assertEquals(32, alert.waiting)
+    }
+
+    @Test
+    fun `bookkeeping gets no note of its own either`() {
+        val moved = filed(at = 900L).copy(transfer = true)
+        val real = filed(at = 950L)
+        val news = filingNews(listOf(moved, real), emptyList(), said = 400L)
+        assertEquals(listOf(real.txn.ref), news.landed.map { it.txn.ref })
+    }
+
     // ─────────────────────────── filing the whole backlog ───────────────────────────
 
     @Test
@@ -202,7 +257,47 @@ class FilingTest {
         assertNull(filingNews(imported, imported, said = 1_000L).alert)
     }
 
-    // ─────────────────────────── the words ───────────────────────────
+    // ─────────────────────────── the words on one note ───────────────────────────
+
+    @Test
+    fun `a transaction's own note names it, prices it, and asks`() {
+        val one = waiting(at = 900L)
+        assertEquals("اسنپ: ۴۵۰ هزار تومان رفت", landedTitle(one))
+        assertEquals("تا یادته، بگو چی بود", landedBody(one))
+    }
+
+    @Test
+    fun `a filed transaction's own note reports the rules' answer and offers the veto`() {
+        val one = filed(at = 900L)
+        assertEquals("اسنپ: ۴۵۰ هزار تومان رفت", landedTitle(one))
+        assertEquals("تو «خوراک» ثبت شد • اگه جاش نیست، عوضش کن", landedBody(one))
+    }
+
+    @Test
+    fun `no note carries the backlog's total - that is the summary's to say`() {
+        // Nine notes each ending «روی هم ۹ تراکنش دسته‌بندی نشده داری» is the app saying the same
+        // sentence nine times, and the number would be stale on eight of them by the time she read
+        // them anyway.
+        for (entry in listOf(waiting(at = 900L), filed(at = 900L))) {
+            assertTrue(landedBody(entry), !landedBody(entry).contains("روی هم"))
+        }
+    }
+
+    @Test
+    fun `one note's words answer nothing and blame nobody`() {
+        val incoming = waiting(at = 900L, merchant = "", signed = 92_000_000L)
+        assertEquals("بانک سامان: ۹٫۲ میلیون تومان رسید", landedTitle(incoming))
+        val unknown = waiting(at = 900L, signed = null)
+        assertEquals("یک تراکنش تازه از اسنپ", landedTitle(unknown))
+        for (entry in listOf(incoming, unknown, waiting(at = 900L), filed(at = 900L))) {
+            val said = "${landedTitle(entry)} ${landedBody(entry)}"
+            for (verdict in listOf("خرج", "درآمد", "هنوز", "دوباره", "فراموش", "باید", "عقب")) {
+                assertTrue(said, !said.contains(verdict))
+            }
+        }
+    }
+
+    // ─────────────────────────── the words on the summary ───────────────────────────
 
     private fun alert(fresh: Int, waiting: Int, entry: LedgerEntry, filed: Int = 0) =
         FilingAlert(fresh = fresh, waiting = waiting, newest = entry, filed = filed)

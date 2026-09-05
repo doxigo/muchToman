@@ -34,10 +34,28 @@ package com.doxigo.muchtoman
  * seconds after the پیامک — see `SmsReceiver` — landing is the event, and what the rules did with
  * it is the news. The unfiled ones ask, the filed ones report, and both exist for the same reason:
  * a ledger she has seen every row of is the one the reports can be trusted against.
+ *
+ * ## One note per transaction, which is what «said» has to mean
+ *
+ * There used to be one note for the whole backlog, replaced every time. Two spends five minutes
+ * apart therefore produced one line on her lock screen — the second one silently overwrote the
+ * first, and the receipt she had not looked at yet stopped existing. That is the opposite of what
+ * the note is for: the whole argument above is that each answer decays on its own clock, so each
+ * transaction gets its own note, dismissed on its own and standing until it is.
+ *
+ * [FilingNews.landed] is that list, and [FilingAlert] is what the batch adds up to — the summary
+ * the platform bundles them under, which is the one place a total belongs. Repeating «روی هم ۹
+ * تراکنش» on all nine would be the app saying the same sentence nine times.
  */
 
 /**
- * What is worth saying about the backlog right now.
+ * What the batch adds up to — the line over the top of [FilingNews.landed], not a note in its own
+ * right.
+ *
+ * Every transaction that landed has its own note; this is the one the platform bundles them under,
+ * and it exists to hold the two things no single note can honestly say: how many arrived, and how
+ * much is waiting in all. When exactly one landed the platform shows that one and hides this, so
+ * the words below are still written to stand alone.
  *
  * Nothing here is stored. Like [BudgetProgress], it is worked out from the ledger every time it is
  * asked for, so a receipt filed on the other phone in the household moves it the moment the sync
@@ -63,7 +81,7 @@ data class FilingAlert(
 )
 
 /**
- * The alert, if there is one, and the mark to write down afterwards.
+ * Everything to say, one note each, and the mark to write down afterwards.
  *
  * [mark] is the newest `at` this phone has accounted for. A millisecond stamp rather than a count,
  * and that choice is load-bearing three times over:
@@ -75,8 +93,25 @@ data class FilingAlert(
  *
  * It is a high-water mark and never lowered, for the reason [BudgetMark]'s level is not — except
  * back to the wall clock, which no honestly-stamped row can ever be ahead of.
+ *
+ * The mark is also what makes [landed] safe to post one-for-one: a transaction is past it the
+ * moment it has been spoken for, so the next wakeup — five seconds later, on the second پیامک of a
+ * pair — carries only what that wakeup brought, and nothing is ever posted twice.
  */
-data class FilingNews(val alert: FilingAlert?, val mark: Long)
+data class FilingNews(
+    /** The batch's summary, or null when there is nothing to say. Null exactly when [landed] is empty. */
+    val alert: FilingAlert?,
+    /**
+     * One entry per transaction that landed, newest first — a note each.
+     *
+     * Newest first because that is the order they matter in and the order the platform's own
+     * per-app ceiling drops them in: if anything has to go unposted it must be the oldest, which
+     * is the one she is least likely to be able to place. Capped at [LANDED_NOTE_LIMIT] here so
+     * that choice is made by this file and not by whatever the phone's system UI happens to allow.
+     */
+    val landed: List<LedgerEntry>,
+    val mark: Long,
+)
 
 /**
  * How many rows a phone that has never spoken may speak for.
@@ -92,6 +127,21 @@ data class FilingNews(val alert: FilingAlert?, val mark: Long)
  * can land between one wakeup and the next.
  */
 private const val FIRST_PASS_LIMIT = 3
+
+/**
+ * How many notes one wakeup may post before the summary has to carry the rest.
+ *
+ * Android keeps a per-app ceiling on live notifications — around twenty-five on the versions this
+ * app still runs on — and it is shared with «بودجه». Past it the platform simply refuses the next
+ * post, so an uncapped batch would be a household's Thursday deciding on its own which of the
+ * app's notes survive.
+ *
+ * Eight rather than the ceiling because the point of one note per transaction is that each is one
+ * tap; a screen of them is not eight answers, it is the deck with worse ergonomics, and the deck is
+ * what the summary opens. Eight is also comfortably past any single پیامک burst — the six-hour
+ * sweep is the only path that can bring more, and that is a sit-down with the deck either way.
+ */
+const val LANDED_NOTE_LIMIT = 8
 
 /**
  * What has landed since [said], and how far the mark moves.
@@ -126,36 +176,37 @@ fun filingNews(
     // case: learn where it is and say nothing. Over a ledger holding only what just arrived, it
     // is a new phone's first spend, and that is worth saying.
     val seeding = said <= 0L && entries.size > FIRST_PASS_LIMIT
-    val alert = if (seeding || (fresh.isEmpty() && filed.isEmpty())) {
-        null
-    } else {
+    // Newest first, so [FilingAlert.newest] is simply the head of it and so the cap below drops
+    // the oldest — the one she is least likely to still be able to place.
+    val landed = if (seeding) emptyList() else (fresh + filed).sortedByDescending { it.txn.at }
+    val alert = landed.firstOrNull()?.let {
         FilingAlert(
             fresh = fresh.size,
             waiting = review.size,
-            newest = (fresh + filed).maxBy { it.txn.at },
+            newest = it,
             filed = filed.size,
         )
     }
-    return FilingNews(alert, mark)
+    // The counts on the summary stay honest about the whole batch even when the cap trims the
+    // notes under it: «۱۲ تراکنش تازه رسید» over eight of them is the truth, and the deck it opens
+    // holds all twelve.
+    return FilingNews(alert, landed.take(LANDED_NOTE_LIMIT), mark)
 }
 
 /**
- * The one line the note leads with: what landed.
+ * The one line a single transaction's note leads with: what landed.
  *
- * One of them is named and priced, because a single transaction is a thing she can picture and
- * «اسنپ‌پی: ۴۵۰ هزار تومان رفت» is very nearly the answer already. Several are counted instead — a
- * list of three merchants does not fit on a lock screen and picking one of them to print would make
- * the other two invisible.
+ * Named and priced, because a transaction is a thing she can picture and «اسنپ‌پی: ۴۵۰ هزار تومان
+ * رفت» is very nearly the answer already — which is the whole reason each one gets its own note
+ * rather than being counted into a total.
  *
  * «رفت» and «رسید» are directions and nothing more. The direction is the one thing the message did
  * state; whether it was خرج, a refund or a move between her own accounts is precisely the question
  * this note exists to ask, so it is not answered here. A message that did not say which way the
  * money went gets neither verb rather than a guess.
  */
-fun filingAlertTitle(alert: FilingAlert): String {
-    val landed = alert.fresh + alert.filed
-    if (landed > 1) return "${faNumber(landed.toDouble())} تراکنش تازه رسید"
-    val txn = alert.newest.txn
+fun landedTitle(entry: LedgerEntry): String {
+    val txn = entry.txn
     val who = txnTitleFa(txn)
     val rial = txn.amountRial ?: return "یک تراکنش تازه از $who"
     val moved = when (txn.direction) {
@@ -164,6 +215,41 @@ fun filingAlertTitle(alert: FilingAlert): String {
         else -> ""
     }
     return "$who: ${faCompact(tomanOf(rial))} تومان$moved"
+}
+
+/**
+ * The line under it: the question, or the rules' answer to it.
+ *
+ * «تا یادته» is the whole argument for interrupting her at all, and it is an argument rather than an
+ * instruction — the app has no claim on her afternoon, it just knows the answer is easier today. A
+ * filed row is reported in the same spirit: the rules' answer with an invitation to veto it, never
+ * a verdict.
+ *
+ * No total here, on either branch. This note is about one transaction, and how much else is waiting
+ * is the summary's to say — see [filingAlertBody].
+ */
+fun landedBody(entry: LedgerEntry): String =
+    if (entry.needsReview) {
+        "تا یادته، بگو چی بود"
+    } else {
+        "تو «${entry.categoryFa}» ثبت شد • اگه جاش نیست، عوضش کن"
+    }
+
+/**
+ * The one line the summary leads with: how much landed.
+ *
+ * Counted, not listed — a list of three merchants does not fit on a lock screen and picking one of
+ * them to print would make the other two invisible. The three of them are named in full on the
+ * notes bundled underneath, which is where a merchant belongs.
+ *
+ * One of them is [landedTitle] verbatim, because when only one landed the platform hides this
+ * summary and shows that note instead — and on a phone old enough to show the summary in its place,
+ * it has to read as the thing it stands for.
+ */
+fun filingAlertTitle(alert: FilingAlert): String {
+    val landed = alert.fresh + alert.filed
+    if (landed > 1) return "${faNumber(landed.toDouble())} تراکنش تازه رسید"
+    return landedTitle(alert.newest)
 }
 
 /**
@@ -185,8 +271,10 @@ fun filingAlertTitle(alert: FilingAlert): String {
 fun filingAlertBody(alert: FilingAlert): String {
     // Nothing to ask, only to report: the rules filed everything that landed.
     if (alert.fresh == 0) {
+        // A lone filed row makes [newest] that row, so its own note's words are the right ones —
+        // this summary is standing in for exactly it.
         val head = if (alert.filed == 1) {
-            "تو «${alert.newest.categoryFa}» ثبت شد • اگه جاش نیست، عوضش کن"
+            landedBody(alert.newest)
         } else {
             "خودکار دسته‌بندی شدن • یه نگاه بنداز که سر جاشون نشسته باشن"
         }

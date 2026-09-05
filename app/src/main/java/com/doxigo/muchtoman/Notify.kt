@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -40,12 +41,20 @@ import androidx.core.content.ContextCompat
  * wants budget alerts and no transaction notes — or the reverse — is one switch in Android's own
  * settings, not an uninstall, and either can be turned back down there too.
  *
- * ## What it will not do
+ * ## One note per thing, and what «thing» means on each channel
  *
- * One live notification per budget and exactly one for the backlog, replaced rather than stacked:
- * one budget is one conversation, «۸۰٪» followed by «۹۵٪» is that conversation moving on, and a
- * per-transaction note would turn a household's Thursday into eleven of them. Nothing is ongoing,
- * nothing is a foreground service, and every note is dismissible and opens the screen it is about.
+ * A budget is one conversation, so it gets one note that is replaced: «۸۰٪» followed by «۹۵٪» is
+ * that conversation moving on, not two of them.
+ *
+ * A transaction is not. Each is a separate question with its own answer and its own clock, and the
+ * backlog used to get one note that each new arrival overwrote — so two spends five minutes apart
+ * left one line on her lock screen and the first receipt quietly stopped existing. Now every
+ * transaction gets its own note, tagged with its `ref`, stacked under a group summary the platform
+ * bundles them into and capped at [LANDED_NOTE_LIMIT] so a Thursday cannot fill the shade. Opening
+ * the app takes the whole stack back at once — see [clearFilingNote].
+ *
+ * Beyond that: nothing is ongoing, nothing is a foreground service, and every note is dismissible
+ * and opens the screen it is about.
  */
 
 /** «بودجه» — one of the two channels. Named so it can be silenced on its own in Android's settings. */
@@ -64,10 +73,35 @@ private const val FILING_CHANNEL = "filing"
 private const val BUDGET_NOTE_ID = 1
 
 /**
- * The backlog's one note. No tag: there is one backlog and therefore one conversation about it, and
- * the count inside it is what changes.
+ * One id for every transaction note, with the transaction's `ref` as the tag.
+ *
+ * The same tag-plus-id arrangement [BUDGET_NOTE_ID] uses, and for the same reason: `ref` is already
+ * the primary key of the row, so it is collision-free without hashing anything into an int space.
+ * It is also what makes the whole stack findable — see [clearFilingNote], which asks the platform
+ * for everything it has posted under this id rather than keeping a list of its own that could drift.
+ *
+ * There is one more thing it buys, quietly: a phone upgrading from the build that posted a single
+ * untagged note at this id still has that note live, and it comes down with the rest.
  */
 private const val FILING_NOTE_ID = 2
+
+/**
+ * The line over the stack: how many landed, and how much is waiting in all.
+ *
+ * Untagged and separate from [FILING_NOTE_ID], so [clearFilingNote] can tell the summary from the
+ * notes it summarises without inspecting either. When only one transaction has landed the platform
+ * shows that note and hides this — which is why [filingAlertTitle] still reads correctly alone.
+ */
+private const val FILING_SUMMARY_ID = 3
+
+/**
+ * What bundles the transaction notes together.
+ *
+ * Without it, four spends are four separate lines competing with everything else in her shade;
+ * with it they are one entry she can expand, and the platform takes the summary down on its own
+ * once she has swiped the last child away.
+ */
+private const val FILING_GROUP = "com.doxigo.muchtoman.FILING"
 
 /** Read by [MainActivity] to open on the screen a notification was about. */
 const val EXTRA_OPEN_TAB = "com.doxigo.muchtoman.OPEN_TAB"
@@ -247,51 +281,153 @@ fun notifyBudget(context: Context, budget: BudgetProgress) {
 }
 
 /**
- * Says the one thing there is to say about the backlog, and replaces whatever it said last.
+ * Says one thing per transaction that landed, and one thing over the top of them.
  *
- * Every word comes from [filingAlertTitle] and [filingAlertBody], which are pure and tested, for the
- * reason [notifyBudget]'s do: what a test asserts and what lands on her lock screen have to be the
- * same strings.
+ * The notes are posted oldest-last so the newest is the one that arrives most recently and sorts to
+ * the top of the shade, and the summary goes out after all of them: a summary that lands first is a
+ * group with no children for as long as the loop takes, which some system UIs draw as an empty
+ * bundle.
+ *
+ * Every word comes from [landedTitle], [landedBody], [filingAlertTitle] and [filingAlertBody], which
+ * are pure and tested, for the reason [notifyBudget]'s do: what a test asserts and what lands on
+ * her lock screen have to be the same strings.
+ *
+ * Each post is wrapped on its own. One note refused — an OEM's per-app ceiling, a `ref` the
+ * platform dislikes — must not cost the other seven, and least of all the summary.
  */
 // Same reasoning as [notifyBudget]: [canNotify] is the one place that knows every way a note can
 // fail to appear, and lint's dataflow does not follow the check across a function boundary.
 @SuppressLint("MissingPermission")
-fun notifyFiling(context: Context, alert: FilingAlert) {
+fun notifyFiling(context: Context, news: FilingNews) {
+    val alert = news.alert ?: return
     if (!canNotify(context)) return
     ensureFilingChannel(context)
-    val title = filingAlertTitle(alert)
-    val body = filingAlertBody(alert)
-    val note = NotificationCompat.Builder(context, FILING_CHANNEL)
+    val manager = NotificationManagerCompat.from(context)
+    for (entry in news.landed.asReversed()) {
+        runCatching { manager.notify(entry.txn.ref, FILING_NOTE_ID, landedNote(context, entry)) }
+            .onFailure { android.util.Log.w("muchtoman", "filing notify failed: $it") }
+    }
+    runCatching { manager.notify(FILING_SUMMARY_ID, filingSummary(context, alert)) }
+        .onFailure { android.util.Log.w("muchtoman", "filing summary failed: $it") }
+}
+
+/**
+ * One transaction's note: what landed, and the one thing there is to do about it.
+ *
+ * GROUP_ALERT_CHILDREN rather than the summary, and it is the difference between hearing about a
+ * spend and not: the summary is hidden whenever a single transaction has landed, which is nearly
+ * every time, and a group that alerts through a hidden note alerts through nothing. The platform
+ * rate-limits an app's sounds to roughly one a second, so the sweep that brings four still makes
+ * about one noise.
+ *
+ * No `setNumber` here, deliberately. The count belongs to [filingSummary], and launchers that draw
+ * a badge sum a group's children — eight notes each carrying the backlog's size would badge the
+ * backlog eight times over.
+ *
+ * ## No `setWhen(txn.at)` either, which cost a note before it was found
+ *
+ * Stamping the note with the transaction's own time reads better — the six-hour sweep can be hours
+ * behind the پیامک — and the platform **silently drops** anything whose `when` is more than about a
+ * fortnight old: `NotificationService: Ignored enqueue for old …`, no exception, nothing for the
+ * `runCatching` around the post to catch. A four-transaction batch posted three notes and a summary
+ * that counted four, and the one that vanished was the oldest, which is the one she is least likely
+ * to remember unaided.
+ *
+ * That is not a rewind-only curiosity. A phone whose notifications were off for a fortnight leaves
+ * its mark where it stood — [LedgerWatchWorker] skips the announce entirely — so the batch waiting
+ * on the far side of switching them back on is exactly the batch this would eat. The post time is
+ * what every other app shows; the transaction's own time is on the row in دفتر, one tap away.
+ */
+private fun landedNote(context: Context, entry: LedgerEntry): Notification {
+    val title = landedTitle(entry)
+    val body = landedBody(entry)
+    return NotificationCompat.Builder(context, FILING_CHANNEL)
         .setSmallIcon(R.drawable.ic_toman)
         .setColor(0xFF0A423B.toInt())
         .setContentTitle(title)
         .setContentText(body)
-        // Persian wraps long, and the count at the end of the body is the half she cannot work
-        // out from the title.
+        // Persian wraps long, and on a filed row the category at the end of the body is the half
+        // she cannot work out from the title.
         .setStyle(NotificationCompat.BigTextStyle().bigText(body))
         // Not CATEGORY_REMINDER, which the platform reserves for something *she* asked to be
         // reminded of at a time she chose. This is the app noticing something.
         .setCategory(NotificationCompat.CATEGORY_STATUS)
         // The pre-O mirror of the channel importance, kept in step with [ensureFilingChannel].
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setGroup(FILING_GROUP)
+        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+        .setAutoCancel(true)
+        // A row still waiting opens the deck that answers it; one the rules already filed opens the
+        // timeline it is sitting in, where changing its category is one tap on the row.
+        .setContentIntent(if (entry.needsReview) openDeck(context) else openLedgerTab(context))
+        // Read out as one sentence rather than as a heading and an orphaned figure.
+        .setTicker("$title. $body")
+        .build()
+}
+
+/**
+ * The line over the stack, and on a phone showing a single note, the note itself.
+ *
+ * Silent — GROUP_ALERT_CHILDREN — because the notes underneath already made the sound. Its content
+ * intent is the deck whenever anything is waiting, since that is what a total is an argument for.
+ *
+ * ## What it counts, and the one thing it does not
+ *
+ * [FilingAlert] is *this wakeup's* batch, and the stack under it is not: a spend at noon she never
+ * looked at is still standing when the half-past-twelve one arrives, so «۲ تراکنش تازه رسید» can
+ * head a bundle of three. That is left alone deliberately. «تازه رسید» is a claim about arrival and
+ * stays true of every note under it; the figure that must not drift — [setNumber], and the «روی هم»
+ * line in [filingAlertBody] — is the whole backlog either way, read off the ledger and not off the
+ * batch. Making the heading count the shade instead would mean asking the platform what is standing
+ * and building these words from the answer, which trades a pure, tested sentence for a query that
+ * can only be checked on a phone.
+ */
+private fun filingSummary(context: Context, alert: FilingAlert): Notification {
+    val title = filingAlertTitle(alert)
+    val body = filingAlertBody(alert)
+    return NotificationCompat.Builder(context, FILING_CHANNEL)
+        .setSmallIcon(R.drawable.ic_toman)
+        .setColor(0xFF0A423B.toInt())
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setGroup(FILING_GROUP)
+        .setGroupSummary(true)
+        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
         // The whole backlog, not the new ones: launchers that draw a number draw this one, and a
         // badge that disagrees with the badge on the دفتر tab is two apps' worth of counting.
         // Zero — everything filed — draws no number, which is the platform's own convention.
         .setNumber(alert.waiting)
         .setAutoCancel(true)
-        // A note with anything left to file opens the deck that files it; a note that only
-        // reported the rules' work opens the timeline the work is sitting in.
+        // Anything left to file opens the deck that files it; a batch that only reported the rules'
+        // work opens the timeline the work is sitting in.
         .setContentIntent(if (alert.waiting > 0) openDeck(context) else openLedgerTab(context))
         .setTicker("$title. $body")
         .build()
-    runCatching { NotificationManagerCompat.from(context).notify(FILING_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "filing notify failed: $it") }
 }
 
-/** Takes back the backlog note. Called the moment she opens the app, which is the answer to it. */
+/**
+ * Takes back every transaction note at once. Called the moment she opens the app, which is the
+ * answer to all of them.
+ *
+ * The live set is asked for rather than remembered. A list of posted tags kept in prefs would have
+ * to survive process death, an import, and her swiping half of them away by hand — and every one of
+ * those drifts silently into a note that can never be taken down. The platform already holds the
+ * truth, keyed by [FILING_NOTE_ID], which is exactly the set this posted.
+ *
+ * That also picks up the single untagged note left standing by the build before this one, whose id
+ * was the same.
+ */
 fun clearFilingNote(context: Context) {
-    runCatching { NotificationManagerCompat.from(context).cancel(FILING_NOTE_ID) }
-        .onFailure { android.util.Log.w("muchtoman", "filing cancel failed: $it") }
+    val manager = NotificationManagerCompat.from(context)
+    runCatching {
+        manager.cancel(FILING_SUMMARY_ID)
+        for (live in manager.activeNotifications) {
+            if (live.id == FILING_NOTE_ID) manager.cancel(live.tag, FILING_NOTE_ID)
+        }
+    }.onFailure { android.util.Log.w("muchtoman", "filing cancel failed: $it") }
 }
 
 /**
@@ -362,8 +498,11 @@ fun announceFiling(context: Context, store: Store, view: LedgerView) {
     // or a parser fix filed the last of it — so a standing *ask* is describing work that is gone.
     // This also retires an unread filed-only note at the next sweep, deliberately: what it
     // reported is on the timeline either way, and a report is not worth keeping stale.
+    //
+    // The whole stack, not just the summary: every one of those notes is describing the same
+    // vanished work.
     if (view.review.isEmpty() && news.alert == null) clearFilingNote(context)
-    news.alert?.let { notifyFiling(context, it) }
+    notifyFiling(context, news)
 }
 
 /**
