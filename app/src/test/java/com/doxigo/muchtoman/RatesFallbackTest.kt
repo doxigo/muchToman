@@ -107,7 +107,7 @@ class RatesFallbackTest {
             ours,
             now,
         )
-        assertEquals("$origin/download", proxied.latest?.downloadUrl)
+        assertEquals("$origin/download", proxied.latest?.downloadUrlFor(false))
 
         // Someone else's APK is dropped on its own — the release page survives it, because a
         // note that falls back to GitHub still beats no note at all.
@@ -117,7 +117,7 @@ class RatesFallbackTest {
             now,
         )
         assertEquals("", hijacked.latest?.apk)
-        assertEquals(page, hijacked.latest?.downloadUrl)
+        assertEquals(page, hijacked.latest?.downloadUrlFor(false))
 
         // Right origin, wrong path: /download is the only thing this link may ever be.
         val elsewhere = sanitizeRates(
@@ -125,7 +125,7 @@ class RatesFallbackTest {
             ours,
             now,
         )
-        assertEquals(page, elsewhere.latest?.downloadUrl)
+        assertEquals(page, elsewhere.latest?.downloadUrlFor(false))
 
         // No APK in the release the Worker saw: the page is all there is, and it is still shown.
         val pageOnly = sanitizeRates(
@@ -133,7 +133,7 @@ class RatesFallbackTest {
             ours,
             now,
         )
-        assertEquals(page, pageOnly.latest?.downloadUrl)
+        assertEquals(page, pageOnly.latest?.downloadUrlFor(false))
     }
 
     @Test

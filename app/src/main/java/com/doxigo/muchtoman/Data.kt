@@ -95,9 +95,12 @@ data class Release(
      * without a note still announces itself, and the sheet simply has nothing to list.
      */
     val notes: List<String> = emptyList(),
+    val apkLite: String = "",
 ) {
     /** Whichever of the two she has the better chance of actually opening. */
-    val downloadUrl: String get() = apk.ifBlank { url }
+    val downloadUrl: String get() = downloadUrlFor(BuildConfig.LITE)
+
+    fun downloadUrlFor(lite: Boolean): String = (if (lite) apkLite else apk).ifBlank { url }
 }
 
 /** Everything the Worker sends: Toman per one unit of each asset id, plus the coin catalogue. */
@@ -299,6 +302,10 @@ fun snapshotHistory(
 }
 
 const val WALLET_SNAPSHOT_MAX_AGE_MS = 10 * 60_000L
+
+fun backupReminderDue(enabled: Boolean, lastExportAt: Long, now: Long): Boolean =
+    enabled && (lastExportAt <= 0L || now - lastExportAt >= 30 * DAY_MS)
+
 fun refreshedSnapshotHoldings(
     current: List<Holding>,
     results: Map<String, Pair<Holding, WalletBalance>>,
@@ -506,6 +513,7 @@ private fun trustedRelease(value: Release?, ratesUrl: String): Release? {
         name = name,
         url = url.toExternalForm(),
         apk = trustedApk(value.apk, ratesUrl),
+        apkLite = trustedApk(value.apkLite, ratesUrl, "/download/lite"),
         notes = value.notes.asSequence()
             .map { safeText(it, MAX_RELEASE_NOTE_LENGTH, "") }
             .filter { it.isNotEmpty() }
@@ -521,7 +529,7 @@ private fun trustedRelease(value: Release?, ratesUrl: String): Release? {
 }
 
 /** Same rule as [trustedCoinIcon]: this origin or the official one, and only that one path. */
-private fun trustedApk(value: String, ratesUrl: String): String {
+private fun trustedApk(value: String, ratesUrl: String, path: String = "/download"): String {
     if (value.isBlank()) return ""
     return runCatching {
         val apk = URL(value)
@@ -530,7 +538,7 @@ private fun trustedApk(value: String, ratesUrl: String): String {
         if (
             !trustedOrigin ||
             !apk.protocol.equals("https", ignoreCase = true) ||
-            apk.path != "/download" ||
+            apk.path != path ||
             apk.userInfo != null ||
             apk.ref != null ||
             !apk.query.isNullOrBlank()
@@ -715,6 +723,11 @@ class Store(context: Context) {
         get() = prefs.getString("dismissedUpdate", "").orEmpty()
         set(v) { prefs.edit().putString("dismissedUpdate", v).apply() }
 
+    var lastBackupAt: Long
+        get() = prefs.getLong("lastBackupAt", 0L)
+        set(v) { check(prefs.edit().putLong("lastBackupAt", v).commit()) }
+
+    var backupReminderEnabled: Boolean
     /** Who the app greets. Empty means greet nobody. */
     var name: String
         get() = prefs.getString("name", "").orEmpty()
