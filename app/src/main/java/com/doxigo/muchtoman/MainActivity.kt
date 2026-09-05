@@ -810,6 +810,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                                 createdAt = now,
                                 updatedAt = now,
                                 memberId = session?.member.orEmpty(),
+                                familyRef = session?.let { familyTxnId(it.member, manualRef(id)) }.orEmpty(),
                             )
                         )
                     }
@@ -978,7 +979,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     // ——— Backup and restore: the recovery path for a phone that no longer exists ———
 
-    private val _backup = MutableStateFlow(BackupUi())
+    private val _backup = MutableStateFlow(BackupUi(
+        lastExportAt = store.lastBackupAt,
+        reminderEnabled = store.backupReminderEnabled,
+    ))
 
     /** Its own flow, not [UiState]: only the two settings rows read it. */
     val backup: StateFlow<BackupUi> = _backup.asStateFlow()
@@ -1015,9 +1019,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val stream = runCatching { app.contentResolver.openOutputStream(uri, "wt") }
                     .getOrNull() ?: app.contentResolver.openOutputStream(uri)
                 (stream ?: error("no stream for $uri")).use { it.write(sealed) }
-            }.onSuccess {
+                val exportedAt = System.currentTimeMillis()
+                store.lastBackupAt = exportedAt
+                exportedAt
+            }.onSuccess { exportedAt ->
                 _backup.update {
-                    it.copy(working = false, notice = "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
+                    it.copy(working = false, lastExportAt = exportedAt,
+                        notice = "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
                 }
             }.onFailure { e ->
                 android.util.Log.w("muchtoman", "backup export failed: $e")
@@ -1084,16 +1092,23 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 stageRestore(app, Base64.decode(payload.durableDbB64), encodeBackupPrefs(payload.prefs))
             }.onSuccess {
                 pendingRestore = null
-                _backup.update { BackupUi(restartNeeded = true) }
+                _backup.update { it.copy(working = false, ready = false, restartNeeded = true) }
             }.onFailure { e ->
                 android.util.Log.w("muchtoman", "backup staging failed: $e")
                 _backup.update {
-                    it.copy(working = false, failed = true, notice = "بازگردانی نشد. دوباره امتحان کن.")
+                    it.copy(working = false, failed = true, notice =
+                        if ((e as? BackupException)?.fault == BackupFault.NEWER_FORMAT)
+                            "این پشتیبان با نسخهٔ جدیدتر برنامه ساخته شده. اول برنامه رو به‌روز کن."
+                        else "بازگردانی نشد. فایل رو بررسی کن و دوباره امتحان کن.")
                 }
             }
         }
     }
 
+    fun setBackupReminder(on: Boolean) {
+        store.backupReminderEnabled = on
+        _backup.update { it.copy(reminderEnabled = on) }
+    }
     /** She closed the sheet. The decrypted payload goes with it; the file stays hers to re-pick. */
     fun dismissRestore() {
         pendingRestore = null

@@ -287,6 +287,7 @@ private fun SettingsIndex(
                 shape = bandShape(1, 2),
                 onClick = { onOpen(SettingsRoom.CACHE) },
             ) { GlyphIcon(CategoryGlyph.SWAP, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            ) { GlyphIcon(CategoryGlyph.TRAY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
 
             // The answer to "which version do you have?" over the phone, without her having to
             // find the system app-info page. A fixed gap, not weight(1f): inside a scrolling
@@ -922,6 +923,12 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     ) { uri -> if (uri != null) importUri = uri }
 
     SettingsPage("پشتیبان‌گیری", onBack) {
+        Text(
+            if (backup.lastExportAt > 0) "آخرین پشتیبان: ${faDate(tehranDay(backup.lastExportAt))}"
+            else "روی این گوشی هنوز پشتیبانی ساخته نشده.",
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(bottom = Space.m),
+        )
         DoorRow(
             title = "پشتیبان‌گیری از همه‌چیز",
             subtitle = "پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات، توی یک فایل رمزدار",
@@ -942,12 +949,19 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
             onClick = { openFile.launch(arrayOf("*/*")) },
         )
         Text(
-            "فایل پشتیبان رمز داره و بدون رمزش هیچ‌کس نمی‌تونه بخوندش — حتی خود برنامه. " +
-                "رمز رو یه جای مطمئن نگه دار.",
+            "فایل پشتیبان رمز داره. فایل و رمزش رو جای مطمئن نگه دار. " +
+                "این تاریخ فقط زمان ساخت فایله؛ برنامه نمی‌تونه موندن فایل در محل ذخیره رو بررسی کنه.",
             fontSize = 13.sp,
             lineHeight = 20.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+        )
+        Spacer(Modifier.height(Space.l))
+        SettingCard(
+            title = "یادآوری پشتیبان در برنامه",
+            subtitle = "بعد از ۳۰ روز، صفحهٔ خانه یادآوری می‌کنه. اعلانی فرستاده نمی‌شه.",
+            checked = backup.reminderEnabled,
+            onChange = vm::setBackupReminder,
         )
         backup.notice?.let { words ->
             Text(
@@ -996,6 +1010,7 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     }
 }
 
+@Composable
 /**
  * «حافظهٔ موقت» — the way back from a stale cache, and the sentence that makes it safe to press.
  *

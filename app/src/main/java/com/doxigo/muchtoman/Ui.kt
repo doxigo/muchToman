@@ -1,5 +1,7 @@
 package com.doxigo.muchtoman
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -396,6 +398,7 @@ private fun AppScreens(
     activity: FragmentActivity,
     notices: TransientNotices,
 ) {
+    val backupState by vm.backup.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Editing?>(null) }
     // Saveable, like tab and transactionRef below: these four are *where she is standing*, and
@@ -901,6 +904,15 @@ private fun AppScreens(
                         .padding(edge)
                         .padding(top = Space.s),
                 )
+            }
+
+            if (backupReminderDue(backupState.reminderEnabled, backupState.lastExportAt, System.currentTimeMillis())) {
+                item(key = "backup-reminder") {
+                    TextButton(onClick = { settings = true }, modifier = Modifier.padding(edge).fillMaxWidth()) {
+                        Text("وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.",
+                            fontSize = 14.sp, lineHeight = 22.sp)
+                    }
+                }
             }
 
             // The answer, as the one deep-green object on the page: a card, not a field. The

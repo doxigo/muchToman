@@ -728,6 +728,9 @@ class Store(context: Context) {
         set(v) { check(prefs.edit().putLong("lastBackupAt", v).commit()) }
 
     var backupReminderEnabled: Boolean
+        get() = prefs.getBoolean("backupReminderEnabled", false)
+        set(v) { prefs.edit().putBoolean("backupReminderEnabled", v).apply() }
+
     /** Who the app greets. Empty means greet nobody. */
     var name: String
         get() = prefs.getString("name", "").orEmpty()
