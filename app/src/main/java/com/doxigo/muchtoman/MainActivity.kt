@@ -1544,6 +1544,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         try {
             val result = syncNow(durable, derived, session, assets = assets)
             if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
+            }
             publishLedger(durable, derived)
             refreshFamily(
                 session,
@@ -1868,7 +1869,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private suspend fun runScan(app: Application) {
         val extra = extraLookup(store.extraBankNumbers)
 
-        val messages = readSmsInbox(app, store.smsScannedTo)
+        val rebuilding = store.smsFoldNeedsRefresh
+        val messages = readSmsInbox(app, if (rebuilding) 0L else store.smsScannedTo)
         if (messages.isEmpty()) return
 
         // Re-keyed through senderKey on the way in: the key function has changed once
@@ -1876,7 +1878,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // stay dismissed. senderKey is a fixpoint over its own output.
         val dismissed = store.dismissedSenders.map(::senderKey).toSet()
         var accounts = store.bankAccounts
-        val seen = store.seenSms
+        val seen = if (rebuilding) emptySet() else store.seenSms
+        val reparsed = mutableListOf<BankSms>()
         val fresh = mutableListOf<String>()
         val strangers = store.strangeSenders.toMutableList()
         for (m in messages) {
@@ -1913,12 +1916,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
             // Through the plausibility gate, not applyBankSms directly: a garbled twenty-one
             // -digit figure from a matched sender must contribute nothing — see [foldBankSms].
-            accounts = foldBankSms(accounts, parsed)
+            if (rebuilding) reparsed += parsed else accounts = foldBankSms(accounts, parsed)
             fresh += key
         }
 
         if (!store.smsEnabled || !canReadSms(app)) return
 
+        if (rebuilding) accounts = rebuildBankAccounts(accounts, reparsed)
         store.bankAccounts = accounts
         store.seenSms = rememberSeen(seen, fresh)
         // A stranger whose number has since been added resolves and drops off the list, as
@@ -1937,6 +1941,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
         // put the watermark there and silently freeze every balance for ever after.
         store.smsScannedTo = minOf(messages.maxOf { it.at }, System.currentTimeMillis())
+        store.smsFoldNeedsRefresh = false
         _state.update { it.copy(bankAccounts = accounts) }
         recordSnapshot()
     }

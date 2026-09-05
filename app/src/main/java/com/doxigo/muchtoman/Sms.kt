@@ -879,6 +879,21 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
     return accounts.filterNot { it.bank == sms.bank.name } + next
 }
 
+/** Legacy anchors have no manual/bank provenance, so only equally recent bank evidence replaces them. */
+fun rebuildBankAccounts(previous: List<BankAccount>, messages: List<BankSms>): List<BankAccount> {
+    var rebuilt = previous
+    for ((bank, rows) in messages.groupBy { it.bank.name }) {
+        val anchor = previous.firstOrNull { it.bank == bank && it.anchored }
+        if (anchor == null) rebuilt = rebuilt.filterNot { it.bank == bank }
+        for (sms in rows.sortedBy { it.at }) {
+            if (anchor != null && (sms.at < anchor.updatedAt ||
+                    (sms.at == anchor.updatedAt && sms.balance == null))) continue
+            rebuilt = foldBankSms(rebuilt, sms)
+        }
+    }
+    return rebuilt
+}
+
 /**
  * The one figure she can give us that no message carries: what an account actually holds right
  * now. Anchors it, so everything read afterwards accumulates onto a real balance instead of

@@ -598,40 +598,14 @@ internal fun InputStream.readUtf8Limited(maxBytes: Int): String {
     return output.toString(Charsets.UTF_8.name())
 }
 
-/**
- * Bumped whenever the way a bank message is read changes enough that the balances already on
- * disk were produced by code now known to be wrong.
- *
- * Version 2 dropped everything built before the Rial-beside-Toman tenfold error, the account
- * number read as a balance, the مانده بدهی counted as cash, and one account stored several
- * times over and summed. Version 3 follows the minus-sign fix: خاورمیانه writes its
- * withdrawals as a bare "-5,025,000" and the amount was being skipped for the reference number
- * underneath it.
- *
- * Figures built by any of that cannot be repaired — but they never had to be, because they are
- * not the record. Her inbox is. Clearing them makes the next scan read it from the start and
- * rebuild every balance with the parser as it now stands. **Bump this whenever parsing changes,
- * or the fix ships to a phone that will never re-read the messages it applies to.**
- */
-// 11: the actual 90000258 thread proves it belongs to Blu, not Khavarmianeh. Rebuild every
-// balance because messages from that sender were previously skipped or assigned to the wrong bank.
-private const val SMS_SCHEMA = 11
+private const val SMS_SCHEMA = 12
 
 class Store(context: Context) {
     private val prefs = context.getSharedPreferences("muchtoman", Context.MODE_PRIVATE)
 
     init {
-        // extraBankNumbers survives on purpose: those are her own statements about her banks,
-        // not something a parser computed.
         if (prefs.getInt("smsSchema", 0) != SMS_SCHEMA) {
-            prefs.edit()
-                .remove("bankAccounts")
-                .remove("seenSms")
-                .remove("smsScannedTo")
-                .remove("unknownSenders")
-                .remove("strangers")
-                .putInt("smsSchema", SMS_SCHEMA)
-                .apply()
+            prefs.edit().putInt("smsSchema", SMS_SCHEMA).putBoolean("smsFoldNeedsRefresh", true).apply()
         }
     }
 
@@ -864,6 +838,10 @@ class Store(context: Context) {
         set(v) { prefs.edit().putLong("filingMark", v).apply() }
 
     /** How far the inbox has been read, so each scan only looks at what arrived since. */
+    var smsFoldNeedsRefresh: Boolean
+        get() = prefs.getBoolean("smsFoldNeedsRefresh", false)
+        set(v) { prefs.edit().putBoolean("smsFoldNeedsRefresh", v).apply() }
+
     var smsScannedTo: Long
         get() = prefs.getLong("smsScannedTo", 0L)
         set(v) { prefs.edit().putLong("smsScannedTo", v).apply() }
@@ -920,7 +898,7 @@ class Store(context: Context) {
  */
 val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "bankAccounts", "disabledBanks",
-    "seenSms", "smsScannedTo", "smsSchema", "extraBankNumbers", "dismissedSenders",
+    "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded",
 )
@@ -989,7 +967,7 @@ fun applyRestoredPrefs(context: Context, restored: Map<String, BackupPref>) {
             // A tag from a future build: skipped rather than guessed at.
         }
     }
-    editor.commit()
+    check(editor.commit()) { "Could not persist restored preferences" }
 }
 
 /**
