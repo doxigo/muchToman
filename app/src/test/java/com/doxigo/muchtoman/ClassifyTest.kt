@@ -182,6 +182,7 @@ class ClassifyTest {
         val outgoing = categoryChoices(BUILTIN_CATEGORIES, "out").map { it.nameFa }
         assertTrue("خواربار" in outgoing)
         assertTrue("سفر" in outgoing)
+        assertTrue("ورزش" in outgoing)
         assertTrue("بازپرداخت اسنپ و تپسی" in outgoing)
         assertTrue("آرایشگاه" in outgoing)
         assertTrue("آرایشی و بهداشتی" in outgoing)

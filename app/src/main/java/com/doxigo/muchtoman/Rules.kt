@@ -124,6 +124,15 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // a guess, and it earns a rule the first time she files one and says «همیشه».
     Category("cat_ride_credit", nameFa = "بازپرداخت اسنپ و تپسی", kind = CategoryKind.EXPENSE, sort = 115, builtin = true),
     Category("cat_atina", nameFa = "خرج اتینا", kind = CategoryKind.EXPENSE, sort = 120, builtin = true),
+    // ورزش is a باشگاه term paid three months at a time, the استخر ticket and the classes around
+    // it — one standing decision with a size she can check. Filed under سلامت it reads afterwards
+    // as a year of being unwell, which is the opposite of what it was, and filed under خرید روزانه
+    // a whole term disappears into a fortnight of small shopping.
+    //
+    // Last of the monthly ones, beside the other commitments she signs up for rather than happens
+    // to make. No shipped rule behind it, for the reason قسط و وام has none: it is paid at a desk
+    // by card or in cash, and the message that arrives says only that money left.
+    Category("cat_sport", nameFa = "ورزش", kind = CategoryKind.EXPENSE, sort = 125, builtin = true),
 
     // ── the occasional ones ──
     Category("cat_savings", nameFa = "پس‌انداز و سرمایه", kind = CategoryKind.EXPENSE, sort = 130, builtin = true),

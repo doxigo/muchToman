@@ -44,7 +44,7 @@ enum class CategoryGlyph {
     BASKET, CUP, BUS, RECEIPT, CROSS, TAG, NOTE, PERCENT, TRAY, SWAP,
     STACK, PLANE, GIFT, BLOOM, SHIRT, MUSIC, HOUSE, PERSON, LEND, PAYBACK,
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
-    RING, AIRPLANE, SCISSORS, BOTTLE, PIN,
+    RING, AIRPLANE, SCISSORS, BOTTLE, PIN, MUSCLE,
     DOTS,
 }
 
@@ -83,6 +83,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "فرهنگی و هنری" -> CategoryGlyph.MUSIC
     "خانه و کاشانه" -> CategoryGlyph.HOUSE
     "خرج اتینا" -> CategoryGlyph.PERSON
+    "ورزش" -> CategoryGlyph.MUSCLE
     "قرض" -> CategoryGlyph.LEND
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
@@ -215,17 +216,17 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // the eye compares along a row and down a column, never across a diagonal.
         CategoryGlyph.AIRPLANE -> if (dark) Color(0xFFA6D478) else Color(0xFF598A28)
         // بازپرداخت اسنپ و تپسی opens no row and closes none: it lands beside قسط و وام, under
-        // سلامت's red and over زیبایی's burnt orange. Those three rule out the warm half of the
+        // سلامت's red and over هدیه و نیکوکاری's indigo. Those three rule out the warm half of the
         // wheel and everything from teal round to violet, which leaves the green — and the green
         // is where this grid is already thickest. Between پس‌انداز's leaf and برداشت نقدی's
         // jade, about 11° off each: neither comes within a cell of it, and it clears قسط و وام
         // beside it by 66°, which is the number that decides the cell.
         CategoryGlyph.PIN -> if (dark) Color(0xFF7ED39C) else Color(0xFF1E854B)
-        // آرایشگاه opens the row below زیبایی, with خرج اتینا's teal above it and قرض's
-        // red-orange below. Violet is what is left, and the free space in it is the gap between
-        // مد و پوشاک's purple and دخانیات's plum — 12° off both, and neither is adjacent to this
-        // cell: مد و پوشاک is two rows up and one across, دخانیات the far end of this same row.
-        // The three it actually touches it clears by 84° and more.
+        // آرایشگاه sits beside زیبایی, with ورزش's gold above it and قرض's red-orange below.
+        // Violet is what is left, and the free space in it is the gap between مد و پوشاک's purple
+        // and دخانیات's plum — 12° off both, and neither is adjacent to this cell: مد و پوشاک is
+        // two rows straight up this column, دخانیات a corner away in the row below. The four it
+        // actually touches it clears by 84° and more.
         CategoryGlyph.SCISSORS -> if (dark) Color(0xFFDBA5EE) else Color(0xFF8F56A4)
         // آرایشی و بهداشتی sits beside آرایشگاه, under پس‌انداز and over سفر. Azure, which is the
         // one part of the wheel this grid never spent: کارمزد is at the same hue and is grey by
@@ -233,6 +234,19 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // rows up — are ten degrees away and nowhere near this cell. The narrowest gap it keeps is
         // 65°, to پس‌انداز's green directly above it.
         CategoryGlyph.BOTTLE -> if (dark) Color(0xFF7BC9EA) else Color(0xFF1B78A7)
+        // ورزش closes the monthly block, so it sits between خرج اتینا's teal and پس‌انداز's leaf
+        // with مد و پوشاک's purple directly above it and آرایشگاه's violet directly below. Those
+        // four leave the whole warm half of the wheel, and the one gap in it this grid never spent
+        // is the gold between رستوران و کافه's amber and خانه و کاشانه's olive — 15° off each, and
+        // neither is adjacent to this cell: رستوران is three rows straight up, خانه a corner away.
+        // The four it does touch it clears by 80° and more.
+        //
+        // پاداش's gold in the income grid is 6° off it, which costs nothing where either grid is
+        // drawn — they share no cell — and shows only in the timeline, where a bonus and a باشگاه
+        // term are each set beside their own name. The same trade درآمد and برداشت نقدی already
+        // make further down this table, and the cheapest one left on a wheel this grid has now
+        // divided twenty-eight ways.
+        CategoryGlyph.MUSCLE -> if (dark) Color(0xFFDBC768) else Color(0xFF917D17)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -983,6 +997,36 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 style = ink,
             )
             drawCircle(tint, w * 0.13f, Offset(w * 0.5f, h * 0.38f), style = ink)
+        }
+        // A flexed arm: the upper arm along the bottom, the bicep swelling over it, and the
+        // forearm standing up to a fist. The one drawing that says «ورزش» and not «باشگاه» — a
+        // dumbbell is equipment she may never touch, and this is the thing the equipment is for.
+        //
+        // The whole mark is the outline and nothing inside it. A dumbbell drawn in this pen comes
+        // out as four evenly spaced verticals and reads as a fence; an arm has two masses with a
+        // deep crook between them, and that notch is what the eye lands on at 17dp. The bicep
+        // peaks well left of the fist and the crook drops past the middle of the box on purpose:
+        // shallower, the two masses merge and the mark is a rounded square with a nick in it.
+        CategoryGlyph.MUSCLE -> {
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.05f, h * 0.66f)
+                    quadraticTo(w * 0.26f, h * 0.16f, w * 0.54f, h * 0.43f)
+                    // Into the crook of the elbow, which is the deepest point of the outline.
+                    quadraticTo(w * 0.62f, h * 0.7f, w * 0.67f, h * 0.66f)
+                    lineTo(w * 0.67f, h * 0.18f)
+                    // The fist, rounded across the top rather than knuckled: fingers at this size
+                    // are three strokes inside a shape two strokes wide.
+                    quadraticTo(w * 0.67f, h * 0.04f, w * 0.81f, h * 0.04f)
+                    quadraticTo(w * 0.95f, h * 0.04f, w * 0.95f, h * 0.18f)
+                    lineTo(w * 0.95f, h * 0.78f)
+                    quadraticTo(w * 0.95f, h * 0.94f, w * 0.79f, h * 0.94f)
+                    lineTo(w * 0.05f, h * 0.94f)
+                    close()
+                },
+                tint,
+                style = ink,
+            )
         }
         // Nothing known yet. Three dots say «unset» without the alarm a «؟» carries.
         CategoryGlyph.DOTS -> {
