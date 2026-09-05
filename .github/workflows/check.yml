@@ -60,7 +60,13 @@ jobs:
         working-directory: pwa
         # Its tests read the golden corpus out of the Android module, so this is also the check
         # that the two parsers still agree on every case they share.
-        run: npm ci && npm run check
+        run: npm ci --no-audit && npm run check
+      - name: Install browser
+        working-directory: pwa
+        run: npx playwright install --with-deps chromium
+      - name: Browser regressions
+        working-directory: pwa
+        run: npm run test:browser
 
   sync:
     # The Worker's own build needs pwa/dist to exist, so the assets are built first.
