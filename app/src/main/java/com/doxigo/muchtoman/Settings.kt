@@ -109,7 +109,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * because a process death that threw her from پشتیبان‌گیری back to the index would read as the
  * app restarting itself — the same reason `settings` itself is saveable upstairs.
  */
-private enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE }
+private enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE, HEALTH }
 
 @Composable
 fun SettingsScreen(
@@ -193,6 +193,8 @@ fun SettingsScreen(
             onClear = onClearCache,
             onBack = { page = SettingsRoom.INDEX },
         )
+
+        SettingsRoom.HEALTH -> LedgerHealthPage(activity, onRescanInbox) { page = SettingsRoom.INDEX }
     }
 }
 
@@ -278,15 +280,20 @@ private fun SettingsIndex(
             SectionLabel("نگهداری")
             IndexRow(
                 title = "پشتیبان‌گیری",
-                shape = bandShape(0, 2),
+                shape = bandShape(0, 3),
                 divided = true,
                 onClick = { onOpen(SettingsRoom.BACKUP) },
             ) { GlyphIcon(CategoryGlyph.STACK, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             IndexRow(
                 title = "حافظهٔ موقت",
-                shape = bandShape(1, 2),
+                shape = bandShape(1, 3),
+                divided = true,
                 onClick = { onOpen(SettingsRoom.CACHE) },
             ) { GlyphIcon(CategoryGlyph.SWAP, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            IndexRow(
+                title = "وضعیت دفتر",
+                shape = bandShape(2, 3),
+                onClick = { onOpen(SettingsRoom.HEALTH) },
             ) { GlyphIcon(CategoryGlyph.TRAY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
 
             // The answer to "which version do you have?" over the phone, without her having to
@@ -1011,6 +1018,34 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
 }
 
 @Composable
+private fun LedgerHealthPage(activity: FragmentActivity, onImport: () -> Unit, onBack: () -> Unit) {
+    val vm = remember(activity) { ViewModelProvider(activity)[AppVm::class.java] }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val health = state.ledger.health
+    LaunchedEffect(Unit) { vm.runLedger() }
+    SettingsPage("وضعیت دفتر", onBack) {
+        val rows = listOf(
+            "تراکنش‌های ذخیره‌شده" to faNumber(health.transactionCount.toDouble()),
+            "پیامک‌های نگه‌داشته‌شده" to faNumber(health.sourceCount.toDouble()),
+            "قدیمی‌ترین تراکنش" to (health.oldestDay?.let(::faDate) ?: "هنوز ثبت نشده"),
+            "قدیمی‌ترین پیامک" to (health.oldestSourceAt?.let { faDate(tehranDay(it)) } ?: "هنوز ثبت نشده"),
+            "آخرین پیامک واردشده" to (health.lastIngestAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز وارد نشده"),
+            "مرز خواندن پیامک‌ها" to (health.scannedTo?.let { faDate(tehranDay(it)) } ?: "هنوز شروع نشده"),
+            "آخرین آماده‌سازی دفتر" to (health.derivedAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز آماده نشده"),
+        )
+        rows.forEach { (label, value) ->
+            Text("$label: $value", fontSize = 15.sp, lineHeight = 26.sp,
+                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(vertical = Space.s))
+        }
+        Text(
+            "گزارش‌ها همهٔ تراکنش‌های نگه‌داشته‌شده رو حساب می‌کنن. روزهای بدون پیامک لزوماً روزهای بدون خرج نیستن.",
+            fontSize = 14.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = Space.l),
+        )
+        if (state.smsEnabled) PillButton("وارد کردن پیامک‌های قدیمی", onImport)
+    }
+}
+
 /**
  * «حافظهٔ موقت» — the way back from a stale cache, and the sentence that makes it safe to press.
  *

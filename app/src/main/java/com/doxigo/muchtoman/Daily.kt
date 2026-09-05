@@ -180,7 +180,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
             // lost. The gate is not reentrant; nothing under this lock takes it again.
             ledgerGate.withLock {
                 val added = ingestBankSms(app, durable, extra)
-                if (added > 0 || needsDerive(derived)) derive(durable, derived, extra)
+                if (added > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
                 if (announce) {
                     // One read of the ledger for both. Two would be two walks over four thousand rows
                     // and, worse, two answers to «what is in the ledger right now».
@@ -207,7 +207,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 val result = syncNow(durable, derived, session)
                 // Pulled rows sit in durable until a derive folds them in, and the foreground
                 // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
-                if (result.received > 0) derive(durable, derived, extra)
+                if (result.received > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
             }.onFailure { android.util.Log.w("muchtoman", "background family sync failed: $it") }
         }
         return watched

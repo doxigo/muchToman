@@ -774,6 +774,10 @@ private fun AppScreens(
             // has nothing to notify her of, and asking for the permission then would be the launch
             // -time prompt this app deliberately does not do.
             notifyBlocked = state.ledger.budgets.isNotEmpty() && !canNote,
+            // Paired, not «has a member id»: an unpaired phone keeps its identity from a
+            // household it has left, and offering to share with it would be offering to share
+            // with nobody.
+            hasHousehold = state.family.paired,
             onAddBudget = vm::addBudget,
             onEditBudget = vm::editBudget,
             onAddGoal = vm::addGoal,

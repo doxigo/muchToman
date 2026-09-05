@@ -56,7 +56,7 @@ import kotlinx.coroutines.sync.withLock
 // signing its own call centre on every message, which stored «آوای نوین» as the merchant and
 // titled every one of that bank's rows with it instead of the bank's name. The wrong merchant
 // is sitting in every stored row until this rebuild reads them again.
-const val PARSER_VERSION = 7
+// Rebuild duplicate and transfer classifications, including synced transfer flags.
 const val PARSER_VERSION = 8
 
 private const val META_PARSER_VER = "parser_ver"
@@ -470,6 +470,12 @@ data class LedgerEntry(
     val note: String = "",
     /**
      * Who wrote [note], when that was somebody else. Blank for her own, which needs no byline.
+     *
+     * A note is shared with the household and any member can write one on any shared row, so
+     * «کادوی تولد مامان» on a row can be words she is reading rather than words she wrote, and a
+     * screen that does not say so is putting somebody else's sentence in her mouth.
+     */
+    val noteAuthorName: String = "",
 )
 
 /** Everything the ledger screens need, read in one pass. */
@@ -492,7 +498,16 @@ data class LedgerView(
      * filed as, and it must keep drawing it too.
      */
     val marks: Map<String, CategoryGlyph> = emptyMap(),
+    /**
+     * Who this phone is in its household, blank until it pairs.
+     *
+     * Carried on the view rather than looked up again wherever it is wanted, because it is what
+     * decides whose rows a private cap counts — and a screen that answered that question from a
+     * different read than [budgets] did would draw a bar that disagreed with its own figure.
+     */
+    val mineId: String = "",
     val ready: Boolean = false,
+    val health: LedgerHealth = LedgerHealth(),
 ) {
     /**
      * Everything she actually has to answer, biggest first.
@@ -529,10 +544,10 @@ data class LedgerEntries(
 )
 
 /**
- * ponytail: still a full read. If this ever shows up in a frame, the answer is to sum in SQL per
- * month rather than to shorten the list again — the list being short is what was wrong.
+ * Reports and goals need the complete retained ledger. Timeline rendering is lazy;
+ * a display page size must never truncate the collection used for accounting.
  */
-const val LEDGER_VIEW_LIMIT = 4_000
+const val LEDGER_VIEW_LIMIT = Int.MAX_VALUE
 
 suspend fun ledgerEntries(
     derived: DerivedDb,
@@ -558,11 +573,15 @@ suspend fun ledgerEntries(
     val members = durable.familyMembers().all().associateBy { it.id }
     val currentMemberId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
     val categoryDecisions = durable.decisions().ofKind(DecisionKind.CATEGORY).associateBy { it.ref }
+    // Kept as the decisions rather than as text: the row says who last wrote it, and a shared
+    // note needs that as much as a shared category does. One row per ref — `ref` and `kind` are
+    // unique together — so there is nothing to collapse.
     val notes = durable.decisions().ofKind(DecisionKind.NOTE)
-        .mapNotNull { d -> d.value?.takeIf { it.isNotBlank() }?.let { d.ref to it } }
-        .toMap()
+        .filter { !it.value.isNullOrBlank() }
+        .associateBy { it.ref }
     val hidden = hiddenRefs(links)
-    val transfers = transferRefs(links)
+    val transfers = transferRefs(links) + durable.familyTxns().all()
+        .filter { it.transfer }.map { familyLocalRef(it.id) }
     val entries = transactions.map { txn ->
         val filed = classes[txn.ref]
         val ownerMemberId = txn.ownerMemberId.ifBlank { currentMemberId }
@@ -582,7 +601,11 @@ suspend fun ledgerEntries(
             ownerName = members[ownerMemberId]?.name.orEmpty(),
             ownerAvatar = members[ownerMemberId]?.avatar.orEmpty(),
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),
-            note = notes[txn.ref].orEmpty(),
+            note = notes[txn.ref]?.value.orEmpty(),
+            noteAuthorName = notes[txn.ref]?.memberId
+                ?.takeIf { it.isNotBlank() && it != currentMemberId }
+                ?.let { members[it]?.name }
+                .orEmpty(),
         )
     }
     return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory))
@@ -603,17 +626,55 @@ suspend fun ledgerView(
     // renames a shipped category renames the budget kept against it.
     val active = durable.goals().active()
     val names = ledger.categories.associate { it.id to it.nameFa }
+    // Who this phone is, and who else is in the household: the first decides whose rows a private
+    // figure counts, the second is how a shared one says whose figure it is. Both blank and empty
+    // on a phone that never paired, which is the answer there — see [scopedTo].
+    val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+    val memberNames = durable.familyMembers().all().associate { it.id to it.name }
     return LedgerView(
         entries = ledger.entries,
         categories = ledger.categories,
         goals = active.filterNot { it.kind == GoalKind.CAP }
-            .map { goalProgress(it, ledger.entries, today) },
-        budgets = budgetsOf(active, ledger.entries, today, names),
+            .map {
+                goalProgress(
+                    goal = it,
+                    entries = ledger.entries,
+                    today = today,
+                    mineId = mineId,
+                    ownerName = it.ownerMemberId
+                        .takeIf { owner -> owner.isNotBlank() && owner != mineId }
+                        ?.let { owner -> memberNames[owner] }
+                        .orEmpty(),
+                )
+            },
+        budgets = budgetsOf(active, ledger.entries, today, names, mineId, memberNames),
         worthIt = answers,
         marks = ledger.marks,
+        mineId = mineId,
         ready = true,
+        health = LedgerHealth(
+            oldestDay = ledger.entries.minOfOrNull { it.txn.day },
+            transactionCount = ledger.entries.size,
+            sourceCount = durable.smsSource().count(),
+            oldestSourceAt = durable.smsSource().oldestAt(),
+            lastIngestAt = durable.smsSource().newestIngestedAt(),
+            scannedTo = durable.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull(),
+            derivedAt = derived.meta().get(META_DERIVED_AT)?.toLongOrNull(),
+            deriveMs = derived.meta().get(META_DERIVE_MS)?.toLongOrNull(),
+        ),
     )
 }
+
+data class LedgerHealth(
+    val oldestDay: Long? = null,
+    val transactionCount: Int = 0,
+    val sourceCount: Int = 0,
+    val oldestSourceAt: Long? = null,
+    val lastIngestAt: Long? = null,
+    val scannedTo: Long? = null,
+    val derivedAt: Long? = null,
+    val deriveMs: Long? = null,
+)
 
 /**
  * What an account holds, worked out rather than accumulated.

@@ -1109,6 +1109,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         store.backupReminderEnabled = on
         _backup.update { it.copy(reminderEnabled = on) }
     }
+
     /** She closed the sheet. The decrypted payload goes with it; the file stays hers to re-pick. */
     fun dismissRestore() {
         pendingRestore = null
@@ -1558,7 +1559,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         } else null
         try {
             val result = syncNow(durable, derived, session, assets = assets)
-            if (result.received > 0) derive(durable, derived, extraLookup(store.extraBankNumbers))
+            if (result.received > 0 || needsDerive(derived, durable)) {
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
             }
             publishLedger(durable, derived)
             refreshFamily(
@@ -2287,6 +2289,8 @@ data class UiState(
 
 /** What the backup rows in تنظیمات have to say. Everything user-visible in it is words. */
 data class BackupUi(
+    val lastExportAt: Long = 0L,
+    val reminderEnabled: Boolean = false,
     val working: Boolean = false,
     /** The one line under the rows — success and failure alike are said, never just implied. */
     val notice: String? = null,
