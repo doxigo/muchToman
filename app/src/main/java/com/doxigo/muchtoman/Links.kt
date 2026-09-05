@@ -150,7 +150,7 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     for (matches in ordered.filter { it.refNo.isNotEmpty() }.groupBy { it.bank to it.refNo }.values) {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
-                if (matches[j].at - matches[i].at > DUPLICATE_REFNO_WINDOW_MS) continue
+                if (matches[j].at - matches[i].at > DUPLICATE_REFNO_WINDOW_MS) break
                 val a = matches[i]
                 val b = matches[j]
                 val compatible = a.accountId == b.accountId &&
@@ -170,7 +170,7 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     for (matches in balanceGroups.values) {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
-                if (matches[j].at - matches[i].at > DUPLICATE_BALANCE_WINDOW_MS) continue
+                if (matches[j].at - matches[i].at > DUPLICATE_BALANCE_WINDOW_MS) break
                 byBalance += pair(matches[i], matches[j], LinkKind.DUPLICATE, "balance", auto = true)
             }
         }
@@ -206,14 +206,48 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
  * and fifty million of spending — the same quietly-wrong total this app was built to avoid,
  * arriving from a new direction.
  */
-private fun railOf(sent: Txn, received: Txn): String? =
-    listOf(sent.channel, received.channel).firstOrNull { it in SLOW_RAILS }
+private fun railOf(sent: Txn, received: Txn): String? = when {
+    sent.channel in SLOW_RAILS -> sent.channel
+    received.channel in SLOW_RAILS -> received.channel
+    else -> null
+}
+
+private class TransferTimes(rows: List<Txn>) {
+    private val ordered = rows.sortedBy { it.at }
+
+    fun around(at: Long, window: Long): List<Txn> {
+        val from = at.coerceAtLeast(Long.MIN_VALUE + window) - window
+        val until = at.coerceAtMost(Long.MAX_VALUE - window) + window
+        var low = 0
+        var high = ordered.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (ordered[middle].at < from) low = middle + 1 else high = middle
+        }
+        val start = low
+        high = ordered.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (ordered[middle].at <= until) low = middle + 1 else high = middle
+        }
+        return ordered.subList(start, low)
+    }
+}
 
 fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
     val outgoing = transactions.filter { it.direction == "out" && it.amountRial != null }
     val incoming = transactions.filter { it.direction == "in" && it.amountRial != null }
+    val allTimes = TransferTimes(incoming)
+    val slowTimes = TransferTimes(incoming.filter { it.channel in SLOW_RAILS })
+    val instantTimes = TransferTimes(incoming.filter { it.channel !in SLOW_RAILS })
     val candidates = outgoing.map { sent ->
-        sent to incoming.filter { received ->
+        val nearby = if (sent.channel in SLOW_RAILS) {
+            allTimes.around(sent.at, SLOW_RAIL_WINDOW_MS)
+        } else {
+            instantTimes.around(sent.at, TRANSFER_WINDOW_MS) +
+                slowTimes.around(sent.at, SLOW_RAIL_WINDOW_MS)
+        }
+        sent to nearby.filter { received ->
             val slow = railOf(sent, received) != null
             received.accountId != sent.accountId &&
                 kotlin.math.abs(received.at - sent.at) <=
