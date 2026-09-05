@@ -50,7 +50,7 @@ Sample data, live rates.
   confetti, and no comparison with anybody else.
 - **Optional family ledger.** Two or more people can join by one-time QR code. Each person chooses
   whether their parsed SMS transactions are shared. Every shared item names its owner, and any
-  family member can categorize it.
+  family member can categorize it or write a note on it — a shared note says who wrote it.
 - **Public-wallet tracking, or manual entry.** Save a public address and the app refreshes BTC,
   ETH/ERC-20, SOL, TRX/TRC-20, and supported EVM-token balances on BSC, Arbitrum, Polygon,
   Optimism, and Avalanche. Anything else can be entered by hand.
@@ -58,7 +58,11 @@ Sample data, live rates.
   مشترک". The asset keeps its real name underneath, so the rate still applies.
 - **A year of history.** The total is remembered once a day, with 1/3/6/12-month change.
 - **A backup only you can read.** Everything — messages, balances, every decision — exports to
-  one passphrase-encrypted file and restores from it on a new phone.
+  one passphrase-encrypted file and restores from it on a new phone. Settings show the last
+  successful export and offer an optional reminder after 30 days.
+- **Ledger health.** Settings show retained history, record counts and the last ingestion.
+- **Browser companion.** Correct your own transactions, see unsent changes and switch saved
+  households without mixing their records. After the first complete load, the shell works offline.
 - **Search the ledger.** By merchant, note, category, or amount — in Persian, Arabic, or Latin
   digits, it does not matter.
 - **Offline-tolerant.** The last good rates are cached on the phone.

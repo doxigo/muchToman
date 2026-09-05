@@ -34,8 +34,8 @@ to know what their gold is worth and has no household to run. It installs as
 keeps the released `com.doxigo.muchtoman`, which is why a v1.0.4 install upgrades into it in place
 with its balances and categories intact.
 
-The difference is one boolean, read in one place — `tabs` in `TabBar.kt`. Nothing else in the app
-branches on the edition, and nothing else should: a bank detection fix has to land in both APKs
+The screen selection uses `BuildConfig.LITE` in `tabs` in `TabBar.kt`. The updater also uses
+that flag to select the matching APK. Shared behavior stays common: a bank detection fix has to land in both APKs
 without anyone remembering to do it twice, which is the entire reason this is a flavour and not a
 second repository. The cost is that the lite APK carries the ledger code it never shows, so it is
 fewer screens rather than a smaller download.
@@ -67,6 +67,12 @@ port through `10.0.2.2`; a physical phone needs `adb reverse`, as with the rates
 Family records are encrypted on the client. The sync Worker stores routing metadata and
 ciphertext only. A member's SMS sharing starts off, raw SMS bodies are never synchronized, and
 disabling sharing publishes tombstones for that member's previously shared SMS transactions.
+
+**A new record kind means the Worker ships first.** `asRecords` rejects an unknown `kind` for the
+whole batch with a 400, so a phone that pushes one at a Worker which has not learned it yet does
+not sync at all — not the new record, not the transactions beside it. Deploy `sync/`, then the
+APK. Going the other way is safe: an old client ignores a kind it cannot name and keeps its own
+records flowing.
 
 ```bash
 cd pwa && npm ci && npm run check
@@ -382,7 +388,8 @@ budget publishes the ledger, which announces it on the spot.
 **The second thing it says is «این چی بود؟».** A bank message never carries a category, so anything
 the rules are not sure about lands in `LedgerView.review` and waits — and the answer decays, because
 a merchant she can place today is archaeology in two weeks. `Filing.kt` is the pure half: `filingNews`
-takes the review list and one `Long`, and returns what is worth saying plus the mark to write down.
+takes the review list and one `Long`, and returns one entry per transaction that landed
+(`FilingNews.landed`), the summary they add up to (`FilingAlert`), and the mark to write down.
 `filingMark` sits in `SharedPreferences` beside `budgetMarks` and is the newest `at` this phone has
 accounted for — a stamp rather than a count, so filing some and receiving more is still news, so a
 receipt refiled into the backlog is not, and so `rewindIngest` importing a year of past-stamped rows
@@ -393,14 +400,28 @@ The asymmetry with budgets is deliberate and lives in two places. The worker cal
 `publishLedger` calls **`markFilingSeen`**, which takes the note down and moves the mark past
 everything on screen — the app never posts this one, because the tab badge, the pill on دفتر and the
 deck they open have already said it better, and a note about rows she is looking at is the app
-talking over itself. And the channel is `IMPORTANCE_LOW` against the budget channel's
-`IMPORTANCE_DEFAULT`: budgets are money and interrupt, filing is homework and waits in the shade.
-Two channels so either can be silenced without the other.
+talking over itself. Both channels are `IMPORTANCE_DEFAULT` — filing was `IMPORTANCE_LOW` while it
+trailed the spend by up to six hours and was therefore homework, and `SmsReceiver` is what changed
+that. Two channels so either can be silenced without the other.
 
-Tapping it opens the deck rather than a tab, through `EXTRA_OPEN_DECK` → `AppVm.openDeck` →
-`UiState.openDeck`, the same one-shot shape `openTab` uses. The two `PendingIntent`s differ **only**
-in their extras, and the platform does not compare extras — so they carry request codes `0` and `1`,
-without which `FLAG_UPDATE_CURRENT` would quietly point the budget note at the review deck.
+**One note per transaction, not one for the backlog.** Each is tagged with the row's `ref` under
+`FILING_NOTE_ID`, so a second spend stacks rather than overwriting the first — which is what it used
+to do, quietly, leaving one line on the lock screen for two receipts. They carry `FILING_GROUP` and
+sit under a `setGroupSummary` note at `FILING_SUMMARY_ID`; the children alert and the summary is
+silent (`GROUP_ALERT_CHILDREN`), because the platform hides the summary when only one child exists
+and a group alerting through a hidden note alerts through nothing. `LANDED_NOTE_LIMIT` caps a batch
+at eight so a busy sweep cannot fill the shade — the summary's counts stay honest about all of it.
+
+`clearFilingNote` takes the whole stack down by asking `NotificationManagerCompat` for its live
+notifications and cancelling everything at `FILING_NOTE_ID`, rather than keeping a list of posted
+tags that could drift past a process death. That also collects the single untagged note left
+standing by any build before this one, whose id was the same.
+
+Tapping goes through `EXTRA_OPEN_DECK` → `AppVm.openDeck` → `UiState.openDeck`, the same one-shot
+shape `openTab` uses: a row still waiting opens the deck, one the rules already filed opens دفتر,
+where re-filing it is one tap on the row. The `PendingIntent`s differ **only** in their extras, and
+the platform does not compare extras — so they carry request codes `0`, `1` and `2`, without which
+`FLAG_UPDATE_CURRENT` would quietly point the budget note at the review deck.
 
 **Watching it fire is harder than the budget one, and worth writing down.** Opening the app is what
 takes the note away, so it cannot be triggered from the UI, and `cmd jobscheduler run -f` does not
@@ -465,3 +486,44 @@ cd sync && npm run deploy
 
 `sync.muchtoman.com`, custom domain only — `workers.dev` is DNS-sinkholed inside Iran, same as
 for the rates Worker.
+
+## September 2026 review fixes
+
+Durable schema 11 adds the family transaction transfer flag. Keep the historical schema files
+unchanged; Robolectric persistence tests open versions 1 through 10 through the real Room
+migrations. Restore validates and migrates a staged database before touching the live database,
+and keeps rollback copies of the database, sidecars and exported preferences until commit.
+
+Deploy the updated sync Worker before shipping the updated clients. The Worker advertises
+`rotationClientSecret` before clients begin recoverable token rotation, bounds pull responses,
+and returns `hasMore`. Android and the browser serialize sync and persist pending rotation
+credentials. Applied pull revisions force a later ledger rebuild if a subsequent request fails.
+The rates Worker serves the full APK at `/download` and Lite at `/download/lite`; both mutable
+aliases send `Cache-Control: no-store`, while internal version caches remain immutable.
+
+Parser upgrades re-read bank messages without erasing legacy anchors. Old preferences do not
+record whether an anchor was typed or supplied by a bank, so those anchors are retained unless
+an equally recent or newer bank statement supersedes them. Unanchored delta totals can be
+recomputed from the inbox. Deleted historical messages cannot be reconstructed.
+
+Accounting uses all retained ledger entries. Timeline/browser presentation can page independently.
+Daily portfolio history requires fresh linked-wallet quantities as well as fresh prices; an
+incomplete refresh skips the point. Backup settings show the last successful export date and
+an optional in-app reminder after 30 days. This date does not verify the exported file still exists.
+Ledger health shows retained coverage and the last successful ingestion and derivation.
+
+Browser storage is partitioned by server, household, encryption scope and member. Re-pairing
+keeps unsent records with their original session. The browser supports owner-only corrections,
+version-aware acknowledgements, bounded sync batches and indexed visible pages. The generated
+service worker precaches every emitted shell asset before activation. Browser regressions run
+against the production build:
+
+```bash
+cd pwa
+npm ci --no-audit
+npx playwright install chromium
+npm run check
+npm run test:browser
+```
+
+Dependency advisory checking was intentionally skipped for this review.
