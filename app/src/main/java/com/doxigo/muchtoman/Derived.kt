@@ -529,19 +529,6 @@ data class LedgerEntries(
 )
 
 /**
- * How much of the ledger every screen holds at once.
- *
- * Not a page size — the timeline is lazy and the reports walk the whole list. It is how far back
- * the app can see, and it used to be three hundred, which is about ten months of a household's
- * messages. That was invisible while the longest report was six months and became wrong the day
- * دخل و خرج offered «۱ سال»: the twelfth month back would have been reported from however much of
- * it fitted under the cap — not empty, which reads as *no data*, but short, which reads as *a
- * quiet month*, and a quietly wrong figure is the one thing this app must never produce.
- *
- * Four thousand is a decade at a household's rate and comfortably past [MAX_REPORT_MONTHS], which
- * bounds what can be asked for. The cost is a few thousand small objects built off the main
- * thread when the ledger changes; the walks over them are linear and there are a dozen per report.
- *
  * ponytail: still a full read. If this ever shows up in a frame, the answer is to sum in SQL per
  * month rather than to shorten the list again — the list being short is what was wrong.
  */

@@ -1018,6 +1018,11 @@ fun buildStory(
     countPassThrough: Boolean = false,
     /** The categories she has told the reports to leave out — home is a report in miniature. */
     excluded: Set<String> = emptySet(),
+    /**
+     * This phone's member id, so a private cap's evidence is the rows it actually counted — see
+     * [scopedTo]. Blank on a phone that never paired, which is the whole ledger there.
+     */
+    mineId: String = "",
 ): HomeStory {
     val here = reportMonthOf(today)
     val month = monthReport(entries, here, countPassThrough, excluded)
@@ -1030,7 +1035,7 @@ fun buildStory(
         previous = previous,
         // First, so that [HomeStory.attention] — which takes the first ATTENTION line there is —
         // prefers a cap she has run past over a review queue. See [pressingBudget].
-        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries) }) +
+        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries, mineId) }) +
             narrate(month, had, entries, buffer, current = true),
         wins = quietWins(month, had, buffer, current = true),
         bufferDays = buffer,
