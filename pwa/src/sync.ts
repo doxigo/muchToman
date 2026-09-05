@@ -1,6 +1,6 @@
 import { open as unseal, seal } from './crypto';
 import {
-  allRecords, clearOutbox, enqueue, getMeta, getRecord, outbox, putRecords, setMeta,
+  acknowledge, enqueue, getMeta, getRecord, outbox, putRecords, setMeta, partition, persistSession, withSyncLock,
 } from './db';
 import type { OutboxRecord, StoredRecord } from './db';
 
@@ -100,9 +100,10 @@ export async function save(
   session: Session,
   entry: Omit<Entry, 'kind' | 'ownerMemberId' | 'sourceKind' | 'categoryEditorId'>,
   localId = uuid7(),
+  recordId?: string,
 ): Promise<void> {
-  const id = familyTxnId(session.member, `m:${localId}`);
-  const existing = await getRecord(id);
+  if (!Number.isSafeInteger(entry.amountRial) || entry.amountRial <= 0 || entry.amountRial > 1_000_000_000_000_000) throw new Error('مبلغ معتبر نیست.');
+  const id = recordId ?? familyTxnId(session.member, `m:${localId}`);
   const existing = await getRecord(id, partition(session));
   if (recordId && (!existing || existing.ownerMemberId !== session.member || existing.scope !== session.scope)) throw new Error('فقط تراکنش خودت رو می‌تونی ویرایش کنی.');
   const updatedAt = nextStamp(existing?.updatedAt, Date.now());
@@ -178,75 +179,101 @@ async function registerIdentity(session: Session): Promise<void> {
 }
 
 export async function pull(session: Session): Promise<number> {
-  const since = (await getMeta<number>('seq')) ?? 0;
-  const res = await request(session, `/v1/sync?since=${since}`);
-  if (!res.ok) throw new Error(`pull failed: ${res.status}`);
-  const { seq, records } = (await res.json()) as {
-    seq: number;
-    records: Array<{
-      id: string; scope: string; updatedAt: number; device: string;
-      kind?: string; ownerMemberId?: string; authorMemberId?: string;
-      deleted: boolean; nonce: string; body: string;
-    }>;
-  };
-
-  const rows: StoredRecord[] = [];
-  for (const record of records) {
-    const value = await unseal<unknown>(session.key, record.nonce, record.body);
-    if (value == null) continue;
-    if (record.deleted) {
-      // The `deleted` flag rides in plaintext, so it proves nothing on its own: a delete is
-      // honoured only when the sealed body authenticates AND names this very record. The old
-      // contentless tombstone shape fails here and is rejected — the protocol never shipped in
-      // a tagged release, so nothing is owed to it.
-      const tombstone = value as { id?: unknown; deleted?: unknown };
-      if (tombstone.deleted !== true || tombstone.id !== record.id) continue;
+  const space = partition(session);
+  let since = (await getMeta<number>('seq', space)) ?? 0;
+  let received = 0;
+  for (;;) {
+    const res = await request(session, `/v1/sync?since=${since}&limit=500`);
+    if (!res.ok) throw new Error(`pull failed: ${res.status}`);
+    const { seq, records, hasMore, rotationClientSecret } = (await res.json()) as {
+      seq: number; hasMore?: boolean; rotationClientSecret?: boolean;
+      records: Array<{
+        id: string; scope: string; updatedAt: number; device: string;
+        kind?: string; ownerMemberId?: string; authorMemberId?: string;
+        deleted: boolean; nonce: string; body: string;
+      }>;
+    };
+    if (!Number.isSafeInteger(seq) || seq < since || !Array.isArray(records)) throw new Error('Invalid sync page');
+    const rows: StoredRecord[] = [];
+    for (const record of records) {
+      if (record.scope !== session.scope) continue;
+      const value = await unseal<unknown>(session.key, record.nonce, record.body);
+      if (value == null) throw new Error('تعویض کلید یا داده ناخوانا؛ همگام‌سازی متوقف شد.');
+      if (record.deleted) {
+        const tombstone = value as { id?: unknown; deleted?: unknown };
+        if (tombstone.deleted !== true || tombstone.id !== record.id) throw new Error('Invalid tombstone');
+      }
+      rows.push({
+        id: record.id, scope: record.scope, updatedAt: record.updatedAt,
+        device: record.device, kind: record.kind, ownerMemberId: record.ownerMemberId,
+        authorMemberId: record.authorMemberId, deleted: record.deleted, value,
+      });
     }
-    rows.push({
-      id: record.id, scope: record.scope, updatedAt: record.updatedAt,
-      device: record.device, kind: record.kind, ownerMemberId: record.ownerMemberId,
-      authorMemberId: record.authorMemberId, deleted: record.deleted, value,
-    });
+    await putRecords(rows, space, seq);
+    await setMeta('rotation-supported', rotationClientSecret === true, space);
+    received += rows.length;
+    if (hasMore !== true && !(hasMore === undefined && records.length === 500)) return received;
+    if (seq <= since) throw new Error('Sync cursor did not advance');
+    since = seq;
   }
-  await putRecords(rows);
-  await setMeta('seq', seq);
-  return rows.length;
 }
 
+export const MAX_PUSH_BYTES = 900 * 1024;
+export const MAX_PUSH_RECORDS = 500;
+function wireRecord(r: OutboxRecord): object {
+  return {
+    id: r.id, scope: r.scope, updatedAt: r.updatedAt, device: r.device,
+    kind: r.kind ?? 'legacy', ownerMemberId: r.ownerMemberId ?? '',
+    deleted: r.deleted, nonce: r.nonce, body: r.body,
+  };
+}
 export async function push(session: Session): Promise<number> {
-  const pending: OutboxRecord[] = await outbox();
-  if (pending.length === 0) return 0;
-  const res = await request(session, '/v1/sync', {
-    method: 'POST',
-    body: JSON.stringify({
-      records: pending.map((r) => ({
-        id: r.id, scope: r.scope, updatedAt: r.updatedAt,
-        device: r.device, kind: r.kind ?? 'legacy', ownerMemberId: r.ownerMemberId ?? '',
-        deleted: r.deleted, nonce: r.nonce, body: r.body,
-      })),
-    }),
-  });
-  if (!res.ok) throw new Error(`push failed: ${res.status}`);
-  // The server clamps far-future stamps (its LWW skew bound) and answers with what it stored;
-  // the local copy takes the server's word so both sides count from the same stamp.
-  const ack = (await res.json()) as { clamped?: Array<{ id: string; updatedAt: number }> };
-  for (const clamp of ack.clamped ?? []) {
-    const row = await getRecord(clamp.id);
-    if (row) await putRecords([{ ...row, updatedAt: clamp.updatedAt }]);
   const space = partition(session);
   const pending = await outbox(space);
+  let sent = 0;
+  for (let offset = 0; offset < pending.length;) {
+    const batch: OutboxRecord[] = [];
+    let bytes = new TextEncoder().encode('{"records":[]}').length;
+    while (offset < pending.length && batch.length < MAX_PUSH_RECORDS) {
+      const row = pending[offset];
+      if (row.scope !== session.scope || row.ownerMemberId !== session.member) throw new Error('Pending record belongs to another identity');
+      const size = new TextEncoder().encode(JSON.stringify(wireRecord(row))).length + (batch.length ? 1 : 0);
+      if (bytes + size > MAX_PUSH_BYTES) {
+        if (!batch.length) throw new Error('این مورد برای فرستادن زیادی بزرگه.');
+        break;
+      }
+      batch.push(row); bytes += size; offset++;
+    }
+    const res = await request(session, '/v1/sync', {
+      method: 'POST', body: JSON.stringify({ records: batch.map(wireRecord) }),
+    });
+    if (!res.ok) throw new Error(`push failed: ${res.status}`);
+    const ack = (await res.json()) as { clamped?: Array<{ id: string; updatedAt: number }> };
+    await acknowledge(batch, space, ack.clamped);
+    sent += batch.length;
   }
-  await clearOutbox(pending.map((r) => r.id));
-  return pending.length;
+  return sent;
 }
 
 const TOKEN_ROTATE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
-
-/**
- * A new secret once a month, taken at the end of a sync that already proved the network works.
- * The old secret is dead the moment the server answers, so the session is persisted immediately;
- * the shape written here is exactly the one main.ts stores and loads.
- */
+interface PendingRotation { oldToken: string; newToken: string; startedAt: number }
+async function recoverRotation(session: Session): Promise<void> {
+  const space = partition(session);
+  const pending = await getMeta<PendingRotation>('pending-rotation', space);
+  if (!pending) return;
+  const secret = pending.newToken.split('.')[1];
+  let response = await request({ ...session, token: pending.oldToken }, '/v1/rotate', {
+    method: 'POST', body: JSON.stringify({ secret }),
+  });
+  if (response.status === 401) response = await request({ ...session, token: pending.newToken }, '/v1/rotate', {
+    method: 'POST', body: JSON.stringify({ secret }),
+  });
+  if (!response.ok) throw new Error(`Token recovery failed: ${response.status}`);
+  const result = await response.json() as { secret?: string };
+  if (result.secret !== secret) throw new Error('Token rotation mismatch');
+  session.token = pending.newToken; session.issuedAt = pending.startedAt;
+  await persistSession(session, true);
+}
 async function rotateTokenIfStale(session: Session): Promise<void> {
   if (Date.now() - session.issuedAt < TOKEN_ROTATE_AFTER_MS) return;
   const res = await request(session, '/v1/rotate', { method: 'POST' });

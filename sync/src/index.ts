@@ -24,6 +24,7 @@ import { DurableObject } from 'cloudflare:workers';
 
 const MAX_SYNC_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_RECORDS_PER_PUSH = 500;
+const MAX_PULL_RECORD_BYTES = 768 * 1024;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_SCOPE_CHARS = 128;
 // A household is a family, not a tenant: sixteen devices and a hundred and twenty thousand
@@ -474,12 +475,19 @@ export class Household extends DurableObject<Env> {
     const auth = await this.authorise(request);
     const since = Number(url.searchParams.get('since') ?? '0');
     if (!Number.isFinite(since) || since < 0) throw new SyncError('invalid_since', 400);
-    const limit = Math.min(Number(url.searchParams.get('limit') ?? '500') || 500, 1000);
+    const requestedLimit = Number(url.searchParams.get('limit') ?? '500');
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit <= 0) {
+      throw new SyncError('invalid_limit', 400);
+    }
+    const limit = Math.min(requestedLimit, 1000);
 
     // The second lock. The key is the first: a scope she has no key for is unreadable even if
     // this filter were wrong. Both, because one of them being enough is not a thing to rely on.
     const rows: PushRecord[] = [];
     let highest = since;
+    let scanned = 0;
+    let bytes = 0;
+    let hasMore = false;
     for (const row of this.sql.exec<{
       id: string; scope: string; seq: number; updated_at: number; kind: PushRecord['kind'];
       device: string; owner_member: string; author_member: string;
@@ -487,11 +495,18 @@ export class Household extends DurableObject<Env> {
     }>(
       'SELECT * FROM record WHERE seq > ? ORDER BY seq ASC LIMIT ?',
       since,
-      limit,
+      limit + 1,
     )) {
-      highest = Math.max(highest, row.seq);
-      if (!auth.scopes.includes(row.scope)) continue;
-      rows.push({
+      if (scanned >= limit) {
+        hasMore = true;
+        break;
+      }
+      if (!auth.scopes.includes(row.scope)) {
+        highest = row.seq;
+        scanned++;
+        continue;
+      }
+      const record: PushRecord = {
         id: row.id,
         scope: row.scope,
         updatedAt: row.updated_at,
@@ -502,11 +517,21 @@ export class Household extends DurableObject<Env> {
         deleted: row.deleted === 1,
         nonce: row.nonce,
         body: row.body,
-      });
+      };
+      const recordBytes = new TextEncoder().encode(JSON.stringify(record)).byteLength;
+      if (rows.length > 0 && bytes + recordBytes > MAX_PULL_RECORD_BYTES) {
+        hasMore = true;
+        break;
+      }
+      rows.push(record);
+      bytes += recordBytes;
+      highest = row.seq;
+      scanned++;
     }
     return jsonResponse({
       seq: highest,
       records: rows,
+      hasMore,
       memberId: auth.memberId,
       deviceId: auth.id,
       primaryMemberId: this.primaryMember(),

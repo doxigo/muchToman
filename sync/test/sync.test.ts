@@ -722,3 +722,64 @@ describe('the PWA it serves', () => {
     expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
   });
 });
+describe('bounded resumable pulls', () => {
+  it('rejects invalid page limits and caps oversized integer limits', async () => {
+    const token = await claim('e101'.repeat(8), ['personal:her']);
+    for (const limit of ['-1', '0', '1.5', 'NaN', 'Infinity', '']) {
+      const response = await SELF.fetch(`https://sync.test/v1/sync?limit=${limit}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ code: 'invalid_limit' });
+    }
+    const response = await SELF.fetch('https://sync.test/v1/sync?limit=2000', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('reports remaining pages even when the current page has no visible rows', async () => {
+    const owner = await claim('e102'.repeat(8), ['personal:her', 'family:home']);
+    await push(owner, [record({ id: 'private' }), record({ id: 'shared', scope: 'family:home' })]);
+    const invitation = await SELF.fetch('https://sync.test/v1/invite', {
+      method: 'POST', headers: { authorization: `Bearer ${owner}` },
+      body: JSON.stringify({ scopes: ['family:home'] }),
+    });
+    const { code } = await invitation.json() as { code: string };
+    const pairing = await SELF.fetch('https://sync.test/v1/pair', {
+      method: 'POST', headers: { authorization: `Bearer ${owner}` },
+      body: JSON.stringify({ code }),
+    });
+    const { secret } = await pairing.json() as { secret: string };
+    const token = `${owner.split('.')[0]}.${secret}`;
+    const first = await SELF.fetch('https://sync.test/v1/sync?limit=1', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const page = await first.json() as { seq: number; hasMore: boolean; records: unknown[] };
+    expect(page).toMatchObject({ seq: 1, hasMore: true, records: [] });
+    const next = await SELF.fetch(`https://sync.test/v1/sync?since=${page.seq}&limit=1`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(await next.json()).toMatchObject({ seq: 2, hasMore: false, records: [{ id: 'shared' }] });
+  });
+
+  it('stays below the Android response budget and resumes without skipping large rows', async () => {
+    const token = await claim('e103'.repeat(8), ['personal:her']);
+    expect((await push(token, Array.from({ length: 20 }, (_, i) => record({
+      id: `large-${i}`, body: 'a'.repeat(64 * 1024),
+    })))).status).toBe(200);
+    const first = await SELF.fetch('https://sync.test/v1/sync?limit=1000', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const text = await first.text();
+    expect(new TextEncoder().encode(text).length).toBeLessThan(1024 * 1024);
+    const page = JSON.parse(text) as { seq: number; hasMore: boolean; records: { id: string }[] };
+    expect(page.hasMore).toBe(true);
+    const second = await SELF.fetch(`https://sync.test/v1/sync?since=${page.seq}&limit=1000`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const remainder = await second.json() as { hasMore: boolean; records: { id: string }[] };
+    expect(remainder.hasMore).toBe(false);
+    expect(new Set([...page.records, ...remainder.records].map(r => r.id)).size).toBe(20);
+  });
+});
