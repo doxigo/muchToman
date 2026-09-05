@@ -57,7 +57,7 @@ async function loadSession(): Promise<Session | null> {
     scope: stored.scope,
     key: legacyKey ? await importKey(new Uint8Array(stored.key as number[])) : (stored.key as CryptoKey),
   };
-  if (legacyKey || !stored.member || !stored.name || !stored.issuedAt) await setMeta('session', session);
+  await activateSession(session);
   return session;
 }
 
@@ -83,7 +83,7 @@ async function redeemPairing(pairing: Pairing, name: string): Promise<Session> {
     // non-extractable object — the raw bytes stay in the URL fragment they arrived in.
     key: await importKey(pairing.key),
   };
-  await setMeta('session', session);
+  await activateSession(session);
   await saveProfile(session);
   return session;
 }
@@ -145,7 +145,7 @@ function renderPairing(error?: string): void {
  * rule — not a stray line of grey text — the browser keeps her here. The card below is the
  * app's own `JoinCard`, to the word: what the name is for, then the field, then the answer.
  */
-function renderJoin(pairing: Pairing, originalHash: string): void {
+function renderJoin(pairing: Pairing, originalHash: string, previous?: Session | null): void {
   const nativeUrl = `muchtoman://join${originalHash}`;
   app.replaceChildren(
     el(`
@@ -217,10 +217,26 @@ const submitting = new Set<string>();
 const syncing = new Set<string>();
 const pages = new Map<string, PageCursor[]>();
 let activeSpace = '';
+let renderGeneration = 0;
+const emptyDraft = (): Draft => ({ amount: '', direction: 'out', merchant: '', paste: '' });
+
 async function renderLedger(session: Session, note?: string, warn = false): Promise<void> {
-  const records = await allRecords();
+  const space = partition(session); activeSpace = space;
+  const generation = ++renderGeneration;
+  app.querySelectorAll<HTMLButtonElement>('#next-page, #previous-page').forEach((button) => { button.disabled = true; });
+  const focused = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement
+    ? { id: document.activeElement.id, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
+  const stack = pages.get(space) ?? [];
+  const now = Date.now();
+  const [page, monthRecords, profileRecords, pending, lastSync, savedDraft] = await Promise.all([
     recordPage(space, 50, stack.at(-1)),
     recordsBetween(space, now - 32 * 86_400_000, now + 32 * 86_400_000),
+    recordsOfKind(space, 'member'), pendingCount(space), getMeta<number>('last-sync', space), getMeta<Draft>('draft', space),
+  ]);
+  if (!drafts.has(space)) drafts.set(space, savedDraft ?? emptyDraft());
+  const records = [...new Map([...page.rows, ...monthRecords].map((r) => [r.id, r])).values()];
+  const contextRecords = [...profileRecords, ...await decisionsFor(space, records.map((r) => r.id))];
+  if (generation !== renderGeneration || activeSpace !== space) return;
   const profiles = new Map<string, MemberProfile>();
   const decisions = new Map<string, CategoryDecision>();
   const notes = new Map<string, NoteDecision>();
@@ -297,13 +313,15 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
                «مانده» is a balance, and a balance is allowed to be either sign. -->
           <p class="hero-label">مانده این ماه</p>
           <div class="figure total" style="--fit:${fit(net, 1.3)}">${net}<span class="unit">تومان</span></div>
-          ${note ? `<p class="strip${warn ? ' warn' : ''}">${escape(note)}</p>` : ''}
+          ${note ? `<p class="strip${warn ? ' warn' : ''}" role="status">${escape(note)}</p>` : ''}
+          <p id="sync-status" class="muted" role="status" aria-live="polite">${syncing.has(space) ? 'در حال همگام‌سازی...' : pending ? `${fa(pending)} تغییر روی این مرورگر ذخیره شده و هنوز فرستاده نشده.` : lastSync ? `آخرین همگام‌سازی: ${new Date(lastSync).toLocaleString('fa-IR')}` : 'هنوز همگام نشده.'}</p>
         </header>
         <div class="actions">
-          <button id="sync" class="action" type="button">
+          <button id="sync" class="action" type="button" ${syncing.has(space) ? 'disabled aria-busy="true"' : ''}>
             <span class="disc">${REFRESH}</span>
             همگام کن
           </button>
+          <button id="households" type="button">خانواده‌ها</button>
         </div>
         <div class="stack">
           <div class="panel">
@@ -333,15 +351,16 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
             <textarea id="paste" rows="3"></textarea>
             <button id="read" type="button">خواندن پیامک</button>
           </div>
-          <form id="manual" class="panel">
+          <form id="manual" class="panel" novalidate>
             <p class="panel-title">ثبت دستی</p>
             <label for="amount">مبلغ (تومان)</label>
             <input id="amount" inputmode="numeric" enterkeyhint="next" required />
             <label for="direction">نوع تراکنش</label>
             <select id="direction"><option value="out">خرج</option><option value="in">درآمد</option></select>
             <label for="merchant">بابت چه چیزی؟</label>
-            <input id="merchant" enterkeyhint="done" />
-            <button class="primary" type="submit">ثبت</button>
+            <input id="merchant" enterkeyhint="done" maxlength="120" />
+            <button id="save" class="primary" type="submit" ${submitting.has(space) ? 'disabled' : ''}>ثبت</button>
+            <button id="cancel-edit" type="button" hidden>لغو ویرایش</button>
             <p id="save-error" class="error" role="alert"></p>
           </form>
         </div>
@@ -349,8 +368,9 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
           <h2>تراکنش‌ها</h2>
           ${visibleRows.length ? `<span class="muted">${fa(visibleRows.length)} مورد در این صفحه</span>` : ''}
         </div>
+        ${visibleRows.length ? `
           <div class="band" id="rows">
-            ${rows.map((r) => `
+            ${visibleRows.map((r) => `
               <div class="row">
                 <div class="grow">
                   <div>${escape(r.entry.merchant || 'بدون نام')}</div>
@@ -358,6 +378,7 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
                   ${r.note ? `<div class="muted">${escape(r.note)}${
                     r.noteAuthor ? ` — ${escape(r.noteAuthor)}` : ''
                   }</div>` : ''}
+                  ${r.ownerId === session.member && r.entry.sourceKind === 'manual' ? `<button type="button" data-edit="${escape(r.id)}">ویرایش</button><button type="button" data-delete="${escape(r.id)}">حذف</button>` : ''}
                 </div>
                 <div class="figure amount ${r.entry.direction === 'in' ? 'in' : ''}">
                   ${r.entry.direction === 'in' ? '+' : '−'}${toman(r.entry.amountRial)}
@@ -371,6 +392,7 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
               <p class="muted">اولین چیزی که ثبت کنی، همین‌جا می‌مونه.</p>
             </div>
           </div>`}
+        <nav aria-label="صفحه‌های تراکنش">${stack.length ? '<button id="previous-page" type="button">جدیدتر</button>' : ''}${page.next ? '<button id="next-page" type="button">قدیمی‌تر</button>' : ''}</nav>
       </div>
     `),
   );
@@ -378,6 +400,18 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
   const amount = app.querySelector<HTMLInputElement>('#amount')!;
   const direction = app.querySelector<HTMLSelectElement>('#direction')!;
   const merchant = app.querySelector<HTMLInputElement>('#merchant')!;
+  const paste = app.querySelector<HTMLTextAreaElement>('#paste')!;
+  const draft = drafts.get(space)!;
+  amount.value = draft.amount; direction.value = draft.direction; merchant.value = draft.merchant; paste.value = draft.paste;
+  for (const field of [amount, direction, merchant, paste]) field.disabled = submitting.has(space);
+  const saveButton = app.querySelector<HTMLButtonElement>('#save')!;
+  saveButton.textContent = draft.editing ? 'ذخیره ویرایش' : 'ثبت';
+  app.querySelector<HTMLButtonElement>('#cancel-edit')!.hidden = !draft.editing;
+  const remember = (): void => {
+    Object.assign(draft, { amount: amount.value, direction: direction.value, merchant: merchant.value, paste: paste.value });
+    void setMeta('draft', draft, space).catch(() => { app.querySelector('#save-error')!.textContent = 'پیش‌نویس ذخیره نشد. قبل از بستن صفحه دوباره امتحان کن.'; });
+  };
+  for (const field of [amount, direction, merchant, paste]) field.addEventListener('input', remember);
   app.querySelector('#read')!.addEventListener('click', () => {
     const read = parsePasted(paste.value);
     if (read.amountRial != null) {
@@ -389,37 +423,82 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
   });
   app.querySelector('#manual')!.addEventListener('submit', async (event) => {
     event.preventDefault();
-      at: Date.now(),
-      amountRial: value * 10,
-      direction: direction.value as 'in' | 'out',
-      bank: 'MANUAL',
-      categoryId: '',
-      categoryName: '',
-      categoryKind: 'expense',
-      categoryUpdatedAt: 0,
-      merchant: merchant.value.trim(),
-      note: '',
-    });
-    await renderLedger(session, 'ثبت شد.');
-    void trySync(session);
+    if (submitting.has(space)) return;
     const value = draft.pastedAmount === amount.value && draft.pastedRial != null ? draft.pastedRial : parseToman(amount.value);
+    const failure = app.querySelector('#save-error')!;
     if (value == null) { failure.textContent = 'مبلغ رو با رقم کامل و بدون علامت یا اعشار بنویس.'; amount.focus(); return; }
+    draft.localId ??= uuid7();
+    remember(); submitting.add(space); saveButton.disabled = true;
+    for (const field of [amount, direction, merchant, paste]) field.disabled = true;
+    try {
+      const previous = draft.editing ? records.find((r) => r.id === draft.editing)?.value as Entry | undefined : undefined;
+      await save(session, {
+        ...previous, at: draft.at ?? Date.now(), amountRial: value,
+        direction: direction.value as 'in' | 'out', bank: previous?.bank ?? 'MANUAL',
+        categoryId: previous?.categoryId ?? '', categoryName: previous?.categoryName ?? '',
+        categoryKind: previous?.categoryKind ?? (direction.value === 'in' ? 'income' : 'expense'),
+        categoryUpdatedAt: previous?.categoryUpdatedAt ?? 0, merchant: merchant.value.trim(),
+      }, draft.localId, draft.editing);
+      drafts.set(space, emptyDraft()); await setMeta('draft', emptyDraft(), space).catch(() => {});
+      submitting.delete(space);
+      if (activeSpace === space) await renderLedger(session, 'ثبت شد.');
+      void trySync(session);
+    } catch {
+      failure.textContent = 'ذخیره نشد. نوشته‌ات همین‌جاست؛ دوباره امتحان کن.';
+    } finally {
+      submitting.delete(space); saveButton.disabled = false;
+      for (const field of [amount, direction, merchant, paste]) field.disabled = false;
+    }
   });
+  app.querySelector('#cancel-edit')!.addEventListener('click', async () => {
+    drafts.set(space, emptyDraft()); await setMeta('draft', emptyDraft(), space); await renderLedger(session);
+  });
+  app.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((button) => button.addEventListener('click', async () => {
+    const row = visibleRows.find((r) => r.id === button.dataset.edit)!;
+    drafts.set(space, { amount: String(Math.trunc(row.entry.amountRial / 10)), direction: row.entry.direction,
+      merchant: row.entry.merchant, paste: '', editing: row.id, at: row.entry.at,
+      pastedAmount: String(Math.trunc(row.entry.amountRial / 10)), pastedRial: row.entry.amountRial });
+    await setMeta('draft', drafts.get(space), space); await renderLedger(session); app.querySelector<HTMLInputElement>('#amount')?.focus();
+  }));
+  app.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach((button) => button.addEventListener('click', async () => {
+    if (button.disabled || !confirm('این تراکنش حذف بشه؟')) return;
+    button.disabled = true;
+    try { await remove(session, button.dataset.delete!); await renderLedger(session, 'حذف شد.'); void trySync(session); }
+    catch { button.disabled = false; app.querySelector('#save-error')!.textContent = 'حذف نشد. دوباره امتحان کن.'; }
+  }));
+  app.querySelector('#next-page')?.addEventListener('click', () => { pages.set(space, [...stack, page.next!]); void renderLedger(session); });
+  app.querySelector('#previous-page')?.addEventListener('click', () => { pages.set(space, stack.slice(0, -1)); void renderLedger(session); });
   app.querySelector('#sync')!.addEventListener('click', () => void trySync(session, true));
+  app.querySelector('#households')!.addEventListener('click', () => void renderHouseholds(session));
+  if (focused) {
+    const field = app.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${focused.id}`);
+    field?.focus(); if (field && focused.start != null) field.setSelectionRange(focused.start, focused.end);
+  }
+}
+
+async function renderHouseholds(current: Session): Promise<void> {
+  const sessions = await savedSessions<Session>();
+  renderGeneration++;
+  app.replaceChildren(el(`<div class="page"><h1 class="title">خانواده‌ها</h1><p class="muted">دفترها و تغییرات نفرستاده جدا نگه داشته می‌شن. برای خانواده تازه، لینک دعوتش رو باز کن.</p><div id="sessions" class="stack"></div><button id="back" type="button">برگشت</button></div>`));
+  for (const [index, session] of sessions.entries()) {
+    const count = await pendingCount(partition(session));
+    const button = el(`<button type="button">خانواده ${fa(index + 1)} • ${escape(session.name)}${count ? ` • ${fa(count)} تغییر نفرستاده` : ''}</button>`);
+    button.addEventListener('click', async () => { await activateSession(session); await renderLedger(session); void trySync(session); });
+    app.querySelector('#sessions')!.append(button);
+  }
+  app.querySelector('#back')!.addEventListener('click', () => void renderLedger(current));
 }
 
 async function trySync(session: Session, loud = false): Promise<void> {
-  // The disc spins while it works — the one thing on this page that takes long enough to need
-  // saying so. Cleared in `finally` because a quiet sync that brought nothing back never
-  // re-renders, and a disc left spinning is a page that looks stuck.
-  const disc = app.querySelector<HTMLButtonElement>('#sync');
-  disc?.setAttribute('aria-busy', 'true');
+  const space = partition(session);
+  if (syncing.has(space)) return;
+  syncing.add(space);
   const button = app.querySelector<HTMLButtonElement>('#sync');
+  if (activeSpace === space) { button?.setAttribute('aria-busy', 'true'); if (button) button.disabled = true; }
+  let message: string | undefined; let warn = false;
   try {
     const { sent, received } = await syncNow(session);
-    if (loud || received > 0) {
-      await renderLedger(session, loud ? `${fa(sent)} مورد فرستادیم، ${fa(received)} مورد گرفتیم.` : undefined);
-    }
+    if (loud) message = `${fa(sent)} مورد فرستادیم، ${fa(received)} مورد گرفتیم.`;
   } catch {
     message = 'اتصال نشد. تغییرات روی این مرورگر ذخیره شدن و بعداً فرستاده می‌شن.'; warn = true;
   } finally {
