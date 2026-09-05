@@ -6,11 +6,7 @@ import type { CategoryDecision, Entry, MemberProfile, Session } from './sync';
 import { parsePasted } from './paste';
 
 const app = document.getElementById('app')!;
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-const fa = (n: number): string =>
-  Math.round(n).toLocaleString('en-US').replace(/[0-9]/g, (d) => FA_DIGITS[Number(d)]);
-const toman = (rial: number): string => fa(rial / 10);
-
+import { fa, toman, parseToman } from './money';
 /**
  * How wide a figure is, in ems, so the field can size it to fit rather than wrap — the app's
  * autosize, done where the string is. Tabular digits all have one advance, so length is width:
@@ -207,7 +203,7 @@ function renderJoin(pairing: Pairing, originalHash: string): void {
 function isEntry(value: unknown): value is Entry {
   if (value == null || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
-  return typeof row.at === 'number' && typeof row.amountRial === 'number';
+  return typeof row.at === 'number' && Number.isFinite(row.at) && Number.isSafeInteger(row.amountRial) && Number(row.amountRial) > 0 && (row.direction === 'in' || row.direction === 'out');
 }
 
 async function renderLedger(session: Session, note?: string, warn = false): Promise<void> {
@@ -250,8 +246,7 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
 
   // The hero says «این ماه», so it sums this Jalali month and nothing else — the list below
   // still carries everything.
-  const now = Date.now();
-  const monthRows = rows.filter((r) => inJalaliMonth(r.entry.at, now));
+  const monthRows = rows.filter((r) => inJalaliMonth(r.entry.at, now) && !r.entry.transfer && r.categoryKind !== 'transfer');
   const income = monthRows.filter((r) => r.entry.direction === 'in').reduce((s, r) => s + r.entry.amountRial, 0);
   const spent = monthRows.filter((r) => r.entry.direction === 'out').reduce((s, r) => s + r.entry.amountRial, 0);
   const members = [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
@@ -349,17 +344,16 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
   const direction = app.querySelector<HTMLSelectElement>('#direction')!;
   const merchant = app.querySelector<HTMLInputElement>('#merchant')!;
   app.querySelector('#read')!.addEventListener('click', () => {
-    const text = app.querySelector<HTMLTextAreaElement>('#paste')!.value;
-    const read = parsePasted(text);
-    if (read.amountRial != null) amount.value = String(Math.round(read.amountRial / 10));
+    const read = parsePasted(paste.value);
+    if (read.amountRial != null) {
+      amount.value = String(Math.trunc(read.amountRial / 10));
+      draft.pastedAmount = amount.value; draft.pastedRial = read.amountRial;
+    }
     if (read.direction) direction.value = read.direction;
-    amount.focus();
+    remember(); amount.focus();
   });
   app.querySelector('#manual')!.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const value = Number(amount.value.replace(/[^0-9]/g, ''));
-    if (!Number.isFinite(value) || value <= 0) return;
-    await save(session, {
       at: Date.now(),
       amountRial: value * 10,
       direction: direction.value as 'in' | 'out',
@@ -373,6 +367,8 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
     });
     await renderLedger(session, 'ثبت شد.');
     void trySync(session);
+    const value = draft.pastedAmount === amount.value && draft.pastedRial != null ? draft.pastedRial : parseToman(amount.value);
+    if (value == null) { failure.textContent = 'مبلغ رو با رقم کامل و بدون علامت یا اعشار بنویس.'; amount.focus(); return; }
   });
   app.querySelector('#sync')!.addEventListener('click', () => void trySync(session, true));
 }
