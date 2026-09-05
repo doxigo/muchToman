@@ -36,6 +36,8 @@ import java.io.FileOutputStream
  * here, re-deriving the ledger from it is offline, instant, needs no permission, and still works
  * after she revokes READ_SMS.
  */
+const val DURABLE_DB_VERSION = 11
+
 @Database(
     entities = [
         SmsSource::class, DurableMeta::class, BalanceAnchor::class,
@@ -43,7 +45,7 @@ import java.io.FileOutputStream
         ManualTxn::class, Goal::class, FamilyMember::class, FamilyTxn::class,
         SyncPublication::class, FamilyAsset::class,
     ],
-    version = 9,
+    version = DURABLE_DB_VERSION,
     exportSchema = true,
 )
 abstract class DurableDb : RoomDatabase() {
@@ -244,6 +246,14 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        /**
+         * Whose a budget or a goal is — hers, or the household's — and who last moved its figure.
+         *
+         * All three default to the private, unattributed answer, which is the only safe direction
+         * for a column about sharing: an upgrade must not put a figure on somebody else's phone
+         * because a build shipped. On a phone that has never paired the default is also the whole
+         * truth, and nothing on screen moves — see [Goal.shared].
+         */
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `goal` ADD COLUMN `shared` INTEGER NOT NULL DEFAULT 0")
@@ -262,6 +272,14 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        internal fun builder(context: Context, name: String): RoomDatabase.Builder<DurableDb> =
+            Room.databaseBuilder(context, DurableDb::class.java, name)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                    MIGRATION_9_10, MIGRATION_10_11,
+                )
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: run {
                 // A staged restore is finished here, inside the one window where "durable.db is
@@ -269,22 +287,11 @@ abstract class DurableDb : RoomDatabase() {
                 // no instance built yet, before Room ever touches the file. Never thrown out of:
                 // a restore that cannot finish must not take the working database with it.
                 runCatching { finishStagedRestore(context.applicationContext) }
-                    .onFailure { android.util.Log.w("muchtoman", "restore completion failed: $it") }
-                Room
-                    .databaseBuilder(context.applicationContext, DurableDb::class.java, "durable.db")
-                    // No fallbackToDestructiveMigration, now or ever. Every migration on this
-                    // database is written by hand and tested. Losing this file is losing the only
-                    // copy of messages her inbox may no longer have.
-                    //
-                    // These migrations are also what a *restored* file runs through on its first
-                    // open: a backup written by an older build is simply an older schema arriving
-                    // the way an upgrade's would, which is the whole reason the backup carries
-                    // the database file rather than some export of it.
-                    .addMigrations(
-                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-                        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                    )
-                    .build()
+                    .onFailure {
+                        if (File(context.getDatabasePath("durable.db").parentFile, RESTORE_ROLLBACK_READY).exists()) throw it
+                        android.util.Log.w("muchtoman", "restore completion failed: $it")
+                    }
+                builder(context.applicationContext, "durable.db").build()
                     .also { instance = it }
             }
         }
@@ -298,7 +305,10 @@ abstract class DurableDb : RoomDatabase() {
         fun completePendingRestore(context: Context): Boolean = synchronized(this) {
             if (instance != null) return false
             runCatching { finishStagedRestore(context.applicationContext) }
-                .onFailure { android.util.Log.w("muchtoman", "restore completion failed: $it") }
+                .onFailure {
+                    if (File(context.getDatabasePath("durable.db").parentFile, RESTORE_ROLLBACK_READY).exists()) throw it
+                    android.util.Log.w("muchtoman", "restore completion failed: $it")
+                }
                 .getOrDefault(false)
         }
     }
@@ -565,6 +575,9 @@ interface SmsSourceDao {
 
     @Query("SELECT MAX(at) FROM sms_source")
     suspend fun newestAt(): Long?
+
+    @Query("SELECT MIN(at) FROM sms_source")
+    suspend fun oldestAt(): Long?
 
     /** When something last actually arrived, which is what [clockRunsAhead] holds `now` against. */
     @Query("SELECT MAX(ingested_at) FROM sms_source")
@@ -896,6 +909,7 @@ suspend fun rewindIngest(db: DurableDb, now: Long = System.currentTimeMillis()) 
 val BACKUP_STRIPPED_META: List<String> = listOf(
     META_SYNC_BASE, META_SYNC_TOKEN, META_SYNC_TOKEN_AT, META_SYNC_DEVICE, META_SYNC_MEMBER,
     META_SYNC_SCOPE, META_SYNC_KEY, META_SYNC_SEQ, META_SYNC_IDENTITY_OK, META_SYNC_SHARE_SMS,
+    META_SYNC_ROTATION,
 )
 
 /**
@@ -944,6 +958,10 @@ suspend fun backupDurableDbBytes(context: Context, db: DurableDb): ByteArray =
 private const val RESTORE_DB = "durable.db.restore"
 private const val RESTORE_PREFS = "durable.db.restore-prefs"
 private const val RESTORE_READY = "durable.db.restore-ready"
+private const val RESTORE_ROLLBACK = "durable.db.restore-original"
+private const val RESTORE_ROLLBACK_PREFS = "durable.db.restore-original-prefs"
+private const val RESTORE_ROLLBACK_READY = "durable.db.restore-original-ready"
+private val DATABASE_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
 
 private fun writeSynced(file: File, bytes: ByteArray) {
     FileOutputStream(file).use { out ->
@@ -952,77 +970,141 @@ private fun writeSynced(file: File, bytes: ByteArray) {
     }
 }
 
-/**
- * Park a decrypted backup beside the database for the next launch to apply.
- *
- * Deliberately *not* an in-place swap. Closing the live Room instance safely would need every
- * toucher of `durable.db` quiescent at once — the six-hour watch worker, the receiver's one-shot
- * run, family sync, whatever the ViewModel has in flight — and that is a hope, not a proof. The
- * staged file is applied by [finishStagedRestore] inside `DurableDb.get`'s synchronized block,
- * where instance == null *is* the proof, before Room opens the file in that process.
- *
- * Ready marker last, after both halves are on disk and synced: its existence is the commit point,
- * so a kill mid-staging leaves nothing armed.
- */
-fun stageRestore(context: Context, dbBytes: ByteArray, prefsJson: String) {
-    val dir = context.getDatabasePath("durable.db").parentFile ?: error("no database dir")
-    dir.mkdirs()
-    File(dir, RESTORE_READY).delete() // never a marker standing over half-written staging
-    val dbTmp = File(dir, "$RESTORE_DB.tmp")
-    writeSynced(dbTmp, dbBytes)
-    if (!dbTmp.renameTo(File(dir, RESTORE_DB))) error("could not stage database")
-    val prefsTmp = File(dir, "$RESTORE_PREFS.tmp")
-    writeSynced(prefsTmp, prefsJson.toByteArray(Charsets.UTF_8))
-    if (!prefsTmp.renameTo(File(dir, RESTORE_PREFS))) error("could not stage preferences")
-    writeSynced(File(dir, RESTORE_READY), ByteArray(0))
+private fun copySynced(source: File, target: File) {
+    source.inputStream().use { input ->
+        FileOutputStream(target).use { output ->
+            input.copyTo(output)
+            output.fd.sync()
+        }
+    }
 }
 
-/**
- * Apply a staged restore, if one is waiting. Only ever called with the DurableDb companion lock
- * held and no instance built — see [stageRestore] for why that is the one safe moment.
- *
- * Idempotent by construction, marker deleted last: killed anywhere in the middle, the next launch
- * runs it again — the prefs write re-applies, a staged db either still waits or is already in
- * place, and the derived wipe repeats for free.
- */
-private fun finishStagedRestore(context: Context): Boolean {
+/** Opens the actual Room schema, including migrations, before any live data is replaced. */
+internal fun validateRestoreDatabase(context: Context, file: File) {
+    SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { sql ->
+        if (sql.version > DURABLE_DB_VERSION) {
+            throw BackupException(BackupFault.NEWER_FORMAT, "newer database schema")
+        }
+        require(sql.version in 1..DURABLE_DB_VERSION) { "unsupported database schema" }
+        sql.rawQuery("PRAGMA integrity_check", null).use { result ->
+            check(result.moveToFirst() && result.getString(0) == "ok" && !result.moveToNext()) {
+                "database integrity check failed"
+            }
+        }
+    }
+    val db = DurableDb.builder(context, file.absolutePath).build()
+    try {
+        val sql = db.openHelper.writableDatabase
+        sql.query("SELECT COUNT(*) FROM sms_source").use { check(it.moveToFirst()) }
+        sql.query("PRAGMA wal_checkpoint(TRUNCATE)").use {
+            check(it.moveToFirst() && it.getInt(0) == 0) { "database checkpoint failed" }
+        }
+    } finally {
+        db.close()
+    }
+}
+
+/** The ready marker is written only after decryption, schema validation and migration succeed. */
+fun stageRestore(context: Context, dbBytes: ByteArray, prefsJson: String) {
+    decodeBackupPrefs(prefsJson)
+    val dir = context.getDatabasePath("durable.db").parentFile ?: error("no database dir")
+    dir.mkdirs()
+    val dbTmp = File(dir, "$RESTORE_DB.tmp")
+    try {
+        DATABASE_SUFFIXES.forEach { File(dbTmp.path + it).delete() }
+        writeSynced(dbTmp, dbBytes)
+        validateRestoreDatabase(context, dbTmp)
+        val ready = File(dir, RESTORE_READY)
+        check(!ready.exists() || ready.delete()) { "could not clear previous restore marker" }
+        DATABASE_SUFFIXES.drop(1).forEach { suffix ->
+            val sidecar = File(dir, RESTORE_DB + suffix)
+            check(!sidecar.exists() || sidecar.delete()) { "could not clear staged database sidecar" }
+        }
+        check(dbTmp.renameTo(File(dir, RESTORE_DB))) { "could not stage database" }
+        val prefsTmp = File(dir, "$RESTORE_PREFS.tmp")
+        writeSynced(prefsTmp, prefsJson.toByteArray(Charsets.UTF_8))
+        check(prefsTmp.renameTo(File(dir, RESTORE_PREFS))) { "could not stage preferences" }
+        writeSynced(File(dir, RESTORE_READY), ByteArray(0))
+    } finally {
+        DATABASE_SUFFIXES.forEach { File(dbTmp.path + it).delete() }
+    }
+}
+
+private fun clearRestoreRollback(dir: File) {
+    val marker = File(dir, RESTORE_ROLLBACK_READY)
+    check(!marker.exists() || marker.delete()) { "could not finish restore rollback" }
+    DATABASE_SUFFIXES.forEach { File(dir, RESTORE_ROLLBACK + it).delete() }
+    File(dir, RESTORE_ROLLBACK_PREFS).delete()
+}
+
+private fun restoreOriginal(context: Context, target: File, dir: File) {
+    val prefs = decodeBackupPrefs(File(dir, RESTORE_ROLLBACK_PREFS).readText())
+    DATABASE_SUFFIXES.forEach { suffix ->
+        val original = File(dir, RESTORE_ROLLBACK + suffix)
+        val destination = File(target.path + suffix)
+        if (original.exists()) {
+            val temp = File(destination.path + ".rollback-tmp")
+            copySynced(original, temp)
+            check(temp.renameTo(destination)) { "could not restore original database" }
+        } else {
+            check(!destination.exists() || destination.delete()) { "could not clear restored database" }
+        }
+    }
+    applyRestoredPrefs(context, prefs)
+    clearRestoreRollback(dir)
+}
+
+/** Only called before the durable singleton is opened. Staging remains intact until commit. */
+internal fun finishStagedRestore(context: Context): Boolean {
     val target = context.getDatabasePath("durable.db")
     val dir = target.parentFile ?: return false
     val ready = File(dir, RESTORE_READY)
-    if (!ready.exists()) return false
-    android.util.Log.i("muchtoman", "applying staged restore")
+    val rollbackReady = File(dir, RESTORE_ROLLBACK_READY)
+    if (!ready.exists()) {
+        clearRestoreRollback(dir)
+        return false
+    }
+    if (rollbackReady.exists()) restoreOriginal(context, target, dir)
 
     val stagedPrefs = File(dir, RESTORE_PREFS)
     val stagedDb = File(dir, RESTORE_DB)
-    if (stagedPrefs.exists()) {
-        val prefs = runCatching { decodeBackupPrefs(stagedPrefs.readText()) }.getOrNull()
-        if (prefs == null) {
-            // Torn staging on disk. Abandon the restore whole rather than apply half of it —
-            // she still has the phone's current data, and can run the import again.
-            android.util.Log.w("muchtoman", "staged prefs unreadable; abandoning restore")
-            stagedPrefs.delete()
-            stagedDb.delete()
-            ready.delete()
-            return false
+    val prefs = decodeBackupPrefs(stagedPrefs.readText())
+    validateRestoreDatabase(context, stagedDb)
+
+    clearRestoreRollback(dir)
+    DATABASE_SUFFIXES.forEach { suffix ->
+        File(target.path + suffix).takeIf { it.exists() }?.let {
+            copySynced(it, File(dir, RESTORE_ROLLBACK + suffix))
         }
+    }
+    writeSynced(
+        File(dir, RESTORE_ROLLBACK_PREFS),
+        encodeBackupPrefs(exportablePrefs(context)).toByteArray(Charsets.UTF_8),
+    )
+    writeSynced(rollbackReady, ByteArray(0))
+
+    try {
+        val install = File(dir, "$RESTORE_DB.install")
+        copySynced(stagedDb, install)
+        DATABASE_SUFFIXES.drop(1).forEach { suffix ->
+            val sidecar = File(target.path + suffix)
+            check(!sidecar.exists() || sidecar.delete()) { "could not remove database sidecar" }
+        }
+        check(install.renameTo(target)) { "could not install restored database" }
+        validateRestoreDatabase(context, target)
         applyRestoredPrefs(context, prefs)
-    }
-    if (stagedDb.exists()) {
-        // The old file's sidecars must go before anything opens the new one: SQLite would
-        // otherwise replay the *old* database's WAL frames into the restored file.
-        File("${target.path}-wal").delete()
-        File("${target.path}-shm").delete()
-        File("${target.path}-journal").delete()
-        if (!stagedDb.renameTo(target)) {
-            stagedDb.copyTo(target, overwrite = true)
-            stagedDb.delete()
+        for (name in listOf("derived.db", "derived.db-wal", "derived.db-shm")) {
+            val cache = File(dir, name)
+            check(!cache.exists() || cache.delete()) { "could not clear derived database" }
         }
+        check(ready.delete()) { "could not commit restore" }
+    } catch (failure: Throwable) {
+        runCatching { restoreOriginal(context, target, dir) }
+            .onFailure { failure.addSuppressed(it) }
+        throw failure
     }
-    // derived.db is a cache and its parser marker dies with it — deleting the files is the
-    // existing force-a-full-re-derive mechanism, so the next pipeline run rebuilds every
-    // transaction from the restored messages instead of trusting rows derived from the old ones.
-    for (name in listOf("derived.db", "derived.db-wal", "derived.db-shm")) File(dir, name).delete()
+    clearRestoreRollback(dir)
     stagedPrefs.delete()
-    ready.delete()
+    DATABASE_SUFFIXES.forEach { File(stagedDb.path + it).delete() }
     return true
 }

@@ -164,6 +164,7 @@ android {
 
     sourceSets.getByName("test") {
         assets.srcDir("schemas")
+        resources.srcDir("schemas")
     }
 }
 

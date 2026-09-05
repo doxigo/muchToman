@@ -217,7 +217,7 @@ class ExportTest {
         assertEquals(
             listOf(
                 "holdings", "overrides", "history", "bankAccounts", "disabledBanks",
-                "seenSms", "smsScannedTo", "smsSchema", "extraBankNumbers", "dismissedSenders",
+                "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
                 "dismissedUpdate", "reportExcluded",
             ),
@@ -243,6 +243,7 @@ class ExportTest {
             listOf(
                 "sync_base", "sync_token", "sync_token_at", "sync_device", "sync_member",
                 "sync_scope", "sync_key", "sync_seq", "sync_identity_ok", "sync_share_sms",
+                "sync_rotation",
             ),
             BACKUP_STRIPPED_META,
         )
