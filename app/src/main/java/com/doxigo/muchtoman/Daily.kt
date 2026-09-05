@@ -20,9 +20,12 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.TimeUnit
 
 /**
@@ -49,6 +52,15 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         // portfolio holding shares against rates that have none, snapshotHistory refuses the
         // whole day, and the chart quietly stops for anyone who owns a single نماد.
         stocks?.onSuccess { store.cachedStocks = it }
+        val slots = Semaphore(4)
+        val refreshedWallets = coroutineScope {
+            holdings.filter { !it.excluded && it.wallet != null }.map { holding ->
+                async {
+                    slots.withPermit { fetchWalletBalance(BuildConfig.RATES_URL, holding.wallet!!) }
+                        .getOrNull()?.let { holding.key to (holding to it) }
+                }
+            }.awaitAll().filterNotNull().toMap()
+        }
         // A failed fetch still falls through: cached rates younger than a day are good enough,
         // and snapshotHistory is the one that decides.
         //
@@ -58,7 +70,10 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         ledgerGate.withLock {
             snapshotHistory(
                 store.history,
-                listHoldings(holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
+                listHoldings(
+                    refreshedSnapshotHoldings(store.holdings, refreshedWallets),
+                    store.smsEnabled, store.bankAccounts, store.disabledBanks,
+                ),
                 effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
                 store.cachedRates.updatedAt,
                 System.currentTimeMillis(),

@@ -287,9 +287,27 @@ fun snapshotHistory(
     // The same 24h rule the rates just passed, applied to the shares' own clock — a stale
     // بورس skips the day exactly as stale rates do, and the next fresh fetch fills it in.
     if (list.any { isStockId(it.typeId) } && now - stocksUpdatedAt > 24 * 60 * 60_000L) return null
+    if (list.any { holding ->
+        !holding.excluded && holding.wallet?.let {
+            it.updatedAt <= 0 || it.updatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS ||
+                now - it.updatedAt > WALLET_SNAPSHOT_MAX_AGE_MS
+        } == true
+    }) return null
     val totals = computeTotals(list, rates)
     if (totals.missing.isNotEmpty()) return null
     return recordDay(history, now / DAY_MS, totals.toman)
+}
+
+const val WALLET_SNAPSHOT_MAX_AGE_MS = 10 * 60_000L
+fun refreshedSnapshotHoldings(
+    current: List<Holding>,
+    results: Map<String, Pair<Holding, WalletBalance>>,
+): List<Holding> = current.map { holding ->
+    val (original, balance) = results[holding.key] ?: return@map holding
+    if (holding.wallet == null || holding.wallet != original.wallet || holding.amount != original.amount) {
+        return@map holding
+    }
+    holding.copy(amount = balance.amount, wallet = holding.wallet.copy(updatedAt = balance.updatedAt))
 }
 
 /**
