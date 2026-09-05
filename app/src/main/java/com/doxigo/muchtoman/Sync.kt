@@ -5,6 +5,8 @@ import android.util.Base64
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
@@ -52,6 +54,16 @@ data class SyncSession(
     override fun equals(other: Any?) = other is SyncSession && token == other.token && member == other.member
     override fun hashCode() = 31 * token.hashCode() + member.hashCode()
 }
+
+private val familySyncMutex = Mutex()
+
+internal suspend fun <T> withFamilySync(block: suspend () -> T): T =
+    withContext(Dispatchers.IO) { familySyncMutex.withLock { block() } }
+
+internal fun sameHouseholdSession(expected: SyncSession, actual: SyncSession): Boolean =
+    expected.base == actual.base && expected.token.substringBefore('.') == actual.token.substringBefore('.') &&
+        expected.member == actual.member && expected.device == actual.device && expected.scope == actual.scope &&
+        expected.key.contentEquals(actual.key)
 
 private fun b64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
 private fun unb64(value: String): ByteArray = Base64.decode(value, Base64.NO_WRAP)
@@ -240,6 +252,9 @@ private data class ClampedStamp(val id: String = "", val updatedAt: Long = 0)
 @Serializable
 private data class PushAck(val seq: Long = 0, val clamped: List<ClampedStamp> = emptyList())
 
+internal class SyncHttpException(val status: Int, detail: String = "") :
+    IllegalStateException("sync $status: $detail")
+
 private fun request(
     url: String,
     method: String,
@@ -260,7 +275,7 @@ private fun request(
         payload?.let { conn.outputStream.use { out -> out.write(it.toByteArray(Charsets.UTF_8)) } }
         if (conn.responseCode !in 200..299) {
             val detail = conn.errorStream?.readUtf8Limited(4096).orEmpty()
-            throw IllegalStateException("sync ${conn.responseCode}: ${detail.take(120)}")
+            throw SyncHttpException(conn.responseCode, detail.take(120))
         }
         conn.inputStream.readUtf8Limited(1 shl 20)
     }
@@ -303,6 +318,7 @@ private fun memberRecordId(memberId: String): String = "member:$memberId"
 private fun assetRecordId(memberId: String): String = "asset:$memberId"
 private fun categoryRecordId(familyRef: String): String = "category:${sha256Hex(familyRef)}"
 
+/**
 /** One fresh household on the server: a random id, claimed for this member and device. */
 private fun claimFreshHousehold(base: String, member: String, device: String): SyncSession {
     val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
@@ -326,6 +342,7 @@ private fun claimFreshHousehold(base: String, member: String, device: String): S
 
 suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String): SyncSession =
     withContext(Dispatchers.IO) {
+    withFamilySync {
         val session = claimFreshHousehold(base, newIdentity(), newIdentity())
         saveSession(durable, session)
         resetFamilySharing(durable)
@@ -335,7 +352,8 @@ suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String)
         session
     }
 
-suspend fun saveSession(durable: DurableDb, session: SyncSession) {
+suspend fun saveSession(durable: DurableDb, session: SyncSession) = durable.withTransaction {
+    durable.meta().delete(META_SYNC_ROTATION)
     durable.meta().put(DurableMeta(META_SYNC_BASE, session.base))
     durable.meta().put(DurableMeta(META_SYNC_TOKEN, session.token))
     // Every caller of this is a moment a token was minted, so the issue date rides along; it is
@@ -373,13 +391,14 @@ private suspend fun registerIdentity(session: SyncSession, durable: DurableDb) {
     durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "true"))
 }
 
-suspend fun invite(session: SyncSession, durable: DurableDb): String = withContext(Dispatchers.IO) {
-    registerIdentity(session, durable)
+suspend fun invite(session: SyncSession, durable: DurableDb): String = withFamilySync {
+    val active = activeSession(durable, session)
+    registerIdentity(active, durable)
     val response = request(
-        "${session.base}/v1/invite",
+        "${active.base}/v1/invite",
         "POST",
-        session.token,
-        SYNC_JSON.encodeToString(InviteBody(listOf(session.scope))),
+        active.token,
+        SYNC_JSON.encodeToString(InviteBody(listOf(active.scope))),
     )
     SYNC_JSON.decodeFromString<CodeBody>(response).code
 }
@@ -450,7 +469,7 @@ private suspend fun resetFamilySharing(durable: DurableDb) {
 }
 
 suspend fun joinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
-    withContext(Dispatchers.IO) {
+    withFamilySync {
         val session = pairHousehold(link)
         commitJoin(durable, session, memberName)
         session
@@ -478,7 +497,7 @@ fun pairingCase(sessionToken: String?, linkHid: String): PairingCase = when {
  * the pair minted a fresh member id, so the old own row belongs to a household this phone left.
  */
 suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
-    withContext(Dispatchers.IO) {
+    withFamilySync {
         val session = pairHousehold(link)
         durable.withTransaction {
             buryHousehold(durable, keepMember = null)
@@ -499,13 +518,14 @@ suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String
  * [renewHousehold] is the answer to that.
  */
 suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberId: String): Unit =
-    withContext(Dispatchers.IO) {
-        require(memberId != session.member) { "not for leaving" }
+    withFamilySync {
+        val active = activeSession(durable, session)
+        require(memberId != active.member) { "not for leaving" }
         val member = durable.familyMembers().get(memberId)
         val stamp = nextStamp(member?.updatedAt, System.currentTimeMillis())
         val recordId = memberRecordId(memberId)
         val tombstone = wireRecord(
-            session,
+            active,
             recordId,
             "member",
             memberId,
@@ -514,9 +534,9 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             deleted = true,
         )
         request(
-            "${session.base}/v1/remove",
+            "${active.base}/v1/remove",
             "POST",
-            session.token,
+            active.token,
             SYNC_JSON.encodeToString(RemoveMemberBody(memberId, tombstone)),
         )
         durable.familyMembers().put(
@@ -534,22 +554,23 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
  * The same honesty as removal: nothing already seen is taken back, and the key this phone holds
  * is not un-held. «نو کردن خانواده» on a remaining phone is the answer to that.
  */
-suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withContext(Dispatchers.IO) {
-    val recordId = memberRecordId(session.member)
-    val stamp = nextStamp(durable.familyMembers().get(session.member)?.updatedAt, System.currentTimeMillis())
+suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFamilySync {
+    val active = activeSession(durable, session)
+    val recordId = memberRecordId(active.member)
+    val stamp = nextStamp(durable.familyMembers().get(active.member)?.updatedAt, System.currentTimeMillis())
     val tombstone = wireRecord(
-        session,
+        active,
         recordId,
         "member",
-        session.member,
+        active.member,
         stamp,
         SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
         deleted = true,
     )
     request(
-        "${session.base}/v1/leave",
+        "${active.base}/v1/leave",
         "POST",
-        session.token,
+        active.token,
         SYNC_JSON.encodeToString(LeaveBody(tombstone)),
     )
     durable.withTransaction {
@@ -574,7 +595,7 @@ suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withCo
  * that ledger stops updating, and the shared one starts over. Everyone remaining has to scan a
  * fresh QR; the copy on the screen says so in as many words.
  */
-suspend fun renewHousehold(durable: DurableDb): SyncSession = withContext(Dispatchers.IO) {
+suspend fun renewHousehold(durable: DurableDb): SyncSession = withFamilySync {
     val old = loadSession(durable) ?: error("no household to renew")
     val session = claimFreshHousehold(old.base, old.member, old.device)
     durable.withTransaction {
@@ -596,6 +617,7 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     // The cursor and the identity registration belong to a server this device will never
     // speak to again; the publications are buried rather than deleted so the same rows keep
     // their monotonic stamps when they are re-published under the new key.
+    durable.meta().delete(META_SYNC_ROTATION)
     durable.meta().put(DurableMeta(META_SYNC_SEQ, "0"))
     durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "false"))
     resetFamilySharing(durable)
@@ -624,6 +646,13 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     for (asset in durable.familyAssets().all()) {
         durable.familyAssets().put(asset.copy(updatedAt = nextStamp(asset.updatedAt, now), deleted = true))
     }
+    // Budgets and goals split by who made them, which is the only place this cleanup is not a
+    // sweep. Somebody else's shared cap goes the way their transactions go — it was the
+    // household's figure and there is no household. Hers stay, because they are hers, and land
+    // back on «مال خودم»: the phone has nobody to share with until it pairs again, and a row
+    // still marked shared would start publishing to the next household the day she joined it.
+    for (goal in durable.goals().all()) {
+        if (goal.deleted) continue
 }
 
 data class SyncResult(val sent: Int, val received: Int)
@@ -1205,6 +1234,11 @@ private const val TOKEN_ROTATE_AFTER_MS = 30L * 24 * 60 * 60 * 1000
  * writing the new one is one Room put; a crash inside it means re-pairing, which is why this
  * runs monthly on a good connection rather than eagerly on every launch.
  */
+private suspend fun activeSession(durable: DurableDb, expected: SyncSession): SyncSession {
+    val actual = loadSession(durable) ?: error("no household")
+    check(sameHouseholdSession(expected, actual)) { "household changed" }
+    return recoverTokenRotation(durable, actual)
+}
 private suspend fun rotateTokenIfStale(durable: DurableDb, session: SyncSession, now: Long) {
     val issuedAt = durable.meta().get(META_SYNC_TOKEN_AT)?.toLongOrNull()
     if (issuedAt == null) {
@@ -1228,15 +1262,18 @@ suspend fun syncNow(
     now: Long = System.currentTimeMillis(),
     /** This member's دارایی to share, or null when sharing is off. */
     assets: List<AssetShareItem>? = null,
-): SyncResult = withContext(Dispatchers.IO) {
-    registerIdentity(session, durable)
-    val outgoing = outgoingRecords(durable, derived, session, now, assets)
+): SyncResult = withFamilySync {
+    val stored = loadSession(durable) ?: return@withFamilySync SyncResult(0, 0)
+    if (!sameHouseholdSession(session, stored)) return@withFamilySync SyncResult(0, 0)
+    val active = recoverTokenRotation(durable, stored)
+    registerIdentity(active, durable)
+    val outgoing = outgoingRecords(durable, derived, active, now, assets)
     var sent = 0
     for (chunk in outgoing.chunked(200)) {
         val response = request(
-            "${session.base}/v1/sync",
+            "${active.base}/v1/sync",
             "POST",
-            session.token,
+            active.token,
             SYNC_JSON.encodeToString(PushBody(chunk.map { it.wire })),
         )
         // The server clamps far-future stamps and answers with what it stored; the publication
@@ -1254,7 +1291,7 @@ suspend fun syncNow(
     var received = 0
     do {
         val pulled = SYNC_JSON.decodeFromString<PullBody>(
-            request("${session.base}/v1/sync?since=$cursor&limit=1000", "GET", session.token, null)
+            request("${active.base}/v1/sync?since=$cursor&limit=1000", "GET", active.token, null)
         )
         val previous = cursor
         val nextCursor = maxOf(cursor, pulled.seq)
