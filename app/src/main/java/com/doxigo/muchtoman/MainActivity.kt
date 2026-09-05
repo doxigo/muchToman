@@ -1587,25 +1587,35 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      *
      * `nameFa` is the category's name at this moment, snapshotted for the same reason a filed
      * transaction keeps the name it was filed under: the row must still be readable when the
-     * category behind it is archived.
+     * category behind it is archived. On a total there is no category to snapshot, so it keeps
+     * [BUDGET_TOTAL_FA] — the one name that cannot go stale.
+     *
+     * [category] is null for a cap on everything — «سقف کل خرج». See [Goal.total].
      */
-    fun addBudget(category: Category, period: BudgetPeriod, capRial: Long) {
+    fun addBudget(category: Category?, period: BudgetPeriod, capRial: Long, shared: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val now = System.currentTimeMillis()
             runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
                 durable.goals().put(
                     Goal(
                         id = uuid7(now),
-                        nameFa = category.nameFa.take(40),
+                        nameFa = category?.nameFa?.take(40) ?: BUDGET_TOTAL_FA,
                         targetRial = capRial,
                         kind = GoalKind.CAP,
-                        categoryId = category.id,
+                        categoryId = category?.id,
                         period = period.id,
                         startsOn = tehranDay(now),
                         createdAt = now,
                         updatedAt = now,
+                        // Only ever shared on a phone that has somebody to share with. The sheet
+                        // does not offer the choice without a household, and a row that claimed to
+                        // be shared with nobody would start publishing the day she paired.
+                        shared = shared && mineId.isNotBlank(),
+                        ownerMemberId = mineId,
+                        editedByMemberId = mineId,
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
@@ -1621,13 +1631,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * counts towards it. The card states the date it counts from, so the figure can be checked
      * rather than taken on faith.
      */
-    fun addGoal(name: String, targetRial: Long, horizon: GoalHorizon) {
+    fun addGoal(name: String, targetRial: Long, horizon: GoalHorizon, shared: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val now = System.currentTimeMillis()
             val today = tehranDay(now)
             runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
                 durable.goals().put(
                     Goal(
                         id = uuid7(now),
@@ -1639,6 +1650,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         endsOn = horizon.endsOn(today),
                         createdAt = now,
                         updatedAt = now,
+                        shared = shared && mineId.isNotBlank(),
+                        ownerMemberId = mineId,
+                        editedByMemberId = mineId,
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
@@ -1656,17 +1670,31 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * the edited budget exactly as it would one created at this spend: each threshold speaks
      * once, against the cap she actually keeps now.
      */
-    fun editBudget(id: String, period: BudgetPeriod, capRial: Long) {
+    fun editBudget(id: String, period: BudgetPeriod, capRial: Long, shared: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val now = System.currentTimeMillis()
             runCatching {
                 val goal = durable.goals().byId(id) ?: return@runCatching
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val next = shared && mineId.isNotBlank()
                 // Saved untouched is not an edit: a re-put would only churn updatedAt, and the
                 // dropped marks would say the same warning a second time about nothing new.
-                if (goal.targetRial == capRial && goal.period == period.id) return@runCatching
-                durable.goals().put(goal.copy(targetRial = capRial, period = period.id, updatedAt = now))
+                if (goal.targetRial == capRial && goal.period == period.id && goal.shared == next) {
+                    return@runCatching
+                }
+                durable.goals().put(
+                    goal.copy(
+                        targetRial = capRial,
+                        period = period.id,
+                        updatedAt = now,
+                        shared = next,
+                        // Who moved it, which is the tie-break two phones converge on — and on a
+                        // budget her partner set, the name that stops being the one on the card.
+                        editedByMemberId = mineId,
+                    )
+                )
                 // The marks list is get-then-set on prefs and [announceBudgets] does the same
                 // under [ledgerGate] — so this write takes the gate too, and releases it before
                 // publishLedger takes it again: the Mutex is not reentrant.
@@ -1688,20 +1716,22 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * When she picks one it is measured from today, exactly as on a new goal: the pill says
      * «۶ ماه», and six months from some day she cannot see would be the sheet lying.
      */
-    fun editGoal(id: String, name: String, targetRial: Long, horizon: GoalHorizon?) {
+    fun editGoal(id: String, name: String, targetRial: Long, horizon: GoalHorizon?, shared: Boolean) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val now = System.currentTimeMillis()
             runCatching {
                 val goal = durable.goals().byId(id) ?: return@runCatching
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
                 val next = goal.copy(
                     nameFa = name.take(40),
                     targetRial = targetRial,
                     endsOn = if (horizon != null) horizon.endsOn(tehranDay(now)) else goal.endsOn,
+                    shared = shared && mineId.isNotBlank(),
                 )
                 if (next == goal) return@runCatching
-                durable.goals().put(next.copy(updatedAt = now))
+                durable.goals().put(next.copy(updatedAt = now, editedByMemberId = mineId))
                 publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "editGoal failed: $it") }
         }
@@ -1713,7 +1743,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             runCatching {
-                durable.goals().delete(id, System.currentTimeMillis())
+                // Stamped with who did it, like every other edit: on a shared row this is what
+                // the next sync reads to build the tombstone that takes it off the other phones.
+                durable.goals().delete(
+                    id,
+                    System.currentTimeMillis(),
+                    durable.meta().get(META_SYNC_MEMBER).orEmpty(),
+                )
                 // Before the publish, not after: [announceBudgets] can only retract a note for a
                 // budget it can still see, and this one is about to stop existing. A warning about
                 // a budget she has deleted is the app talking about nothing.
@@ -2185,6 +2221,7 @@ data class UiState(
             // are its shipped default rather than a mechanism of their own.
             countPassThrough = true,
             excluded = reportExcluded,
+            mineId = ledger.mineId,
         )
     }
     val stocks: List<Stock> get() = tse.stocks

@@ -3,6 +3,7 @@ package com.doxigo.muchtoman
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -119,10 +120,20 @@ fun BudgetScreen(
     categories: List<Category>,
     /** True when she keeps budgets and this phone would not be able to tell her about them. */
     notifyBlocked: Boolean,
-    onAddBudget: (Category, BudgetPeriod, Long) -> Unit,
-    onEditBudget: (String, BudgetPeriod, Long) -> Unit,
-    onAddGoal: (String, Long, GoalHorizon) -> Unit,
-    onEditGoal: (String, String, Long, GoalHorizon?) -> Unit,
+    /**
+     * True when this phone is in a household, and therefore when «مال کیه؟» is a real question.
+     *
+     * Without one it is not asked at all — not asked and greyed out, not asked. A control whose
+     * only answer is the one it already has is a control that teaches her the app is full of
+     * things she cannot use, and «مال خودم» on a phone with nobody to share with is not a choice
+     * she made. It is simply what a budget is there.
+     */
+    hasHousehold: Boolean,
+    /** [Category] is null for a cap on everything — «کل خرج». See [Goal.total]. */
+    onAddBudget: (Category?, BudgetPeriod, Long, Boolean) -> Unit,
+    onEditBudget: (String, BudgetPeriod, Long, Boolean) -> Unit,
+    onAddGoal: (String, Long, GoalHorizon, Boolean) -> Unit,
+    onEditGoal: (String, String, Long, GoalHorizon?, Boolean) -> Unit,
     onDelete: (String) -> Unit,
     onAskNotify: () -> Unit,
     bottomInset: Dp,
@@ -171,8 +182,8 @@ fun BudgetScreen(
                 // for, and this one has to carry the word «فصلی» too, because a quarterly budget
                 // is the one shape nobody expects an app to offer.
                 Text(
-                    "برای هر دسته می‌تونی سقف خرج بذاری — هفتگی، ماهانه یا فصلی. " +
-                        "وقتی به سقف نزدیک شدی یا از اون گذشتی، خبرت می‌کنیم.",
+                    "می‌تونی برای کل خرجت یه سقف بذاری، یا برای هر دسته جدا — هفتگی، ماهانه " +
+                        "یا فصلی. وقتی به سقف نزدیک شدی یا از اون گذشتی، خبرت می‌کنیم.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp,
                 )
@@ -229,14 +240,18 @@ fun BudgetScreen(
         BudgetSheet(
             // Only what she can actually budget, and only once each. A second cap on one category
             // would be two cards counting the same receipts and disagreeing about whether it was
-            // over — see [budgetSpent], which keys on the category and nothing else.
+            // over — see [budgetRows], which keys on the category and nothing else.
             choices = remember(categories, budgets) {
                 categoryChoices(categories, direction = "out")
                     .filter { it.id != CAT_TRANSFER && budgets.none { b -> b.goal.categoryId == it.id } }
             },
-            onSave = { category, period, cap ->
+            hasHousehold = hasHousehold,
+            // The same rule the categories run under, for the same reason: two roofs over one
+            // month would be two cards counting every receipt in it and disagreeing.
+            totalTaken = budgets.any { it.total },
+            onSave = { category, period, cap, shared ->
                 addingBudget = false
-                onAddBudget(category, period, cap)
+                onAddBudget(category, period, cap, shared)
             },
             onDismiss = { addingBudget = false },
         )
@@ -245,12 +260,14 @@ fun BudgetScreen(
     budgets.firstOrNull { it.goal.id == editingBudget }?.let { budget ->
         BudgetSheet(
             choices = emptyList(),
-            onSave = { _, _, _ -> },
+            hasHousehold = hasHousehold,
+            totalTaken = true,
+            onSave = { _, _, _, _ -> },
             onDismiss = { editingBudget = null },
             editing = budget,
-            onUpdate = { period, cap ->
+            onUpdate = { period, cap, shared ->
                 editingBudget = null
-                onEditBudget(budget.goal.id, period, cap)
+                onEditBudget(budget.goal.id, period, cap, shared)
             },
             onDelete = {
                 editingBudget = null
@@ -261,9 +278,10 @@ fun BudgetScreen(
 
     if (addingGoal) {
         GoalSheet(
-            onSave = { name, target, horizon ->
+            hasHousehold = hasHousehold,
+            onSave = { name, target, horizon, shared ->
                 addingGoal = false
-                onAddGoal(name, target, horizon)
+                onAddGoal(name, target, horizon, shared)
             },
             onDismiss = { addingGoal = false },
         )
@@ -271,12 +289,13 @@ fun BudgetScreen(
 
     goals.firstOrNull { it.goal.id == editingGoal }?.let { progress ->
         GoalSheet(
-            onSave = { _, _, _ -> },
+            hasHousehold = hasHousehold,
+            onSave = { _, _, _, _ -> },
             onDismiss = { editingGoal = null },
             editing = progress,
-            onUpdate = { name, target, horizon ->
+            onUpdate = { name, target, horizon, shared ->
                 editingGoal = null
-                onEditGoal(progress.goal.id, name, target, horizon)
+                onEditGoal(progress.goal.id, name, target, horizon, shared)
             },
             onDelete = {
                 editingGoal = null
@@ -450,7 +469,10 @@ internal fun NotifyBlockedCard(what: String, onAsk: () -> Unit) {
  */
 @Composable
 private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, onOpen: () -> Unit) {
-    val hue = categoryHue(budget.categoryFa)
+    // A total has no category and therefore no hue of its own. `primary` rather than a colour
+    // borrowed from the table: the roof is not one of the rooms, and giving it one of their
+    // colours would put it in the same set the eye is scanning for a category.
+    val hue = if (budget.total) MaterialTheme.colorScheme.primary else categoryHue(budget.categoryFa)
     // The one authored moment on the card: a receipt she has just refiled moves the bar rather
     // than replacing it, which is what makes the two screens read as one ledger. Both channels
     // animate together and everything tinted reads the animated value — a percentage that snaps
@@ -464,12 +486,19 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
     )
     val note = budgetNoteFa(budget)
 
+    // «ماهانه • مرداد» — the shape of the budget and the window it is measuring. Both, because
+    // «ماهانه» alone does not say which month and «مرداد» alone does not say it comes back next
+    // month. A third part only when there is a third fact: whose it is, and who set it.
+    val subtitle = listOf(budget.period.everyFa, budget.window.fa, budgetScopeFa(budget))
+        .filter { it.isNotEmpty() }
+        .joinToString(" • ")
+
     BandCard(
         shape = shape,
         divided = divided,
         onOpen = onOpen,
         modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = "${budget.categoryFa}، بودجهٔ ${budget.period.everyFa}: " +
+            contentDescription = "${budget.categoryFa}، $subtitle: " +
                 "${faCompact(tomanOf(budget.spentRial))} از ${faCompact(tomanOf(budget.capRial))} تومان، " +
                 "${faNumber(budget.percent.toDouble())} درصد. " +
                 budgetDaysLeftFa(budget) + ". " + note
@@ -485,7 +514,8 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
                     .background(hue.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                CategoryIcon(budget.categoryFa, hue, size = 20.dp)
+                if (budget.total) TotalMark(hue, size = 20.dp)
+                else CategoryIcon(budget.categoryFa, hue, size = 20.dp)
             }
             Spacer(Modifier.width(Space.m))
             Column(Modifier.weight(1f)) {
@@ -495,10 +525,7 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    // «ماهانه • مرداد» — the shape of the budget and the window it is measuring.
-                    // Both, because «ماهانه» alone does not say which month and «مرداد» alone does
-                    // not say it comes back next month.
-                    "${budget.period.everyFa} • ${budget.window.fa}",
+                    subtitle,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -582,14 +609,29 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
 private fun GoalCard(progress: GoalProgress, shape: Shape, divided: Boolean, onOpen: () -> Unit) {
     val met = MaterialTheme.colorScheme.tertiary
     val tone = if (progress.done) met else MaterialTheme.colorScheme.primary
+    // The same third fact a cap's subtitle carries, and blank for the same reason: a goal only
+    // says whose it is once that distinguishes it from the one under it.
+    val scope = when {
+        progress.ownerName.isNotBlank() -> "خانوادگی • ${progress.ownerName}"
+        progress.shared -> "خانوادگی"
+        else -> ""
+    }
     BandCard(shape = shape, divided = divided, onOpen = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                progress.goal.nameFa,
-                Modifier.weight(1f),
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    progress.goal.nameFa,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (scope.isNotEmpty()) {
+                    Text(
+                        scope,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             EditHint()
         }
         Spacer(Modifier.height(Space.s))
@@ -688,6 +730,120 @@ private fun EditHint() {
     )
 }
 
+/**
+ * The mark a total wears: a ring drawn full.
+ *
+ * Not a glyph from [CategoryGlyph], and the omission is the point — that table is the app's
+ * vocabulary for *kinds of spending*, and a seventeenth entry meaning «all of them» would sit in
+ * the settings picker offering itself as a category's mark. Drawn here, in the tab set's own pen
+ * ([pen]), so it belongs to the app without belonging to that list.
+ *
+ * A ring with its centre filled reads as a pie chart at 100% — the whole of something — which is
+ * exactly what the card under it caps. The gap between the two is what keeps it from being a
+ * plain disc, which would read as a bullet.
+ */
+@Composable
+private fun TotalMark(tint: Color, size: Dp = 20.dp) {
+    Canvas(Modifier.size(size)) {
+        val radius = this.size.minDimension * 0.42f
+        drawCircle(tint, radius, style = pen(1.6.dp))
+        drawCircle(tint, radius * 0.5f)
+    }
+}
+
+/**
+ * «کل خرج» as a thing to pick — the roof, offered above the rooms.
+ *
+ * A full-width row and not a tile in [CategoryGrid], because the grid is seventeen answers to
+ * «which category» and this is not one of them. Put in there it would have to be read to be told
+ * apart from its neighbours, which is the one thing that grid is built so she never has to do.
+ *
+ * It wears the selected tile's own colours when chosen — `primary` filled, `onPrimary` ink — so
+ * «this one» is said in the same colour here as it is three lines below.
+ */
+@Composable
+private fun TotalChoice(selected: Boolean, onClick: () -> Unit) {
+    val fill by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        tween(Motion.fast, easing = Motion.enter),
+        label = "totalFill",
+    )
+    val ink by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        tween(Motion.fast, easing = Motion.enter),
+        label = "totalInk",
+    )
+    val mark by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+        tween(Motion.fast, easing = Motion.enter),
+        label = "totalMark",
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .background(fill)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 64.dp)
+            .padding(horizontal = Space.m, vertical = Space.s)
+            .semantics {
+                contentDescription = "$BUDGET_TOTAL_FA" + if (selected) "، انتخاب‌شده" else ""
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(mark.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            TotalMark(mark, size = 20.dp)
+        }
+        Spacer(Modifier.width(Space.m))
+        Column(Modifier.weight(1f)) {
+            Text(BUDGET_TOTAL_FA, fontWeight = FontWeight.Bold, color = ink)
+            Text(
+                "سقف روی همهٔ خرج‌ها با هم",
+                fontSize = 12.sp,
+                color = ink.copy(alpha = 0.75f),
+            )
+        }
+    }
+}
+
+/**
+ * «مال کیه؟» — the one question that decides both who sees a figure and whose spending counts.
+ *
+ * Two pills and a sentence, and the sentence is not decoration: the control's effect is invisible
+ * — a record leaving the phone, a filter narrowing — so the only way she can know what she just
+ * chose is to be told in words. See [budgetScopeNoteFa], which is where those words live so the
+ * budget sheet and the goal sheet cannot drift into promising different things.
+ *
+ * Drawn only where there is a household to share with. See [BudgetScreen]'s `hasHousehold`.
+ */
+@Composable
+private fun WhoseChoice(shared: Boolean, wasShared: Boolean, onChange: (Boolean) -> Unit) {
+    SheetLabel("مال کیه؟")
+    SegmentedChoice(
+        options = listOf(false, true),
+        selected = shared,
+        label = { if (it) "خانوادگی" else "مال خودم" },
+        onSelect = onChange,
+    )
+    Text(
+        budgetScopeNoteFa(shared, wasShared),
+        fontSize = 12.sp,
+        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(top = Space.s, start = Space.xs)
+            // Announced when it changes, or the consequence of the pill she just pressed is the
+            // one thing on this sheet TalkBack never says.
+            .semantics { liveRegion = LiveRegionMode.Polite },
+    )
+}
+
 // ─────────────────────────── making one ───────────────────────────
 
 /**
@@ -710,10 +866,14 @@ private fun EditHint() {
 @Composable
 private fun BudgetSheet(
     choices: List<Category>,
-    onSave: (Category, BudgetPeriod, Long) -> Unit,
+    /** Whether «مال کیه؟» is a real question here — see [BudgetScreen]. */
+    hasHousehold: Boolean,
+    /** Whether a total already exists, in which case it is not offered a second time. */
+    totalTaken: Boolean,
+    onSave: (Category?, BudgetPeriod, Long, Boolean) -> Unit,
     onDismiss: () -> Unit,
     editing: BudgetProgress? = null,
-    onUpdate: (BudgetPeriod, Long) -> Unit = { _, _ -> },
+    onUpdate: (BudgetPeriod, Long, Boolean) -> Unit = { _, _, _ -> },
     onDelete: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -721,6 +881,13 @@ private fun BudgetSheet(
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
     var picked by remember { mutableStateOf<Category?>(null) }
+    // «کل خرج», which is a choice about *what* rather than a category, so it is its own piece of
+    // state and not a synthetic row in [choices]. Picking either clears the other: a budget caps
+    // one thing.
+    var wantsTotal by remember { mutableStateOf(false) }
+    // What she keeps now while editing, and «مال خودم» on a new one — a figure starts out hers
+    // and becomes the household's by her saying so, never the other way round.
+    var shared by remember { mutableStateOf(editing?.shared ?: false) }
     // A month, because that is what her salary, her rent and every bill she pays already run on.
     var period by remember { mutableStateOf(editing?.period ?: BudgetPeriod.MONTH) }
     // Whole Toman, exactly what she typed to make it: a cap is stored in Rial but was never
@@ -746,10 +913,12 @@ private fun BudgetSheet(
         ) {
             SheetTitle(if (editing != null) "ویرایش بودجه" else "بودجهٔ تازه")
 
-            if (editing == null && choices.isEmpty()) {
-                // Every category already has one, which is a real state and not an error.
+            if (editing == null && choices.isEmpty() && totalTaken) {
+                // Every category already has one and so has the month, which is a real state and
+                // not an error. Only a dead end once the total is taken too — otherwise there is
+                // still the one budget on this sheet that is not a category.
                 Text(
-                    "برای همهٔ دسته‌ها بودجه گذاشتی. برای تغییر یکی، بازش کن و ویرایشش کن.",
+                    "برای کل خرجت و همهٔ دسته‌ها بودجه گذاشتی. برای تغییر یکی، بازش کن و ویرایشش کن.",
                     fontSize = 13.sp,
                     lineHeight = 22.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -763,7 +932,9 @@ private fun BudgetSheet(
                 // Which budget this sheet is open on, said the way its own card says it: the
                 // category's mark on its disc, then the name. Not a field — a cap on a different
                 // category is a different budget, and the sentence under it says the way there.
-                val hue = categoryHue(editing.categoryFa)
+                val hue =
+                    if (editing.total) MaterialTheme.colorScheme.primary
+                    else categoryHue(editing.categoryFa)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = Space.l),
@@ -775,7 +946,8 @@ private fun BudgetSheet(
                             .background(hue.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CategoryIcon(editing.categoryFa, hue, size = 20.dp)
+                        if (editing.total) TotalMark(hue, size = 20.dp)
+                        else CategoryIcon(editing.categoryFa, hue, size = 20.dp)
                     }
                     Spacer(Modifier.width(Space.m))
                     Text(
@@ -785,20 +957,42 @@ private fun BudgetSheet(
                     )
                 }
                 Text(
-                    "دسته‌اش عوض نمی‌شه — برای دستهٔ دیگه، بودجهٔ تازه بساز.",
+                    if (editing.total) {
+                        "این سقف روی کل خرجته، جز پول‌هایی که فقط رد می‌شن — قرض و همسر."
+                    } else {
+                        "دسته‌اش عوض نمی‌شه — برای دستهٔ دیگه، بودجهٔ تازه بساز."
+                    },
                     fontSize = 12.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = Space.s, start = Space.xs),
                 )
             } else {
-                SheetLabel("برای کدوم دسته؟")
-                CategoryGrid(
-                    choices = choices,
-                    selectedId = picked?.id,
-                    onPick = { picked = it },
-                    selectedLabel = "انتخاب‌شده",
-                )
+                SheetLabel("روی چی؟")
+                // The roof above the rooms, and above them on the sheet too. A full-width row
+                // rather than a seventeenth tile in the grid: it is not one of the categories,
+                // and a cell among them would have to be read as one to be told apart.
+                if (!totalTaken) {
+                    TotalChoice(
+                        selected = wantsTotal,
+                        onClick = {
+                            wantsTotal = !wantsTotal
+                            if (wantsTotal) picked = null
+                        },
+                    )
+                    Spacer(Modifier.height(Space.m))
+                }
+                if (choices.isNotEmpty()) {
+                    CategoryGrid(
+                        choices = choices,
+                        selectedId = picked?.id,
+                        onPick = {
+                            picked = it
+                            wantsTotal = false
+                        },
+                        selectedLabel = "انتخاب‌شده",
+                    )
+                }
             }
 
             SheetLabel("هر چه مدت؟")
@@ -834,18 +1028,22 @@ private fun BudgetSheet(
                     .semantics { contentDescription = "سقف خرج به تومان" },
             )
 
+            if (hasHousehold) {
+                WhoseChoice(shared, wasShared = editing?.shared == true) { shared = it }
+            }
+
             Spacer(Modifier.height(Space.l))
             Button(
                 onClick = {
                     val cap = capRial ?: return@Button
                     if (editing != null) {
-                        close { onUpdate(period, cap) }
+                        close { onUpdate(period, cap, shared) }
                     } else {
-                        val category = picked ?: return@Button
-                        close { onSave(category, period, cap) }
+                        if (!wantsTotal && picked == null) return@Button
+                        close { onSave(picked.takeUnless { wantsTotal }, period, cap, shared) }
                     }
                 },
-                enabled = (editing != null || picked != null) && capRial != null,
+                enabled = (editing != null || wantsTotal || picked != null) && capRial != null,
                 shape = RoundedCornerShape(Radius.pill),
                 colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -904,17 +1102,20 @@ internal fun SheetDelete(label: String, onConfirmed: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GoalSheet(
-    onSave: (String, Long, GoalHorizon) -> Unit,
+    /** Whether «مال کیه؟» is a real question here — see [BudgetScreen]. */
+    hasHousehold: Boolean,
+    onSave: (String, Long, GoalHorizon, Boolean) -> Unit,
     onDismiss: () -> Unit,
     editing: GoalProgress? = null,
     /** The horizon is null when she left «تا کِی؟» alone and the deadline she has stands. */
-    onUpdate: (String, Long, GoalHorizon?) -> Unit = { _, _, _ -> },
+    onUpdate: (String, Long, GoalHorizon?, Boolean) -> Unit = { _, _, _, _ -> },
     onDelete: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
+    var shared by remember { mutableStateOf(editing?.shared ?: false) }
     var name by remember { mutableStateOf(editing?.goal?.nameFa ?: "") }
     // Whole Toman, as in [BudgetSheet]: stored in Rial, never typed in it.
     var amount by remember { mutableStateOf(editing?.let { (it.targetRial / 10).toString() } ?: "") }
@@ -994,15 +1195,19 @@ private fun GoalSheet(
                 modifier = Modifier.padding(top = Space.s, start = Space.xs),
             )
 
+            if (hasHousehold) {
+                WhoseChoice(shared, wasShared = editing?.shared == true) { shared = it }
+            }
+
             Spacer(Modifier.height(Space.l))
             Button(
                 onClick = {
                     val target = targetRial ?: return@Button
                     if (name.isBlank()) return@Button
                     if (editing != null) {
-                        close { onUpdate(name.trim(), target, horizon) }
+                        close { onUpdate(name.trim(), target, horizon, shared) }
                     } else {
-                        close { onSave(name.trim(), target, horizon ?: GoalHorizon.HALF) }
+                        close { onSave(name.trim(), target, horizon ?: GoalHorizon.HALF, shared) }
                     }
                 },
                 enabled = name.isNotBlank() && targetRial != null,

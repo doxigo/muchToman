@@ -27,6 +27,8 @@ class BudgetTest {
         categoryId: String = dining,
         transfer: Boolean = false,
         duplicate: Boolean = false,
+        /** Whose row it is. Blank is «this phone's», exactly as [ledgerEntries] fills it in. */
+        owner: String = "",
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
@@ -43,6 +45,7 @@ class BudgetTest {
             ),
             categoryId = categoryId, categoryFa = "رستوران و کافه", confidence = 95,
             needsReview = false, duplicate = duplicate, transfer = transfer,
+            ownerMemberId = owner,
         )
     }
 
@@ -52,10 +55,12 @@ class BudgetTest {
         category: String? = dining,
         startsOn: Long = first,
         id: String = "b1",
+        shared: Boolean = false,
+        owner: String = "",
     ) = Goal(
         id = id, nameFa = "رستوران و کافه", targetRial = cap, kind = GoalKind.CAP,
         categoryId = category, period = period.id, startsOn = startsOn,
-        createdAt = 0, updatedAt = 0,
+        createdAt = 0, updatedAt = 0, shared = shared, ownerMemberId = owner,
     )
 
     // ─────────────────────────── the window ───────────────────────────
@@ -466,5 +471,182 @@ class BudgetTest {
         val story = buildStory(rows, liquidRial = 0L, today = first + 5)
         assertNull(story.attentionBudget)
         assertTrue(story.attention!!.text.contains("منتظر"))
+    }
+
+    // ─────────────────────────── the roof over the month ───────────────────────────
+
+    private val her = "aaaa1111bbbb2222"
+    private val him = "cccc3333dddd4444"
+
+    /** A cap with no category — see [Goal.total]. */
+    private fun total(
+        cap: Long,
+        period: BudgetPeriod = BudgetPeriod.MONTH,
+        shared: Boolean = false,
+        owner: String = "",
+        id: String = "b_total",
+    ) = budget(cap, period, category = null, id = id, shared = shared, owner = owner)
+
+    @Test
+    fun `a total counts every category, not one of them`() {
+        val rows = listOf(
+            entry(first + 1, -3_000_000, categoryId = dining),
+            entry(first + 2, -4_000_000, categoryId = "cat_groceries"),
+            entry(first + 3, -1_000_000, categoryId = "cat_home"),
+        )
+        val roof = budgetsOf(listOf(total(10_000_000)), rows, first + 5).single()
+        assertTrue(roof.total)
+        assertEquals(8_000_000L, roof.spentRial)
+        assertEquals(BUDGET_TOTAL_FA, roof.categoryFa)
+    }
+
+    @Test
+    fun `a total leaves out money that only passes through`() {
+        // قرض out and back is one movement told in two halves. A roof that counted the outgoing
+        // half would announce she had spent money that netted nothing — the same reason دخل و خرج
+        // seeds its exclusions with [PASS_THROUGH_CATEGORIES].
+        val rows = listOf(
+            entry(first + 1, -2_000_000, categoryId = dining),
+            entry(first + 2, -50_000_000, categoryId = CAT_LOAN),
+            entry(first + 3, -9_000_000, categoryId = CAT_SPOUSE),
+        )
+        val roof = budgetsOf(listOf(total(10_000_000)), rows, first + 5).single()
+        assertEquals(2_000_000L, roof.spentRial)
+    }
+
+    @Test
+    fun `a cap she put on قرض by name still counts it`() {
+        // The deliberate divergence: naming a category is her asking for it to be measured, and a
+        // budget on قرض that always read zero would be worse than no budget at all.
+        val rows = listOf(entry(first + 1, -5_000_000, categoryId = CAT_LOAN))
+        val capped = budgetsOf(
+            listOf(budget(10_000_000, category = CAT_LOAN, id = "b_loan")),
+            rows,
+            first + 5,
+        ).single()
+        assertEquals(5_000_000L, capped.spentRial)
+    }
+
+    @Test
+    fun `the roof sits above the rooms however far through each of them is`() {
+        val rows = listOf(
+            entry(first + 1, -6_500_000, categoryId = dining),      // 130% of five
+            entry(first + 2, -1_000_000, categoryId = "cat_home"),  // 10% of ten
+        )
+        val ordered = budgetsOf(
+            listOf(
+                budget(5_000_000, category = dining, id = "b_dining"),
+                budget(10_000_000, category = "cat_home", id = "b_home"),
+                total(100_000_000),
+            ),
+            rows,
+            first + 5,
+        )
+        assertEquals(listOf("b_total", "b_dining", "b_home"), ordered.map { it.goal.id })
+    }
+
+    @Test
+    fun `a total says what it is rather than naming itself as a category`() {
+        val rows = listOf(entry(first + 1, -12_000_000, categoryId = dining))
+        val roof = budgetsOf(listOf(total(10_000_000)), rows, first + 5).single()
+        assertEquals("از سقف کل خرج مرداد گذشتی", budgetAlertTitle(roof))
+        // Never «کل خرج: ...», which would read as a category by that name.
+        assertTrue(!budgetAlertTitle(roof).startsWith(BUDGET_TOTAL_FA))
+    }
+
+    // ─────────────────────────── whose figure it is ───────────────────────────
+
+    @Test
+    fun `a private cap counts only her own rows`() {
+        val rows = listOf(
+            entry(first + 1, -3_000_000, owner = her),
+            entry(first + 2, -4_000_000, owner = him),
+        )
+        val mine = budgetsOf(listOf(budget(10_000_000)), rows, first + 5, mineId = her).single()
+        assertEquals(3_000_000L, mine.spentRial)
+        assertTrue(!mine.shared)
+    }
+
+    @Test
+    fun `a shared cap counts the household`() {
+        val rows = listOf(
+            entry(first + 1, -3_000_000, owner = her),
+            entry(first + 2, -4_000_000, owner = him),
+        )
+        val ours = budgetsOf(
+            listOf(budget(10_000_000, shared = true, owner = her)),
+            rows,
+            first + 5,
+            mineId = her,
+        ).single()
+        assertEquals(7_000_000L, ours.spentRial)
+        assertTrue(ours.shared)
+    }
+
+    @Test
+    fun `on a phone that never paired, private is the whole ledger and nothing changed`() {
+        // The migration's promise: `shared` defaults to false, and on a solo phone every row
+        // carries the same blank owner, so the figure is exactly what it was before the column.
+        val rows = listOf(
+            entry(first + 1, -3_000_000),
+            entry(first + 2, -4_000_000),
+        )
+        assertEquals(
+            7_000_000L,
+            budgetsOf(listOf(budget(10_000_000)), rows, first + 5, mineId = "").single().spentRial,
+        )
+    }
+
+    @Test
+    fun `a shared cap somebody else set says whose it is`() {
+        val rows = listOf(entry(first + 1, -3_000_000, owner = him))
+        val theirs = budgetsOf(
+            listOf(budget(10_000_000, shared = true, owner = him)),
+            rows,
+            first + 5,
+            mineId = her,
+            members = mapOf(him to "مریم", her to "سارا"),
+        ).single()
+        assertEquals("مریم", theirs.ownerName)
+        assertEquals("خانوادگی • مریم", budgetScopeFa(theirs))
+        assertTrue(budgetInsight(theirs, rows, her).why.contains("مریم"))
+    }
+
+    @Test
+    fun `her own shared cap is not attributed to her on her own phone`() {
+        val rows = listOf(entry(first + 1, -3_000_000, owner = her))
+        val ours = budgetsOf(
+            listOf(budget(10_000_000, shared = true, owner = her)),
+            rows,
+            first + 5,
+            mineId = her,
+            members = mapOf(her to "سارا"),
+        ).single()
+        assertEquals("", ours.ownerName)
+        assertEquals("خانوادگی", budgetScopeFa(ours))
+    }
+
+    @Test
+    fun `a private cap says nothing about whose it is`() {
+        val rows = listOf(entry(first + 1, -3_000_000, owner = her))
+        val mine = budgetsOf(listOf(budget(10_000_000)), rows, first + 5, mineId = her).single()
+        assertEquals("", budgetScopeFa(mine))
+    }
+
+    @Test
+    fun `a private cap's evidence is the rows it actually counted`() {
+        val mine = entry(first + 1, -60_000_000, owner = her)
+        val his = entry(first + 1, -60_000_000, owner = him)
+        val rows = listOf(mine, his)
+        val budget = budgetsOf(listOf(budget(50_000_000)), rows, first + 5, mineId = her).single()
+        assertEquals(listOf(mine.txn.ref), budgetInsight(budget, rows, her).refs)
+    }
+
+    @Test
+    fun `unsharing warns that the others lose it, and only then`() {
+        // The one effect of this control she cannot see happen and cannot undo by flipping back.
+        assertTrue(budgetScopeNoteFa(shared = false, wasShared = true).contains("بقیه"))
+        assertTrue(!budgetScopeNoteFa(shared = false, wasShared = false).contains("بقیه"))
+        assertTrue(budgetScopeNoteFa(shared = true, wasShared = false).contains("همه"))
     }
 }

@@ -158,23 +158,55 @@ fun budgetLevel(spentRial: Long, capRial: Long): Int = when {
 }
 
 /**
- * What one category cost inside one window, by the same rules `periodReport` counts spending by.
+ * The rows one budget counts — the single definition of what it measures, so the figure, the bar
+ * and the evidence behind the sentence on home cannot be three different answers.
  *
- * Only the negative side, which is what that report does when it builds `spendingByCategory`: money
- * arriving under a spending category is a refund and lands on the income side there. Netting it off
- * here would give «رستوران و کافه» one value on the budget card and another in دخل و خرج, and there
- * is no version of that she should have to reconcile. Duplicates and transfer legs fall out through
- * [spendable], as they do everywhere else.
+ * Only the negative side, which is what `periodReport` does when it builds `spendingByCategory`:
+ * money arriving under a spending category is a refund and lands on the income side there. Netting
+ * it off here would give «رستوران و کافه» one value on the budget card and another in دخل و خرج,
+ * and there is no version of that she should have to reconcile. Duplicates and transfer legs fall
+ * out through [spendable], as they do everywhere else.
  *
- * The one deliberate divergence: money that only passes through — قرض, همسر — is counted here even
- * though دخل و خرج holds it apart by default. That gate is a way of *reading a report*, and a cap on
- * a category is her saying in as many words that she wants that category measured. A budget on همسر
- * that always read zero would be worse than no budget at all.
+ * Three gates, in the order they are asked:
+ *
+ *  - **Whose.** [scopedTo], off [Goal.shared] — the household's rows or only hers.
+ *  - **When.** Inside the window, which is always the current one.
+ *  - **What.** The category it names, or — on a total — everything except what only passes
+ *    through: قرض out and back is one movement told in two halves, and a roof over the month that
+ *    counted both halves would announce she had spent money that netted nothing. That is the same
+ *    reason `reportExcluded` seeds itself with [PASS_THROUGH_CATEGORIES], and it is taken from the
+ *    constant rather than from her report setting on purpose: a shared total must read the same
+ *    figure on both phones, and that setting is a preference on one of them.
+ *
+ * The one deliberate divergence, and it only applies to a **named** category: money that passes
+ * through is counted when she has capped it by name, even though دخل و خرج holds it apart by
+ * default. That gate is a way of *reading a report*, and a cap on همسر is her saying in as many
+ * words that she wants همسر measured. A budget on همسر that always read zero would be worse than
+ * no budget at all.
  */
-fun budgetSpent(entries: List<LedgerEntry>, categoryId: String?, window: BudgetWindow): Long =
-    spendable(entries)
-        .filter { it.txn.day in window && it.categoryId == categoryId }
-        .sumOf { -(it.txn.signedRial ?: 0L).coerceAtMost(0L) }
+fun budgetRows(
+    entries: List<LedgerEntry>,
+    goal: Goal,
+    window: BudgetWindow,
+    /** This phone's member id, blank when it has never paired — see [scopedTo]. */
+    mineId: String = "",
+): List<LedgerEntry> =
+    scopedTo(spendable(entries), mineId, goal.shared)
+        .filter { entry ->
+            entry.txn.day in window && when (val category = goal.categoryId) {
+                null -> entry.categoryId !in PASS_THROUGH_CATEGORIES
+                else -> entry.categoryId == category
+            }
+        }
+
+/** What those rows cost. Whole Rial, and never a net: only what went out. */
+fun budgetSpent(
+    entries: List<LedgerEntry>,
+    goal: Goal,
+    window: BudgetWindow,
+    mineId: String = "",
+): Long = budgetRows(entries, goal, window, mineId)
+    .sumOf { -(it.txn.signedRial ?: 0L).coerceAtMost(0L) }
 
 /**
  * Where a budget stands, worked out from the transactions and nothing else.
@@ -220,7 +252,10 @@ data class BudgetProgress(
      * bare share cannot tell them apart. A fact about two ratios, stated as one.
      */
     val outpacing: Boolean,
-    /** The live category name, or the one snapshotted when she set the budget. Never blank. */
+    /**
+     * What the card calls it: the live category name, the one snapshotted when she set the
+     * budget, or [BUDGET_TOTAL_FA] on a total. Never blank.
+     */
     val categoryFa: String,
     /**
      * True when she set this budget part-way into the window it is currently reporting on.
@@ -229,13 +264,34 @@ data class BudgetProgress(
      * so the card owes her the sentence that says the days before she decided are in the figure.
      */
     val partWindow: Boolean,
+    /**
+     * Who set it, when that was somebody else — «مریم». Blank on her own and on every private
+     * budget, which is the same thing said twice: a private budget can only be hers.
+     */
+    val ownerName: String = "",
 ) {
     val period: BudgetPeriod get() = window.period
     val over: Boolean get() = level == BudgetLevel.OVER
 
     /** Whether the budget has anything left to say beyond its own bar. */
     val loud: Boolean get() = level >= BudgetLevel.NEAR
+
+    /** The roof over the whole window rather than a cap on one category — see [Goal.total]. */
+    val total: Boolean get() = goal.total
+
+    /** The household's, and therefore measured against everybody's spending. */
+    val shared: Boolean get() = goal.shared
 }
+
+/**
+ * What a total is called, everywhere it is named.
+ *
+ * «کل خرج» and not «همه» or «بودجهٔ کل»: the card sits in a list of category names and has to read
+ * as one of them, and what it caps is the spending rather than the budget. It is a constant rather
+ * than a category row because it is not a category — nothing can be filed under it, it cannot be
+ * archived, and a row in that table would show up in every picker in the app.
+ */
+const val BUDGET_TOTAL_FA = "کل خرج"
 
 /**
  * One budget, against the window it is in right now.
@@ -249,10 +305,14 @@ fun budgetProgress(
     entries: List<LedgerEntry>,
     today: Long,
     categoryFa: String = goal.nameFa,
+    /** This phone's member id, blank when it has never paired — see [scopedTo]. */
+    mineId: String = "",
+    /** Who set it, when that was somebody else. See [BudgetProgress.ownerName]. */
+    ownerName: String = "",
 ): BudgetProgress {
     val window = budgetWindow(BudgetPeriod.of(goal.period), today)
     val cap = goal.targetRial
-    val spent = budgetSpent(entries, goal.categoryId, window)
+    val spent = budgetSpent(entries, goal, window, mineId)
     val left = (cap - spent).coerceAtLeast(0L)
     val over = (spent - cap).coerceAtLeast(0L)
     val daysLeft = window.daysLeft(today)
@@ -272,28 +332,55 @@ fun budgetProgress(
         // and a cap at most a few trillion Rial, so neither product can overflow, and there is no
         // rounding to argue with at the moment the two ratios are equal.
         outpacing = cap > 0L && spent * window.days > cap * window.daysGone(today),
-        categoryFa = categoryFa.ifBlank { goal.nameFa },
+        categoryFa = if (goal.total) BUDGET_TOTAL_FA else categoryFa.ifBlank { goal.nameFa },
         partWindow = goal.startsOn > window.startDay,
+        ownerName = ownerName,
     )
 }
 
 /**
- * Every budget she keeps, the ones closest to trouble first.
+ * Every budget she keeps, the ones closest to trouble first — under the total, if she keeps one.
  *
  * Ordered by how much of the cap is gone rather than by when she made them, because the whole
  * reason to open this screen is «چقدر جا دارم؟» and the answer she needs is the one at the top.
  * A stable secondary sort on the id keeps two budgets at identical shares from swapping places
  * between recompositions.
+ *
+ * The total is pinned above that ordering rather than competing in it, and it is the one place
+ * this list is not sorted by urgency. A roof at 40% while «رستوران و کافه» is at 130% is not the
+ * less important card — it is the one that says how much of the month is left *at all*, and the
+ * categories under it are rooms inside the figure it states. Ranking it by share would drop it
+ * into the middle of its own contents.
  */
 fun budgetsOf(
     goals: List<Goal>,
     entries: List<LedgerEntry>,
     today: Long,
     names: Map<String, String> = emptyMap(),
+    /** This phone's member id, blank when it has never paired — see [scopedTo]. */
+    mineId: String = "",
+    /** Member names, for attributing a shared budget somebody else set. */
+    members: Map<String, String> = emptyMap(),
 ): List<BudgetProgress> =
     goals.filter { it.kind == GoalKind.CAP }
-        .map { budgetProgress(it, entries, today, names[it.categoryId] ?: it.nameFa) }
-        .sortedWith(compareByDescending<BudgetProgress> { it.percent }.thenBy { it.goal.id })
+        .map {
+            budgetProgress(
+                goal = it,
+                entries = entries,
+                today = today,
+                categoryFa = names[it.categoryId] ?: it.nameFa,
+                mineId = mineId,
+                ownerName = it.ownerMemberId
+                    .takeIf { owner -> owner.isNotBlank() && owner != mineId }
+                    ?.let { owner -> members[owner] }
+                    .orEmpty(),
+            )
+        }
+        .sortedWith(
+            compareByDescending<BudgetProgress> { it.total }
+                .thenByDescending { it.percent }
+                .thenBy { it.goal.id }
+        )
 
 // ─────────────────────────── saying it once ───────────────────────────
 
@@ -347,8 +434,13 @@ fun budgetNews(budgets: List<BudgetProgress>, said: List<BudgetMark>): BudgetNew
  *
  * The real percent, not the threshold it crossed. She is being told about her own money and «۸۳٪»
  * is what is true; «۸۰٪» would be the app quoting its own rule back at her.
+ *
+ * A total has no category to lead with, so it leads with what it is instead. «کل خرج: از بودجهٔ
+ * مرداد گذشتی» would read as a category called «کل خرج» — the colon is what makes a name a name.
  */
 fun budgetAlertTitle(budget: BudgetProgress): String = when {
+    budget.total && budget.over -> "از سقف کل خرج ${budget.window.fa} گذشتی"
+    budget.total -> "${faNumber(budget.percent.toDouble())}٪ سقف کل خرج ${budget.window.fa} رفته"
     budget.over -> "${budget.categoryFa}: از بودجهٔ ${budget.window.fa} گذشتی"
     else -> "${budget.categoryFa}: ${faNumber(budget.percent.toDouble())}٪ بودجهٔ ${budget.window.fa} رفته"
 }
@@ -391,19 +483,69 @@ fun pressingBudget(budgets: List<BudgetProgress>): BudgetProgress? =
 /**
  * That budget as a line for home, carrying its own evidence like every other [Insight]: the rows
  * behind the figure, in the window that produced it.
+ *
+ * The evidence comes from [budgetRows] and not from a filter written out again here, which it
+ * used to be. Two copies of «what this budget counts» is how the sentence ends up citing receipts
+ * the figure above it never counted — a total would have cited قرض, and a private budget her
+ * partner's café.
+ *
+ * The «چرا» names whose cap it is. «سقفی که خودت گذاشتی» is a claim, and on a budget her partner
+ * set on both their phones it is the wrong one.
  */
-fun budgetInsight(budget: BudgetProgress, entries: List<LedgerEntry>): Insight = Insight(
-    text = if (budget.over) {
-        "از بودجهٔ «${budget.categoryFa}» گذشتی."
-    } else {
-        "${faNumber(budget.percent.toDouble())}٪ بودجهٔ «${budget.categoryFa}» رفته."
+fun budgetInsight(
+    budget: BudgetProgress,
+    entries: List<LedgerEntry>,
+    /** This phone's member id, blank when it has never paired — see [scopedTo]. */
+    mineId: String = "",
+): Insight = Insight(
+    text = when {
+        budget.total && budget.over -> "از سقف کل خرج ${budget.window.fa} گذشتی."
+        budget.total -> "${faNumber(budget.percent.toDouble())}٪ سقف کل خرجت رفته."
+        budget.over -> "از بودجهٔ «${budget.categoryFa}» گذشتی."
+        else -> "${faNumber(budget.percent.toDouble())}٪ بودجهٔ «${budget.categoryFa}» رفته."
     },
-    why = "سقفی که خودت برای این دسته گذاشتی، در برابر خرج ${budget.window.fa}.",
-    refs = spendable(entries)
-        .filter { it.txn.day in budget.window && it.categoryId == budget.goal.categoryId }
-        .map { it.txn.ref },
+    why = buildString {
+        append(
+            when {
+                budget.ownerName.isNotBlank() -> "سقفی که ${budget.ownerName} گذاشت"
+                budget.total -> "سقفی که خودت برای کل خرجت گذاشتی"
+                else -> "سقفی که خودت برای این دسته گذاشتی"
+            }
+        )
+        append("، در برابر خرج ")
+        append(if (budget.shared) "خانواده در ${budget.window.fa}" else budget.window.fa)
+        append('.')
+    },
+    refs = budgetRows(entries, budget.goal, budget.window, mineId).map { it.txn.ref },
     tone = Insight.Tone.ATTENTION,
 )
+
+/**
+ * Whose budget this is, as the card's subtitle says it — or nothing at all.
+ *
+ * Blank on a private one, and that is the point: «مال خودم» on every card of a household that
+ * shares nothing is a word repeated until it stops being read. The scope only earns a place on
+ * the card once it is a fact that distinguishes this card from the one under it.
+ */
+fun budgetScopeFa(budget: BudgetProgress): String = when {
+    budget.ownerName.isNotBlank() -> "خانوادگی • ${budget.ownerName}"
+    budget.shared -> "خانوادگی"
+    else -> ""
+}
+
+/**
+ * What the sheet says under «مال کیه؟» — the consequences of the answer, before she commits to it.
+ *
+ * The unshare line is the only one here that warns about anything, and it has to: taking a budget
+ * back to «مال خودم» removes it from the other phones, which is the one effect of this control
+ * that she cannot see happen and cannot undo by flipping the switch again. Everything else is a
+ * statement of what the two words mean.
+ */
+fun budgetScopeNoteFa(shared: Boolean, wasShared: Boolean): String = when {
+    shared -> "همه می‌بینن‌ش و می‌تونن عوضش کنن، و خرج همه توش حساب می‌شه."
+    wasShared -> "از روی گوشی بقیه برداشته می‌شه و فقط خرج خودت توش حساب می‌شه."
+    else -> "فقط روی گوشی خودته و فقط خرج خودت توش حساب می‌شه."
+}
 
 /**
  * «۱۲ روز تا آخر ماه», and on the last day the thing that is actually worth knowing.

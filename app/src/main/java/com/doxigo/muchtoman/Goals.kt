@@ -18,14 +18,18 @@ import androidx.room.Query
  *
  * Two shapes, and no more:
  *  - `save` — put this much aside by then. This file.
- *  - `cap`  — keep this category under this much, per week, month or فصل. That is a budget, and
- *    it lives in `Budget.kt`, which is one row of this same table read a different way.
+ *  - `cap`  — keep spending under this much, per week, month or فصل. That is a budget, and it
+ *    lives in `Budget.kt`, which is one row of this same table read a different way. A cap names
+ *    a category, or names none and is then the roof over all of them — see [Goal.total].
  *
  * They share a table because they share everything that matters — a target in Rial, a period, a
  * start, an end, and progress that is never written down — and they are two files because the
  * arithmetic runs in opposite directions: a goal is met by reaching its figure and a budget by
  * not reaching its own. Keeping both in one `when` is how the sign of that comparison gets
  * flipped by somebody who is reading the other half.
+ *
+ * Either shape is hers or the household's, and that is [Goal.shared] — one flag deciding both
+ * who sees the figure and whose spending counts against it, because those are not two questions.
  */
 
 object GoalKind {
@@ -57,7 +61,13 @@ data class Goal(
     @ColumnInfo(name = "name_fa") val nameFa: String,
     @ColumnInfo(name = "target_rial") val targetRial: Long,
     val kind: String,
-    /** For a cap, which category it holds down. Null on a savings goal. */
+    /**
+     * For a cap, which category it holds down — or **null for the whole month's spending**.
+     *
+     * Null carries two meanings and they never meet, because they live under different [kind]s: a
+     * savings goal has no category to name, and a cap with none is the roof over all of them. See
+     * [Goal.total], which is the only way this file asks the question.
+     */
     @ColumnInfo(name = "category_id") val categoryId: String? = null,
     val period: String,
     @ColumnInfo(name = "starts_on") val startsOn: Long,
@@ -65,7 +75,52 @@ data class Goal(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     val deleted: Boolean = false,
-)
+    /**
+     * Whose figure this is: hers alone, or the household's. One flag, and it decides **both**
+     * things that could have been two switches — who can see it and whose spending counts.
+     *
+     * That is not a shortcut, it is the whole question. A cap that syncs to her partner's phone
+     * but only measures her own receipts is a number the two of them read differently while
+     * looking at the same card; a cap that stays on this phone but counts his café run is one she
+     * can go over without spending a Toman. Neither is a state anybody asked for. So there is one
+     * question — «مال خودم» or «خانوادگی» — and everything follows from the answer.
+     *
+     * False on every row that predates the column, which is the safe direction on an upgrade:
+     * nothing that was private starts leaving the phone because a build shipped. On a phone with
+     * no household it is also the *only* direction, and it changes nothing — see [scopedTo].
+     */
+    val shared: Boolean = false,
+    /**
+     * Who set it, kept for the sentence a shared card carries rather than for permission.
+     *
+     * Anybody in the household may move a shared figure — it is theirs together, and a budget one
+     * of them cannot adjust is a budget they cannot keep. What this field buys is attribution:
+     * «سقفی که مریم گذاشت» is a fact about a card that appeared on her phone without her doing
+     * anything, and a card that arrives unattributed reads as the app having invented it.
+     *
+     * Blank on a private row, and on every row written before the column: there is nobody to name
+     * when a figure has only ever been on one phone.
+     */
+    @ColumnInfo(name = "owner_member_id") val ownerMemberId: String = "",
+    /**
+     * Who last moved the figure, and the tie-break that makes two phones agree about it.
+     *
+     * The same device [categoryUpdateWins] uses on a filed receipt, for the same reason: two
+     * people editing one budget in the same millisecond is rare and must still converge, so the
+     * later stamp wins and the higher member id breaks the draw. A losing edit is a figure that
+     * reverts on the next pull — the named ceiling, and cheaper than a CRDT for a number two
+     * people change a handful of times a year.
+     */
+    @ColumnInfo(name = "edited_by_member_id") val editedByMemberId: String = "",
+) {
+    /**
+     * True when this is a cap on everything rather than on one category — «سقف کل خرج».
+     *
+     * Asked here and nowhere else, so «a cap with no category» never has to be spelled out at a
+     * call site where somebody could read it as a savings goal instead.
+     */
+    val total: Boolean get() = kind == GoalKind.CAP && categoryId == null
+}
 
 @Dao
 interface GoalDao {
@@ -75,13 +130,43 @@ interface GoalDao {
     @Query("SELECT * FROM goal WHERE deleted = 0 ORDER BY created_at")
     suspend fun active(): List<Goal>
 
+    /**
+     * Every row, buried ones included — what the sync reads, and the one query that must.
+     *
+     * A deleted goal is exactly the row the household still has to be told about: the tombstone
+     * that takes it off the other phones is built from it. [active] would hide the only rows that
+     * still have something to say.
+     */
+    @Query("SELECT * FROM goal ORDER BY created_at")
+    suspend fun all(): List<Goal>
+
     /** One live row by its id — the edit sheet can only be open on one that still exists. */
     @Query("SELECT * FROM goal WHERE id = :id AND deleted = 0")
     suspend fun byId(id: String): Goal?
 
-    @Query("UPDATE goal SET deleted = 1, updated_at = :now WHERE id = :id")
-    suspend fun delete(id: String, now: Long)
+    /** One row whether or not it is buried, so an arriving record can be judged against it. */
+    @Query("SELECT * FROM goal WHERE id = :id")
+    suspend fun anyById(id: String): Goal?
+
+    @Query("UPDATE goal SET deleted = 1, updated_at = :now, edited_by_member_id = :by WHERE id = :id")
+    suspend fun delete(id: String, now: Long, by: String = "")
 }
+
+/**
+ * The rows one figure is allowed to count: the whole household's, or only hers.
+ *
+ * The single place [Goal.shared] turns into arithmetic, used by both a cap and a savings goal so
+ * the two cannot drift into meaning different things by the same word. A shared figure counts
+ * everything the phone can see, which on a paired phone is both of them; a private one counts the
+ * rows this phone read itself.
+ *
+ * [mineId] is `META_SYNC_MEMBER`, and it is blank on a phone that has never paired. That is not a
+ * special case to guard — [LedgerEntry.ownerMemberId] is filled in with the same blank on every
+ * local row, so «only mine» on a solo phone selects the whole ledger, which is what it means
+ * there. The choice never appears on that phone and never has to.
+ */
+fun scopedTo(entries: List<LedgerEntry>, mineId: String, shared: Boolean): List<LedgerEntry> =
+    if (shared) entries else entries.filter { it.ownerMemberId == mineId }
 
 /**
  * How long a savings goal may run for, offered instead of a date picker.
@@ -140,7 +225,15 @@ data class GoalProgress(
     val perMonthRial: Long?,
     /** True when the deadline has passed with the target unmet. Never true for a met goal. */
     val expired: Boolean,
-)
+    /**
+     * Who set it, when that was somebody else — «مریم». Blank on her own and on every private
+     * goal, which is the same thing said twice: a private goal can only be hers.
+     */
+    val ownerName: String = "",
+) {
+    /** The household's, and therefore measured against what everybody keeps. */
+    val shared: Boolean get() = goal.shared
+}
 
 /**
  * A savings goal counts what was kept: income minus spending since it started, with transfers and
@@ -154,9 +247,22 @@ data class GoalProgress(
  *
  * ponytail: one net for every goal. Allocating savings between goals needs a way for her to say
  * which pot a deposit went to, which is a whole screen and a decision nobody has asked for yet.
+ *
+ * A shared goal nets the household and a private one nets only her — [scopedTo], the same gate a
+ * cap runs through. Which matters more here than on a cap: two people saving for one trip are
+ * putting money aside out of one pot, and a goal that counted half of it would ask them to reach
+ * the figure twice.
  */
-fun goalProgress(goal: Goal, entries: List<LedgerEntry>, today: Long): GoalProgress {
-    val net = spendable(entries)
+fun goalProgress(
+    goal: Goal,
+    entries: List<LedgerEntry>,
+    today: Long,
+    /** This phone's member id, blank when it has never paired — see [scopedTo]. */
+    mineId: String = "",
+    /** Who set it, when that was somebody else. See [GoalProgress.ownerName]. */
+    ownerName: String = "",
+): GoalProgress {
+    val net = scopedTo(spendable(entries), mineId, goal.shared)
         .filter { it.txn.day >= goal.startsOn }
         .sumOf { it.txn.signedRial ?: 0L }
     val current = net.coerceAtLeast(0L)
@@ -188,6 +294,7 @@ fun goalProgress(goal: Goal, entries: List<LedgerEntry>, today: Long): GoalProgr
                 (remaining + months - 1) / months
             },
         expired = daysLeft != null && daysLeft <= 0 && !done,
+        ownerName = ownerName,
     )
 }
 

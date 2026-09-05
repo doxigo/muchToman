@@ -106,6 +106,7 @@ data class SyncEntry(
     val categoryId: String = "",
     val categoryName: String = "",
     val categoryKind: String = CategoryKind.EXPENSE,
+    val transfer: Boolean = false,
     /** The mark, for a category she made. Blank on shipped ones, which every build looks up. */
     val categoryGlyph: String = "",
     val categoryEditorId: String = "",
@@ -152,6 +153,39 @@ data class FamilyAssetView(
 fun decodeAssetItems(json: String): List<AssetShareItem> =
     runCatching { SYNC_JSON.decodeFromString<List<AssetShareItem>>(json) }.getOrDefault(emptyList())
 
+/**
+ * One shared budget or savings goal, whole — the row itself, not a diff against it.
+ *
+ * Replaced wholesale like a دارایی record and for the same reason: there are a handful of these
+ * per household and they are edited a handful of times a year, so a merge protocol would be more
+ * machinery than the thing it protects. What settles a collision is the envelope stamp with
+ * [editedByMemberId] breaking the draw, exactly as a filed category does.
+ *
+ * Every field a [Goal] needs to be rebuilt is here **except** `updatedAt` and `deleted`, which ride
+ * on the envelope, and `shared`, which is true by definition of the record existing. That absence
+ * is what makes the payload a fixed point: a phone that receives this and later republishes it
+ * builds a byte-identical string, so its content hash matches and it stays quiet. Two phones
+ * echoing one budget at each other for ever is the failure this shape is chosen to rule out.
+ */
+@Serializable
+internal data class SyncGoalPayload(
+    val kind: String = "goal",
+    /** The record's own goal id, sealed in — the same check a tombstone gets. */
+    val goalId: String,
+    val nameFa: String,
+    val targetRial: Long,
+    /** [GoalKind.SAVE] or [GoalKind.CAP]. */
+    val goalKind: String,
+    /** Blank on a savings goal and on a total — see [Goal.total]. */
+    val categoryId: String = "",
+    val period: String,
+    val startsOn: Long,
+    val endsOn: Long? = null,
+    val createdAt: Long,
+    val ownerMemberId: String,
+    val editedByMemberId: String,
+)
+
 @Serializable
 private data class SyncCategoryPayload(
     val kind: String = "category",
@@ -163,6 +197,7 @@ private data class SyncCategoryPayload(
     val editedByMemberId: String,
 )
 
+/**
  * Somebody's words about one transaction, on its own record rather than inside the
  * transaction's.
  *
@@ -711,6 +746,17 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
         if (goal.deleted) continue
         val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember
         durable.goals().put(
+            if (hers) {
+                goal.copy(
+                    shared = false,
+                    ownerMemberId = keepMember.orEmpty(),
+                    updatedAt = nextStamp(goal.updatedAt, now),
+                )
+            } else {
+                goal.copy(updatedAt = nextStamp(goal.updatedAt, now), deleted = true)
+            }
+        )
+    }
 }
 
 data class SyncResult(val sent: Int, val received: Int)
@@ -869,6 +915,7 @@ private suspend fun outgoingRecords(
     val assetId = assetRecordId(session.member)
     val assetPublication = publications[assetId]
     if (assets != null) {
+    if (assets != null && shareAssets) {
         // The same 64-item ceiling the receivers hold; past it the payload is a parse gone
         // wrong, and a record that outgrows the server's body cap would wedge the whole push.
         val shared = safeAssetShareItems(assets)
@@ -889,7 +936,7 @@ private suspend fun outgoingRecords(
         }
     } else if (
         assetPublication != null && !assetPublication.deleted &&
-        !durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean()
+        !shareAssets
     ) {
         // Only her switch unshares. A null with the switch still on is a caller with no prices
         // to hand — the background worker — and must leave the shared record standing, not
@@ -909,16 +956,54 @@ private suspend fun outgoingRecords(
         )
     }
 
+    // Budgets and goals she keeps with the household, one record each, replaced wholesale.
+    //
+    // Every phone that knows a shared goal holds a publication row for it — [applyGoal] writes one
+    // on arrival, not only the phone that first published it. That is what makes this loop the
+    // same three lines on both sides: the hash it compares against is «what the household record
+    // currently says», so a phone that has only ever received a goal computes a matching hash and
+    // stays quiet, and a phone that has just edited one does not. Without it the two would echo
+    // one budget at each other for ever, and neither could retract a goal the other had shared.
+    //
+    // A row that stops being shared is retracted exactly as a deleted one is, because to the other
+    // phones the two are the same event: the figure they were shown is not theirs any more. The
+    // sheet says so before she flips it.
+    for (goal in durable.goals().all()) {
+        val goalId = goalRecordId(goal.id)
+        val previous = publications[goalId]
+        if (goal.shared && !goal.deleted) {
+            val payload = goalPayload(goal)
+            val contentHash = sha256Hex(payload)
+            if (previous != null && !previous.deleted && previous.contentHash == contentHash) continue
+            // Stamped from the edit rather than from this moment, as a filed category is: the
+            // sync may run hours after she moved the figure, and the stamp is what decides whose
+            // edit won.
+            val updatedAt = nextStamp(previous?.updatedAt, goal.updatedAt)
+            outgoing += PreparedRecord(
+                wireRecord(session, goalId, "goal", goal.ownerMemberId.ifBlank { session.member }, updatedAt, payload),
+                SyncPublication(goalId, "goal", contentHash, updatedAt, deleted = false),
+            )
+        } else {
+            // Never shared, or already retracted: there is nothing out there to take back, and a
+            // tombstone for a record the household has never seen is a row on the server for ever.
+            if (previous == null || previous.deleted) continue
+            val updatedAt = nextStamp(previous.updatedAt, now)
+            outgoing += PreparedRecord(
+                wireRecord(
+                    session,
+                    goalId,
+                    "goal",
+                    goal.ownerMemberId.ifBlank { session.member },
+                    updatedAt,
+                    SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = goalId, deleted = true)),
+                    deleted = true,
+                ),
+                previous.copy(contentHash = "", updatedAt = updatedAt, deleted = true),
     val entriesByRef = ledger.entries.associateBy { it.txn.ref }
     for (decision in categoryDecisions) {
         if (decision.deleted) continue
         val categoryId = decision.value ?: continue
         val transaction = entriesByRef[decision.ref]?.txn
-        if (
-            transaction?.familyRef.isNullOrBlank() &&
-            (transaction?.sourceKind == "sms" || decision.ref.startsWith("s:")) &&
-            !shareSms
-        ) continue
         if (!decisionMayLeave(decision, transaction, shareSms, session.member, excludedBanks)) continue
         val target = familyTargetOf(decision, transaction, session.member) ?: continue
         val category = categoryById[categoryId] ?: continue
@@ -1005,6 +1090,11 @@ private fun familyTargetOf(decision: TxnDecision, txn: Txn?, member: String): St
         ?: familyTxnId(member, decision.ref).takeUnless { decision.ref.startsWith("f:") }
 
 /**
+ * Whether an answer about one row may leave this phone.
+ *
+ * A decision names a transaction, so it inherits every gate the transaction itself rides: while
+ * SMS sharing is off a parsed message stays home, and a bank she has set aside keeps its rows
+ * home whatever anybody writes about them — a record naming a transaction the family cannot see
  * is a leak dressed as bookkeeping. A row that came *from* the family is already shared by its
  * owner, and her answer about one is hers to send.
  *
@@ -1303,6 +1393,7 @@ private suspend fun applyNote(
     )
     return true
 }
+
 /**
  * Somebody's shared دارایی, kept as sent: their names, their prices. Validated the way every
  * other record is — the id, the envelope owner and the sealed payload must all name the same
@@ -1333,6 +1424,130 @@ private suspend fun applyAsset(
                 .takeIf { it.isFinite() && it in 0.0..MAX_PLAUSIBLE_RIAL.toDouble() }
                 ?: items.sumOf { it.toman },
             updatedAt = record.updatedAt,
+        )
+    )
+    return true
+}
+
+/**
+ * A budget or a goal somebody in the household shares, stored as a row of the same table her own
+ * live in — because it is one. `Budget.kt` reads the table and neither knows nor needs to know
+ * which phone a row arrived on; a `family_goal` table beside it would have been a second
+ * definition of «what a cap is» kept in step by hand.
+ *
+ * Validated the way every other record is: the id, the envelope owner and the sealed payload must
+ * agree about which goal this is. What it deliberately does **not** check is that the sender owns
+ * it — a household budget only one of them may adjust is a budget they cannot keep, so any member
+ * may move the figure and the stamp settles who did. See [goalRecordId].
+ *
+ * The publication row written at the end is not bookkeeping about a push; it is this phone's copy
+ * of what the household record says, and it is what keeps [outgoingRecords] from echoing the goal
+ * straight back. Hashed from the payload this phone would *send*, not from the bytes that arrived:
+ * if the two ever disagree, this phone republishes its canonical form once and both sides settle
+ * on it, instead of trading records for ever.
+ */
+private suspend fun applyGoal(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+    payload: SyncGoalPayload,
+): Boolean {
+    val goalId = payload.goalId.takeIf(String::isNotBlank) ?: return false
+    if (record.id != goalRecordId(goalId)) return false
+    val kind = payload.goalKind.takeIf { it == GoalKind.SAVE || it == GoalKind.CAP } ?: return false
+    if (payload.targetRial !in 0..MAX_PLAUSIBLE_RIAL) return false
+    val existing = durable.goals().anyById(goalId)
+    if (existing != null && existing.updatedAt > record.updatedAt) return false
+    // The same draw-breaker a filed category uses, and it has to be here as well as on the server:
+    // two edits landing on the same millisecond arrive in whichever order the pull happened to
+    // return them, and only a rule both phones apply makes them agree afterwards.
+    val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
+    if (
+        existing != null &&
+        existing.updatedAt == record.updatedAt &&
+        existing.editedByMemberId >= editor
+    ) return false
+    val owner = payload.ownerMemberId.takeIf(::isValidSyncIdentity) ?: record.ownerMemberId
+    val goal = syncedGoal(payload, kind, record.updatedAt, owner, editor)
+    ensureMemberPlaceholder(durable, owner, record.updatedAt)
+    durable.goals().put(goal)
+    durable.syncPublications().putAll(
+        listOf(
+            SyncPublication(
+                id = record.id,
+                sourceKind = "goal",
+                contentHash = sha256Hex(goalPayload(goal)),
+                updatedAt = record.updatedAt,
+                deleted = false,
+            )
+        )
+    )
+    return true
+}
+
+/**
+ * One arriving goal record as a row — the half of [applyGoal] that touches no database.
+ *
+ * Pure, and separated for the reason [prefBackupValue] is: a mistake in here is not a wrong figure
+ * on one screen, it is two phones trading one budget back and forth for ever. What must hold is
+ * that [goalPayload] of what this returns is byte-identical to the payload it was given — the
+ * fixed point the whole publish loop rests on — and that is a property a test can state.
+ */
+internal fun syncedGoal(
+    payload: SyncGoalPayload,
+    kind: String,
+    updatedAt: Long,
+    owner: String,
+    editor: String,
+): Goal = Goal(
+    id = payload.goalId,
+    nameFa = safeSyncedText(payload.nameFa, 40, "بی‌نام"),
+    targetRial = payload.targetRial,
+    kind = kind,
+    // Blank is the total — a cap on everything — and on a savings goal it is the absence the
+    // column has always meant. Neither is a category id, and storing one would be inventing a
+    // category out of an empty string.
+    categoryId = safeSyncedText(payload.categoryId, 80).takeIf(String::isNotBlank),
+    period = payload.period.takeIf { it.length <= 16 } ?: GoalPeriod.MONTH,
+    startsOn = payload.startsOn,
+    endsOn = payload.endsOn,
+    createdAt = payload.createdAt,
+    updatedAt = updatedAt,
+    deleted = false,
+    shared = true,
+    ownerMemberId = owner,
+    editedByMemberId = editor,
+)
+
+/**
+ * A verified retraction of a shared goal: somebody deleted it, or took it back to being their own.
+ *
+ * Both arrive as the same record and mean the same thing here — the figure on this screen is not
+ * this household's any more — so the local row is buried rather than un-shared. Un-sharing it
+ * would leave a copy of somebody else's private budget sitting on her آینده tab, measuring her
+ * spending against a number she never chose.
+ */
+private suspend fun applyGoalTombstone(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+): Boolean {
+    val goalId = record.id.removePrefix("goal:").takeIf(String::isNotBlank) ?: return false
+    val existing = durable.goals().anyById(goalId) ?: return false
+    if (existing.updatedAt > record.updatedAt) return false
+    // Her own row, retracted by a record naming her as the editor, is this phone hearing its own
+    // unshare back through a peer. Burying it would delete the private budget she just kept.
+    if (!existing.shared && existing.editedByMemberId == session.member) return false
+    durable.goals().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
+    durable.syncPublications().putAll(
+        listOf(
+            SyncPublication(
+                id = record.id,
+                sourceKind = "goal",
+                contentHash = "",
+                updatedAt = record.updatedAt,
+                deleted = true,
+            )
         )
     )
     return true
@@ -1408,6 +1623,7 @@ private suspend fun applyRecord(
             "transaction" -> applyTransactionTombstone(durable, session, record)
             "member" -> applyMemberTombstone(durable, session, record)
             "asset" -> applyAssetTombstone(durable, session, record)
+            "goal" -> applyGoalTombstone(durable, session, record)
             else -> false
         }
     }

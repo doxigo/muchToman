@@ -244,6 +244,18 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `goal` ADD COLUMN `shared` INTEGER NOT NULL DEFAULT 0")
+                connection.execSQL(
+                    "ALTER TABLE `goal` ADD COLUMN `owner_member_id` TEXT NOT NULL DEFAULT ''"
+                )
+                connection.execSQL(
+                    "ALTER TABLE `goal` ADD COLUMN `edited_by_member_id` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: run {
                 // A staged restore is finished here, inside the one window where "durable.db is

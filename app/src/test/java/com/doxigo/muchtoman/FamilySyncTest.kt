@@ -150,6 +150,7 @@ class FamilySyncTest {
         // And a note arriving back at the phone that wrote it changes nothing.
         assertFalse(syncedEditWins(100L, "member-a", 100L, "member-a"))
     }
+
     @Test
     fun `automatic category refresh cannot overwrite a member edit`() {
         assertTrue(categoryUpdateWins(0L, "owner", 0L, "owner"))
@@ -309,5 +310,85 @@ class FamilySyncTest {
         assertEquals(setOf("SAMAN", "BLU"), parseExcludedBanks(setOf("SAMAN", "BLU").joinToString(",")))
         assertEquals(emptySet<String>(), parseExcludedBanks(""))
         assertEquals(emptySet<String>(), parseExcludedBanks(null))
+    }
+
+    // ─────────────────────── a budget the household keeps ───────────────────────
+
+    private val her = "aaaa1111bbbb2222aaaa1111bbbb2222"
+    private val him = "cccc3333dddd4444cccc3333dddd4444"
+
+    private fun sharedGoal(
+        id: String = "g1",
+        kind: String = GoalKind.CAP,
+        category: String? = "cat_dining",
+        owner: String = her,
+        editor: String = her,
+    ) = Goal(
+        id = id, nameFa = "رستوران و کافه", targetRial = 50_000_000L, kind = kind,
+        categoryId = category, period = GoalPeriod.MONTH, startsOn = 20_000L,
+        createdAt = 1_700_000_000_000L, updatedAt = 1_700_000_000_100L,
+        shared = true, ownerMemberId = owner, editedByMemberId = editor,
+    )
+
+    /** What [applyGoal] does to a payload, minus the database. */
+    private fun receive(goal: Goal, at: Long = 1_700_000_000_100L, editor: String = goal.editedByMemberId): Goal {
+        val payload = Json.decodeFromString<SyncGoalPayload>(goalPayload(goal))
+        return syncedGoal(payload, payload.goalKind, at, payload.ownerMemberId, editor)
+    }
+
+    @Test
+    fun `a goal published and received again publishes to the very same bytes`() {
+        // The property the whole publish loop rests on. The receiving phone stores what arrived
+        // and then asks what it would send; if that differed by one byte, the two phones would
+        // trade the same budget for ever, each seeing a hash the other did not write.
+        for (goal in listOf(
+            sharedGoal(),
+            sharedGoal(category = null),                       // the total
+            sharedGoal(kind = GoalKind.SAVE, category = null), // a savings goal
+            sharedGoal(owner = him, editor = him),
+        )) {
+            val sent = goalPayload(goal)
+            assertEquals(sent, goalPayload(receive(goal, editor = goal.editedByMemberId)))
+        }
+    }
+
+    @Test
+    fun `a name past the cap settles on one side rather than flapping`() {
+        // Truncation applied on the way out as well as in, so the long name converges in one
+        // round instead of being cut again by every phone that receives it.
+        val long = sharedGoal().copy(nameFa = "خ".repeat(200))
+        val once = receive(long)
+        assertEquals(40, once.nameFa.length)
+        assertEquals(goalPayload(once), goalPayload(receive(once)))
+    }
+
+    @Test
+    fun `a total survives the wire as a total and not as a category called blank`() {
+        val roof = receive(sharedGoal(category = null))
+        assertTrue(roof.total)
+        assertNull(roof.categoryId)
+    }
+
+    @Test
+    fun `an arriving goal is the household's, whoever set it`() {
+        val theirs = receive(sharedGoal(owner = him, editor = him))
+        assertTrue(theirs.shared)
+        assertEquals(him, theirs.ownerMemberId)
+        assertEquals(him, theirs.editedByMemberId)
+    }
+
+    @Test
+    fun `a goal record is keyed by the figure and never by who made it`() {
+        // Keying it by member would put an owner in the id, and the server would then have to
+        // refuse every edit from the other phone — a household cap only one of them may adjust.
+        assertEquals(goalRecordId("g1"), goalRecordId("g1"))
+        assertTrue(goalRecordId("g1").startsWith("goal:"))
+        assertTrue(!goalRecordId("g1").contains(her))
+    }
+
+    @Test
+    fun `an unknown period lands on a month rather than wedging the screen`() {
+        val odd = sharedGoal().copy(period = "z".repeat(64))
+        assertEquals(GoalPeriod.MONTH, receive(odd).period)
     }
 }
