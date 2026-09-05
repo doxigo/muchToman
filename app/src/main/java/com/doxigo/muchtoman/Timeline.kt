@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.size
@@ -1042,7 +1043,7 @@ internal fun TimelineRow(
                         .background(hue.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
                 ) { CategoryIcon(categoryFa, hue, size = 22.dp, stroke = 1.8.dp) }
-                // Whose row, on the disc's corner — the face they picked ([MemberFace]),
+                // Whose row, on the disc's edge — the face they picked ([MemberFace]),
                 // shrunk to a badge. A badge rather than a disc of its own because the disc's
                 // hue is the category and stays the first thing the eye reads; on a shared
                 // ledger *who* is the second question, and the corner answers it before the
@@ -1054,6 +1055,17 @@ internal fun TimelineRow(
                     Box(
                         Modifier
                             .align(Alignment.BottomStart)
+                            // Sitting *on* the disc's line, not inside it. Pinned flat to the
+                            // corner, a 24.dp badge has its centre 10.dp out from the middle of
+                            // a 22.dp radius — that is the disc's open field, and the badge
+                            // reads as floating in it, half over the mark. Pushed out along the
+                            // diagonal until the centre lands on the circumference: 14.dp
+                            // start-ward and 17.dp down measures 22.02.dp from the middle. x is
+                            // counted from the start edge, so out of the corner is negative.
+                            // The diagonal leans low on purpose — the row lends 10.dp above and
+                            // below to the overhang but only Space.xs at the start, and the
+                            // sideways half has to stay inside the row's own clip.
+                            .offset(x = -Space.xs, y = 7.dp)
                             .size(24.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.background)
@@ -1374,10 +1386,14 @@ private fun LearnSimilarToggle(txn: Txn, checked: Boolean, onChange: (Boolean) -
 }
 
 /**
- * Her own words about the row, saved when she says so rather than on every keystroke.
+ * Words about the row, saved when she says so rather than on every keystroke.
  *
  * The save pill only exists while the draft and the stored note disagree, and its disappearance
  * after the tap is the receipt: what is on screen is what the ledger holds.
+ *
+ * A note is the household's, not one phone's, so the words here can be somebody else's — and
+ * when they are, the line underneath says whose before she edits over them. Her own note gets
+ * no byline: «یادداشت از سهیل» on her own sentence is the app telling her who she is.
  */
 @Composable
 private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit) {
@@ -1385,7 +1401,7 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
     Column {
         OutlinedTextField(
             value = draft,
-            onValueChange = { draft = it.take(200) },
+            onValueChange = { draft = it.take(MAX_NOTE_CHARS) },
             placeholder = { Text("مثلاً کادوی تولد مامان") },
             shape = RoundedCornerShape(Radius.field),
             minLines = 2,
@@ -1393,6 +1409,14 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
                 .fillMaxWidth()
                 .semantics { contentDescription = "یادداشت تراکنش" },
         )
+        if (entry.noteAuthorName.isNotBlank()) {
+            Spacer(Modifier.height(Space.s))
+            Text(
+                "یادداشت از ${entry.noteAuthorName}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (draft.trim() != entry.note) {
             Spacer(Modifier.height(Space.s))
             PillButton("ذخیره یادداشت", { onNote(entry, draft) }, voice = ButtonVoice.PRIMARY)
