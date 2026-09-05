@@ -151,7 +151,14 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
                 if (matches[j].at - matches[i].at > DUPLICATE_REFNO_WINDOW_MS) continue
-                byRefNo += pair(matches[i], matches[j], LinkKind.DUPLICATE, "refno", auto = true)
+                val a = matches[i]
+                val b = matches[j]
+                val compatible = a.accountId == b.accountId &&
+                    a.direction != null && a.direction == b.direction &&
+                    a.amountRial != null && a.amountRial == b.amountRial &&
+                    a.signedRial != null && a.signedRial == b.signedRial &&
+                    (a.mask.isBlank() || b.mask.isBlank() || a.mask == b.mask)
+                byRefNo += pair(a, b, LinkKind.DUPLICATE, "refno", auto = compatible)
             }
         }
     }
