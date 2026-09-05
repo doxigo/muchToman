@@ -64,6 +64,7 @@ export interface NoteDecision {
   note: string;
   editedByMemberId: string;
 }
+
 export function nextStamp(previous: number | undefined, now: number): number {
   return Math.max(now, (previous ?? 0) + 1);
 }

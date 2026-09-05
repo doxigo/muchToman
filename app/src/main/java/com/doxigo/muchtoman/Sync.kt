@@ -28,6 +28,7 @@ const val META_SYNC_BASE = "sync_base"
 const val META_SYNC_TOKEN = "sync_token"
 const val META_SYNC_TOKEN_AT = "sync_token_at"
 const val META_SYNC_ROTATION = "sync_rotation"
+const val META_SYNC_DERIVE_REVISION = "sync_derive_revision"
 const val META_SYNC_DEVICE = "sync_device"
 const val META_SYNC_MEMBER = "sync_member"
 const val META_SYNC_SCOPE = "sync_scope"
@@ -864,6 +865,7 @@ private suspend fun outgoingRecords(
                 categoryId = entry.categoryId,
                 categoryName = entry.categoryFa,
                 categoryKind = category?.kind ?: CategoryKind.EXPENSE,
+                transfer = entry.transfer,
                 categoryGlyph = category?.glyph.orEmpty(),
                 categoryEditorId = categoryDecision?.memberId.orEmpty().ifBlank { session.member },
                 categoryUpdatedAt = categoryDecision?.updatedAt ?: 0L,
@@ -914,7 +916,6 @@ private suspend fun outgoingRecords(
     // republished whenever its content hash moves and tombstoned the sync after sharing stops.
     val assetId = assetRecordId(session.member)
     val assetPublication = publications[assetId]
-    if (assets != null) {
     if (assets != null && shareAssets) {
         // The same 64-item ceiling the receivers hold; past it the payload is a parse gone
         // wrong, and a record that outgrows the server's body cap would wedge the whole push.

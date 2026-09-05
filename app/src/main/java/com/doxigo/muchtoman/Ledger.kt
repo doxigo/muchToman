@@ -256,6 +256,12 @@ abstract class DurableDb : RoomDatabase() {
             }
         }
 
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `family_txn` ADD COLUMN `transfer` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): DurableDb = instance ?: synchronized(this) {
             instance ?: run {
                 // A staged restore is finished here, inside the one window where "durable.db is
@@ -394,6 +400,7 @@ data class FamilyTxn(
     val merchant: String = "",
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     val deleted: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val transfer: Boolean = false,
 )
 
 /** What this device has successfully published, used to send reliable unshare tombstones. */
