@@ -567,6 +567,15 @@ fun ruleFrom(txn: Txn, categoryId: String, addrKey: String, now: Long, id: Strin
 
 // ─────────────────────────── decisions she made ───────────────────────────
 
+/**
+ * The longest note the app keeps, in characters.
+ *
+ * Named because two sides now have to agree on it: the field she types into, and the sync that
+ * takes a note another member wrote. A receiver with a shorter ceiling would quietly truncate
+ * somebody else's words and then publish the truncation back at them.
+ */
+const val MAX_NOTE_CHARS = 200
+
 object DecisionKind {
     const val CATEGORY = "category"
     const val NOTE = "note"
@@ -663,8 +672,29 @@ interface TxnDecisionDao {
     @Query("SELECT * FROM txn_decision WHERE ref = :ref AND deleted = 0")
     suspend fun forRef(ref: String): List<TxnDecision>
 
+    /**
+     * One answer, retraction included — `ref` and `kind` are unique together, so there is only
+     * ever the one row to find.
+     *
+     * [forRef] hides a retracted row, which is right for the screens and wrong for anything that
+     * has to reason about *when* the answer last changed: a note taken back at noon has to beat
+     * the same note arriving from another phone stamped at dawn, and a row this query cannot see
+     * is a note that comes back from the dead.
+     */
+    @Query("SELECT * FROM txn_decision WHERE ref = :ref AND kind = :kind")
+    suspend fun answerFor(ref: String, kind: String): TxnDecision?
+
     @Query("SELECT * FROM txn_decision WHERE kind = :kind AND deleted = 0")
     suspend fun ofKind(kind: String): List<TxnDecision>
+
+    /**
+     * Every answer of one kind, retractions included, for the family push.
+     *
+     * A note taken back has to be *published* as taken back. [ofKind] would hide it, and the
+     * household would keep showing words their author has already deleted.
+     */
+    @Query("SELECT * FROM txn_decision WHERE kind = :kind")
+    suspend fun ofKindWithRetracted(kind: String): List<TxnDecision>
 
     /** The answers to transactions nobody ever made. See [ManualTxnDao.deleteWithIdPrefix]. */
     @Query("DELETE FROM txn_decision WHERE ref LIKE :prefix || '%'")

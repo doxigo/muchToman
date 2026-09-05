@@ -223,7 +223,7 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
     recordsBetween(space, now - 32 * 86_400_000, now + 32 * 86_400_000),
   const profiles = new Map<string, MemberProfile>();
   const decisions = new Map<string, CategoryDecision>();
-  for (const record of records) {
+  const notes = new Map<string, NoteDecision>();
   for (const record of contextRecords) {
     if (record.value == null || typeof record.value !== 'object') continue;
     const value = record.value as Record<string, unknown>;
@@ -237,6 +237,12 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
     if (recordKind === 'category' && value.kind === 'category' && typeof value.target === 'string') {
       decisions.set(value.target, record.value as CategoryDecision);
     }
+    if (
+      recordKind === 'note' && value.kind === 'note' &&
+      typeof value.target === 'string' && typeof value.note === 'string'
+    ) {
+      notes.set(value.target, record.value as NoteDecision);
+    }
   }
   const rows = records
     .filter((record) => {
@@ -249,11 +255,21 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
         ? record.authorMemberId || ''
         : record.ownerMemberId || record.authorMemberId || '';
       const category = decisions.get(record.id);
+      // Whoever wrote the note, not whose row it is: on a shared ledger anybody may write one,
+      // so the words need the name that goes with them. Blank when it is this phone's own.
+      const written = notes.get(record.id);
+      const author = written?.editedByMemberId ?? '';
       return {
         id: record.id,
+        ownerId,
         entry,
+        categoryKind: category?.categoryKind || entry.categoryKind,
         ownerName: profiles.get(ownerId)?.name || (ownerId === session.member ? session.name : 'عضو خانواده'),
         categoryName: category?.categoryName || entry.categoryName || 'دسته‌بندی نشده',
+        note: written?.note ?? '',
+        noteAuthor: author && author !== session.member
+          ? profiles.get(author)?.name || 'عضو خانواده'
+          : '',
       };
     })
     .sort((a, b) => b.entry.at - a.entry.at);
@@ -261,6 +277,8 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
   // The hero says «این ماه», so it sums this Jalali month and nothing else — the list below
   // still carries everything.
   const monthRows = rows.filter((r) => inJalaliMonth(r.entry.at, now) && !r.entry.transfer && r.categoryKind !== 'transfer');
+  const visibleIds = new Set(page.rows.map((r) => r.id));
+  const visibleRows = rows.filter((r) => visibleIds.has(r.id));
   const income = monthRows.filter((r) => r.entry.direction === 'in').reduce((s, r) => s + r.entry.amountRial, 0);
   const spent = monthRows.filter((r) => r.entry.direction === 'out').reduce((s, r) => s + r.entry.amountRial, 0);
   const members = [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name, 'fa'));
@@ -337,6 +355,9 @@ async function renderLedger(session: Session, note?: string, warn = false): Prom
                 <div class="grow">
                   <div>${escape(r.entry.merchant || 'بدون نام')}</div>
                   <div class="muted">${escape(r.ownerName)} • ${escape(r.categoryName)}</div>
+                  ${r.note ? `<div class="muted">${escape(r.note)}${
+                    r.noteAuthor ? ` — ${escape(r.noteAuthor)}` : ''
+                  }</div>` : ''}
                 </div>
                 <div class="figure amount ${r.entry.direction === 'in' ? 'in' : ''}">
                   ${r.entry.direction === 'in' ? '+' : '−'}${toman(r.entry.amountRial)}

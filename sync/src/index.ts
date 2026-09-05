@@ -590,6 +590,17 @@ export class Household extends DurableObject<Env> {
         // A note is written by whoever is reading the row, not by whose row it is, so — exactly
         // like a category — it carries no owner check. The id namespace is all that is fenced.
         if (record.kind === 'note' && !record.id.startsWith('note:')) {
+          throw new SyncError('invalid_id', 400);
+        }
+        // A shared budget or goal belongs to the household rather than to whoever typed it in:
+        // a cap only one of them may adjust is a cap they cannot keep together. So, like a
+        // category and a note, it carries no owner check — the record names its owner for the
+        // sentence on the card, and the stamp settles who moved the figure last. The id
+        // namespace is all that is fenced, and the tombstone rides the same path for the same
+        // reason: either of them may put the figure away.
+        if (record.kind === 'goal' && !record.id.startsWith('goal:')) {
+          throw new SyncError('invalid_id', 400);
+        }
         const existing = [...this.sql.exec<{
           updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string;
         }>(

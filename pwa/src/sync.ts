@@ -20,6 +20,7 @@ export interface Entry {
   kind: 'transaction';
   ownerMemberId: string;
   sourceKind: 'sms' | 'manual';
+  transfer?: boolean;
   at: number;
   amountRial: number;
   direction: 'in' | 'out';
@@ -30,7 +31,6 @@ export interface Entry {
   categoryEditorId: string;
   categoryUpdatedAt: number;
   merchant: string;
-  note: string;
 }
 
 export interface MemberProfile {
@@ -49,6 +49,21 @@ export interface CategoryDecision {
   editedByMemberId: string;
 }
 
+/**
+ * Somebody's words about one transaction, on a record of its own rather than inside the
+ * transaction's — a note is written by whoever is reading the row, and only its owner may write
+ * the transaction record. Blank is a note taken back — the row simply loses its line.
+ *
+ * This page reads notes and does not write them: there is no field to type one into here, and
+ * a screen that showed somebody else's words with no way to answer them would be the wrong half
+ * of the feature to build first.
+ */
+export interface NoteDecision {
+  kind: 'note';
+  target: string;
+  note: string;
+  editedByMemberId: string;
+}
 export function nextStamp(previous: number | undefined, now: number): number {
   return Math.max(now, (previous ?? 0) + 1);
 }

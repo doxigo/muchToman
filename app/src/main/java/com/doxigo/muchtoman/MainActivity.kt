@@ -575,7 +575,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // Derive when anything new arrived, or when this build reads messages differently from
         // whatever produced the rows already there. The second case needs no inbox, no
         // permission and no network — it is why a parser fix is now a Tuesday job.
-        if (added > 0 || deriveAfterRestore || needsDerive(derived)) {
+        if (added > 0 || deriveAfterRestore || needsDerive(derived, durable)) {
             deriveAfterRestore = false
             val rows = derive(durable, derived, extra)
             android.util.Log.i("muchtoman", "ledger: +$added messages, $rows transactions")
@@ -714,15 +714,22 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * Her note on one transaction — the one field that is words rather than an answer. Blank
      * takes it back. A [DecisionKind.NOTE] decision like any other, so it survives a re-derive
      * and replays onto a rebuilt ledger the way a category does.
+     *
+     * And it goes to the household the way a category does too: a note is written by whoever is
+     * looking at the row, so it carries the family reference of the transaction it is about —
+     * her own row's, or the one her husband's row already came with — and the sync is asked for
+     * straight away rather than left to the next hourly one, because a note she just typed and
+     * cannot see on the other phone reads as a note that was not saved.
      */
     fun setNote(entry: LedgerEntry, text: String) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             runCatching {
-                val clean = text.trim().take(200)
-                val previous = durable.decisions().forRef(entry.txn.ref)
-                    .firstOrNull { it.kind == DecisionKind.NOTE }
+                val clean = text.trim().take(MAX_NOTE_CHARS)
+                // The retracted row too: `ref` and `kind` are unique together, so re-noting a
+                // row she had cleared has to land on that same row rather than race it.
+                val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.NOTE)
                 if (previous == null && clean.isEmpty()) return@runCatching
                 if (previous != null && previous.value.orEmpty() == clean) return@runCatching
                 val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
@@ -737,10 +744,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         updatedAt = now,
                         deleted = clean.isEmpty(),
                         memberId = session?.member.orEmpty(),
-                        familyRef = entry.txn.familyRef,
+                        familyRef = entry.txn.familyRef.ifBlank {
+                            session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                        },
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "setNote failed: $it") }
         }
     }
@@ -789,7 +799,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                             )
                         )
                     }
-                    val cleanNote = note.trim().take(200)
+                    val cleanNote = note.trim().take(MAX_NOTE_CHARS)
                     if (cleanNote.isNotEmpty()) {
                         durable.decisions().put(
                             TxnDecision(

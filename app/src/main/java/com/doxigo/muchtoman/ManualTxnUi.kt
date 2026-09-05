@@ -256,7 +256,7 @@ fun ManualTxnSheet(
             SheetLabel("توضیحات")
             OutlinedTextField(
                 value = note,
-                onValueChange = { note = it.take(200) },
+                onValueChange = { note = it.take(MAX_NOTE_CHARS) },
                 label = { Text("یادداشت — خالی هم می‌شه") },
                 minLines = 2,
                 shape = RoundedCornerShape(Radius.field),

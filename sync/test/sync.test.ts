@@ -376,6 +376,32 @@ describe('privacy between households and members', () => {
       ownerMemberId: ownerMember,
     })]);
     expect(category.status).toBe(200);
+
+    // A note about somebody else's row is the same story as a category on it: anybody in the
+    // household may write one, so no owner check — only the id namespace is fenced.
+    const note = await push(other.token, [record({
+      id: `note:${'59'.repeat(32)}`,
+      scope,
+      kind: 'note',
+      ownerMemberId: ownerMember,
+    })]);
+    expect(note.status).toBe(200);
+
+    const misfiled = await push(other.token, [record({
+      id: `note:${'5a'.repeat(32)}`,
+      scope,
+      kind: 'transaction',
+      ownerMemberId: ownerMember,
+    })]);
+    expect(misfiled.status).toBe(400);
+
+    const unnamespaced = await push(other.token, [record({
+      id: `notes-${'5b'.repeat(16)}`,
+      scope,
+      kind: 'note',
+      ownerMemberId: ownerMember,
+    })]);
+    expect(unnamespaced.status).toBe(400);
   });
 
   it('locks an established token to its person and device identity', async () => {
@@ -722,6 +748,7 @@ describe('the PWA it serves', () => {
     expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
   });
 });
+
 describe('bounded resumable pulls', () => {
   it('rejects invalid page limits and caps oversized integer limits', async () => {
     const token = await claim('e101'.repeat(8), ['personal:her']);

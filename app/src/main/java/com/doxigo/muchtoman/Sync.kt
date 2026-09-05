@@ -113,7 +113,6 @@ data class SyncEntry(
     /** Compatibility with records written before category ids were synchronized. */
     val category: String = "",
     val merchant: String = "",
-    val note: String = "",
 )
 
 @Serializable
@@ -161,6 +160,27 @@ private data class SyncCategoryPayload(
     val categoryName: String,
     val categoryKind: String,
     val categoryGlyph: String = "",
+    val editedByMemberId: String,
+)
+
+ * Somebody's words about one transaction, on its own record rather than inside the
+ * transaction's.
+ *
+ * A note is written by whoever is looking at the row — «کادوی تولد مامان» on her husband's
+ * grocery run is hers to add, exactly as the category on it is hers to change — so it cannot
+ * ride inside the owner's transaction record, which only the owner may write. This is the same
+ * shape [SyncCategoryPayload] takes and for the same reason, down to the target naming the
+ * family reference rather than either phone's local one.
+ *
+ * A blank [note] is a note taken back. There is no tombstone: the record id is a hash of its
+ * target, so a contentless delete would name a row the receiver cannot resolve — an empty note
+ * says the same thing and says it somewhere the receiver can act on.
+ */
+@Serializable
+private data class SyncNotePayload(
+    val kind: String = "note",
+    val target: String,
+    val note: String,
     val editedByMemberId: String,
 )
 
@@ -213,6 +233,7 @@ private data class PullBody(
     val seq: Long = 0,
     val records: List<WireRecord> = emptyList(),
     val primaryMemberId: String = "",
+    val hasMore: Boolean? = null,
     val rotationClientSecret: Boolean = false,
 )
 
@@ -321,6 +342,40 @@ private fun assetRecordId(memberId: String): String = "asset:$memberId"
 private fun categoryRecordId(familyRef: String): String = "category:${sha256Hex(familyRef)}"
 
 /**
+ * A shared budget or goal's record, keyed by the goal and **not by who made it**.
+ *
+ * `goal:<memberId>:<goalId>` is the shape a transaction uses, and it is the wrong one here: it
+ * would name an owner in the id, and the server would then have to refuse a write from anybody
+ * else. A household budget one of them cannot adjust is a budget they cannot keep, so the id says
+ * only which figure is meant and ownership is a fact on the record rather than a lock on it.
+ */
+internal fun goalRecordId(goalId: String): String = "goal:$goalId"
+
+/**
+ * One goal as it goes on the wire, built here and nowhere else.
+ *
+ * The single constructor is the fixed point: a phone that receives a record, stores it and then
+ * asks this function what it would send gets the same bytes back, so the content hash matches and
+ * nothing is republished. Every field is put through the same cap the receiving side applies, so
+ * a name one byte too long cannot make the two sides disagree for ever.
+ */
+internal fun goalPayload(goal: Goal): String = SYNC_JSON.encodeToString(
+    SyncGoalPayload(
+        goalId = goal.id,
+        nameFa = safeSyncedText(goal.nameFa, 40, "بی‌نام"),
+        targetRial = goal.targetRial,
+        goalKind = goal.kind,
+        categoryId = safeSyncedText(goal.categoryId.orEmpty(), 80),
+        period = goal.period,
+        startsOn = goal.startsOn,
+        endsOn = goal.endsOn,
+        createdAt = goal.createdAt,
+        ownerMemberId = goal.ownerMemberId,
+        editedByMemberId = goal.editedByMemberId,
+    )
+)
+private fun noteRecordId(familyRef: String): String = "note:${sha256Hex(familyRef)}"
+
 /** One fresh household on the server: a random id, claimed for this member and device. */
 private fun claimFreshHousehold(base: String, member: String, device: String): SyncSession {
     val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
@@ -343,7 +398,6 @@ private fun claimFreshHousehold(base: String, member: String, device: String): S
 }
 
 suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String): SyncSession =
-    withContext(Dispatchers.IO) {
     withFamilySync {
         val session = claimFreshHousehold(base, newIdentity(), newIdentity())
         saveSession(durable, session)
@@ -655,6 +709,8 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     // still marked shared would start publishing to the next household the day she joined it.
     for (goal in durable.goals().all()) {
         if (goal.deleted) continue
+        val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember
+        durable.goals().put(
 }
 
 data class SyncResult(val sent: Int, val received: Int)
@@ -784,6 +840,11 @@ private suspend fun outgoingRecords(
         // and the asset record has its own unshare below — a "transaction" tombstone under an
         // asset: id would be refused by the server as a kind mismatch anyway.
         if (publication.sourceKind == "category" || publication.sourceKind == "asset") continue
+        // Only transaction publications sweep here: category and note records answer to their
+        // own decisions, and the asset and goal records have their own unshare below — a
+        // "transaction" tombstone under an asset: id would be refused by the server as a kind
+        // mismatch anyway.
+        if (publication.sourceKind in setOf("category", "note", "asset", "goal")) continue
         if (publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
         val deleted = publication.copy(contentHash = "", updatedAt = updatedAt, deleted = true)
@@ -858,13 +919,8 @@ private suspend fun outgoingRecords(
             (transaction?.sourceKind == "sms" || decision.ref.startsWith("s:")) &&
             !shareSms
         ) continue
-        // The same gate the transaction itself rides: a category record for a row an excluded
-        // bank keeps home would name a transaction the family cannot see.
-        if (transaction != null && transaction.familyRef.isBlank() && transaction.bank in excludedBanks) continue
-        val target = decision.familyRef.ifBlank {
-            transaction?.familyRef?.takeIf(String::isNotBlank)
-                ?: familyTxnId(session.member, decision.ref)
-        }
+        if (!decisionMayLeave(decision, transaction, shareSms, session.member, excludedBanks)) continue
+        val target = familyTargetOf(decision, transaction, session.member) ?: continue
         val category = categoryById[categoryId] ?: continue
         val editor = decision.memberId.ifBlank { session.member }
         val payload = SYNC_JSON.encodeToString(
@@ -895,12 +951,94 @@ private suspend fun outgoingRecords(
             publication,
         )
     }
+
+    // Notes go out the way categories do, on records of their own, because whoever is reading a
+    // row is who writes one — see [SyncNotePayload]. Retracted decisions are walked too: a note
+    // she has taken back must be published as gone, or her words stay on every other phone.
+    for (decision in durable.decisions().ofKindWithRetracted(DecisionKind.NOTE)) {
+        val transaction = entriesByRef[decision.ref]?.txn
+        if (!decisionMayLeave(decision, transaction, shareSms, session.member, excludedBanks)) continue
+        val target = familyTargetOf(decision, transaction, session.member) ?: continue
+        val id = noteRecordId(target)
+        val previous = publications[id]
+        val note = if (decision.deleted) "" else decision.value.orEmpty()
+        // A note nobody was ever told about and that is blank now has nothing to say. Only one
+        // the household has already read is worth the record that takes it back.
+        if (note.isBlank() && (previous == null || previous.deleted)) continue
+        val payload = SYNC_JSON.encodeToString(
+            SyncNotePayload(
+                target = target,
+                note = note,
+                editedByMemberId = decision.memberId.ifBlank { session.member },
+            )
+        )
+        val contentHash = sha256Hex(payload)
+        if (previous != null && !previous.deleted && previous.contentHash == contentHash) continue
+        val updatedAt = nextStamp(previous?.updatedAt, decision.updatedAt)
+        outgoing += PreparedRecord(
+            wireRecord(
+                session,
+                id,
+                "note",
+                ownerOfFamilyTxnId(target) ?: session.member,
+                updatedAt,
+                payload,
+            ),
+            SyncPublication(id, "note", contentHash, updatedAt, deleted = false),
+        )
+    }
     return outgoing
+}
+
+/**
+ * Which shared transaction an answer is about, in the household's own naming.
+ *
+ * The decision carries it once its row has been in a family; failing that the transaction does;
+ * failing both it is one of her own rows and the reference is hers to build. A row that came
+ * *from* the family carrying neither cannot be named to anybody — `f:` is a local hash of a
+ * reference the others would have to already know — so it is left alone rather than published
+ * under a guess at somebody's transaction id.
+ */
+private fun familyTargetOf(decision: TxnDecision, txn: Txn?, member: String): String? =
+    decision.familyRef.takeIf(String::isNotBlank)
+        ?: txn?.familyRef?.takeIf(String::isNotBlank)
+        ?: familyTxnId(member, decision.ref).takeUnless { decision.ref.startsWith("f:") }
+
+/**
+ * is a leak dressed as bookkeeping. A row that came *from* the family is already shared by its
+ * owner, and her answer about one is hers to send.
+ *
+ * Only her *own* answers, though. Somebody else's category or note arrived as their record and
+ * stays theirs: the server keeps it, so nobody needs it echoed, and echoing it would rewrite the
+ * record under this device's authorship — which is the line that says who wrote the words. A
+ * blank author is a decision from before the household existed, and that one is hers.
+ */
+internal fun decisionMayLeave(
+    decision: TxnDecision,
+    txn: Txn?,
+    shareSms: Boolean,
+    member: String,
+    excludedBanks: Set<String>,
+): Boolean {
+    if (decision.memberId.isNotBlank() && decision.memberId != member) return false
+    if (txn != null && txn.familyRef.isNotBlank()) return true
+    if (!shareSms && (txn?.sourceKind == "sms" || decision.ref.startsWith("s:"))) return false
+    return txn == null || txn.bank !in excludedBanks
 }
 
 private fun safeSyncedText(value: String, max: Int, fallback: String = ""): String =
     value.filterNot(Char::isISOControl).trim().take(max).ifBlank { fallback }
 
+/**
+ * Somebody else's words, held to the shape this app writes them in.
+ *
+ * The newline survives, unlike in every other synced string: a note is prose and the field she
+ * types it into is two lines tall, so flattening it would make her paragraph read as one line on
+ * her husband's phone and nowhere else. Everything else a control character can be is dropped,
+ * because nothing else in a note is text.
+ */
+internal fun safeSyncedNote(value: String): String =
+    value.filterNot { it.isISOControl() && it != '\n' }.trim().take(MAX_NOTE_CHARS)
 
 /**
  * A face another phone chose, held to the two shapes this build renders: a short emoji, or a
@@ -1122,7 +1260,49 @@ private suspend fun applyCategory(
     return true
 }
 
+/**
+ * Somebody's words about a row, arriving from their phone.
+ *
+ * Held to the rules the category is held to: the target has to name a transaction inside this
+ * household, the local reference follows from whose row it is, and the later write wins with the
+ * editor breaking a same-millisecond tie so two phones converge instead of flapping. The guard
+ * reads the retracted row too — a note taken back here must not be resurrected by an older copy
+ * of itself coming back round the household.
+ *
+ * A blank note is a note taken back, and lands as a retracted decision rather than an empty
+ * one, which is the same row [setNote] would have written had she deleted it on this phone.
+ */
+private suspend fun applyNote(
+    durable: DurableDb,
+    session: SyncSession,
+    record: WireRecord,
+    payload: SyncNotePayload,
+): Boolean {
+    val targetOwner = ownerOfFamilyTxnId(payload.target) ?: return false
+    val localRef = if (targetOwner == session.member) {
+        localRefOfFamilyTxn(payload.target, session.member) ?: return false
+    } else {
+        familyLocalRef(payload.target)
+    }
+    val note = safeSyncedNote(payload.note)
+    val existing = durable.decisions().answerFor(localRef, DecisionKind.NOTE)
+    val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
     if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
+    durable.decisions().put(
+        TxnDecision(
+            id = existing?.id ?: noteRecordId(payload.target),
+            ref = localRef,
+            kind = DecisionKind.NOTE,
+            value = note,
+            createdAt = existing?.createdAt ?: record.updatedAt,
+            updatedAt = record.updatedAt,
+            deleted = note.isEmpty(),
+            memberId = editor,
+            familyRef = payload.target,
+        )
+    )
+    return true
+}
 /**
  * Somebody's shared دارایی, kept as sent: their names, their prices. Validated the way every
  * other record is — the id, the envelope owner and the sealed payload must all name the same
@@ -1236,6 +1416,8 @@ private suspend fun applyRecord(
             .getOrNull()?.let { applyMember(durable, record, it) } ?: false
         "category" -> runCatching { SYNC_JSON.decodeFromString<SyncCategoryPayload>(plain) }
             .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
+        "note" -> runCatching { SYNC_JSON.decodeFromString<SyncNotePayload>(plain) }
+            .getOrNull()?.let { applyNote(durable, session, record, it) } ?: false
         "asset" -> runCatching { SYNC_JSON.decodeFromString<SyncAssetPayload>(plain) }
             .getOrNull()?.let { applyAsset(durable, session, record, it) } ?: false
         "goal" -> runCatching { SYNC_JSON.decodeFromString<SyncGoalPayload>(plain) }

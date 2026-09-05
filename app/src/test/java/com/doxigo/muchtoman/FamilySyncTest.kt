@@ -4,9 +4,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.serialization.json.Json
 import org.junit.Test
 
 class FamilySyncTest {
+
+    private fun txn(
+        ref: String,
+        bank: String,
+        sourceKind: String,
+        familyRef: String = "",
+    ): Txn = Txn(
+        ref = ref, srcHash = ref, seq = 0, at = 1_700_000_000_000L, day = 20_000L,
+        bank = bank, accountId = bank, direction = "out",
+        amountRial = 2_500_000L, signedRial = -2_500_000L,
+        balanceRial = null, feeRial = null, mask = "", instrument = "unknown",
+        merchant = "", merchantNorm = "", refNo = "", printedAt = "",
+        channel = "unknown", unitPrinted = "none", inferred = false,
+        parserVer = PARSER_VERSION, sourceKind = sourceKind, familyRef = familyRef,
+    )
     @Test
     fun `legacy short device identity is replaced before server registration`() {
         assertFalse(isValidSyncIdentity("a1b2c3d4"))
@@ -50,6 +66,74 @@ class FamilySyncTest {
         assertEquals("family:member-a:SAMAN", row.accountId)
     }
 
+    /**
+     * A note is words, and words about a row the family cannot see are the leak this gate exists
+     * to stop. It is the same gate the transaction itself rides, which is the point: the answer
+     * to «may this record leave» must not depend on which kind of answer it carries.
+     */
+    @Test
+    fun `an answer about a row the family cannot see never leaves the phone`() {
+        val excluded = setOf("MELLAT")
+        val her = "member-a"
+        fun decision(ref: String, familyRef: String = "", author: String = her) =
+            TxnDecision(
+                id = "d1",
+                ref = ref,
+                kind = DecisionKind.NOTE,
+                value = "کادوی تولد مامان",
+                createdAt = 1L,
+                updatedAt = 1L,
+                memberId = author,
+                familyRef = familyRef,
+            )
+
+        val parsed = txn("s:aa:0", bank = "SAMAN", sourceKind = "sms")
+        val typed = txn("m:bb", bank = "MANUAL", sourceKind = "manual")
+        val setAside = txn("s:cc:0", bank = "MELLAT", sourceKind = "sms")
+        val hers = txn("f:dd", bank = "SAMAN", sourceKind = "sms", familyRef = "txn:member-a:6161")
+
+        // SMS sharing off: a note on a parsed message stays home, and so does a note on a row
+        // whose transaction this phone has not even loaded but whose reference says «message».
+        assertFalse(decisionMayLeave(decision("s:aa:0"), parsed, false, her, excluded))
+        assertFalse(decisionMayLeave(decision("s:aa:0"), null, false, her, excluded))
+        assertTrue(decisionMayLeave(decision("s:aa:0"), parsed, true, her, excluded))
+
+        // A row she typed is hers to share whatever the SMS switch says.
+        assertTrue(decisionMayLeave(decision("m:bb"), typed, false, her, excluded))
+
+        // A bank she set aside keeps its rows home, notes about them included.
+        assertFalse(decisionMayLeave(decision("s:cc:0"), setAside, true, her, excluded))
+
+        // Her husband's row is already shared by him. Her note on it is hers to send.
+        assertTrue(
+            decisionMayLeave(decision("f:dd", familyRef = hers.familyRef), hers, false, her, excluded)
+        )
+
+        // His note on his own row reached her as his record and stays his. Echoing it back would
+        // rewrite it under her name, and the byline on it is the whole point of a shared note.
+        assertFalse(
+            decisionMayLeave(
+                decision("f:dd", familyRef = hers.familyRef, author = "member-b"),
+                hers,
+                true,
+                her,
+                excluded,
+            )
+        )
+
+        // A note from before the household existed has no author, and that one is hers.
+        assertTrue(decisionMayLeave(decision("m:bb", author = ""), typed, false, her, excluded))
+    }
+
+    @Test
+    fun `a note keeps the line she typed and loses everything that is not text`() {
+        assertEquals("قسط لپ‌تاپ\nماه دوم", safeSyncedNote("قسط لپ‌تاپ\nماه دوم"))
+        assertEquals("قسط لپ‌تاپ", safeSyncedNote("  \u0000قسط لپ‌تاپ\r  "))
+        assertEquals("", safeSyncedNote("\u0000\u0007"))
+        assertEquals(MAX_NOTE_CHARS, safeSyncedNote("ا".repeat(MAX_NOTE_CHARS + 40)).length)
+    }
+
+    /**
      * Two people writing on the same row in the same instant. One of them wins, and both phones
      * have to agree on which — see [syncedEditWins].
      */
