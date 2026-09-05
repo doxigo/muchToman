@@ -275,20 +275,26 @@ async function recoverRotation(session: Session): Promise<void> {
   await persistSession(session, true);
 }
 async function rotateTokenIfStale(session: Session): Promise<void> {
-  if (Date.now() - session.issuedAt < TOKEN_ROTATE_AFTER_MS) return;
-  const res = await request(session, '/v1/rotate', { method: 'POST' });
-  if (!res.ok) return;
-  const { secret } = (await res.json()) as { secret: string };
-  if (!secret) return;
-  session.token = `${session.token.split('.')[0]}.${secret}`;
-  session.issuedAt = Date.now();
-  await setMeta('session', session);
+  if (Date.now() - session.issuedAt < TOKEN_ROTATE_AFTER_MS || !await getMeta<boolean>('rotation-supported', partition(session))) return;
+  const secret = [...crypto.getRandomValues(new Uint8Array(32))].map((x) => x.toString(16).padStart(2, '0')).join('');
+  await setMeta('pending-rotation', {
+    oldToken: session.token, newToken: `${session.token.split('.')[0]}.${secret}`, startedAt: Date.now(),
+  } satisfies PendingRotation, partition(session));
+  await recoverRotation(session);
 }
 
 export async function syncNow(session: Session): Promise<{ sent: number; received: number }> {
-  await registerIdentity(session);
-  const sent = await push(session);
-  const received = await pull(session);
-  await rotateTokenIfStale(session);
-  return { sent, received };
+  const space = partition(session);
+  return withSyncLock(space, async () => {
+    // A different tab may have rotated while this tab waited for the lock.
+    const latest = await getMeta<Session>(`saved-session:${space}`);
+    if (latest) { session.token = latest.token; session.issuedAt = latest.issuedAt; }
+    await recoverRotation(session);
+    await registerIdentity(session);
+    const sent = await push(session);
+    const received = await pull(session);
+    await rotateTokenIfStale(session);
+    await setMeta('last-sync', Date.now(), space);
+    return { sent, received };
+  });
 }

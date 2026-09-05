@@ -751,13 +751,20 @@ export class Household extends DurableObject<Env> {
    */
   private async rotate(request: Request): Promise<Response> {
     const auth = await this.authorise(request);
-    const secret = randomToken();
-    this.sql.exec(
-      'UPDATE device SET token_hash = ?, last_seen = ? WHERE id = ?',
-      await sha256Hex(secret),
+    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    if (body.secret !== undefined && (typeof body.secret !== 'string' || !/^[a-f0-9]{64}$/.test(body.secret))) {
+      throw new SyncError('invalid_secret', 400);
+    }
+    const secret = typeof body.secret === 'string' ? body.secret : randomToken();
+    const nextHash = await sha256Hex(secret);
+    const changed = [...this.sql.exec<{ id: string }>(
+      'UPDATE device SET token_hash = ?, last_seen = ? WHERE id = ? AND token_hash = ? RETURNING id',
+      nextHash,
       Date.now(),
       auth.id,
-    );
+      auth.tokenHash,
+    )];
+    if (changed.length === 0) throw new SyncError('unauthorised', 401);
     return jsonResponse({ secret });
   }
 }

@@ -27,6 +27,7 @@ private val SYNC_JSON = Json { ignoreUnknownKeys = true }
 const val META_SYNC_BASE = "sync_base"
 const val META_SYNC_TOKEN = "sync_token"
 const val META_SYNC_TOKEN_AT = "sync_token_at"
+const val META_SYNC_ROTATION = "sync_rotation"
 const val META_SYNC_DEVICE = "sync_device"
 const val META_SYNC_MEMBER = "sync_member"
 const val META_SYNC_SCOPE = "sync_scope"
@@ -212,6 +213,7 @@ private data class PullBody(
     val seq: Long = 0,
     val records: List<WireRecord> = emptyList(),
     val primaryMemberId: String = "",
+    val rotationClientSecret: Boolean = false,
 )
 
 @Serializable
@@ -1220,6 +1222,8 @@ private suspend fun applyRecord(
             .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
         "asset" -> runCatching { SYNC_JSON.decodeFromString<SyncAssetPayload>(plain) }
             .getOrNull()?.let { applyAsset(durable, session, record, it) } ?: false
+        "goal" -> runCatching { SYNC_JSON.decodeFromString<SyncGoalPayload>(plain) }
+            .getOrNull()?.let { applyGoal(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
             .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
         else -> false
@@ -1228,31 +1232,61 @@ private suspend fun applyRecord(
 
 private const val TOKEN_ROTATE_AFTER_MS = 30L * 24 * 60 * 60 * 1000
 
-/**
- * A new secret once a month, taken opportunistically at the end of a sync that already proved
- * the network works. The window between the server forgetting the old secret and this device
- * writing the new one is one Room put; a crash inside it means re-pairing, which is why this
- * runs monthly on a good connection rather than eagerly on every launch.
- */
+@Serializable
+internal data class PendingSyncRotation(val oldToken: String, val newToken: String, val startedAt: Long)
+
+internal suspend fun finishSyncRotation(
+    pending: PendingSyncRotation,
+    send: suspend (token: String, secret: String) -> Unit,
+) {
+    val secret = pending.newToken.substringAfter('.')
+    try {
+        send(pending.oldToken, secret)
+    } catch (error: SyncHttpException) {
+        if (error.status != 401) throw error
+        send(pending.newToken, secret)
+    }
+}
+
+private suspend fun recoverTokenRotation(durable: DurableDb, session: SyncSession): SyncSession {
+    val raw = durable.meta().get(META_SYNC_ROTATION) ?: return session
+    val pending = SYNC_JSON.decodeFromString<PendingSyncRotation>(raw)
+    if (session.token != pending.oldToken && session.token != pending.newToken) {
+        durable.meta().delete(META_SYNC_ROTATION)
+        return session
+    }
+    finishSyncRotation(pending) { token, secret ->
+        val response = request(
+            "${session.base}/v1/rotate", "POST", token,
+            SYNC_JSON.encodeToString(SecretBody(secret = secret)),
+        )
+        check(SYNC_JSON.decodeFromString<SecretBody>(response).secret == secret) { "rotation mismatch" }
+    }
+    durable.withTransaction {
+        durable.meta().put(DurableMeta(META_SYNC_TOKEN, pending.newToken))
+        durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, pending.startedAt.toString()))
+        durable.meta().delete(META_SYNC_ROTATION)
+    }
+    return session.copy(token = pending.newToken)
+}
+
 private suspend fun activeSession(durable: DurableDb, expected: SyncSession): SyncSession {
     val actual = loadSession(durable) ?: error("no household")
     check(sameHouseholdSession(expected, actual)) { "household changed" }
     return recoverTokenRotation(durable, actual)
 }
+
 private suspend fun rotateTokenIfStale(durable: DurableDb, session: SyncSession, now: Long) {
     val issuedAt = durable.meta().get(META_SYNC_TOKEN_AT)?.toLongOrNull()
     if (issuedAt == null) {
-        // A session from before rotation existed. Its age is unknown, not known-old: stamp it
-        // now and let the month run from here.
         durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, now.toString()))
         return
     }
     if (now - issuedAt < TOKEN_ROTATE_AFTER_MS) return
-    val response = request("${session.base}/v1/rotate", "POST", session.token, "{}")
-    val secret = SYNC_JSON.decodeFromString<SecretBody>(response).secret
-    if (secret.isBlank()) return
-    durable.meta().put(DurableMeta(META_SYNC_TOKEN, "${session.token.substringBefore('.')}.$secret"))
-    durable.meta().put(DurableMeta(META_SYNC_TOKEN_AT, now.toString()))
+    val secret = hexOf(ByteArray(32).also { SYNC_RANDOM.nextBytes(it) })
+    val pending = PendingSyncRotation(session.token, "${session.token.substringBefore('.')}.$secret", now)
+    durable.meta().put(DurableMeta(META_SYNC_ROTATION, SYNC_JSON.encodeToString(pending)))
+    recoverTokenRotation(durable, session)
 }
 
 suspend fun syncNow(
@@ -1289,11 +1323,13 @@ suspend fun syncNow(
 
     var cursor = durable.meta().get(META_SYNC_SEQ)?.toLongOrNull() ?: 0L
     var received = 0
+    var canRotate = false
     do {
         val pulled = SYNC_JSON.decodeFromString<PullBody>(
             request("${active.base}/v1/sync?since=$cursor&limit=1000", "GET", active.token, null)
         )
         val previous = cursor
+        canRotate = pulled.rotationClientSecret
         val nextCursor = maxOf(cursor, pulled.seq)
         received += durable.withTransaction {
             var applied = 0
@@ -1312,6 +1348,6 @@ suspend fun syncNow(
         cursor = nextCursor
         val more = pulled.records.size >= 1000 && cursor > previous
     } while (more)
-    rotateTokenIfStale(durable, session, now)
+    if (canRotate) rotateTokenIfStale(durable, active, now)
     SyncResult(sent, received)
 }

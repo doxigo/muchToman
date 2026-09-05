@@ -783,3 +783,51 @@ describe('bounded resumable pulls', () => {
     expect(new Set([...page.records, ...remainder.records].map(r => r.id)).size).toBe(20);
   });
 });
+describe('recoverable token rotation', () => {
+  it('allows only one replacement when the old credential rotates concurrently', async () => {
+    const token = await claim('e107'.repeat(8), ['personal:her']);
+    const secrets = ['a'.repeat(64), 'b'.repeat(64)];
+    const results = await Promise.all(secrets.map(secret => SELF.fetch('https://sync.test/v1/rotate', {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ secret }),
+    })));
+    expect(results.map(response => response.status).sort()).toEqual([200, 401]);
+    const accepted = results.findIndex(response => response.status === 200);
+    const replacement = `${token.split('.')[0]}.${secrets[accepted]}`;
+    expect((await pull(replacement)).status).toBe(200);
+    expect((await pull(token)).status).toBe(401);
+  });
+
+  it('retries the persisted replacement after a lost response without retaining old-token access', async () => {
+    const device = await claimDevice('e105'.repeat(8), ['personal:her']);
+    const token = device.token;
+    const secret = 'd'.repeat(64);
+    const rotate = (auth: string) => SELF.fetch('https://sync.test/v1/rotate', {
+      method: 'POST', headers: { authorization: `Bearer ${auth}` }, body: JSON.stringify({ secret }),
+    });
+    expect((await rotate(token)).status).toBe(200);
+    expect((await rotate(token)).status).toBe(401);
+    const replacement = `${token.split('.')[0]}.${secret}`;
+    expect((await rotate(replacement)).status).toBe(200);
+    expect((await rotate(replacement)).status).toBe(200);
+    expect((await pull(token)).status).toBe(401);
+    expect((await pull(replacement)).status).toBe(200);
+    const revoked = await SELF.fetch('https://sync.test/v1/revoke', {
+      method: 'POST', headers: { authorization: `Bearer ${replacement}` },
+      body: JSON.stringify({ member: device.memberId }),
+    });
+    expect(revoked.status).toBe(200);
+    expect((await rotate(token)).status).toBe(401);
+    expect((await rotate(replacement)).status).toBe(401);
+  });
+
+  it('rejects malformed replacements without invalidating the working credential', async () => {
+    const token = await claim('e106'.repeat(8), ['personal:her']);
+    for (const secret of ['', 'short', 42, 'g'.repeat(64)]) {
+      const response = await SELF.fetch('https://sync.test/v1/rotate', {
+        method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ secret }),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect((await pull(token)).status).toBe(200);
+  });
+});
