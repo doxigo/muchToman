@@ -619,7 +619,7 @@ const val SOURCE_GRACE_DAYS = 62L
  */
 const val SOURCE_HARD_CAP = 50_000
 
-private const val SOURCE_SCANNED_TO = "source_scanned_to"
+internal const val SOURCE_SCANNED_TO = "source_scanned_to"
 
 /**
  * The oldest message the ledger will hold on to, as an epoch millisecond.
@@ -738,13 +738,26 @@ suspend fun ingestBankSms(
     now: Long = System.currentTimeMillis(),
 ): Int {
     if (!canReadSms(context)) return 0
+    return ingestBankSms(db, extra, now) { since -> readSmsInbox(context, since) }
+}
+
+internal suspend fun ingestBankSms(
+    db: DurableDb,
+    extra: Map<String, Bank>,
+    now: Long,
+    readInbox: suspend (Long) -> List<RawSms>,
+): Int {
     // A first ingest starts here, at `now`: nothing already sitting in the inbox is read. This
     // used to start at the first of the current Jalali month, which let the calendar decide how
     // much homework a new ledger opened on — four weeks of it on the 29th, none on the 1st.
     // Reaching back is [rewindIngest]'s job, and that one is asked for. A watermark, once
     // written, always wins, so this is only ever consulted when nothing has been read yet.
-    val since = db.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull() ?: now
-    val messages = readSmsInbox(context, since)
+    val since = db.withTransaction {
+        db.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull() ?: now.also {
+            db.meta().put(DurableMeta(SOURCE_SCANNED_TO, it.toString()))
+        }
+    }
+    val messages = readInbox(since)
     if (messages.isEmpty()) return 0
 
     // Read before anything is written, so it describes the archive and not this scan. One scan
