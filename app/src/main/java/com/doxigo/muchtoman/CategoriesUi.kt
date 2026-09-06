@@ -55,15 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-/**
- * «دسته‌بندی‌ها» — the categories as a room of their own, not a strip at the bottom of تنظیمات.
- *
- * One list per side of the ledger, because that is how the picker itself offers them: a خرج
- * category will never be shown on money that arrived, so showing the two sides interleaved was
- * a list whose order nothing else in the app agreed with. The shipped rows are here to be seen
- * — where a transaction *can* go is the answer to «چرا این دسته پیشنهاد نشد» — and only the
- * ones she made herself carry «بردار», since a shipped category retires by a build, not a tap.
- */
 @Composable
 fun CategoriesScreen(
     categories: List<Category>,
@@ -73,15 +64,13 @@ fun CategoriesScreen(
 ) {
     var side by rememberSaveable { mutableStateOf(CategoryKind.EXPENSE) }
     var adding by rememberSaveable { mutableStateOf(false) }
-    // Archiving is one tap from irreversible here — there is no «برگردون» — so the row asks
-    // once. Held by id, so opening a second row's question closes the first.
     var confirming by remember { mutableStateOf<String?>(null) }
 
     // «دسته‌بندی نشده» is the absence of an answer and «انتقال» is the escape hatch; neither is
     // a thing to manage. Everything else shows, shipped and hers alike, in the picker's order.
     val visible = remember(categories, side) {
         categories.filter {
-            !it.archived && it.id != CAT_UNCATEGORISED && it.kind == side
+            it.id != CAT_UNCATEGORISED && it.id != "cat_send" && it.kind == side
         }
     }
 
@@ -156,10 +145,6 @@ fun CategoriesScreen(
     }
 }
 
-/**
- * One category: its mark on its disc, its name, and — only on hers — the way to retire it.
- * A shipped row says «پیش‌فرض» instead, so the asymmetry reads as a fact rather than a bug.
- */
 @Composable
 private fun CategoryRow(
     category: Category,
@@ -189,17 +174,14 @@ private fun CategoryRow(
                 category.nameFa,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (category.archived) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = Space.m).weight(1f),
             )
             when {
-                category.builtin -> Text(
-                    "پیش‌فرض",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                category.archived -> PillButton("فعال کن", onArchive, fontSize = 13.sp, minHeight = 40.dp)
                 // These pills draw at 40dp but are hit and announced at 48: Compose expands
                 // any smaller clickable to the minimum touch target. Growing their layout
                 // instead would push every row 4dp taller for a target the finger already has.
@@ -223,7 +205,7 @@ private fun CategoryRow(
                         )
                     }
                 }
-                else -> PillButton("بردار", onAsk, fontSize = 13.sp, minHeight = 40.dp)
+                else -> PillButton("غیرفعال کن", onAsk, fontSize = 13.sp, minHeight = 40.dp)
             }
         }
         if (divided) {
@@ -263,6 +245,7 @@ fun AddCategorySheet(
     var draft by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(initialKind) }
     var glyph by rememberSaveable { mutableStateOf(PICKABLE_GLYPHS.first()) }
+    var glyphChosen by rememberSaveable { mutableStateOf(false) }
 
     // ZWNJ and spaces vary by keyboard, so «پس‌انداز» typed three ways is one name.
     fun key(s: String) = faLetters(s).replace("‌", "").replace(" ", "").trim()
@@ -288,7 +271,13 @@ fun AddCategorySheet(
             SheetLabel("اسمش چی باشه؟")
             OutlinedTextField(
                 value = draft,
-                onValueChange = { draft = it.take(24) },
+                onValueChange = {
+                    draft = it.take(24)
+                    if (!glyphChosen) {
+                        glyph = categoryGlyph(draft.trim()).takeUnless { it == CategoryGlyph.DOTS }
+                            ?: PICKABLE_GLYPHS.first()
+                    }
+                },
                 singleLine = true,
                 isError = clash,
                 placeholder = { Text("مثلاً باشگاه") },
@@ -340,7 +329,7 @@ fun AddCategorySheet(
                             .selectable(
                                 selected = chosen,
                                 role = Role.RadioButton,
-                                onClick = { glyph = option },
+                                onClick = { glyph = option; glyphChosen = true },
                             ),
                         contentAlignment = Alignment.Center,
                     ) {

@@ -504,16 +504,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * Archived, never deleted — every transaction she ever filed under it still names it, and the
      * timeline reads that name off the row rather than off this table.
      */
-    fun archiveCategory(category: Category) {
+    fun toggleCategoryArchived(category: Category) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             runCatching {
                 durable.categories().putAll(
-                    listOf(category.copy(archived = true, updatedAt = System.currentTimeMillis()))
+                    listOf(category.copy(archived = !category.archived, updatedAt = System.currentTimeMillis()))
                 )
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "archiveCategory failed: $it") }
+            }.onFailure { android.util.Log.w("muchtoman", "toggleCategoryArchived failed: $it") }
         }
     }
 
@@ -1292,6 +1292,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 (previous ?: FamilyMember(session.member, clean, updatedAt = now))
                     .copy(name = clean, updatedAt = now)
             )
+            publishLedger(durable, DerivedDb.get(app))
             refreshFamily(session)
             requestFamilySync(silent = true)
         }
@@ -1313,9 +1314,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 (previous ?: FamilyMember(session.member, store.name.trim().take(32).ifBlank { "من" }, updatedAt = now))
                     .copy(avatar = avatar, updatedAt = now)
             )
+            publishLedger(durable, DerivedDb.get(app))
             refreshFamily(session)
-            // The ledger rows carry the owner's face too; the queued sync's publishLedger is
-            // what re-reads them, the same way a renamed member reaches the rows.
             requestFamilySync(silent = true)
         }
     }
@@ -1332,6 +1332,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, enabled.toString()))
                 durable.familyMembers().put(previous.copy(sharesSms = enabled, updatedAt = now))
             }
+            publishLedger(durable, DerivedDb.get(app))
             refreshFamily(session)
             requestFamilySync(silent = false)
         }
@@ -1361,6 +1362,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val next = if (bank in current) current - bank else current + bank
                 durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, next.sorted().joinToString(",")))
             }
+            publishLedger(durable, DerivedDb.get(app))
             refreshFamily(session)
             requestFamilySync(silent = false)
         }
@@ -1563,22 +1565,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
             }
             publishLedger(durable, derived)
+            val compatibilityError = if (result.unsupportedKinds.isNotEmpty())
+                syncErrorFa(SyncHttpException(400, "{\"code\":\"invalid_kind\"}")) else null
             refreshFamily(
                 session,
+                error = compatibilityError,
                 note = "${faNumber(result.sent.toDouble())} مورد فرستادیم، " +
                     "${faNumber(result.received.toDouble())} مورد گرفتیم.",
             )
             announcePull(
-                if (result.received == 0) "تراکنش تازه‌ای از خانواده نبود."
+                compatibilityError ?: if (result.received == 0) "مورد تازه‌ای از خانواده نبود."
                 else "${faNumber(result.received.toDouble())} مورد تازه از خانواده گرفتیم."
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             android.util.Log.w("muchtoman", "sync failed: $error")
-            if (silent) refreshFamily(session)
-            else refreshFamily(session, error = "اتصال نشد. تغییرات روی گوشی محفوظ موند.")
-            announcePull("اتصال نشد. اینترنتت رو چک کن.")
+            val message = syncErrorFa(error)
+            refreshFamily(session, error = message)
+            announcePull(message)
         }
     }
 
@@ -1593,6 +1598,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
         }
         if (next != null) requestFamilySync(next)
+    }
+
+    fun keepBudget(id: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                val conflicts = durable.goals().byId(id)?.let { budgetConflicts(durable.goals().active(), it) }.orEmpty()
+                keepBudget(durable, id, System.currentTimeMillis())
+                conflicts.forEach { clearBudgetNote(app, it.id) }
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "keepBudget failed: $it") }
+        }
     }
 
     /**
@@ -1637,6 +1656,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "addBudget failed: $it") }
         }
     }
@@ -1674,6 +1694,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
         }
     }
@@ -1721,6 +1742,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
                 clearBudgetNote(app, id)
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "editBudget failed: $it") }
         }
     }
@@ -1751,6 +1773,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 if (next == goal) return@runCatching
                 durable.goals().put(next.copy(updatedAt = now, editedByMemberId = mineId))
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "editGoal failed: $it") }
         }
     }
@@ -1773,6 +1796,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 // a budget she has deleted is the app talking about nothing.
                 clearBudgetNote(app, id)
                 publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "deleteGoal failed: $it") }
         }
     }

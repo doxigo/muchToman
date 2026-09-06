@@ -74,6 +74,21 @@ not sync at all — not the new record, not the transactions beside it. Deploy `
 APK. Going the other way is safe: an old client ignores a kind it cannot name and keeps its own
 records flowing.
 
+
+The September 2026 family refresh failure was a deployment mismatch: production rejected
+`note` and `goal` with `400 invalid_kind`. Android now sends record kinds in separate batches,
+retains unsupported records for retry, and still pulls the household. The UI reports a service
+compatibility error instead of blaming the internet. Budget and goal saves, edits and deletions
+request sync immediately.
+
+Family budgets and savings goals count only shared transactions. Excluded banks and unshared
+SMS stay in personal figures. Once both phones have synced, they must use the same shared rows.
+A total budget can coexist with category budgets; their amounts are never added together.
+Duplicates mean the same category, period and personal/family scope. The editor prevents new
+matching budgets and flags duplicates arriving from another phone. Choosing which cap to keep
+publishes that choice and tombstones the other copies in one local transaction. Equal-time
+choices use the existing member-id tie break.
+
 ```bash
 cd pwa && npm ci && npm run check
 cd sync && npm ci && npm run check

@@ -63,6 +63,31 @@ class BudgetTest {
         createdAt = 0, updatedAt = 0, shared = shared, ownerMemberId = owner,
     )
 
+    @Test
+    fun `family spending excludes private rows on either phone`() {
+        val shared = entry(first, -95_000_000, owner = "her")
+        val private = entry(first, -18_000_000, owner = "him").copy(sharedWithFamily = false)
+        val goal = budget(200_000_000, shared = true)
+        val window = budgetWindow(BudgetPeriod.MONTH, first)
+        assertEquals(95_000_000, budgetSpent(listOf(shared, private), goal, window, "him"))
+        assertEquals(95_000_000, budgetSpent(listOf(shared), goal, window, "her"))
+        assertEquals(18_000_000, budgetSpent(listOf(shared, private), goal.copy(shared = false), window, "him"))
+    }
+
+    @Test
+    fun `only matching scope category and period collide and totals can coexist`() {
+        val goal = budget(100, shared = true)
+        val duplicate = goal.copy(id = "duplicate", targetRial = 200, ownerMemberId = "other")
+        val others = listOf(
+            goal, duplicate, goal.copy(id = "personal", shared = false),
+            goal.copy(id = "weekly", period = GoalPeriod.WEEK),
+            goal.copy(id = "total", categoryId = null),
+            duplicate.copy(id = "deleted", deleted = true),
+        )
+        assertEquals(listOf(duplicate), budgetConflicts(others, goal))
+        assertTrue(budgetConflicts(others, goal.copy(id = "total", categoryId = null)).isEmpty())
+    }
+
     // ─────────────────────────── the window ───────────────────────────
 
     @Test

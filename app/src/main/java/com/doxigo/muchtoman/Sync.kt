@@ -312,7 +312,25 @@ private data class ClampedStamp(val id: String = "", val updatedAt: Long = 0)
 private data class PushAck(val seq: Long = 0, val clamped: List<ClampedStamp> = emptyList())
 
 internal class SyncHttpException(val status: Int, detail: String = "") :
-    IllegalStateException("sync $status: $detail")
+    IllegalStateException("sync $status: $detail") {
+    val code: String = runCatching {
+        val value = SYNC_JSON.parseToJsonElement(detail) as? kotlinx.serialization.json.JsonObject
+        (value?.get("code") as? kotlinx.serialization.json.JsonPrimitive)?.content
+    }.getOrNull().orEmpty()
+}
+
+internal fun syncErrorFa(error: Throwable): String = when {
+    error is SyncHttpException && error.code == "invalid_kind" ->
+        "سرویس همگام‌سازی به به‌روزرسانی نیاز داره. تغییرات روی گوشی محفوظ موند."
+    error is SyncHttpException && error.status in setOf(401, 403) ->
+        "دسترسی به خانواده تأیید نشد. تغییرات روی گوشی محفوظ موند."
+    error is SyncHttpException && error.status == 429 ->
+        "درخواست‌ها زیاد شده. کمی بعد دوباره امتحان کن."
+    error is SyncHttpException ->
+        "سرویس همگام‌سازی خطا داد (${error.status}). تغییرات روی گوشی محفوظ موند."
+    error is java.io.IOException -> "اتصال نشد. اینترنتت رو چک کن. تغییرات روی گوشی محفوظ موند."
+    else -> "همگام‌سازی کامل نشد. تغییرات روی گوشی محفوظ موند."
+}
 
 private fun request(
     url: String,
@@ -760,7 +778,7 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     }
 }
 
-data class SyncResult(val sent: Int, val received: Int)
+data class SyncResult(val sent: Int, val received: Int, val unsupportedKinds: Set<String> = emptySet())
 
 private data class PreparedRecord(
     val wire: WireRecord,
@@ -972,7 +990,8 @@ private suspend fun outgoingRecords(
         if (goal.shared && !goal.deleted) {
             val payload = goalPayload(goal)
             val contentHash = sha256Hex(payload)
-            if (previous != null && !previous.deleted && previous.contentHash == contentHash) continue
+            if (previous != null && !previous.deleted && previous.contentHash == contentHash &&
+                previous.updatedAt >= goal.updatedAt) continue
             // Stamped from the edit rather than from this moment, as a filed category is: the
             // sync may run hours after she moved the figure, and the stamp is what decides whose
             // edit won.
@@ -985,7 +1004,7 @@ private suspend fun outgoingRecords(
             // Never shared, or already retracted: there is nothing out there to take back, and a
             // tombstone for a record the household has never seen is a row on the server for ever.
             if (previous == null || previous.deleted) continue
-            val updatedAt = nextStamp(previous.updatedAt, now)
+            val updatedAt = nextStamp(previous.updatedAt, goal.updatedAt)
             outgoing += PreparedRecord(
                 wireRecord(
                     session,
@@ -1536,11 +1555,13 @@ private suspend fun applyGoalTombstone(
 ): Boolean {
     val goalId = record.id.removePrefix("goal:").takeIf(String::isNotBlank) ?: return false
     val existing = durable.goals().anyById(goalId) ?: return false
-    if (existing.updatedAt > record.updatedAt) return false
+    val editor = record.authorMemberId
+    if (existing.updatedAt > record.updatedAt ||
+        (existing.updatedAt == record.updatedAt && existing.editedByMemberId >= editor)) return false
     // Her own row, retracted by a record naming her as the editor, is this phone hearing its own
     // unshare back through a peer. Burying it would delete the private budget she just kept.
     if (!existing.shared && existing.editedByMemberId == session.member) return false
-    durable.goals().put(existing.copy(updatedAt = record.updatedAt, deleted = true))
+    durable.goals().put(existing.copy(updatedAt = record.updatedAt, editedByMemberId = editor, deleted = true))
     durable.syncPublications().putAll(
         listOf(
             SyncPublication(
@@ -1719,13 +1740,19 @@ suspend fun syncNow(
     registerIdentity(active, durable)
     val outgoing = outgoingRecords(durable, derived, active, now, assets)
     var sent = 0
-    for (chunk in outgoing.chunked(200)) {
-        val response = request(
+    val unsupportedKinds = mutableSetOf<String>()
+    for (chunk in outgoing.groupBy { it.wire.kind }.values.flatMap { it.chunked(200) }) {
+        if (chunk.first().wire.kind in unsupportedKinds) continue
+        val response = try { request(
             "${active.base}/v1/sync",
             "POST",
             active.token,
             SYNC_JSON.encodeToString(PushBody(chunk.map { it.wire })),
-        )
+        ) } catch (error: SyncHttpException) {
+            if (error.status != 400 || error.code != "invalid_kind") throw error
+            unsupportedKinds += chunk.first().wire.kind
+            continue
+        }
         // The server clamps far-future stamps and answers with what it stored; the publication
         // marks take the server's word so the next nextStamp builds on a stamp that can win.
         val clamped = runCatching { SYNC_JSON.decodeFromString<PushAck>(response) }
@@ -1769,5 +1796,5 @@ suspend fun syncNow(
         val more = (pulled.hasMore ?: (pulled.records.size >= 1000)) && cursor > previous
     } while (more)
     if (canRotate) rotateTokenIfStale(durable, active, now)
-    SyncResult(sent, received)
+    SyncResult(sent, received, unsupportedKinds)
 }

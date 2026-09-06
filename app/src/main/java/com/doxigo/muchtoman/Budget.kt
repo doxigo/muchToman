@@ -1,6 +1,7 @@
 package com.doxigo.muchtoman
 
 import kotlinx.serialization.Serializable
+import androidx.room.withTransaction
 
 /**
  * Budgets — «برای این ماه چقدر گذاشتم، و چقدرش رفته».
@@ -293,6 +294,21 @@ data class BudgetProgress(
  */
 const val BUDGET_TOTAL_FA = "کل خرج"
 
+internal fun budgetConflicts(goals: List<Goal>, budget: Goal): List<Goal> = goals.filter {
+    !it.deleted && it.id != budget.id && it.kind == GoalKind.CAP && budget.kind == GoalKind.CAP &&
+        it.categoryId == budget.categoryId && it.period == budget.period && it.shared == budget.shared
+}
+
+internal suspend fun keepBudget(durable: DurableDb, id: String, now: Long) = durable.withTransaction {
+    val budget = durable.goals().byId(id) ?: return@withTransaction
+    val conflicts = budgetConflicts(durable.goals().active(), budget)
+    if (conflicts.isEmpty()) return@withTransaction
+    val editor = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+    val stamp = maxOf(now, (conflicts + budget).maxOf { it.updatedAt } + 1)
+    durable.goals().put(budget.copy(updatedAt = stamp, editedByMemberId = editor))
+    conflicts.forEach { durable.goals().delete(it.id, stamp, editor) }
+}
+
 /**
  * One budget, against the window it is in right now.
  *
@@ -542,7 +558,7 @@ fun budgetScopeFa(budget: BudgetProgress): String = when {
  * statement of what the two words mean.
  */
 fun budgetScopeNoteFa(shared: Boolean, wasShared: Boolean): String = when {
-    shared -> "همه می‌بینن‌ش و می‌تونن عوضش کنن، و خرج همه توش حساب می‌شه."
+    shared -> "همه می‌بینن‌ش و می‌تونن عوضش کنن. فقط تراکنش‌های به‌اشتراک‌گذاشته‌شده حساب می‌شن؛ بانک‌های کنارگذاشته‌شده حساب نمی‌شن."
     wasShared -> "از روی گوشی بقیه برداشته می‌شه و فقط خرج خودت توش حساب می‌شه."
     else -> "فقط روی گوشی خودته و فقط خرج خودت توش حساب می‌شه."
 }

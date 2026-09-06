@@ -446,8 +446,13 @@ suspend fun needsDerive(derived: DerivedDb, durable: DurableDb? = null): Boolean
  * builtin retires; deleting one would orphan every row that named it.
  */
 suspend fun seedBuiltins(durable: DurableDb, now: Long = System.currentTimeMillis()) {
-    durable.categories().putAll(BUILTIN_CATEGORIES.map { it.copy(updatedAt = now) })
-    durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })
+    durable.withTransaction {
+        val existing = durable.categories().withArchived().associateBy { it.id }
+        durable.categories().putAll(BUILTIN_CATEGORIES.map {
+            it.copy(archived = it.archived || existing[it.id]?.archived == true, updatedAt = now)
+        })
+        durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })
+    }
 }
 
 /** One line of the timeline: what happened, what it was filed as, and whether that is settled. */
@@ -476,12 +481,14 @@ data class LedgerEntry(
      * screen that does not say so is putting somebody else's sentence in her mouth.
      */
     val noteAuthorName: String = "",
+    val sharedWithFamily: Boolean = true,
 )
 
 /** Everything the ledger screens need, read in one pass. */
 data class LedgerView(
     val entries: List<LedgerEntry> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val managedCategories: List<Category> = categories,
     val goals: List<GoalProgress> = emptyList(),
     /**
      * The same table as [goals], read the other way — see `Budget.kt`. Ordered by how much of each
@@ -541,6 +548,7 @@ data class LedgerEntries(
     val categories: List<Category>,
     val categoryDecisions: Map<String, TxnDecision>,
     val marks: Map<String, CategoryGlyph> = emptyMap(),
+    val managedCategories: List<Category> = categories,
 )
 
 /**
@@ -572,6 +580,8 @@ suspend fun ledgerEntries(
     val names = everyCategory.associate { it.id to it.nameFa }
     val members = durable.familyMembers().all().associateBy { it.id }
     val currentMemberId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+    val sharesSms = durable.meta().get(META_SYNC_SHARE_SMS).toBoolean()
+    val excludedBanks = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS))
     val categoryDecisions = durable.decisions().ofKind(DecisionKind.CATEGORY).associateBy { it.ref }
     // Kept as the decisions rather than as text: the row says who last wrote it, and a shared
     // note needs that as much as a shared category does. One row per ref — `ref` and `kind` are
@@ -598,6 +608,9 @@ suspend fun ledgerEntries(
             // field, and only this field keeps a transfer out of income and out of spending.
             transfer = txn.ref in transfers || filed?.categoryId == CAT_TRANSFER,
             ownerMemberId = ownerMemberId,
+            sharedWithFamily = txn.familyRef.isNotBlank() ||
+                (currentMemberId.isNotBlank() && txn.bank !in excludedBanks &&
+                    (txn.sourceKind != "sms" || sharesSms)),
             ownerName = members[ownerMemberId]?.name.orEmpty(),
             ownerAvatar = members[ownerMemberId]?.avatar.orEmpty(),
             categoryEditorName = members[categoryEditorId]?.name.orEmpty(),
@@ -608,7 +621,7 @@ suspend fun ledgerEntries(
                 .orEmpty(),
         )
     }
-    return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory))
+    return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory), everyCategory)
 }
 
 suspend fun ledgerView(
@@ -634,6 +647,7 @@ suspend fun ledgerView(
     return LedgerView(
         entries = ledger.entries,
         categories = ledger.categories,
+        managedCategories = ledger.managedCategories,
         goals = active.filterNot { it.kind == GoalKind.CAP }
             .map {
                 goalProgress(

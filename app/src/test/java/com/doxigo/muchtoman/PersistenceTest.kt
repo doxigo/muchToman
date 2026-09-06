@@ -24,6 +24,22 @@ class PersistenceTest {
     private inline fun <T : androidx.room.RoomDatabase, R> T.use(block: (T) -> R): R =
         try { block(this) } finally { close() }
 
+    @Test
+    fun `disabled defaults survive reseeding and remain available for history and restoration`() = runBlocking {
+        DurableDb.builder(context, "category-disable.db").build().use { db ->
+            seedBuiltins(db, now)
+            val sport = db.categories().get("cat_sport")!!
+            db.categories().putAll(listOf(sport.copy(archived = true)))
+            seedBuiltins(db, now + 1)
+            assertFalse(db.categories().all().any { it.id == sport.id })
+            assertEquals(sport.nameFa, db.categories().withArchived().single { it.id == sport.id }.nameFa)
+            db.categories().putAll(listOf(sport.copy(archived = false)))
+            seedBuiltins(db, now + 2)
+            assertTrue(db.categories().all().any { it.id == sport.id })
+            assertTrue(db.categories().get("cat_send")!!.archived)
+        }
+    }
+
     private fun schemaDatabase(version: Int, name: String, body: String = "saved message"): File {
         val schema = requireNotNull(javaClass.classLoader!!.getResourceAsStream("com.doxigo.muchtoman.DurableDb/$version.json"))
             .bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonObject["database"]!!.jsonObject }

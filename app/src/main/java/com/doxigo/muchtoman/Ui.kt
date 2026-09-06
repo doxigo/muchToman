@@ -577,9 +577,9 @@ private fun AppScreens(
         // Back steps to تنظیمات, the page it was opened from — same one-level rule as companion.
         BackHandler { categoriesPage = false }
         CategoriesScreen(
-            categories = state.ledger.categories,
+            categories = state.ledger.managedCategories,
             onAdd = vm::addCategory,
-            onArchive = vm::archiveCategory,
+            onArchive = vm::toggleCategoryArchived,
             onBack = { categoriesPage = false },
         )
         return
@@ -780,6 +780,7 @@ private fun AppScreens(
             hasHousehold = state.family.paired,
             onAddBudget = vm::addBudget,
             onEditBudget = vm::editBudget,
+            onKeepBudget = vm::keepBudget,
             onAddGoal = vm::addGoal,
             onEditGoal = vm::editGoal,
             onDelete = vm::deleteGoal,

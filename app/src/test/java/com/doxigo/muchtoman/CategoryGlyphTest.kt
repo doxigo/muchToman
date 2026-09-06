@@ -57,4 +57,18 @@ class CategoryGlyphTest {
         // would leave a build that renames a category drawing the mark it used to have.
         assertEquals(emptyMap<String, CategoryGlyph>(), customGlyphs(BUILTIN_CATEGORIES))
     }
+    @Test
+    fun `legacy placeholder marks get the named icons while explicit alternatives survive`() {
+        val categories = listOf(
+            customCategory("آموزش", CategoryKind.EXPENSE, CategoryGlyph.BASKET, 1),
+            customCategory("باشگاه", CategoryKind.EXPENSE, CategoryGlyph.BASKET, 2),
+            customCategory("نظافت", CategoryKind.EXPENSE, CategoryGlyph.ASTERISK, 3),
+        )
+        assertEquals(mapOf(
+            "آموزش" to CategoryGlyph.BOOK,
+            "باشگاه" to CategoryGlyph.DUMBBELL,
+            "نظافت" to CategoryGlyph.BROOM,
+        ), customGlyphs(categories))
+        assertEquals(CategoryGlyph.STAR, customGlyphs(listOf(categories[1].copy(glyph = "STAR")))["باشگاه"])
+    }
 }

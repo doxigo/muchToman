@@ -45,6 +45,7 @@ enum class CategoryGlyph {
     STACK, PLANE, GIFT, BLOOM, SHIRT, MUSIC, HOUSE, PERSON, LEND, PAYBACK,
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
     RING, AIRPLANE, SCISSORS, BOTTLE, PIN, MUSCLE,
+    BALL, MIRROR, BOOK, DUMBBELL, BROOM,
     DOTS,
 }
 
@@ -76,14 +77,17 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "پس‌انداز و سرمایه" -> CategoryGlyph.STACK
     "انتقال وجه" -> CategoryGlyph.PLANE
     "هدیه و نیکوکاری" -> CategoryGlyph.GIFT
-    "زیبایی" -> CategoryGlyph.BLOOM
+    "زیبایی" -> CategoryGlyph.MIRROR
     "آرایشگاه" -> CategoryGlyph.SCISSORS
     "آرایشی و بهداشتی" -> CategoryGlyph.BOTTLE
     "مد و پوشاک" -> CategoryGlyph.SHIRT
     "فرهنگی و هنری" -> CategoryGlyph.MUSIC
     "خانه و کاشانه" -> CategoryGlyph.HOUSE
     "خرج اتینا" -> CategoryGlyph.PERSON
-    "ورزش" -> CategoryGlyph.MUSCLE
+    "ورزش" -> CategoryGlyph.BALL
+    "آموزش" -> CategoryGlyph.BOOK
+    "باشگاه" -> CategoryGlyph.DUMBBELL
+    "نظافت" -> CategoryGlyph.BROOM
     "قرض" -> CategoryGlyph.LEND
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
@@ -120,7 +124,15 @@ val LocalCustomGlyphs = compositionLocalOf { emptyMap<String, CategoryGlyph>() }
 
 /** Name → mark, for every category carrying one of its own. Feeds [LocalCustomGlyphs]. */
 fun customGlyphs(categories: List<Category>): Map<String, CategoryGlyph> =
-    categories.mapNotNull { c -> glyphNamed(c.glyph)?.let { c.nameFa to it } }.toMap()
+    categories.mapNotNull { c ->
+        val stored = glyphNamed(c.glyph)
+        val corrected = when {
+            c.nameFa in setOf("آموزش", "باشگاه") && stored == CategoryGlyph.BASKET -> categoryGlyph(c.nameFa)
+            c.nameFa == "نظافت" && stored == CategoryGlyph.ASTERISK -> CategoryGlyph.BROOM
+            else -> stored
+        }
+        corrected?.let { c.nameFa to it }
+    }.toMap()
 
 @Composable
 private fun glyphOf(nameFa: String): CategoryGlyph =
@@ -175,7 +187,7 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         CategoryGlyph.PLANE -> if (dark) Color(0xFF6FCFDE) else Color(0xFF14798C)
         // ── row 3: the row that forced the whole scheme ──
         CategoryGlyph.GIFT -> if (dark) Color(0xFFA5AEF2) else Color(0xFF4A52B8)
-        CategoryGlyph.BLOOM -> if (dark) Color(0xFFF2AF92) else Color(0xFFA85A38)
+        CategoryGlyph.BLOOM, CategoryGlyph.MIRROR -> if (dark) Color(0xFFF2AF92) else Color(0xFFA85A38)
         CategoryGlyph.SHIRT -> if (dark) Color(0xFFCBA4EA) else Color(0xFF7B4AA8)
         CategoryGlyph.MUSIC -> if (dark) Color(0xFFF2A0BC) else Color(0xFFB04A6E)
         // ── row 4 ──
@@ -246,7 +258,7 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // term are each set beside their own name. The same trade درآمد and برداشت نقدی already
         // make further down this table, and the cheapest one left on a wheel this grid has now
         // divided twenty-eight ways.
-        CategoryGlyph.MUSCLE -> if (dark) Color(0xFFDBC768) else Color(0xFF917D17)
+        CategoryGlyph.MUSCLE, CategoryGlyph.BALL -> if (dark) Color(0xFFDBC768) else Color(0xFF917D17)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -289,6 +301,9 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         CategoryGlyph.SWAP -> if (dark) Color(0xFF6FCFDE) else Color(0xFF14798C)
         // Nothing is known about this one, so it borrows the colour of muted text and claims
         // nothing — the same honesty the DOTS mark itself carries.
+        CategoryGlyph.BOOK -> if (dark) Color(0xFF94B8E8) else Color(0xFF3C6390)
+        CategoryGlyph.DUMBBELL -> if (dark) Color(0xFFA3D486) else Color(0xFF55893A)
+        CategoryGlyph.BROOM -> if (dark) Color(0xFF7ED3CB) else Color(0xFF267F77)
         CategoryGlyph.DOTS -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
@@ -1027,6 +1042,60 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 tint,
                 style = ink,
             )
+        }
+        CategoryGlyph.BALL -> {
+            drawCircle(tint, w * 0.43f, Offset(w * 0.5f, h * 0.5f), style = ink)
+            drawPath(Path().apply {
+                moveTo(w * 0.5f, h * 0.07f)
+                lineTo(w * 0.5f, h * 0.93f)
+                moveTo(w * 0.07f, h * 0.5f)
+                lineTo(w * 0.93f, h * 0.5f)
+                moveTo(w * 0.21f, h * 0.18f)
+                cubicTo(w * 0.48f, h * 0.34f, w * 0.48f, h * 0.66f, w * 0.21f, h * 0.82f)
+                moveTo(w * 0.79f, h * 0.18f)
+                cubicTo(w * 0.52f, h * 0.34f, w * 0.52f, h * 0.66f, w * 0.79f, h * 0.82f)
+            }, tint, style = ink)
+        }
+        CategoryGlyph.MIRROR -> {
+            drawOval(tint, Offset(w * 0.22f, h * 0.06f), Size(w * 0.56f, h * 0.58f), style = ink)
+            drawRoundRect(tint, Offset(w * 0.43f, h * 0.64f), Size(w * 0.14f, h * 0.29f),
+                CornerRadius(w * 0.06f), style = ink)
+            drawLine(tint, Offset(w * 0.39f, h * 0.34f), Offset(w * 0.55f, h * 0.2f), ink.width, StrokeCap.Round)
+        }
+        CategoryGlyph.BOOK -> {
+            drawPath(Path().apply {
+                moveTo(w * 0.5f, h * 0.24f)
+                quadraticTo(w * 0.3f, h * 0.1f, w * 0.08f, h * 0.16f)
+                lineTo(w * 0.08f, h * 0.8f)
+                quadraticTo(w * 0.3f, h * 0.74f, w * 0.5f, h * 0.88f)
+                quadraticTo(w * 0.7f, h * 0.74f, w * 0.92f, h * 0.8f)
+                lineTo(w * 0.92f, h * 0.16f)
+                quadraticTo(w * 0.7f, h * 0.1f, w * 0.5f, h * 0.24f)
+                lineTo(w * 0.5f, h * 0.88f)
+            }, tint, style = ink)
+        }
+        CategoryGlyph.DUMBBELL -> {
+            drawLine(tint, Offset(w * 0.33f, h * 0.5f), Offset(w * 0.67f, h * 0.5f), ink.width, StrokeCap.Round)
+            for (x in listOf(0.13f, 0.67f)) {
+                drawRoundRect(tint, Offset(w * x, h * 0.23f), Size(w * 0.2f, h * 0.54f),
+                    CornerRadius(w * 0.05f), style = ink)
+            }
+            drawLine(tint, Offset(w * 0.04f, h * 0.4f), Offset(w * 0.04f, h * 0.6f), ink.width, StrokeCap.Round)
+            drawLine(tint, Offset(w * 0.96f, h * 0.4f), Offset(w * 0.96f, h * 0.6f), ink.width, StrokeCap.Round)
+        }
+        CategoryGlyph.BROOM -> {
+            drawLine(tint, Offset(w * 0.8f, h * 0.07f), Offset(w * 0.52f, h * 0.48f), ink.width, StrokeCap.Round)
+            drawPath(Path().apply {
+                moveTo(w * 0.4f, h * 0.41f)
+                lineTo(w * 0.67f, h * 0.6f)
+                lineTo(w * 0.53f, h * 0.94f)
+                quadraticTo(w * 0.26f, h * 0.9f, w * 0.08f, h * 0.65f)
+                close()
+                moveTo(w * 0.39f, h * 0.66f)
+                lineTo(w * 0.23f, h * 0.81f)
+                moveTo(w * 0.5f, h * 0.74f)
+                lineTo(w * 0.4f, h * 0.9f)
+            }, tint, style = ink)
         }
         // Nothing known yet. Three dots say «unset» without the alarm a «؟» carries.
         CategoryGlyph.DOTS -> {

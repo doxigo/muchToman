@@ -157,8 +157,8 @@ interface GoalDao {
  *
  * The single place [Goal.shared] turns into arithmetic, used by both a cap and a savings goal so
  * the two cannot drift into meaning different things by the same word. A shared figure counts
- * everything the phone can see, which on a paired phone is both of them; a private one counts the
- * rows this phone read itself.
+ * only transactions shared with the household, so private banks do not change one phone's
+ * family total. A private figure counts all of this member's own rows.
  *
  * [mineId] is `META_SYNC_MEMBER`, and it is blank on a phone that has never paired. That is not a
  * special case to guard — [LedgerEntry.ownerMemberId] is filled in with the same blank on every
@@ -166,7 +166,7 @@ interface GoalDao {
  * there. The choice never appears on that phone and never has to.
  */
 fun scopedTo(entries: List<LedgerEntry>, mineId: String, shared: Boolean): List<LedgerEntry> =
-    if (shared) entries else entries.filter { it.ownerMemberId == mineId }
+    if (shared) entries.filter { it.sharedWithFamily } else entries.filter { it.ownerMemberId == mineId }
 
 /**
  * How long a savings goal may run for, offered instead of a date picker.

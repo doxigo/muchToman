@@ -135,6 +135,7 @@ fun BudgetScreen(
     onAddGoal: (String, Long, GoalHorizon, Boolean) -> Unit,
     onEditGoal: (String, String, Long, GoalHorizon?, Boolean) -> Unit,
     onDelete: (String) -> Unit,
+    onKeepBudget: (String) -> Unit,
     onAskNotify: () -> Unit,
     bottomInset: Dp,
 ) {
@@ -194,6 +195,14 @@ fun BudgetScreen(
             // grow it are one object, and the air between bands is the separation.
             val budgetRows = budgets.size + 1
             budgets.forEachIndexed { i, budget ->
+                if (budgetConflicts(budgets.map { it.goal }, budget.goal).isNotEmpty()) {
+                    Text(
+                        "بودجهٔ تکراری؛ بازش کن و سقفی که می‌خوای بمونه رو انتخاب کن.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = Space.s),
+                    )
+                }
                 BudgetCard(
                     budget,
                     shape = bandShape(i, budgetRows),
@@ -238,17 +247,9 @@ fun BudgetScreen(
 
     if (addingBudget) {
         BudgetSheet(
-            // Only what she can actually budget, and only once each. A second cap on one category
-            // would be two cards counting the same receipts and disagreeing about whether it was
-            // over — see [budgetRows], which keys on the category and nothing else.
-            choices = remember(categories, budgets) {
-                categoryChoices(categories, direction = "out")
-                    .filter { it.id != CAT_TRANSFER && budgets.none { b -> b.goal.categoryId == it.id } }
-            },
+            choices = categoryChoices(categories, direction = "out").filter { it.id != CAT_TRANSFER },
             hasHousehold = hasHousehold,
-            // The same rule the categories run under, for the same reason: two roofs over one
-            // month would be two cards counting every receipt in it and disagreeing.
-            totalTaken = budgets.any { it.total },
+            budgets = budgets.map { it.goal },
             onSave = { category, period, cap, shared ->
                 addingBudget = false
                 onAddBudget(category, period, cap, shared)
@@ -261,7 +262,8 @@ fun BudgetScreen(
         BudgetSheet(
             choices = emptyList(),
             hasHousehold = hasHousehold,
-            totalTaken = true,
+            budgets = budgets.map { it.goal },
+            onKeep = { onKeepBudget(budget.goal.id); editingBudget = null },
             onSave = { _, _, _, _ -> },
             onDismiss = { editingBudget = null },
             editing = budget,
@@ -868,8 +870,8 @@ private fun BudgetSheet(
     choices: List<Category>,
     /** Whether «مال کیه؟» is a real question here — see [BudgetScreen]. */
     hasHousehold: Boolean,
-    /** Whether a total already exists, in which case it is not offered a second time. */
-    totalTaken: Boolean,
+    budgets: List<Goal>,
+    onKeep: () -> Unit = {},
     onSave: (Category?, BudgetPeriod, Long, Boolean) -> Unit,
     onDismiss: () -> Unit,
     editing: BudgetProgress? = null,
@@ -895,6 +897,13 @@ private fun BudgetSheet(
     // she has to notice before she can change anything else.
     var amount by remember { mutableStateOf(editing?.let { (it.capRial / 10).toString() } ?: "") }
     val capRial = remember(amount) { tomanFieldToRial(amount) }
+    val candidate = Goal(
+        id = editing?.goal?.id.orEmpty(), nameFa = "", targetRial = capRial ?: 0,
+        kind = GoalKind.CAP, categoryId = editing?.goal?.categoryId ?: picked?.id,
+        period = period.id, startsOn = 0, createdAt = 0, updatedAt = 0, shared = shared,
+    )
+    val conflicts = budgetConflicts(budgets, candidate)
+    val chosen = editing != null || wantsTotal || picked != null
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -912,21 +921,6 @@ private fun BudgetSheet(
                 .padding(bottom = Space.l),
         ) {
             SheetTitle(if (editing != null) "ویرایش بودجه" else "بودجهٔ تازه")
-
-            if (editing == null && choices.isEmpty() && totalTaken) {
-                // Every category already has one and so has the month, which is a real state and
-                // not an error. Only a dead end once the total is taken too — otherwise there is
-                // still the one budget on this sheet that is not a category.
-                Text(
-                    "برای کل خرجت و همهٔ دسته‌ها بودجه گذاشتی. برای تغییر یکی، بازش کن و ویرایشش کن.",
-                    fontSize = 13.sp,
-                    lineHeight = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = Space.m),
-                )
-                Spacer(Modifier.height(Space.l))
-                return@Column
-            }
 
             if (editing != null) {
                 // Which budget this sheet is open on, said the way its own card says it: the
@@ -972,16 +966,14 @@ private fun BudgetSheet(
                 // The roof above the rooms, and above them on the sheet too. A full-width row
                 // rather than a seventeenth tile in the grid: it is not one of the categories,
                 // and a cell among them would have to be read as one to be told apart.
-                if (!totalTaken) {
-                    TotalChoice(
-                        selected = wantsTotal,
-                        onClick = {
-                            wantsTotal = !wantsTotal
-                            if (wantsTotal) picked = null
-                        },
-                    )
-                    Spacer(Modifier.height(Space.m))
-                }
+                TotalChoice(
+                    selected = wantsTotal,
+                    onClick = {
+                        wantsTotal = !wantsTotal
+                        if (wantsTotal) picked = null
+                    },
+                )
+                Spacer(Modifier.height(Space.m))
                 if (choices.isNotEmpty()) {
                     CategoryGrid(
                         choices = choices,
@@ -1032,6 +1024,20 @@ private fun BudgetSheet(
                 WhoseChoice(shared, wasShared = editing?.shared == true) { shared = it }
             }
 
+            if (chosen && conflicts.isNotEmpty()) {
+                Text(
+                    "برای همین دسته، دوره و افراد، بودجهٔ دیگه‌ای هست: " +
+                        conflicts.joinToString("، ") { faCompact(tomanOf(it.targetRial)) } + " تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = Space.m),
+                )
+                if (editing != null && period == editing.period && shared == editing.shared) {
+                    TextButton(onClick = { close(onKeep) }) {
+                        Text("فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن")
+                    }
+                }
+            }
             Spacer(Modifier.height(Space.l))
             Button(
                 onClick = {
@@ -1043,7 +1049,7 @@ private fun BudgetSheet(
                         close { onSave(picked.takeUnless { wantsTotal }, period, cap, shared) }
                     }
                 },
-                enabled = (editing != null || wantsTotal || picked != null) && capRial != null,
+                enabled = chosen && capRial != null && conflicts.isEmpty(),
                 shape = RoundedCornerShape(Radius.pill),
                 colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
