@@ -208,6 +208,12 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 // Pulled rows sit in durable until a derive folds them in, and the foreground
                 // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
                 if (result.received > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
+                // The categories the household leaves out of the report, landed on this phone's
+                // own setting while the app is closed — the report has to open on the family's
+                // answer rather than wait for a foreground sync to repeat what this one learnt.
+                readReportExclusions(durable)?.ids?.toSet()?.let { excluded ->
+                    if (excluded != store.reportExcluded) store.reportExcluded = excluded
+                }
             }.onFailure { android.util.Log.w("muchtoman", "background family sync failed: $it") }
         }
         return watched

@@ -176,8 +176,9 @@ fun budgetLevel(spentRial: Long, capRial: Long): Int = when {
  *    through: قرض out and back is one movement told in two halves, and a roof over the month that
  *    counted both halves would announce she had spent money that netted nothing. That is the same
  *    reason `reportExcluded` seeds itself with [PASS_THROUGH_CATEGORIES], and it is taken from the
- *    constant rather than from her report setting on purpose: a shared total must read the same
- *    figure on both phones, and that setting is a preference on one of them.
+ *    constant rather than from the report's excluded set on purpose: that set — shared with the
+ *    household as it now is — is a way of *reading* دخل و خرج, and setting a category aside from
+ *    a report must not quietly widen every total cap in the house.
  *
  * The one deliberate divergence, and it only applies to a **named** category: money that passes
  * through is counted when she has capped it by name, even though دخل و خرج holds it apart by

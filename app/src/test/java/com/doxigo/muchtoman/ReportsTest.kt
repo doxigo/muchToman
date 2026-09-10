@@ -603,6 +603,34 @@ class ReportsTest {
             periodReport(entries, ReportRange(here, here)),
             periodReport(entries, ReportRange(here, here), excluded = emptySet()),
         )
+        assertTrue(periodReport(entries, ReportRange(here, here)).excludedSpending.isEmpty())
+        assertTrue(periodReport(entries, ReportRange(here, here)).excludedIncome.isEmpty())
+    }
+
+    @Test
+    fun `what an exclusion holds out is stated apart, biggest first, and counted nowhere`() {
+        val entries = listOf(
+            entry(first, -1_000_000L, category = "خواربار", categoryId = "cat_groceries"),
+            entry(first + 1, -2_000_000L, category = "کافیس", categoryId = "cat_cafes"),
+            entry(first + 2, -6_000_000L, category = "سفر", categoryId = "cat_travel"),
+            entry(first + 3, 5_000_000L, category = "درآمد", categoryId = CAT_INCOME),
+            // A refund under an excluded spending category: held apart on the income side.
+            entry(first + 4, 500_000L, category = "کافیس", categoryId = "cat_cafes"),
+            // Outside the window: an excluded row from another month is nothing here either.
+            entry(here.endDay, -9_000_000L, category = "کافیس", categoryId = "cat_cafes"),
+        )
+        val report = periodReport(
+            entries,
+            ReportRange(here, here),
+            excluded = setOf("cat_cafes", "cat_travel"),
+        )
+        // The sides and the count are exactly what the exclusion tests above pin…
+        assertEquals(1_000_000L, report.spentRial)
+        assertEquals(5_000_000L, report.incomeRial)
+        assertEquals(2, report.transactions)
+        // …and the held-out money is still named, in Toman, on its own two sides.
+        assertEquals(listOf("سفر" to 6_000_000L, "کافیس" to 2_000_000L), report.excludedSpending)
+        assertEquals(listOf("کافیس" to 500_000L), report.excludedIncome)
     }
 
     // ─────────────────────────── one category, taken apart ───────────────────────────
@@ -1032,5 +1060,33 @@ class ReportsTest {
         // And a category she excluded from the report is out of her members' sheets too.
         val without = memberWindow(rows, amir, income = false, range, 0L, excluded = setOf("cat_x"))
         assertEquals(0L, without.totalRial)
+    }
+
+    @Test
+    fun `a member's sheet groups their own rows by category, biggest first`() {
+        val range = ReportRange(here, here)
+        val rows = listOf(
+            entry(first, -30_000_000, category = "خوراک", categoryId = "cat_food", ownerId = "b", ownerName = "امیر"),
+            entry(first + 1, -10_000_000, category = "سفر", categoryId = "cat_travel", ownerId = "b", ownerName = "امیر"),
+            entry(first + 2, -5_000_000, category = "خوراک", categoryId = "cat_food", ownerId = "b", ownerName = "امیر"),
+            // Somebody else's خوراک must not leak into his answer.
+            entry(first + 3, -80_000_000, category = "خوراک", categoryId = "cat_food", ownerId = "a", ownerName = "ندا"),
+            // His income, off the spending sheet.
+            entry(first + 4, 50_000_000, category = "حقوق", categoryId = "cat_salary", ownerId = "b", ownerName = "امیر"),
+        )
+        val amir = memberShares(rows, range).first { it.id == "b" }
+
+        val spent = memberWindow(rows, amir, income = false, range, sideRial = amir.spentRial)
+        // The breakdown is the very rows the sheet lists, asked «کجا؟»: his categories, biggest
+        // first, adding up to the figure on the bar that opened the sheet.
+        assertEquals(listOf("خوراک" to 35_000_000L, "سفر" to 10_000_000L), spent.breakdown)
+        assertEquals(spent.totalRial, spent.breakdown.sumOf { it.second })
+
+        val earned = memberWindow(rows, amir, income = true, range, sideRial = amir.incomeRial)
+        assertEquals(listOf("حقوق" to 50_000_000L), earned.breakdown)
+
+        // A category's own sheet has no list to give: its rows are all the one category.
+        val food = categoryWindow(rows, "خوراک", income = false, range, sideRial = 0L)
+        assertTrue(food.breakdown.isEmpty())
     }
 }

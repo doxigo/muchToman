@@ -199,6 +199,23 @@ private data class SyncCategoryPayload(
 )
 
 /**
+ * The categories the household's reports leave out — one record for the whole family, replaced
+ * wholesale like a shared budget and settled the same way: any member may move it, the stamp
+ * decides whose edit stands, and the editor id breaks a same-millisecond draw.
+ *
+ * One shared set rather than one per member, because that is the question it answers: «what does
+ * this household's report count?» has one answer or the two phones print two different months.
+ * There is no tombstone — an empty list is not a deletion, it is the household saying «count
+ * everything», and it must land on the other phones exactly as a longer list would.
+ */
+@Serializable
+internal data class SyncExclusionPayload(
+    val kind: String = "exclusion",
+    val categoryIds: List<String>,
+    val editedByMemberId: String,
+)
+
+/**
  * Somebody's words about one transaction, on its own record rather than inside the
  * transaction's.
  *
@@ -430,6 +447,68 @@ internal fun goalPayload(goal: Goal): String = SYNC_JSON.encodeToString(
 )
 private fun noteRecordId(familyRef: String): String = "note:${sha256Hex(familyRef)}"
 
+/**
+ * The one report-exclusion record a household keeps — fixed, because the set is the household's
+ * single answer to «what does the report count?». See [SyncExclusionPayload].
+ */
+internal const val REPORT_EXCLUSIONS_RECORD_ID = "exclusion:report"
+
+/**
+ * The local half of that record: the set itself, when it was last moved, and by whom — the LWW
+ * state an arriving record is judged against, kept in `durable_meta` the way a pending token
+ * rotation is. [Store.reportExcluded] stays the copy every screen reads; this row is what the
+ * sync compares stamps on, and the two are kept in step by whoever writes either.
+ *
+ * `updatedAt == 0` never leaves this phone: it is the state of a set nobody here has touched —
+ * the shipped default, or a household this phone just joined and should adopt rather than talk
+ * over.
+ */
+const val META_REPORT_EXCLUSIONS = "report_exclusions"
+
+@Serializable
+data class ReportExclusionsState(
+    val ids: List<String> = emptyList(),
+    val updatedAt: Long = 0L,
+    val editedByMemberId: String = "",
+)
+
+suspend fun readReportExclusions(durable: DurableDb): ReportExclusionsState? =
+    durable.meta().get(META_REPORT_EXCLUSIONS)?.let {
+        runCatching { SYNC_JSON.decodeFromString<ReportExclusionsState>(it) }.getOrNull()
+    }
+
+suspend fun writeReportExclusions(durable: DurableDb, state: ReportExclusionsState) =
+    durable.meta().put(DurableMeta(META_REPORT_EXCLUSIONS, SYNC_JSON.encodeToString(state)))
+
+/**
+ * Category ids in the one shape both sides store and send: control characters out, each id held
+ * to the length every synced category id is held to, duplicates folded, sorted so the payload is
+ * a canonical form — two phones holding one set must build one byte string, or they would trade
+ * the record for ever — and capped, because an unbounded list is a payload that can outgrow the
+ * server's body cap and wedge the push.
+ */
+internal fun safeExcludedCategoryIds(ids: Collection<String>): List<String> = ids
+    .asSequence()
+    .map { it.filterNot(Char::isISOControl).trim().take(80) }
+    .filter(String::isNotBlank)
+    .distinct()
+    .sorted()
+    .take(400)
+    .toList()
+
+/**
+ * The record as it goes on the wire, built here and nowhere else — [goalPayload]'s fixed point,
+ * for the same reason: what a phone would send after storing an arrival must be byte-identical
+ * to what arrived, or the two phones echo the set at each other for ever.
+ */
+internal fun reportExclusionsPayload(ids: Collection<String>, editor: String): String =
+    SYNC_JSON.encodeToString(
+        SyncExclusionPayload(
+            categoryIds = safeExcludedCategoryIds(ids),
+            editedByMemberId = editor,
+        )
+    )
+
 /** One fresh household on the server: a random id, claimed for this member and device. */
 private fun claimFreshHousehold(base: String, member: String, device: String): SyncSession {
     val hid = hexOf(ByteArray(16).also { SYNC_RANDOM.nextBytes(it) })
@@ -567,6 +646,12 @@ private fun pairHousehold(link: String): SyncSession {
 private suspend fun commitJoin(durable: DurableDb, session: SyncSession, memberName: String) {
     saveSession(durable, session)
     resetFamilySharing(durable)
+    // She is walking into a household that already has an answer to «what does the report
+    // count?», so her own stamp is put down rather than carried in: kept, it would win the
+    // first sync against a set the family settled on months ago, and her join would silently
+    // rewrite everyone's report. Her local reading stands until the household's record lands —
+    // or until she edits it here, which is then a real edit and speaks with a real stamp.
+    durable.meta().delete(META_REPORT_EXCLUSIONS)
     durable.familyMembers().put(
         FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
     )
@@ -903,10 +988,10 @@ private suspend fun outgoingRecords(
 
     for (publication in publications.values) {
         // Only transaction publications sweep here: category and note records answer to their
-        // own decisions, and the asset and goal records have their own unshare below — a
-        // "transaction" tombstone under an asset: id would be refused by the server as a kind
-        // mismatch anyway.
-        if (publication.sourceKind in setOf("category", "note", "asset", "goal")) continue
+        // own decisions, the asset and goal records have their own unshare below, and the
+        // exclusion record is never retracted at all — a "transaction" tombstone under an
+        // asset: id would be refused by the server as a kind mismatch anyway.
+        if (publication.sourceKind in setOf("category", "note", "asset", "goal", "exclusion")) continue
         if (publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
         val deleted = publication.copy(contentHash = "", updatedAt = updatedAt, deleted = true)
@@ -1016,6 +1101,36 @@ private suspend fun outgoingRecords(
                     deleted = true,
                 ),
                 previous.copy(contentHash = "", updatedAt = updatedAt, deleted = true),
+            )
+        }
+    }
+
+    // The report's excluded categories, one record for the household, replaced wholesale the way
+    // a goal is. Only a set somebody here has actually touched goes out — a zero stamp is the
+    // shipped default or a fresh join, and publishing either would talk over the family with a
+    // set nobody chose. Never tombstoned: «count everything» is an empty list, not a delete.
+    val exclusions = readReportExclusions(durable)
+    if (exclusions != null && exclusions.updatedAt > 0) {
+        val payload = reportExclusionsPayload(
+            exclusions.ids,
+            exclusions.editedByMemberId.ifBlank { session.member },
+        )
+        val contentHash = sha256Hex(payload)
+        val previous = publications[REPORT_EXCLUSIONS_RECORD_ID]
+        if (previous == null || previous.deleted || previous.contentHash != contentHash ||
+            previous.updatedAt < exclusions.updatedAt
+        ) {
+            val updatedAt = nextStamp(previous?.updatedAt, exclusions.updatedAt)
+            outgoing += PreparedRecord(
+                wireRecord(
+                    session,
+                    REPORT_EXCLUSIONS_RECORD_ID,
+                    "exclusion",
+                    exclusions.editedByMemberId.ifBlank { session.member },
+                    updatedAt,
+                    payload,
+                ),
+                SyncPublication(REPORT_EXCLUSIONS_RECORD_ID, "exclusion", contentHash, updatedAt, deleted = false),
             )
         }
     }
@@ -1541,6 +1656,44 @@ internal fun syncedGoal(
 )
 
 /**
+ * The household's excluded categories, arriving from another phone.
+ *
+ * Judged against this phone's own [ReportExclusionsState] by the shared-edit rule every category
+ * and note answers to — the later stamp wins, the editor id breaks a draw — and stored two ways
+ * at once: the state, which is what the report reads through its mirror, and a publication row
+ * hashed from the payload *this phone would send*, which is what keeps [outgoingRecords] from
+ * echoing the household's own set straight back at it — the same fixed point [applyGoal] rests
+ * on.
+ */
+private suspend fun applyReportExclusions(
+    durable: DurableDb,
+    record: WireRecord,
+    payload: SyncExclusionPayload,
+): Boolean {
+    if (record.id != REPORT_EXCLUSIONS_RECORD_ID) return false
+    val existing = readReportExclusions(durable)
+    val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
+    if (editor.isBlank()) return false
+    if (existing != null &&
+        !syncedEditWins(existing.updatedAt, existing.editedByMemberId, record.updatedAt, editor)
+    ) return false
+    val ids = safeExcludedCategoryIds(payload.categoryIds)
+    writeReportExclusions(durable, ReportExclusionsState(ids, record.updatedAt, editor))
+    durable.syncPublications().putAll(
+        listOf(
+            SyncPublication(
+                id = record.id,
+                sourceKind = "exclusion",
+                contentHash = sha256Hex(reportExclusionsPayload(ids, editor)),
+                updatedAt = record.updatedAt,
+                deleted = false,
+            )
+        )
+    )
+    return true
+}
+
+/**
  * A verified retraction of a shared goal: somebody deleted it, or took it back to being their own.
  *
  * Both arrive as the same record and mean the same thing here — the figure on this screen is not
@@ -1661,6 +1814,10 @@ private suspend fun applyRecord(
             .getOrNull()?.let { applyAsset(durable, session, record, it) } ?: false
         "goal" -> runCatching { SYNC_JSON.decodeFromString<SyncGoalPayload>(plain) }
             .getOrNull()?.let { applyGoal(durable, session, record, it) } ?: false
+        // No tombstone branch above: an exclusion record is never deleted, only replaced — see
+        // [SyncExclusionPayload] — so a deleted envelope under this kind falls through to nothing.
+        "exclusion" -> runCatching { SYNC_JSON.decodeFromString<SyncExclusionPayload>(plain) }
+            .getOrNull()?.let { applyReportExclusions(durable, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
             .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
         else -> false

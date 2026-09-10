@@ -138,9 +138,11 @@ fun ReportScreen(
     onBack: (() -> Unit)? = null,
     /** The live categories, for naming and choosing what دخل و خرج leaves out. */
     categories: List<Category> = emptyList(),
-    /** Category ids she has told this report to leave out. */
+    /** Category ids this report leaves out — the household's shared set on a paired phone. */
     excluded: Set<String> = emptySet(),
     onExcluded: (Set<String>) -> Unit = {},
+    /** Whether the phone is in a family — then editing [excluded] moves every member's report. */
+    householdShared: Boolean = false,
     /** Her «می‌ارزید؟» answers, summed over this report's own window. */
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     /** The ledger itself, for the category drill-down — the rows behind every share bar. */
@@ -208,6 +210,7 @@ fun ReportScreen(
                     categories = categories,
                     excluded = excluded,
                     onExcluded = onExcluded,
+                    householdShared = householdShared,
                     worthIt = worthIt,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
@@ -629,6 +632,7 @@ private fun CashFlowReportContent(
     categories: List<Category> = emptyList(),
     excluded: Set<String> = emptySet(),
     onExcluded: (Set<String>) -> Unit = {},
+    householdShared: Boolean = false,
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
@@ -652,7 +656,11 @@ private fun CashFlowReportContent(
         WindowNavigator(cash, onWindow)
 
         Spacer(Modifier.height(Space.m))
-        if (period.transactions == 0) {
+        // A window whose only rows are excluded ones is not empty — those rows are listed right
+        // below under کنارگذاشته از جمع — so it takes the summary, zeros and all, rather than a
+        // card claiming nothing was recorded above a list of things that were.
+        val heldApart = period.excludedSpending.isNotEmpty() || period.excludedIncome.isNotEmpty()
+        if (period.transactions == 0 && !heldApart) {
             // A window with nothing in it is two different facts. This month with nothing in it
             // yet is a thing to do; a past one with nothing in it may simply be older than the
             // ledger, and printing zeros for it would report months nobody watched.
@@ -674,7 +682,9 @@ private fun CashFlowReportContent(
             MonthBars(cash, onWindow)
         }
 
-        if (period.transactions > 0) {
+        // Present when anything moved — the counted window, or money an exclusion is holding
+        // apart, which still has to be visible somewhere or the report is hiding it.
+        if (period.transactions > 0 || heldApart) {
             Spacer(Modifier.height(Space.xxl))
             CategoryDetail(period, entries, onOpenEntry)
         }
@@ -691,7 +701,7 @@ private fun CashFlowReportContent(
         // friendlier kind of lie this screen refuses everywhere else.
         if (categories.isNotEmpty()) {
             Spacer(Modifier.height(Space.l))
-            ReportExclusions(categories, excluded, onExcluded)
+            ReportExclusions(categories, excluded, onExcluded, householdShared)
         }
 
         if (worthIt.total > 0) {
@@ -1311,12 +1321,19 @@ private fun CategoryDetail(
     val income = side == LedgerLens.INCOME
     val rows = if (income) period.incomeByCategory else period.spendingByCategory
     val total = if (income) period.incomeRial else period.spentRial
+    // The money this window is deliberately not counting, on the side she is reading — shown
+    // under the counted rows rather than hidden, because a report that quietly loses a category
+    // is the friendlier kind of lie this screen refuses everywhere else.
+    val heldOut = if (income) period.excludedIncome else period.excludedSpending
     // The window written out, never «این ماه»: this line states which months were looked in and
     // found empty, and that is a fact about named months rather than about where she is standing.
     val named = period.range.fa
     // The category she has opened up, or null. Name and side together, because «خوراک» can in
     // principle exist on both sides of the ledger and the sheet must know which one she tapped.
     var opened by rememberSaveable { mutableStateOf<String?>(null) }
+    // A held-apart category she has opened, kept from [opened] because its sheet must not state
+    // a share of a total it was never inside.
+    var openedAside by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column {
         // Heading and lens on one line: the heading names the section and the chips slice it,
@@ -1355,6 +1372,20 @@ private fun CategoryDetail(
                 )
             }
         }
+        if (heldOut.isNotEmpty()) {
+            Spacer(Modifier.height(Space.m))
+            Text(
+                "کنارگذاشته از جمع",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { heading() },
+            )
+            Spacer(Modifier.height(Space.xs))
+            for ((name, rial) in heldOut) {
+                AsideCategoryRow(name, rial, onOpen = { openedAside = name })
+            }
+        }
     }
 
     opened?.let { name ->
@@ -1366,6 +1397,76 @@ private fun CategoryDetail(
             onOpenEntry = onOpenEntry,
             onDismiss = { opened = null },
         )
+    }
+
+    openedAside?.let { name ->
+        // sideRial zero on purpose: this category is inside no total, so the sheet states its
+        // figure and its months and claims no share of a side it was held out of.
+        val window = remember(name, income, entries, period) {
+            categoryWindow(entries, name, income, period.range, sideRial = 0L)
+        }
+        CategorySheet(
+            window = window,
+            onOpenEntry = onOpenEntry,
+            onDismiss = { openedAside = null },
+        )
+    }
+}
+
+/**
+ * One category the report is not counting: the same row shape as [CategoryShare] with the two
+ * things it must not claim taken off — no share, because the figure is inside no total, and no
+ * bar, because a bar on this row would be a length on a scale it is not part of. Dim on purpose;
+ * the amount is stated, not weighed.
+ */
+@Composable
+private fun AsideCategoryRow(
+    name: String,
+    rial: Long,
+    onOpen: (() -> Unit)? = null,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .then(
+                if (onOpen != null) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(vertical = Space.s)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، در جمع حساب نشده"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val hue = categoryHue(name)
+        Box(
+            Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(hue.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) { CategoryIcon(name, hue.copy(alpha = 0.7f), size = 17.dp, stroke = 1.5.dp) }
+        Spacer(Modifier.width(Space.m))
+        Text(name, Modifier.weight(1f), color = muted)
+        Spacer(Modifier.width(Space.s))
+        Text(
+            bidi(faCompact(tomanOf(rial))),
+            style = figureStyle(muted, FontWeight.Bold),
+            fontSize = 14.sp,
+        )
+        if (onOpen != null) {
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = muted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
@@ -1730,6 +1831,24 @@ private fun CategorySheet(
                 }
             }
 
+            // A member's money regrouped by where it went, biggest first — the question their
+            // sheet is opened for. Empty on a category's own sheet, whose rows are all one answer.
+            if (window.breakdown.isNotEmpty()) {
+                item(key = "breakdown") {
+                    SheetLabel("به تفکیک دسته")
+                    Column {
+                        for ((name, rial) in window.breakdown) {
+                            CategoryShare(
+                                name,
+                                rial,
+                                window.totalRial.coerceAtLeast(1L),
+                                if (window.income) INCOME_TINT else null,
+                            )
+                        }
+                    }
+                }
+            }
+
             if (window.trend.any { it.second > 0 }) {
                 item(key = "trend") {
                     SheetLabel("ماه به ماه")
@@ -1889,14 +2008,17 @@ private fun WorthItLine(label: String, rial: Long, tone: Color) {
  * The note is the honesty half and it is not optional: every figure above — the sides, the
  * shares, the savings rate, the bars — is computed without these categories, and a report that
  * hid money without saying so would be lying in exactly the way the pass-through card exists to
- * prevent. The door stays quiet when nothing is excluded, because then there is nothing to
- * confess — only an offer.
+ * prevent. What each one moved anyway is stated under دسته‌ها, so the note now says where to
+ * look rather than being the only trace. The door stays quiet when nothing is excluded, because
+ * then there is nothing to confess — only an offer.
  */
 @Composable
 private fun ReportExclusions(
     categories: List<Category>,
     excluded: Set<String>,
     onExcluded: (Set<String>) -> Unit,
+    /** Whether this phone is in a household — then the set is the family's, not just hers. */
+    householdShared: Boolean = false,
 ) {
     var choosing by rememberSaveable { mutableStateOf(false) }
     val names = remember(categories, excluded) {
@@ -1906,8 +2028,9 @@ private fun ReportExclusions(
     Column {
         if (names.isNotEmpty()) {
             Text(
-                "دسته‌های ${names.joinToString("، ")} به خواست خودت توی هیچ‌کدوم از " +
-                    "عددهای این گزارش حساب نشدن.",
+                "دسته‌های ${names.joinToString("، ")} توی جمع‌های این گزارش حساب نشدن؛ " +
+                    "خرج و درآمدی که داشتن جدا، ته فهرست دسته‌ها، دیده می‌شه." +
+                    if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else "",
                 fontSize = 13.sp,
                 lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1926,6 +2049,7 @@ private fun ReportExclusions(
             excluded = excluded,
             onExcluded = onExcluded,
             onDismiss = { choosing = false },
+            householdShared = householdShared,
         )
     }
 }
@@ -1945,6 +2069,7 @@ private fun ExcludeSheet(
     excluded: Set<String>,
     onExcluded: (Set<String>) -> Unit,
     onDismiss: () -> Unit,
+    householdShared: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -1971,8 +2096,9 @@ private fun ExcludeSheet(
         ) {
             SheetTitle("کدوم‌ها حساب نشن؟")
             Text(
-                "هر دسته‌ای که بزنی از همهٔ عددهای دخل و خرج کنار گذاشته می‌شه — " +
-                    "توی دفتر سر جاش می‌مونه.",
+                "هر دسته‌ای که بزنی از جمع‌های دخل و خرج کنار گذاشته می‌شه — عددش جدا دیده " +
+                    "می‌شه و توی دفتر سر جاش می‌مونه." +
+                    if (householdShared) " این انتخاب برای همهٔ خانواده‌ست و روی گوشی بقیه هم اعمال می‌شه." else "",
                 fontSize = 13.sp,
                 lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

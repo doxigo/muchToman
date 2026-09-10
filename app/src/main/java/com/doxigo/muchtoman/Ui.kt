@@ -843,6 +843,8 @@ private fun AppScreens(
             categories = state.ledger.categories,
             excluded = state.reportExcluded,
             onExcluded = vm::setReportExcluded,
+            // Paired is what makes the exclusion set a household setting — the sheet says so.
+            householdShared = state.family.paired,
             worthIt = worthIt,
             entries = state.ledger.entries,
             // The drill-down's rows open the transaction's own page; closing it lands back on

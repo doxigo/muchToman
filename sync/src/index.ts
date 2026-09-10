@@ -150,7 +150,7 @@ interface PushRecord {
   scope: string;
   updatedAt: number;
   device: string;
-  kind: 'legacy' | 'member' | 'transaction' | 'category' | 'asset' | 'note' | 'goal';
+  kind: 'legacy' | 'member' | 'transaction' | 'category' | 'asset' | 'note' | 'goal' | 'exclusion';
   ownerMemberId: string;
   authorMemberId?: string;
   deleted?: boolean;
@@ -176,7 +176,7 @@ function asRecords(value: unknown): PushRecord[] {
     if (!id || id.length > MAX_ID_CHARS) throw new SyncError('invalid_id', 400);
     if (!scope || scope.length > MAX_SCOPE_CHARS) throw new SyncError('invalid_scope', 400);
     if (!device || device.length > MAX_DEVICE_CHARS) throw new SyncError('invalid_device', 400);
-    if (!['legacy', 'member', 'transaction', 'category', 'asset', 'note', 'goal'].includes(kind)) {
+    if (!['legacy', 'member', 'transaction', 'category', 'asset', 'note', 'goal', 'exclusion'].includes(kind)) {
       throw new SyncError('invalid_kind', 400);
     }
     if (ownerMemberId.length > MAX_MEMBER_CHARS) throw new SyncError('invalid_member', 400);
@@ -560,7 +560,8 @@ export class Household extends DurableObject<Env> {
               : record.id.startsWith('asset:') ? 'asset'
                 : record.id.startsWith('note:') ? 'note'
                   : record.id.startsWith('goal:') ? 'goal'
-                    : null;
+                    : record.id.startsWith('exclusion:') ? 'exclusion'
+                      : null;
         if (reservedKind && record.kind !== reservedKind) throw new SyncError('invalid_kind', 400);
         if (record.kind === 'member') {
           // Member deletion changes household membership, so it never rides the general-purpose
@@ -599,6 +600,12 @@ export class Household extends DurableObject<Env> {
         // namespace is all that is fenced, and the tombstone rides the same path for the same
         // reason: either of them may put the figure away.
         if (record.kind === 'goal' && !record.id.startsWith('goal:')) {
+          throw new SyncError('invalid_id', 400);
+        }
+        // Which categories the household's reports leave out is one setting the household keeps
+        // together, exactly as a shared budget is one figure: any member may move it and the
+        // stamp settles whose edit stands, so — like a goal — only the id namespace is fenced.
+        if (record.kind === 'exclusion' && !record.id.startsWith('exclusion:')) {
           throw new SyncError('invalid_id', 400);
         }
         const existing = [...this.sql.exec<{

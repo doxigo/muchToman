@@ -267,6 +267,16 @@ data class PeriodReport(
     val passedFa: String,
     /** Whether [passedRial] is inside the two figures above, or is being held apart from them. */
     val countedPassThrough: Boolean,
+    /**
+     * What the categories she set aside moved anyway — the spending side, biggest first, in the
+     * shape [spendingByCategory] takes. In **no** figure above: not the sides, not the shares,
+     * not the savings rate, not the count. Held here rather than dropped for the same honesty
+     * [passedRial] exists for — money a report leaves out is money it must still be able to
+     * name, or the leaving-out becomes hiding.
+     */
+    val excludedSpending: List<Pair<String, Long>> = emptyList(),
+    /** The income side of the same held-apart money, in [incomeByCategory]'s shape. */
+    val excludedIncome: List<Pair<String, Long>> = emptyList(),
 ) {
     /** The month it covers, for the report that covers exactly one — the chart's bars, and home. */
     val month: ReportMonth get() = range.last
@@ -318,16 +328,30 @@ fun periodReport(
     range: ReportRange,
     countPassThrough: Boolean = false,
     /**
-     * Categories she has asked the report to leave out — hers to choose, unlike
-     * [PASS_THROUGH_CATEGORIES], which is the app's own honesty about money that only passes
-     * through. Rows under these count in nothing here: not the sides, not the shares, not the
-     * savings rate, not the transaction count. The screen that reads this names what was left
-     * out, for the same reason the pass-through card does.
+     * Categories the report has been asked to leave out — the household's choice, shared and
+     * synced, unlike [PASS_THROUGH_CATEGORIES], which is the app's own honesty about money that
+     * only passes through. Rows under these count in nothing here: not the sides, not the
+     * shares, not the savings rate, not the transaction count. What they moved is still summed
+     * apart into [PeriodReport.excludedSpending] and [PeriodReport.excludedIncome], so the
+     * screen shows the money it is not counting rather than hiding it.
      */
     excluded: Set<String> = emptySet(),
 ): PeriodReport {
-    val inRange = spendable(entries)
-        .filter { it.txn.day in range && it.categoryId !in excluded }
+    val inWindow = spendable(entries).filter { it.txn.day in range }
+    val (leftOut, inRange) = inWindow.partition { it.categoryId in excluded }
+
+    // The held-apart money, summed on its own two sides so the screen can show it beside the
+    // categories it will not count — never folded into anything below this line.
+    val excludedSpending = mutableMapOf<String, Long>()
+    val excludedIncome = mutableMapOf<String, Long>()
+    for (entry in leftOut) {
+        val signed = entry.txn.signedRial ?: continue
+        if (signed > 0) {
+            excludedIncome[entry.categoryFa] = (excludedIncome[entry.categoryFa] ?: 0L) + signed
+        } else {
+            excludedSpending[entry.categoryFa] = (excludedSpending[entry.categoryFa] ?: 0L) - signed
+        }
+    }
 
     var income = 0L
     var spent = 0L
@@ -369,6 +393,8 @@ fun periodReport(
             .filter { it in passedNames }
             .joinToString(" و "),
         countedPassThrough = countPassThrough,
+        excludedSpending = excludedSpending.toList().sortedByDescending { it.second },
+        excludedIncome = excludedIncome.toList().sortedByDescending { it.second },
     )
 }
 
@@ -447,6 +473,13 @@ data class CategoryWindow(
      * [memberWindow].
      */
     val face: String? = null,
+    /**
+     * Where this window's money went, by category and biggest first — the answer to «بیشتر
+     * کجا خرج کرد؟» a member's sheet is opened for. Filled by [memberWindow] and empty on a
+     * category's own window, where every row is the one category and the list would be the
+     * header read back.
+     */
+    val breakdown: List<Pair<String, Long>> = emptyList(),
 ) {
     val share: Double? get() = if (sideRial > 0) totalRial.toDouble() / sideRial else null
 }
@@ -566,6 +599,16 @@ fun memberWindow(
 ) { row ->
     row.ownerMemberId == member.id && row.categoryId !in excluded &&
         (countPassThrough || row.categoryId !in PASS_THROUGH_CATEGORIES)
+}.let { window ->
+    // The member's own rows regrouped the way دسته‌ها groups the whole window — from the very
+    // rows the sheet lists, so the breakdown, the transactions under it and the figure on the
+    // bar she tapped are one walk read three ways.
+    window.copy(
+        breakdown = window.rows
+            .groupBy { it.categoryFa }
+            .map { (name, rows) -> name to rows.sumOf { abs(it.txn.signedRial ?: 0L) } }
+            .sortedByDescending { it.second },
+    )
 }
 
 // ─────────────────────────── the narrative ───────────────────────────

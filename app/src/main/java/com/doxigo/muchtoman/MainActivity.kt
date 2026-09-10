@@ -944,11 +944,39 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Which categories دخل و خرج leaves out. A way of reading the report, never a fact about money. */
+    /**
+     * Which categories دخل و خرج leaves out. A way of reading the report, never a fact about
+     * money — but a way the household reads it *together*: the set is one shared record, so the
+     * edit lands here first and is then stamped into `durable_meta` for the sync to carry, the
+     * same last-write-wins walk a shared budget takes. See [ReportExclusionsState].
+     */
     fun setReportExcluded(ids: Set<String>) {
         store.reportExcluded = ids
         _state.update { it.copy(reportExcluded = ids) }
+        val app = getApplication<Application>()
+        // The counter keeps a burst of taps honest: launched writers can reach the lock out of
+        // order, and only the newest may write, or an early tap landing late would put a set she
+        // has already moved past onto every phone in the family.
+        val edit = reportExclusionEdits.incrementAndGet()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            withFamilySync {
+                if (reportExclusionEdits.get() != edit) return@withFamilySync
+                val previous = readReportExclusions(durable)
+                writeReportExclusions(
+                    durable,
+                    ReportExclusionsState(
+                        ids = safeExcludedCategoryIds(ids),
+                        updatedAt = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L),
+                        editedByMemberId = loadSession(durable)?.member.orEmpty(),
+                    ),
+                )
+            }
+            if (_state.value.family.paired) requestFamilySync(silent = true)
+        }
     }
+
+    private val reportExclusionEdits = java.util.concurrent.atomic.AtomicLong()
 
     /**
      * Everything rebuildable, dropped and rebuilt: the cached rate and بورس snapshots, the coin
@@ -1121,6 +1149,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     private suspend fun refreshFamily(session: SyncSession?, note: String? = null, error: String? = null) {
         val durable = DurableDb.get(getApplication())
+        // The household's word on which categories the report counts, landed on this phone's own
+        // setting. This runs at the end of every sync — the failed ones included — so a set the
+        // background worker pulled overnight reaches the screen on the next refresh even when
+        // this one could not reach the server. Null is a set nobody has ever touched, and then
+        // the local default stands.
+        val excluded = readReportExclusions(durable)?.ids?.toSet()
+        if (excluded != null && excluded != store.reportExcluded) store.reportExcluded = excluded
         val own = session?.let { active ->
             durable.familyMembers().get(active.member) ?: FamilyMember(
                 id = active.member,
@@ -1141,6 +1176,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             .sortedBy { it.name }
         _state.update {
             it.copy(
+                reportExcluded = excluded ?: it.reportExcluded,
                 familyAssets = familyAssets,
                 family = it.family.copy(
                     paired = session != null,

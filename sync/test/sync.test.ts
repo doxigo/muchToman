@@ -630,6 +630,29 @@ describe('shared assets', () => {
   });
 });
 
+describe('report exclusions', () => {
+  it('is one household record either member may replace, and its prefix is fenced', async () => {
+    const hid = 'c2'.repeat(16);
+    const scope = 'family:c2';
+    const owner = await claimDevice(hid, [scope], { memberId: 'ca'.repeat(16), deviceId: 'cb'.repeat(16) });
+    const other = await pairDevice(owner.token, 'cc'.repeat(16), 'cd'.repeat(16));
+
+    const shared = record({ id: 'exclusion:report', scope, kind: 'exclusion', ownerMemberId: owner.memberId });
+    expect((await push(owner.token, [shared])).status).toBe(200);
+    // Not fenced to its first author: which categories the household counts is the household's.
+    expect((await push(other.token, [{ ...shared, updatedAt: 2000, body: 'bmV4dA==' }])).status).toBe(200);
+    // But the id namespace is reserved — it cannot ride in under another kind…
+    expect((await push(other.token, [record({ id: 'exclusion:report', scope })])).status).toBe(400);
+    // …and the kind cannot wander out of its namespace.
+    expect((await push(other.token, [record({ id: 'stray', scope, kind: 'exclusion' })])).status).toBe(400);
+
+    const { json } = await pull(owner.token);
+    const kept = json.records.find((r) => r.id === 'exclusion:report');
+    expect(kept.body).toBe('bmV4dA==');
+    expect(kept.authorMemberId).toBe(other.memberId);
+  });
+});
+
 describe('token rotation', () => {
   it('replaces the secret and kills the old one immediately', async () => {
     const token = await claim('ab'.repeat(16), ['personal:her']);
@@ -817,7 +840,7 @@ describe('shared conflict ordering', () => {
       memberId: '1'.repeat(32), deviceId: 'f'.repeat(32),
     });
     const second = await pairDevice(first.token, 'f'.repeat(32), '1'.repeat(32));
-    for (const kind of ['category', 'note', 'goal']) {
+    for (const kind of ['category', 'note', 'goal', 'exclusion']) {
       for (const reversed of [false, true]) {
         const id = `${kind}:${reversed}`;
         const low = record({ id, scope: 'family:home', kind, body: 'low-member' });
@@ -829,7 +852,7 @@ describe('shared conflict ordering', () => {
       }
     }
     const result = await pull(first.token);
-    expect(result.json.records).toHaveLength(6);
+    expect(result.json.records).toHaveLength(8);
     for (const row of result.json.records) {
       expect(row.body).toBe('high-member');
       expect(row.authorMemberId).toBe(second.memberId);

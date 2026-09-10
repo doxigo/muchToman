@@ -400,6 +400,21 @@ stacked, and a genuine race between the worker and the app posts one note instea
 To watch an alert fire, set a cap below what the category has already cost this month: saving the
 budget publishes the ledger, which announces it on the spot.
 
+### Shared report exclusions
+
+Which categories دخل و خرج leaves out of its totals is one household record, `exclusion:report`
+(kind `exclusion`), replaced wholesale like a shared goal: any member may write it, last write
+wins, the author id breaks a same-millisecond draw, and there is no tombstone — an empty list
+means «count everything». The phone's LWW state lives in `durable_meta` under `report_exclusions`
+and is mirrored into the `reportExcluded` preference every screen reads (after each sync in
+`refreshFamily`, and by `LedgerWatchWorker` for pulls that land while the app is closed). Joining
+a household deletes the local stamp so the family's record is adopted rather than talked over;
+founding or renewing one keeps it, so the founder's set seeds the household. Deploy the sync
+Worker before shipping clients that send it — an old Worker answers `invalid_kind`, and the
+client skips that chunk, keeps everything else flowing, and retries after the upgrade. Excluded
+categories stay visible on the report — their خرج و درآمد is listed under دسته‌ها, outside
+every total (`PeriodReport.excludedSpending`/`excludedIncome`).
+
 **The second thing it says is «این چی بود؟».** A bank message never carries a category, so anything
 the rules are not sure about lands in `LedgerView.review` and waits — and the answer decays, because
 a merchant she can place today is archaeology in two weeks. `Filing.kt` is the pure half: `filingNews`
