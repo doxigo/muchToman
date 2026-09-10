@@ -29,6 +29,9 @@ android {
         // CI passes these from the git tag; local builds don't care.
         versionCode = providers.gradleProperty("muchtoman.versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("muchtoman.versionName").orNull ?: "1.0"
+        // The on-device smoke suite under src/androidTest (plan 008) — plain JUnit4 on the
+        // stock runner; no custom runner exists and none is needed.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "LITE", "false")
         // Whether تنظیمات offers to invent a household's year of transactions. False everywhere
         // but the `dev` build type below — including in `debug`, which is the released app with a
@@ -210,4 +213,15 @@ dependencies {
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
+
+    // The instrumented UI smoke suite (src/androidTest). The BOM is declared again for this
+    // configuration because androidTest resolves its own graph — without it, ui-test-junit4
+    // would float free of the Compose version the app itself is built against.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.junit)
+    // Lets createAndroidComposeRule regain control of a debug-variant activity under test.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
