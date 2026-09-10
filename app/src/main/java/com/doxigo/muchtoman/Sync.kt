@@ -606,7 +606,15 @@ data class PairingInvite(
     val key: ByteArray,
 )
 
-fun parsePairingLink(value: String): PairingInvite? = runCatching {
+/**
+ * A pairing link's `url=` names the server the join request is sent to — and the app has
+ * exactly one sync service, so any other origin is someone else's server dressed up as a
+ * family invite. Refuse it here, before anything is shown or sent.
+ */
+fun parsePairingLink(
+    value: String,
+    allowedBase: String = BuildConfig.SYNC_URL,
+): PairingInvite? = runCatching {
     val uri = Uri.parse(value)
     val fragment = uri.encodedFragment ?: return null
     val params = Uri.parse("https://pairing.local/?$fragment")
@@ -616,13 +624,21 @@ fun parsePairingLink(value: String): PairingInvite? = runCatching {
     val scope = params.getQueryParameter("scope") ?: return null
     val key = params.getQueryParameter("k")?.let(::unb64Url) ?: return null
     val baseUrl = URL(base)
-    if (baseUrl.protocol !in setOf("https", "http") || hid.length !in 16..64 || key.size != 32) return null
+    if (!sameOrigin(baseUrl, URL(allowedBase.trimEnd('/'))) || hid.length !in 16..64 || key.size != 32) return null
     PairingInvite(base, hid, code, scope, key)
 }.getOrNull()
 
+/** Origin equality with default ports made explicit, so `https://x` == `https://x:443`. */
+private fun sameOrigin(a: URL, b: URL): Boolean {
+    fun port(u: URL) = if (u.port == -1) u.defaultPort else u.port
+    return a.protocol == b.protocol &&
+        a.host.equals(b.host, ignoreCase = true) &&
+        port(a) == port(b)
+}
+
 /** The network half of a join: redeem the one-time code for a session. Persists nothing. */
-private fun pairHousehold(link: String): SyncSession {
-    val pairing = parsePairingLink(link) ?: error("invalid pairing link")
+private fun pairHousehold(link: String, allowedBase: String = BuildConfig.SYNC_URL): SyncSession {
+    val pairing = parsePairingLink(link, allowedBase) ?: error("invalid pairing link")
     val member = newIdentity()
     val device = newIdentity()
     val response = request(
@@ -663,9 +679,14 @@ private suspend fun resetFamilySharing(durable: DurableDb) {
     durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, ""))
 }
 
-suspend fun joinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
+suspend fun joinHousehold(
+    link: String,
+    durable: DurableDb,
+    memberName: String,
+    allowedBase: String = BuildConfig.SYNC_URL,
+): SyncSession =
     withFamilySync {
-        val session = pairHousehold(link)
+        val session = pairHousehold(link, allowedBase)
         commitJoin(durable, session, memberName)
         session
     }
@@ -691,9 +712,14 @@ fun pairingCase(sessionToken: String?, linkHid: String): PairingCase = when {
  * [renewHousehold] buries it and the new session is written. Nobody is kept: unlike a renewal,
  * the pair minted a fresh member id, so the old own row belongs to a household this phone left.
  */
-suspend fun rejoinHousehold(link: String, durable: DurableDb, memberName: String): SyncSession =
+suspend fun rejoinHousehold(
+    link: String,
+    durable: DurableDb,
+    memberName: String,
+    allowedBase: String = BuildConfig.SYNC_URL,
+): SyncSession =
     withFamilySync {
-        val session = pairHousehold(link)
+        val session = pairHousehold(link, allowedBase)
         durable.withTransaction {
             buryHousehold(durable, keepMember = null)
             commitJoin(durable, session, memberName)
