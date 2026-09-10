@@ -770,6 +770,9 @@ private fun AppScreens(
             budgets = state.ledger.budgets,
             goals = state.ledger.goals,
             categories = state.ledger.categories,
+            // The same set دخل و خرج reads — the figures on these cards were measured against
+            // it, and the total's sheet says so in words. See [budgetTotalNoteFa].
+            excluded = state.reportExcluded,
             // Only ever raised where there is something to be quiet about: a phone with no budget
             // has nothing to notify her of, and asking for the permission then would be the launch
             // -time prompt this app deliberately does not do.
@@ -845,6 +848,8 @@ private fun AppScreens(
             onExcluded = vm::setReportExcluded,
             // Paired is what makes the exclusion set a household setting — the sheet says so.
             householdShared = state.family.paired,
+            // The one figure off this screen that the same set governs — see [budgetRows].
+            capsTotal = state.ledger.budgets.any { it.total },
             worthIt = worthIt,
             entries = state.ledger.entries,
             // The drill-down's rows open the transaction's own page; closing it lands back on

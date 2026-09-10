@@ -1081,7 +1081,7 @@ fun buildStory(
         previous = previous,
         // First, so that [HomeStory.attention] — which takes the first ATTENTION line there is —
         // prefers a cap she has run past over a review queue. See [pressingBudget].
-        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries, mineId) }) +
+        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries, mineId, excluded) }) +
             narrate(month, had, entries, buffer, current = true),
         wins = quietWins(month, had, buffer, current = true),
         bufferDays = buffer,

@@ -143,6 +143,34 @@ class FamilyBudgetSyncTest {
     }
 
     @Test
+    fun `a category set aside in the report drops out of the roof, on the phone that set it aside`()
+    = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            val category = BUILTIN_CATEGORIES.first { it.kind == CategoryKind.EXPENSE && it.id !in PASS_THROUGH_CATEGORIES }.id
+            val now = System.currentTimeMillis()
+            a.durable.goals().put(a.budget("total", 200_000_000))
+            a.durable.manual().put(ManualTxn("meal", now, tehranDay(now), -113_000_000,
+                categoryId = category, createdAt = now, updatedAt = now))
+            a.sync(); b.sync()
+            suspend fun roof(phone: Phone, excluded: Set<String>) =
+                ledgerView(phone.derived, phone.durable, excluded = excluded).budgets.single().spentRial
+
+            // The set she has never touched — قرض و همسر — is the roof the app shipped with.
+            assertEquals(113_000_000L, roof(a, PASS_THROUGH_CATEGORIES.keys))
+            // Set that category aside in دخل و خرج and the roof stops counting it too: «کل خرج»
+            // is a cap over what the report counts, and two answers to one month is the thing
+            // this must never state.
+            assertEquals(0L, roof(a, PASS_THROUGH_CATEGORIES.keys + category))
+            // It is this phone's set and not the household's, so his roof still counts the row —
+            // the divergence دخل و خرج already has, since each phone reads its own exclusions
+            // over the same shared rows.
+            assertEquals(113_000_000L, roof(b, PASS_THROUGH_CATEGORIES.keys))
+        }
+    }
+
+    @Test
     fun `simultaneous choices converge without deleting both budgets`() = runBlocking {
         Household().use { home ->
             val a = home.phone('a')

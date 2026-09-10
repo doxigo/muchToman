@@ -184,7 +184,9 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 if (announce) {
                     // One read of the ledger for both. Two would be two walks over four thousand rows
                     // and, worse, two answers to «what is in the ledger right now».
-                    val view = ledgerView(derived, durable)
+                    // The same exclusion set the screen reads, or this worker would announce a
+                    // roof over money دخل و خرج leaves out — see [budgetRows].
+                    val view = ledgerView(derived, durable, excluded = store.reportExcluded)
                     announceBudgets(app, store, view.budgets)
                     announceFiling(app, store, view)
                 }

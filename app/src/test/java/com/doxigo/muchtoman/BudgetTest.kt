@@ -540,6 +540,74 @@ class BudgetTest {
     }
 
     @Test
+    fun `a total leaves out the categories she set aside in the report`() {
+        // The roof is a cap over what دخل و خرج counts, so a category she has set aside there is
+        // out from under it too — otherwise the month card and the total state two figures for
+        // one household and she has no way to tell which is the honest one.
+        val rows = listOf(
+            entry(first + 1, -2_000_000, categoryId = dining),
+            entry(first + 2, -7_000_000, categoryId = "cat_home"),
+        )
+        val roof = budgetsOf(
+            listOf(total(10_000_000)),
+            rows,
+            first + 5,
+            excluded = PASS_THROUGH_CATEGORIES.keys + "cat_home",
+        ).single()
+        assertEquals(2_000_000L, roof.spentRial)
+    }
+
+    @Test
+    fun `un-excluding قرض in the report puts it back under the roof`() {
+        // The other half of the same rule, and the reason this reads her set rather than the
+        // constant: she is the one who decides what only passes through.
+        val rows = listOf(
+            entry(first + 1, -2_000_000, categoryId = dining),
+            entry(first + 2, -5_000_000, categoryId = CAT_LOAN),
+        )
+        val roof = budgetsOf(listOf(total(10_000_000)), rows, first + 5, excluded = emptySet()).single()
+        assertEquals(7_000_000L, roof.spentRial)
+    }
+
+    @Test
+    fun `a cap on a category she set aside still counts it`() {
+        // The named-category divergence, now stated against her own set: capping a category by
+        // name is her asking for it to be measured, whatever the report does with it.
+        val rows = listOf(entry(first + 1, -4_000_000, categoryId = dining))
+        val capped = budgetsOf(
+            listOf(budget(10_000_000)),
+            rows,
+            first + 5,
+            excluded = setOf(dining),
+        ).single()
+        assertEquals(4_000_000L, capped.spentRial)
+    }
+
+    @Test
+    fun `a total's evidence cites only the rows it counted`() {
+        // Two copies of «what this budget counts» is how the sentence ends up citing receipts the
+        // figure above it never counted. The insight reads the same set the figure did.
+        val counted = entry(first + 1, -9_000_000, categoryId = dining)
+        val setAside = entry(first + 2, -8_000_000, categoryId = "cat_home")
+        val excluded = PASS_THROUGH_CATEGORIES.keys + "cat_home"
+        val roof = budgetsOf(listOf(total(10_000_000)), listOf(counted, setAside), first + 5, excluded = excluded)
+            .single()
+        assertEquals(
+            listOf(counted.txn.ref),
+            budgetInsight(roof, listOf(counted, setAside), excluded = excluded).refs,
+        )
+    }
+
+    @Test
+    fun `the total's note names what it leaves out`() {
+        assertEquals("این سقف روی کل خرجته — همهٔ دسته‌ها.", budgetTotalNoteFa(emptyList()))
+        assertEquals(
+            "این سقف روی کل خرجته، جز دسته‌هایی که توی دخل و خرج کنار گذاشتی: قرض، همسر.",
+            budgetTotalNoteFa(listOf("قرض", "همسر")),
+        )
+    }
+
+    @Test
     fun `a cap she put on قرض by name still counts it`() {
         // The deliberate divergence: naming a category is her asking for it to be measured, and a
         // budget on قرض that always read zero would be worse than no budget at all.

@@ -118,6 +118,12 @@ fun BudgetScreen(
     budgets: List<BudgetProgress>,
     goals: List<GoalProgress>,
     categories: List<Category>,
+    /**
+     * The categories دخل و خرج leaves out, because they are the ones «کل خرج» leaves out too —
+     * see [budgetTotalNoteFa]. Only ever read as words on the sheet; the figures arrived
+     * already measured against this same set.
+     */
+    excluded: Set<String>,
     /** True when she keeps budgets and this phone would not be able to tell her about them. */
     notifyBlocked: Boolean,
     /**
@@ -147,6 +153,14 @@ fun BudgetScreen(
     // deleted elsewhere resolves to nothing and the sheet simply closes.
     var editingBudget by remember { mutableStateOf<String?>(null) }
     var editingGoal by remember { mutableStateOf<String?>(null) }
+    // Off the spending side alone, in the grid's own order: those are the only categories a roof
+    // could have counted, so they are the only ones worth naming as left out of one. «پس‌گرفتن
+    // قرض» is set aside on a fresh install too, and listing money coming back under a cap on
+    // spending would raise a question the roof never had to answer. A category she has since
+    // retired keeps its exclusion and loses its name here; dropping it beats printing an id.
+    val excludedFa = remember(categories, excluded) {
+        categoryChoices(categories, direction = "out").filter { it.id in excluded }.map { it.nameFa }
+    }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -249,6 +263,7 @@ fun BudgetScreen(
         BudgetSheet(
             choices = categoryChoices(categories, direction = "out").filter { it.id != CAT_TRANSFER },
             hasHousehold = hasHousehold,
+            excludedFa = excludedFa,
             budgets = budgets.map { it.goal },
             onSave = { category, period, cap, shared ->
                 addingBudget = false
@@ -262,6 +277,7 @@ fun BudgetScreen(
         BudgetSheet(
             choices = emptyList(),
             hasHousehold = hasHousehold,
+            excludedFa = excludedFa,
             budgets = budgets.map { it.goal },
             onKeep = { onKeepBudget(budget.goal.id); editingBudget = null },
             onSave = { _, _, _, _ -> },
@@ -870,6 +886,8 @@ private fun BudgetSheet(
     choices: List<Category>,
     /** Whether «مال کیه؟» is a real question here — see [BudgetScreen]. */
     hasHousehold: Boolean,
+    /** What a total leaves out, named — see [budgetTotalNoteFa]. */
+    excludedFa: List<String>,
     budgets: List<Goal>,
     onKeep: () -> Unit = {},
     onSave: (Category?, BudgetPeriod, Long, Boolean) -> Unit,
@@ -951,11 +969,8 @@ private fun BudgetSheet(
                     )
                 }
                 Text(
-                    if (editing.total) {
-                        "این سقف روی کل خرجته، جز پول‌هایی که فقط رد می‌شن — قرض و همسر."
-                    } else {
-                        "دسته‌اش عوض نمی‌شه — برای دستهٔ دیگه، بودجهٔ تازه بساز."
-                    },
+                    if (editing.total) budgetTotalNoteFa(excludedFa)
+                    else "دسته‌اش عوض نمی‌شه — برای دستهٔ دیگه، بودجهٔ تازه بساز.",
                     fontSize = 12.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -973,6 +988,18 @@ private fun BudgetSheet(
                         if (wantsTotal) picked = null
                     },
                 )
+                // Only once she has picked it, and before she has typed a figure: what a roof
+                // leaves out is the one thing «کل خرج» does not say about itself, and it is
+                // worth knowing while she is deciding the number rather than afterwards.
+                if (wantsTotal) {
+                    Text(
+                        budgetTotalNoteFa(excludedFa),
+                        fontSize = 12.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.s, start = Space.xs),
+                    )
+                }
                 Spacer(Modifier.height(Space.m))
                 if (choices.isNotEmpty()) {
                     CategoryGrid(

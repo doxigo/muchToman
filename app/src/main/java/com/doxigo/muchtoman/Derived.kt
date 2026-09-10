@@ -628,6 +628,16 @@ suspend fun ledgerView(
     derived: DerivedDb,
     durable: DurableDb,
     limit: Int = LEDGER_VIEW_LIMIT,
+    /**
+     * The categories دخل و خرج leaves out — `Store.reportExcluded`, the one preference this
+     * database-only read takes.
+     *
+     * It is here rather than read off the screen because a total is measured twice: once for the
+     * card she is looking at and once by [LedgerWatchWorker] at 3am for the notification. Left to
+     * the screen, the alert would announce a roof the card never showed. Defaulted to the
+     * setting's own default — see [budgetRows].
+     */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
 ): LedgerView {
     val ledger = ledgerEntries(derived, durable, limit)
     val answers = durable.decisions().ofKind(DecisionKind.WORTH_IT)
@@ -661,7 +671,7 @@ suspend fun ledgerView(
                         .orEmpty(),
                 )
             },
-        budgets = budgetsOf(active, ledger.entries, today, names, mineId, memberNames),
+        budgets = budgetsOf(active, ledger.entries, today, names, mineId, memberNames, excluded),
         worthIt = answers,
         marks = ledger.marks,
         mineId = mineId,

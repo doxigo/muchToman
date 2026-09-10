@@ -33,6 +33,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -149,7 +150,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
         // scheduleLedgerWatch, announceBudgets and markFilingSeen have all been checked.
         ledgerGate.withLock {
-            val view = ledgerView(derived, durable)
+            // Her exclusion set rides along: a total is a roof over what دخل و خرج counts, so
+            // the figure on the card, the sentence on home and the 3am notification all read the
+            // one set — see [budgetRows].
+            val view = ledgerView(derived, durable, excluded = store.reportExcluded)
             _state.update { it.copy(ledger = view) }
             // Watching is scheduled by whether there is anything left to watch, so deleting the last
             // budget on a phone that does not read messages stops the worker rather than leaving it to
@@ -958,6 +962,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * money — but a way the household reads it *together*: the set is one shared record, so the
      * edit lands here first and is then stamped into `durable_meta` for the sync to carry, the
      * same last-write-wins walk a shared budget takes. See [ReportExclusionsState].
+     *
+     * And it governs one figure off the report too: «کل خرج». A total budget is a roof over
+     * exactly what the report counts (see [budgetRows]), so a set she has just changed moves that
+     * figure — worked out in [ledgerView] for the card and by the watch worker for the note — and
+     * this republishes so the card and her lock screen read the new set rather than the old one.
+     * The republish rides the same edit counter as the write above, so only the newest tap's
+     * publish runs, and it is [NonCancellable] because [announceBudgets] writes its marks before
+     * it posts and a cancellation between the two is an alert marked as said and never made.
      */
     fun setReportExcluded(ids: Set<String>) {
         store.reportExcluded = ids
@@ -988,6 +1000,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (_state.value.family.paired) requestFamilySync(silent = true)
+            // «کل خرج» reads this set too, so the newest edit republishes the ledger to move the
+            // card and the lock-screen note onto it. Stale taps bail at the counter, so a burst
+            // is one ledger walk, not one per tap.
+            if (reportExclusionEdits.get() == edit) {
+                withContext(NonCancellable) {
+                    runCatching { publishLedger(durable, DerivedDb.get(app)) }
+                        .onFailure { android.util.Log.w("muchtoman", "exclusions republish failed: $it") }
+                }
+            }
         }
     }
 

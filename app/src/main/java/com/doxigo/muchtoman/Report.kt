@@ -143,6 +143,11 @@ fun ReportScreen(
     onExcluded: (Set<String>) -> Unit = {},
     /** Whether the phone is in a family — then editing [excluded] moves every member's report. */
     householdShared: Boolean = false,
+    /**
+     * Whether she keeps a cap on «کل خرج», which is the one figure outside this screen that the
+     * exclusion set also governs — see [ReportExclusions] for why that earns a clause.
+     */
+    capsTotal: Boolean = false,
     /** Her «می‌ارزید؟» answers, summed over this report's own window. */
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     /** The ledger itself, for the category drill-down — the rows behind every share bar. */
@@ -211,6 +216,7 @@ fun ReportScreen(
                     excluded = excluded,
                     onExcluded = onExcluded,
                     householdShared = householdShared,
+                    capsTotal = capsTotal,
                     worthIt = worthIt,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
@@ -633,6 +639,8 @@ private fun CashFlowReportContent(
     excluded: Set<String> = emptySet(),
     onExcluded: (Set<String>) -> Unit = {},
     householdShared: Boolean = false,
+    /** Whether she keeps a cap on «کل خرج» — see [ReportExclusions]. */
+    capsTotal: Boolean = false,
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
@@ -701,7 +709,13 @@ private fun CashFlowReportContent(
         // friendlier kind of lie this screen refuses everywhere else.
         if (categories.isNotEmpty()) {
             Spacer(Modifier.height(Space.l))
-            ReportExclusions(categories, excluded, onExcluded, householdShared)
+            ReportExclusions(
+                categories = categories,
+                excluded = excluded,
+                onExcluded = onExcluded,
+                householdShared = householdShared,
+                capsTotal = capsTotal,
+            )
         }
 
         if (worthIt.total > 0) {
@@ -2013,11 +2027,20 @@ private fun WorthItLine(label: String, rial: Long, tone: Color) {
  * prevent. What each one moved anyway is stated under دسته‌ها, so the note now says where to
  * look rather than being the only trace. The door stays quiet when nothing is excluded, because
  * then there is nothing to confess — only an offer.
+ *
+ * Two clauses ride on the base sentence when they apply. On a paired phone the set is the
+ * household's, so the note says so. And «کل خرج» earns a clause when she keeps one, because that
+ * is the only figure this set governs that is not on this screen: a roof is a cap over what this
+ * report counts — see [budgetRows] — so a category set aside here is out from under it too, and
+ * she would otherwise have to work that out from two screens that never mention each other.
+ * Neither is said when it does not apply, where it would describe a feature she has not used.
  */
 @Composable
 private fun ReportExclusions(
     categories: List<Category>,
     excluded: Set<String>,
+    /** Whether «کل خرج» is a figure she keeps — see above. */
+    capsTotal: Boolean,
     onExcluded: (Set<String>) -> Unit,
     /** Whether this phone is in a household — then the set is the family's, not just hers. */
     householdShared: Boolean = false,
@@ -2032,7 +2055,8 @@ private fun ReportExclusions(
             Text(
                 "دسته‌های ${names.joinToString("، ")} توی جمع‌های این گزارش حساب نشدن؛ " +
                     "خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی." +
-                    if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else "",
+                    (if (capsTotal) " و زیر سقف کل خرجت هم نمی‌رن." else "") +
+                    (if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else ""),
                 fontSize = 13.sp,
                 lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

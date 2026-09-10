@@ -172,19 +172,29 @@ fun budgetLevel(spentRial: Long, capRial: Long): Int = when {
  *
  *  - **Whose.** [scopedTo], off [Goal.shared] — the household's rows or only hers.
  *  - **When.** Inside the window, which is always the current one.
- *  - **What.** The category it names, or — on a total — everything except what only passes
- *    through: قرض out and back is one movement told in two halves, and a roof over the month that
- *    counted both halves would announce she had spent money that netted nothing. That is the same
- *    reason `reportExcluded` seeds itself with [PASS_THROUGH_CATEGORIES], and it is taken from the
- *    constant rather than from the report's excluded set on purpose: that set — shared with the
- *    household as it now is — is a way of *reading* دخل و خرج, and setting a category aside from
- *    a report must not quietly widen every total cap in the house.
+ *  - **What.** The category it names, or — on a total — everything except [excluded], which is
+ *    the very set دخل و خرج leaves out. «کل خرج» and the month card are one figure read twice,
+ *    the same way a cap on «رستوران و کافه» and its row in the report are: a category she has
+ *    set aside is gone from every figure in the report, and a roof that still counted it was
+ *    stating a month she had no way to reconcile with the one below it.
  *
- * The one deliberate divergence, and it only applies to a **named** category: money that passes
- * through is counted when she has capped it by name, even though دخل و خرج holds it apart by
- * default. That gate is a way of *reading a report*, and a cap on همسر is her saying in as many
- * words that she wants همسر measured. A budget on همسر that always read zero would be worse than
- * no budget at all.
+ *    This used to read [PASS_THROUGH_CATEGORIES] off the constant, which was the exclusion
+ *    set's own default wearing a second mechanism. It still behaves identically on a phone whose
+ *    setting she has never touched — قرض out and back is one movement told in two halves, and it
+ *    stays out of the roof — but now because she has left it out rather than because a constant
+ *    said so, and un-excluding it in دخل و خرج now moves the roof too.
+ *
+ * The one deliberate divergence, and it only applies to a **named** category: an excluded
+ * category is counted when she has capped it by name, even though دخل و خرج holds it apart. That
+ * gate is a way of *reading a report*, and a cap on همسر is her saying in as many words that she
+ * wants همسر measured. A budget on همسر that always read zero would be worse than no budget at
+ * all.
+ *
+ * On a **shared** total this reads the same figure on both phones, because the excluded set is
+ * itself one household record now (see [setReportExcluded]): the roof and the report under it
+ * count the same categories on every phone, rather than each reading its own preference. What a
+ * category she sets aside costs is still stated under دسته‌ها, outside every total — so the roof
+ * and its own receipts never disagree about what they left out.
  */
 fun budgetRows(
     entries: List<LedgerEntry>,
@@ -192,11 +202,18 @@ fun budgetRows(
     window: BudgetWindow,
     /** This phone's member id, blank when it has never paired — see [scopedTo]. */
     mineId: String = "",
+    /**
+     * What دخل و خرج leaves out — `Store.reportExcluded`, whose own default is
+     * [PASS_THROUGH_CATEGORIES]. Defaulted to that constant here rather than to nothing: a
+     * caller with no preference to hand should read the shipped behaviour, and a total that
+     * quietly counted قرض is the one answer this must never fall back to.
+     */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
 ): List<LedgerEntry> =
     scopedTo(spendable(entries), mineId, goal.shared)
         .filter { entry ->
             entry.txn.day in window && when (val category = goal.categoryId) {
-                null -> entry.categoryId !in PASS_THROUGH_CATEGORIES
+                null -> entry.categoryId !in excluded
                 else -> entry.categoryId == category
             }
         }
@@ -207,7 +224,9 @@ fun budgetSpent(
     goal: Goal,
     window: BudgetWindow,
     mineId: String = "",
-): Long = budgetRows(entries, goal, window, mineId)
+    /** What دخل و خرج leaves out — see [budgetRows]. */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
+): Long = budgetRows(entries, goal, window, mineId, excluded)
     .sumOf { -(it.txn.signedRial ?: 0L).coerceAtMost(0L) }
 
 /**
@@ -326,10 +345,12 @@ fun budgetProgress(
     mineId: String = "",
     /** Who set it, when that was somebody else. See [BudgetProgress.ownerName]. */
     ownerName: String = "",
+    /** What دخل و خرج leaves out — see [budgetRows]. */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
 ): BudgetProgress {
     val window = budgetWindow(BudgetPeriod.of(goal.period), today)
     val cap = goal.targetRial
-    val spent = budgetSpent(entries, goal, window, mineId)
+    val spent = budgetSpent(entries, goal, window, mineId, excluded)
     val left = (cap - spent).coerceAtLeast(0L)
     val over = (spent - cap).coerceAtLeast(0L)
     val daysLeft = window.daysLeft(today)
@@ -378,6 +399,8 @@ fun budgetsOf(
     mineId: String = "",
     /** Member names, for attributing a shared budget somebody else set. */
     members: Map<String, String> = emptyMap(),
+    /** What دخل و خرج leaves out — see [budgetRows]. */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
 ): List<BudgetProgress> =
     goals.filter { it.kind == GoalKind.CAP }
         .map {
@@ -391,6 +414,7 @@ fun budgetsOf(
                     .takeIf { owner -> owner.isNotBlank() && owner != mineId }
                     ?.let { owner -> members[owner] }
                     .orEmpty(),
+                excluded = excluded,
             )
         }
         .sortedWith(
@@ -514,6 +538,12 @@ fun budgetInsight(
     entries: List<LedgerEntry>,
     /** This phone's member id, blank when it has never paired — see [scopedTo]. */
     mineId: String = "",
+    /**
+     * What دخل و خرج leaves out, which the figure above already read — see [budgetRows]. Passed
+     * for the same reason the rows are not filtered again here: evidence that cites a قرض the
+     * total did not count is the sentence disagreeing with its own receipts.
+     */
+    excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
 ): Insight = Insight(
     text = when {
         budget.total && budget.over -> "از سقف کل خرج ${budget.window.fa} گذشتی."
@@ -533,7 +563,7 @@ fun budgetInsight(
         append(if (budget.shared) "خانواده در ${budget.window.fa}" else budget.window.fa)
         append('.')
     },
-    refs = budgetRows(entries, budget.goal, budget.window, mineId).map { it.txn.ref },
+    refs = budgetRows(entries, budget.goal, budget.window, mineId, excluded).map { it.txn.ref },
     tone = Insight.Tone.ATTENTION,
 )
 
@@ -563,6 +593,24 @@ fun budgetScopeNoteFa(shared: Boolean, wasShared: Boolean): String = when {
     wasShared -> "از روی گوشی بقیه برداشته می‌شه و فقط خرج خودت توش حساب می‌شه."
     else -> "فقط روی گوشی خودته و فقط خرج خودت توش حساب می‌شه."
 }
+
+/**
+ * What a roof leaves out, in words — the one thing about «کل خرج» she cannot read off the card.
+ *
+ * A cap on «رستوران و کافه» says what it measures by its own name; a total says «everything»,
+ * and «everything» is the one claim on this screen that is not quite true — it is everything دخل
+ * و خرج counts, which is everything she has not set aside there. So the sheet says which, from
+ * the same set [budgetRows] filters on, and the two cannot drift: a sentence promising a roof
+ * over قرض while the figure ignores it is worse than no sentence.
+ *
+ * With nothing set aside the total really is every category, and it says so — «جز هیچ‌چی» is not
+ * a sentence, and a list of exclusions that is empty is not worth a line she has to read to find
+ * out it says nothing.
+ */
+fun budgetTotalNoteFa(excludedFa: List<String>): String =
+    if (excludedFa.isEmpty()) "این سقف روی کل خرجته — همهٔ دسته‌ها."
+    else "این سقف روی کل خرجته، جز دسته‌هایی که توی دخل و خرج کنار گذاشتی: " +
+        excludedFa.joinToString("، ") + "."
 
 /**
  * «۱۲ روز تا آخر ماه», and on the last day the thing that is actually worth knowing.
