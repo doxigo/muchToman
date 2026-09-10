@@ -346,6 +346,9 @@ fun periodReport(
     val excludedIncome = mutableMapOf<String, Long>()
     for (entry in leftOut) {
         val signed = entry.txn.signedRial ?: continue
+        // A zero moves no money in either direction, and a «name to ۰» line under دسته‌ها would
+        // be a floating dot claiming to be a figure.
+        if (signed == 0L) continue
         if (signed > 0) {
             excludedIncome[entry.categoryFa] = (excludedIncome[entry.categoryFa] ?: 0L) + signed
         } else {

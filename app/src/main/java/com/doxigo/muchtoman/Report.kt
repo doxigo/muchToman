@@ -1310,12 +1310,17 @@ private fun CategoryDetail(
     entries: List<LedgerEntry>,
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
 ) {
-    // خرج unless there is nothing on that side to show, which is the only case where opening on
-    // it would be an empty screen with a full one one tap away.
+    // خرج unless there is nothing on that side to show — counted or held apart — which is the
+    // only case where opening on it would be an empty screen with a full one one tap away.
     var side by rememberSaveable {
         mutableStateOf(
-            if (period.spentRial <= 0 && period.incomeRial > 0) LedgerLens.INCOME
-            else LedgerLens.EXPENSE,
+            if (period.spentRial <= 0 && period.excludedSpending.isEmpty() &&
+                (period.incomeRial > 0 || period.excludedIncome.isNotEmpty())
+            ) {
+                LedgerLens.INCOME
+            } else {
+                LedgerLens.EXPENSE
+            },
         )
     }
     val income = side == LedgerLens.INCOME
@@ -1375,7 +1380,7 @@ private fun CategoryDetail(
         if (heldOut.isNotEmpty()) {
             Spacer(Modifier.height(Space.m))
             Text(
-                "کنارگذاشته از جمع",
+                "بیرون از جمع",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1423,20 +1428,14 @@ private fun CategoryDetail(
 private fun AsideCategoryRow(
     name: String,
     rial: Long,
-    onOpen: (() -> Unit)? = null,
+    onOpen: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.field))
-            .then(
-                if (onOpen != null) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
-                } else {
-                    Modifier
-                },
-            )
+            .clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
                 contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، در جمع حساب نشده"
@@ -1459,14 +1458,17 @@ private fun AsideCategoryRow(
             style = figureStyle(muted, FontWeight.Bold),
             fontSize = 14.sp,
         )
-        if (onOpen != null) {
-            Icon(
-                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = muted,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        Spacer(Modifier.width(Space.s))
+        // The empty well where the counted rows above keep their percentage — reserved, never
+        // drawn, so the two lists' amounts sit on one column instead of the aside figures
+        // drifting toward the chevron.
+        Spacer(Modifier.width(36.dp))
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = muted,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
@@ -1835,7 +1837,7 @@ private fun CategorySheet(
             // sheet is opened for. Empty on a category's own sheet, whose rows are all one answer.
             if (window.breakdown.isNotEmpty()) {
                 item(key = "breakdown") {
-                    SheetLabel("به تفکیک دسته")
+                    SheetLabel("دسته به دسته")
                     Column {
                         for ((name, rial) in window.breakdown) {
                             CategoryShare(
@@ -2029,7 +2031,7 @@ private fun ReportExclusions(
         if (names.isNotEmpty()) {
             Text(
                 "دسته‌های ${names.joinToString("، ")} توی جمع‌های این گزارش حساب نشدن؛ " +
-                    "خرج و درآمدی که داشتن جدا، ته فهرست دسته‌ها، دیده می‌شه." +
+                    "خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی." +
                     if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else "",
                 fontSize = 13.sp,
                 lineHeight = 21.sp,

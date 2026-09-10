@@ -47,15 +47,23 @@ class FamilyExclusionSyncTest {
                             status = 400
                             JSONObject().put("code", "invalid_kind")
                         } else {
+                            // The production Worker's stamp clamp, so the ack's `clamped` answers
+                            // are as real as its LWW: a day past this server's clock, no further.
+                            val maxStamp = System.currentTimeMillis() + 24L * 60 * 60 * 1000
+                            val clamped = JSONArray()
                             for (i in 0 until records.length()) {
                                 val row = records.getJSONObject(i)
+                                val at = minOf(row.getLong("updatedAt"), maxStamp)
+                                if (at != row.getLong("updatedAt")) {
+                                    row.put("updatedAt", at)
+                                    clamped.put(JSONObject().put("id", row.getString("id")).put("updatedAt", at))
+                                }
                                 val previous = rows[row.getString("id")]
-                                val at = row.getLong("updatedAt")
                                 if (previous != null && (previous.getLong("updatedAt") > at ||
                                     (previous.getLong("updatedAt") == at && previous.getString("authorMemberId") >= member))) continue
                                 rows[row.getString("id")] = row.put("authorMemberId", member).put("seq", ++seq)
                             }
-                            JSONObject().put("seq", seq)
+                            JSONObject().put("seq", seq).put("clamped", clamped)
                         }
                     }
                     else -> {
@@ -183,6 +191,54 @@ class FamilyExclusionSyncTest {
 
             home.rejectKinds.clear()
             assertTrue(a.sync().unsupportedKinds.isEmpty())
+            b.sync()
+            assertEquals(setOf("cat_cafes"), b.excluded())
+        }
+    }
+
+    @Test
+    fun `a forged exclusion tombstone is ignored, whatever it is stamped`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            a.exclude(setOf("cat_cafes"), at = 1_000)
+            a.sync(); b.sync()
+            assertEquals(setOf("cat_cafes"), b.excluded())
+            // A compromised server — or a hostile push the real Worker now refuses — plants a
+            // deleted envelope whose sealed body authenticates and names the record, stamped past
+            // every honest edit. The whole no-tombstone design rests on phones refusing it.
+            val (nonce, sealedBody) = seal(home.key, """{"v":1,"id":"$REPORT_EXCLUSIONS_RECORD_ID","deleted":true}""")
+            home.rows[REPORT_EXCLUSIONS_RECORD_ID] = JSONObject()
+                .put("id", REPORT_EXCLUSIONS_RECORD_ID)
+                .put("scope", "family:test")
+                .put("updatedAt", System.currentTimeMillis() + 60_000)
+                .put("device", "z".repeat(32))
+                .put("kind", "exclusion")
+                .put("ownerMemberId", a.session.member)
+                .put("authorMemberId", a.session.member)
+                .put("deleted", true)
+                .put("nonce", nonce)
+                .put("body", sealedBody)
+                .put("seq", ++home.seq)
+            b.sync()
+            assertEquals(setOf("cat_cafes"), b.excluded())
+        }
+    }
+
+    @Test
+    fun `a clamped stamp lands back on the state, so a fast clock cannot republish for ever`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            val farAhead = System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000
+            a.exclude(setOf("cat_cafes"), at = farAhead)
+            a.sync()
+            // The server said what it stored, and the state takes its word alongside the
+            // publication mark — left ahead of it, this phone would republish on every sync.
+            assertTrue(readReportExclusions(a.durable)!!.updatedAt < farAhead)
+            val settled = home.rows[REPORT_EXCLUSIONS_RECORD_ID]!!.getLong("seq")
+            a.sync()
+            assertEquals(settled, home.rows[REPORT_EXCLUSIONS_RECORD_ID]!!.getLong("seq"))
             b.sync()
             assertEquals(setOf("cat_cafes"), b.excluded())
         }

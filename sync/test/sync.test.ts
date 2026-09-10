@@ -645,6 +645,9 @@ describe('report exclusions', () => {
     expect((await push(other.token, [record({ id: 'exclusion:report', scope })])).status).toBe(400);
     // …and the kind cannot wander out of its namespace.
     expect((await push(other.token, [record({ id: 'stray', scope, kind: 'exclusion' })])).status).toBe(400);
+    // There is no such thing as a deleted exclusion record — no client honours one, so a stored
+    // tombstone could only pin the row against honest edits. Refused outright.
+    expect((await push(other.token, [{ ...shared, updatedAt: 3000, deleted: true }])).status).toBe(400);
 
     const { json } = await pull(owner.token);
     const kept = json.records.find((r) => r.id === 'exclusion:report');

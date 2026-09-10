@@ -489,7 +489,10 @@ suspend fun writeReportExclusions(durable: DurableDb, state: ReportExclusionsSta
  */
 internal fun safeExcludedCategoryIds(ids: Collection<String>): List<String> = ids
     .asSequence()
-    .map { it.filterNot(Char::isISOControl).trim().take(80) }
+    // Truncate before trimming, so the function is idempotent: trimming after a cut can expose
+    // a new edge to trim, and a receiver that stores f(x) while hashing f(f(x)) would hold
+    // different canonical bytes from the phone that sent x.
+    .map { it.filterNot(Char::isISOControl).take(80).trim() }
     .filter(String::isNotBlank)
     .distinct()
     .sorted()
@@ -1013,11 +1016,13 @@ private suspend fun outgoingRecords(
     }
 
     for (publication in publications.values) {
-        // Only transaction publications sweep here: category and note records answer to their
-        // own decisions, the asset and goal records have their own unshare below, and the
-        // exclusion record is never retracted at all — a "transaction" tombstone under an
-        // asset: id would be refused by the server as a kind mismatch anyway.
-        if (publication.sourceKind in setOf("category", "note", "asset", "goal", "exclusion")) continue
+        // Only transaction publications sweep here — their sourceKind is the transaction's own
+        // "sms" or "manual". Everything else answers for itself: category and note records to
+        // their decisions, asset and goal records to their own unshare below, the exclusion
+        // record never retracted at all. Opt-in rather than a list of exemptions, so the next
+        // record kind cannot forget to exempt itself and be swept as a "transaction" tombstone
+        // the server would refuse as a kind mismatch — killing the whole transaction chunk.
+        if (publication.sourceKind !in setOf("sms", "manual")) continue
         if (publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
         val deleted = publication.copy(contentHash = "", updatedAt = updatedAt, deleted = true)
@@ -1693,6 +1698,7 @@ internal fun syncedGoal(
  */
 private suspend fun applyReportExclusions(
     durable: DurableDb,
+    session: SyncSession,
     record: WireRecord,
     payload: SyncExclusionPayload,
 ): Boolean {
@@ -1700,8 +1706,16 @@ private suspend fun applyReportExclusions(
     val existing = readReportExclusions(durable)
     val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
     if (editor.isBlank()) return false
+    // A blank stored editor is an edit from before this phone had a member id — published, it
+    // wears this member's name (see [outgoingRecords]) — so the draw is broken against the
+    // same name the server recorded, or the two sides would break the same draw two ways.
     if (existing != null &&
-        !syncedEditWins(existing.updatedAt, existing.editedByMemberId, record.updatedAt, editor)
+        !syncedEditWins(
+            existing.updatedAt,
+            existing.editedByMemberId.ifBlank { session.member },
+            record.updatedAt,
+            editor,
+        )
     ) return false
     val ids = safeExcludedCategoryIds(payload.categoryIds)
     writeReportExclusions(durable, ReportExclusionsState(ids, record.updatedAt, editor))
@@ -1843,7 +1857,7 @@ private suspend fun applyRecord(
         // No tombstone branch above: an exclusion record is never deleted, only replaced — see
         // [SyncExclusionPayload] — so a deleted envelope under this kind falls through to nothing.
         "exclusion" -> runCatching { SYNC_JSON.decodeFromString<SyncExclusionPayload>(plain) }
-            .getOrNull()?.let { applyReportExclusions(durable, record, it) } ?: false
+            .getOrNull()?.let { applyReportExclusions(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
             .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
         else -> false
@@ -1944,6 +1958,17 @@ suspend fun syncNow(
             prepared.publication?.let { pub -> clamped[pub.id]?.let { pub.copy(updatedAt = it) } ?: pub }
         }
         if (publications.isNotEmpty()) durable.syncPublications().putAll(publications)
+        // The exclusion state carries its own stamp, and it has to take the server's word too:
+        // left ahead of the clamped publication, outgoingRecords would read «state newer than
+        // publication» as an unsent edit and republish the record on every sync for as long as
+        // this clock stays ahead. Safe against a concurrent edit because the family-sync mutex
+        // is held for this whole run.
+        clamped[REPORT_EXCLUSIONS_RECORD_ID]?.let { serverAt ->
+            val state = readReportExclusions(durable)
+            if (state != null && state.updatedAt > serverAt) {
+                writeReportExclusions(durable, state.copy(updatedAt = serverAt))
+            }
+        }
         sent += chunk.size
     }
 

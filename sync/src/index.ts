@@ -605,8 +605,12 @@ export class Household extends DurableObject<Env> {
         // Which categories the household's reports leave out is one setting the household keeps
         // together, exactly as a shared budget is one figure: any member may move it and the
         // stamp settles whose edit stands, so — like a goal — only the id namespace is fenced.
-        if (record.kind === 'exclusion' && !record.id.startsWith('exclusion:')) {
-          throw new SyncError('invalid_id', 400);
+        if (record.kind === 'exclusion') {
+          if (!record.id.startsWith('exclusion:')) throw new SyncError('invalid_id', 400);
+          // «Count everything» is an empty list, never a tombstone: no client honours a deleted
+          // exclusion record, so storing one could only pin the row — stamped at the clamp
+          // horizon by a hostile push — against a day of honest edits nobody would see refused.
+          if (record.deleted) throw new SyncError('invalid_kind', 400);
         }
         const existing = [...this.sql.exec<{
           updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string;

@@ -100,6 +100,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var familyTransitioning = false
 
     /**
+     * Tap order for exclusion edits, and how far the meta stamping has caught up. While the two
+     * differ an edit of hers is still on its way into `durable_meta`, and the mirror in
+     * [refreshFamily] holds off — or a sync finishing in that window would read the old state
+     * and visibly un-tap the chip she just tapped. See [setReportExcluded].
+     */
+    private val reportExclusionEdits = java.util.concurrent.atomic.AtomicLong()
+    private val reportExclusionsStamped = java.util.concurrent.atomic.AtomicLong()
+
+    /**
      * Whether the sync now in flight owes her a sentence when it lands. Raised by the ledger's
      * pull and read by whichever sync finishes next — a field rather than a parameter so a pull
      * that arrives while a silent sync is already running still gets its answer, exactly as the
@@ -962,21 +971,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val durable = DurableDb.get(app)
             withFamilySync {
                 if (reportExclusionEdits.get() != edit) return@withFamilySync
-                val previous = readReportExclusions(durable)
-                writeReportExclusions(
-                    durable,
-                    ReportExclusionsState(
-                        ids = safeExcludedCategoryIds(ids),
-                        updatedAt = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L),
-                        editedByMemberId = loadSession(durable)?.member.orEmpty(),
-                    ),
-                )
+                try {
+                    val previous = readReportExclusions(durable)
+                    writeReportExclusions(
+                        durable,
+                        ReportExclusionsState(
+                            ids = safeExcludedCategoryIds(ids),
+                            updatedAt = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L),
+                            editedByMemberId = loadSession(durable)?.member.orEmpty(),
+                        ),
+                    )
+                } finally {
+                    // Only when this is still the newest tap: an older writer must not declare a
+                    // newer tap stamped — the newer tap's own writer is behind it on this lock.
+                    if (reportExclusionEdits.get() == edit) reportExclusionsStamped.set(edit)
+                }
             }
             if (_state.value.family.paired) requestFamilySync(silent = true)
         }
     }
-
-    private val reportExclusionEdits = java.util.concurrent.atomic.AtomicLong()
 
     /**
      * Everything rebuildable, dropped and rebuilt: the cached rate and بورس snapshots, the coin
@@ -1153,8 +1166,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // setting. This runs at the end of every sync — the failed ones included — so a set the
         // background worker pulled overnight reaches the screen on the next refresh even when
         // this one could not reach the server. Null is a set nobody has ever touched, and then
-        // the local default stands.
-        val excluded = readReportExclusions(durable)?.ids?.toSet()
+        // the local default stands. Held off while a tap of hers is still being stamped, or this
+        // read would see the state from before her tap and flip the chip back in front of her.
+        val excluded = readReportExclusions(durable)
+            ?.takeIf { reportExclusionEdits.get() == reportExclusionsStamped.get() }
+            ?.ids?.toSet()
         if (excluded != null && excluded != store.reportExcluded) store.reportExcluded = excluded
         val own = session?.let { active ->
             durable.familyMembers().get(active.member) ?: FamilyMember(
