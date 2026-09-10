@@ -197,7 +197,7 @@ class FamilyExclusionSyncTest {
             val link = "${home.base}/join#url=${android.net.Uri.encode(home.base)}" +
                 "&hid=${"d".repeat(32)}&pair=code&scope=${android.net.Uri.encode("family:test")}" +
                 "&k=${b64Url(home.key)}"
-            joinHousehold(link, a.durable, "من")
+            joinHousehold(link, a.durable, "من", allowedBase = home.base)
             // However fresh her stamp was, a join is walking into a settled household: her set
             // stays hers to read, but it no longer speaks for the family she just joined.
             assertNull(readReportExclusions(a.durable))
