@@ -113,6 +113,20 @@ const val EXTRA_OPEN_TAB = "com.doxigo.muchtoman.OPEN_TAB"
 const val EXTRA_OPEN_DECK = "com.doxigo.muchtoman.OPEN_DECK"
 
 /**
+ * لفظ روی قفل‌صفحه — the public face of every note. A locked screen names the kind of news and
+ * nothing else: no merchant, no figure, no category. The full words wait behind the lock, which is
+ * where FLAG_SECURE already keeps the rest of her money.
+ */
+internal fun budgetPublicTitle(): String = "خبری از بودجه"
+
+internal fun landedPublicTitle(): String = "تراکنش تازه"
+
+internal fun filingPublicTitle(count: Int): String =
+    if (count > 1) "${faNumber(count.toDouble())} تراکنش تازه" else landedPublicTitle()
+
+internal fun publicBody(): String = "جزئیات توی برنامه"
+
+/**
  * Whether a notification posted right now would actually appear.
  *
  * Both halves are load-bearing. From API 33 the runtime permission may be denied; on every version
@@ -239,6 +253,30 @@ private fun destination(context: Context, requestCode: Int, extra: (Intent) -> U
 }
 
 /**
+ * The redacted note a secure lock screen shows in place of the real one.
+ *
+ * Same channel, icon, colour, category and destination as its private counterpart — tapping it
+ * from the lock screen goes where the full note would have gone — but the words are the vague
+ * ones above, with no BigText, no ticker and no count for anything on the lock screen to read.
+ */
+private fun publicVersion(
+    context: Context,
+    channel: String,
+    category: String,
+    title: String,
+    intent: PendingIntent,
+): Notification = NotificationCompat.Builder(context, channel)
+    .setSmallIcon(R.drawable.ic_toman)
+    .setColor(0xFF0A423B.toInt())
+    .setContentTitle(title)
+    .setContentText(publicBody())
+    .setCategory(category)
+    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+    .setAutoCancel(true)
+    .setContentIntent(intent)
+    .build()
+
+/**
  * Says one thing about one budget, and replaces whatever it said last.
  *
  * Every word comes from [budgetAlertTitle] and [budgetAlertBody], which are pure and tested. This
@@ -255,9 +293,18 @@ private fun destination(context: Context, requestCode: Int, extra: (Intent) -> U
 fun notifyBudget(context: Context, budget: BudgetProgress) {
     if (!canNotify(context)) return
     ensureChannel(context)
+    val note = budgetNote(context, budget)
+    // Wrapped: posting can throw on an OEM build that has its own idea about notification limits,
+    // and a budget note that cannot be shown must not take down the worker that computed it.
+    runCatching { NotificationManagerCompat.from(context).notify(budget.goal.id, BUDGET_NOTE_ID, note) }
+        .onFailure { android.util.Log.w("muchtoman", "budget notify failed: $it") }
+}
+
+/** The budget note itself, built apart from the posting so a test can hold it. */
+internal fun budgetNote(context: Context, budget: BudgetProgress): Notification {
     val title = budgetAlertTitle(budget)
     val body = budgetAlertBody(budget)
-    val note = NotificationCompat.Builder(context, BUDGET_CHANNEL)
+    return NotificationCompat.Builder(context, BUDGET_CHANNEL)
         // The app's own mark. A notification icon is drawn from the alpha channel alone, so the
         // solid toman glyph comes out as the silhouette the platform wants.
         .setSmallIcon(R.drawable.ic_toman)
@@ -273,11 +320,12 @@ fun notifyBudget(context: Context, budget: BudgetProgress) {
         .setContentIntent(openBudgets(context))
         // Read out as one sentence rather than as a heading and an orphaned figure.
         .setTicker("$title. $body")
+        // VISIBILITY_PRIVATE is what asks a secure lock screen to show [publicVersion] instead of
+        // the merchant-and-amount words above — the platform's own mechanism, and the same line
+        // FLAG_SECURE already draws for the rest of her money.
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion(context, BUDGET_CHANNEL, NotificationCompat.CATEGORY_REMINDER, budgetPublicTitle(), openBudgets(context)))
         .build()
-    // Wrapped: posting can throw on an OEM build that has its own idea about notification limits,
-    // and a budget note that cannot be shown must not take down the worker that computed it.
-    runCatching { NotificationManagerCompat.from(context).notify(budget.goal.id, BUDGET_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "budget notify failed: $it") }
 }
 
 /**
@@ -338,7 +386,7 @@ fun notifyFiling(context: Context, news: FilingNews) {
  * on the far side of switching them back on is exactly the batch this would eat. The post time is
  * what every other app shows; the transaction's own time is on the row in دفتر, one tap away.
  */
-private fun landedNote(context: Context, entry: LedgerEntry): Notification {
+internal fun landedNote(context: Context, entry: LedgerEntry): Notification {
     val title = landedTitle(entry)
     val body = landedBody(entry)
     return NotificationCompat.Builder(context, FILING_CHANNEL)
@@ -362,6 +410,9 @@ private fun landedNote(context: Context, entry: LedgerEntry): Notification {
         .setContentIntent(if (entry.needsReview) openDeck(context) else openLedgerTab(context))
         // Read out as one sentence rather than as a heading and an orphaned figure.
         .setTicker("$title. $body")
+        // Redacted on a secure lock screen — see [budgetNote] for why.
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, landedPublicTitle(), if (entry.needsReview) openDeck(context) else openLedgerTab(context)))
         .build()
 }
 
@@ -382,7 +433,7 @@ private fun landedNote(context: Context, entry: LedgerEntry): Notification {
  * and building these words from the answer, which trades a pure, tested sentence for a query that
  * can only be checked on a phone.
  */
-private fun filingSummary(context: Context, alert: FilingAlert): Notification {
+internal fun filingSummary(context: Context, alert: FilingAlert): Notification {
     val title = filingAlertTitle(alert)
     val body = filingAlertBody(alert)
     return NotificationCompat.Builder(context, FILING_CHANNEL)
@@ -405,6 +456,10 @@ private fun filingSummary(context: Context, alert: FilingAlert): Notification {
         // work opens the timeline the work is sitting in.
         .setContentIntent(if (alert.waiting > 0) openDeck(context) else openLedgerTab(context))
         .setTicker("$title. $body")
+        // Redacted on a secure lock screen — see [budgetNote] for why. No `setGroup` on the
+        // public version: the lock screen renders it standalone.
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, filingPublicTitle(alert.fresh + alert.filed), if (alert.waiting > 0) openDeck(context) else openLedgerTab(context)))
         .build()
 }
 
