@@ -171,6 +171,41 @@ class FamilyBudgetSyncTest {
     }
 
     @Test
+    fun `a partner's exclusion edit lands with the pull and moves the roof`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            val category = BUILTIN_CATEGORIES.first { it.kind == CategoryKind.EXPENSE && it.id !in PASS_THROUGH_CATEGORIES }.id
+            val now = System.currentTimeMillis()
+            a.durable.goals().put(a.budget("total", 200_000_000))
+            a.durable.manual().put(ManualTxn("meal", now, tehranDay(now), -113_000_000,
+                categoryId = category, createdAt = now, updatedAt = now))
+            a.sync(); b.sync()
+
+            // He sets the category aside in دخل و خرج on his phone — the set is one household
+            // record now, written the way [AppVm.setReportExcluded] stamps it.
+            writeReportExclusions(b.durable, ReportExclusionsState(
+                ids = safeExcludedCategoryIds(PASS_THROUGH_CATEGORIES.keys + category),
+                updatedAt = now + 1_000,
+                editedByMemberId = b.session.member,
+            ))
+            b.sync()
+
+            // Her pull lands his edit, and the roof published off that pull must be measured
+            // against the landed set — not the one from before it, which is why [publishLedger]
+            // lands the record before it reads the view. Here that contract is pinned at the
+            // layer underneath: the set the pull wrote is the set that empties the roof.
+            a.sync()
+            val landed = readReportExclusions(a.durable)!!.ids.toSet()
+            assertEquals(PASS_THROUGH_CATEGORIES.keys + category, landed)
+            assertEquals(
+                0L,
+                ledgerView(a.derived, a.durable, excluded = landed).budgets.single().spentRial,
+            )
+        }
+    }
+
+    @Test
     fun `simultaneous choices converge without deleting both budgets`() = runBlocking {
         Household().use { home ->
             val a = home.phone('a')

@@ -102,12 +102,29 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /**
      * Tap order for exclusion edits, and how far the meta stamping has caught up. While the two
-     * differ an edit of hers is still on its way into `durable_meta`, and the mirror in
-     * [refreshFamily] holds off — or a sync finishing in that window would read the old state
-     * and visibly un-tap the chip she just tapped. See [setReportExcluded].
+     * differ an edit of hers is still on its way into `durable_meta`, and [landReportExclusions]
+     * holds off — or a sync finishing in that window would read the old state and visibly un-tap
+     * the chip she just tapped. See [setReportExcluded].
      */
     private val reportExclusionEdits = java.util.concurrent.atomic.AtomicLong()
     private val reportExclusionsStamped = java.util.concurrent.atomic.AtomicLong()
+
+    /**
+     * The household's excluded set as the last sync landed it in `durable_meta`, put onto
+     * [Store.reportExcluded] — the copy every figure is worked out against — and returned.
+     *
+     * Null twice over, and each is a decision. With no record the set is one nobody in the
+     * household has ever touched, and the local default stands. And while a tap of hers is still
+     * being stamped, the record on disk is from *before* that tap, so landing it would flip the
+     * chip back in front of her — the store already holds the newer answer.
+     */
+    private suspend fun landReportExclusions(durable: DurableDb): Set<String>? {
+        val synced = readReportExclusions(durable)
+            ?.takeIf { reportExclusionEdits.get() == reportExclusionsStamped.get() }
+            ?.ids?.toSet() ?: return null
+        if (synced != store.reportExcluded) store.reportExcluded = synced
+        return synced
+    }
 
     /**
      * Whether the sync now in flight owes her a sentence when it lands. Raised by the ledger's
@@ -152,9 +169,19 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         ledgerGate.withLock {
             // Her exclusion set rides along: a total is a roof over what دخل و خرج counts, so
             // the figure on the card, the sentence on home and the 3am notification all read the
-            // one set — see [budgetRows].
-            val view = ledgerView(derived, durable, excluded = store.reportExcluded)
-            _state.update { it.copy(ledger = view) }
+            // one set — see [budgetRows]. The household's synced word on that set lands *before*
+            // the read, so the publish a pull triggers is measured against what it just pulled —
+            // left to [refreshFamily], which runs after this, the roof stayed one sync behind
+            // the report it must agree with.
+            val synced = landReportExclusions(durable)
+            val view = ledgerView(derived, durable, excluded = synced ?: store.reportExcluded)
+            // The mirror moves in the same update as the cards, so دخل و خرج and «کل خرج»
+            // change together rather than a frame apart. Untouched when nothing landed: a
+            // publish racing her own tap must not flip the set back under it.
+            _state.update {
+                if (synced != null) it.copy(ledger = view, reportExcluded = synced)
+                else it.copy(ledger = view)
+            }
             // Watching is scheduled by whether there is anything left to watch, so deleting the last
             // budget on a phone that does not read messages stops the worker rather than leaving it to
             // wake up and find nothing four times a day.
@@ -1186,13 +1213,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // The household's word on which categories the report counts, landed on this phone's own
         // setting. This runs at the end of every sync — the failed ones included — so a set the
         // background worker pulled overnight reaches the screen on the next refresh even when
-        // this one could not reach the server. Null is a set nobody has ever touched, and then
-        // the local default stands. Held off while a tap of hers is still being stamped, or this
-        // read would see the state from before her tap and flip the chip back in front of her.
-        val excluded = readReportExclusions(durable)
-            ?.takeIf { reportExclusionEdits.get() == reportExclusionsStamped.get() }
-            ?.ids?.toSet()
-        if (excluded != null && excluded != store.reportExcluded) store.reportExcluded = excluded
+        // this one could not reach the server. Why null lands nothing: see [landReportExclusions].
+        val excluded = landReportExclusions(durable)
         val own = session?.let { active ->
             durable.familyMembers().get(active.member) ?: FamilyMember(
                 id = active.member,
