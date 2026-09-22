@@ -234,7 +234,7 @@ fun BudgetScreen(
             if (goals.isEmpty()) {
                 Text(
                     "اینجا فقط هدف‌هایی رو می‌بینی که خودت انتخاب کردی. " +
-                        "خبری از امتیاز، زنجیره یا مقایسه با بقیه نیست.",
+                        "خبری از امتیاز، روزهای پیاپی یا مقایسه با بقیه نیست.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp,
                 )
