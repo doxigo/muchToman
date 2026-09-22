@@ -107,11 +107,37 @@ internal val MONTHS = listOf(
     "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
 )
 
-/** «۳ مرداد ۱۴۰۵», or «امروز» and «دیروز» for the two days she is actually thinking about. */
+/** The Iranian week, in the order it is lived: شنبه first, جمعه last. */
+internal val WEEKDAYS = listOf(
+    "شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه",
+)
+
+/**
+ * «دوشنبه» — which day of the week a Tehran day fell on.
+ *
+ * Off [weekStart] rather than its own modulo: how far a day sits past its own شنبه *is* the
+ * index into a شنبه-first list, so the one fact that epoch day 0 was a Thursday stays stated
+ * in exactly one place.
+ */
+fun faWeekday(day: Long): String = WEEKDAYS[(day - weekStart(day)).toInt()]
+
+/**
+ * «دوشنبه ۳ مرداد ۱۴۰۵» — the date with the weekday in front of it.
+ *
+ * The form a transaction's own date takes, and only that. «دوشنبه» is what tells her whether a
+ * figure came out of a working day or a Friday — a thing the ledger has always known and never
+ * said. It is not the form a goal's deadline or the last backup takes: there the weekday is a
+ * word nobody asked for, which is why [faDate] stays as it is and this sits beside it.
+ */
+fun faWeekdayDate(day: Long): String = "${faWeekday(day)} ${faDate(day)}"
+
+/** «دوشنبه ۳ مرداد ۱۴۰۵», or «امروز» and «دیروز» for the two days she is actually thinking about. */
 fun faDay(day: Long, today: Long = tehranDay(System.currentTimeMillis())): String = when (day) {
+    // The weekday of today is the one weekday she cannot need telling, and «امروز» is the whole
+    // answer where it applies — a third clause here would only lengthen every heading it heads.
     today -> "امروز"
     today - 1 -> "دیروز"
-    else -> faDate(day)
+    else -> faWeekdayDate(day)
 }
 
 /** The same day, always written out — where «امروز» would be less information rather than more. */
@@ -132,7 +158,7 @@ fun faClock(epochMillis: Long): String {
 }
 
 /**
- * «۳ مرداد ۱۴۰۵، ۱۴:۰۳» — the day a transaction happened, and the minute where one is known.
+ * «دوشنبه ۳ مرداد ۱۴۰۵، ۱۴:۰۳» — the day a transaction happened, and the minute where one is known.
  *
  * Every writer stamps `day` as `tehranDay(at)`, so the two halves cannot disagree. What they can
  * differ in is how much they know: a message carries the instant the network stamped it, while a
@@ -142,7 +168,8 @@ fun faClock(epochMillis: Long): String {
  * the millisecond and keeps its clock.
  */
 fun faMoment(at: Long, day: Long): String =
-    if (at == tehranDayStart(day)) faDate(day) else "${faDate(day)}، ${bidi(faClock(at))}"
+    if (at == tehranDayStart(day)) faWeekdayDate(day)
+    else "${faWeekdayDate(day)}، ${bidi(faClock(at))}"
 
 /**
  * «دیروز، ۱۴:۰۳» — the day as she says it, with the minute beside it where one was recorded.
@@ -323,7 +350,15 @@ fun TimelineScreen(
     // hundred rows into «همه» is the middle of nothing in a list that is now nine rows long.
     // Instant rather than animated: the content was replaced, not moved, so there is no distance
     // to travel and scrolling it would only be a delay wearing choreography.
-    LaunchedEffect(lens, catFilter, query) { if (visible.isNotEmpty()) listState.scrollToItem(0) }
+    //
+    // Only when she actually narrowed something, though. The first pass is also the screen
+    // coming back from a transaction with its place restored, and scrolling then would throw
+    // away the one thing that restore exists for.
+    var narrowed by remember { mutableStateOf(false) }
+    LaunchedEffect(lens, catFilter, query) {
+        if (!narrowed) narrowed = true
+        else if (visible.isNotEmpty()) listState.scrollToItem(0)
+    }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         // Pulling the list down asks the family server what the others added — the same sync
@@ -1187,6 +1222,12 @@ fun TransactionScreen(
     onNote: ((LedgerEntry, String) -> Unit)? = null,
     /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
     onDelete: ((LedgerEntry) -> Unit)? = null,
+    /**
+     * Moves a hand-entered row to another day. Offered on the same rows [onDelete] is, and for
+     * the same reason: a message's date is the bank's own stamp, re-read from the message on
+     * every derive, so there is nothing here to edit that would survive one.
+     */
+    onDay: ((LedgerEntry, Long) -> Unit)? = null,
     /** A category of her own, made right here where its absence was discovered. */
     onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
 ) {
@@ -1279,6 +1320,27 @@ fun TransactionScreen(
                         SectionHeading("یادداشت")
                         Spacer(Modifier.height(Space.m))
                         NoteField(entry, onNote)
+                    }
+                }
+            }
+
+            // Above «جزئیات», which is the panel that states the date — the correction belongs
+            // next to the thing it corrects. Only on this phone's own hand-entered rows: `s:`
+            // and `f:` both take their day from a message, and a message is evidence.
+            if (onDay != null && txn.ref.startsWith("m:")) {
+                item(key = "day") {
+                    Column(gutter) {
+                        Spacer(Modifier.height(Space.xxl))
+                        SectionHeading("تاریخ")
+                        Spacer(Modifier.height(Space.xs))
+                        Text(
+                            "اگه روز اشتباهی ثبت شده، همین‌جا درستش کن. ساعتش همون که بود می‌مونه.",
+                            fontSize = 13.sp,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(Space.m))
+                        DayField(entry, onDay)
                     }
                 }
             }
@@ -1420,6 +1482,37 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
         if (draft.trim() != entry.note) {
             Spacer(Modifier.height(Space.s))
             PillButton("ذخیره یادداشت", { onNote(entry, draft) }, voice = ButtonVoice.PRIMARY)
+        }
+    }
+}
+
+/**
+ * The day the row is filed under, moved when she says so — the note field's own bargain.
+ *
+ * The pill exists only while the stepper and the ledger disagree, and its disappearance after
+ * the tap is the receipt: the day on screen is the day the ledger holds. Nothing auto-saves
+ * here, because a stray tap on «روز قبل» must not silently move a transaction into last month
+ * and out of a report she has already read.
+ *
+ * [today] is the live one, not a constant captured on open: the screen can be left standing
+ * past midnight, and a stepper that still lets her walk forward onto what was yesterday's
+ * tomorrow would store a day that has not happened.
+ */
+@Composable
+private fun DayField(entry: LedgerEntry, onDay: (LedgerEntry, Long) -> Unit) {
+    val today = rememberTehranDay()
+    var draft by rememberSaveable(entry.txn.ref) { mutableStateOf(entry.txn.day) }
+    // The ledger's own answer settles the draft once the save lands — and it is what wins if the
+    // day arrives changed from another phone while she is looking at it.
+    LaunchedEffect(entry.txn.day) { draft = entry.txn.day }
+    Column {
+        // Not clamped for display: a row that somehow carries a future day says so, and
+        // «روز قبل» is the way back off it. Clamping here would print today over a stored
+        // tomorrow, which is the stepper telling her the ledger says something it does not.
+        DayStepper(draft, today) { draft = it }
+        if (draft != entry.txn.day) {
+            Spacer(Modifier.height(Space.m))
+            PillButton("ذخیره تاریخ", { onDay(entry, draft) }, voice = ButtonVoice.PRIMARY)
         }
     }
 }

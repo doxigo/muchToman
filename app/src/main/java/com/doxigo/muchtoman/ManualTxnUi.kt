@@ -202,38 +202,7 @@ fun ManualTxnSheet(
             }
 
             SheetLabel("کِی؟")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PillButton("روز قبل", { day -= 1 }, fontSize = 12.sp, minHeight = 40.dp)
-                Column(
-                    Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        faDay(day, today),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                    )
-                    // «امروز» is an answer, not a date — the date it stands for is stated under
-                    // it, so what is about to be stored is on screen before it is stored.
-                    if (day >= today - 1) {
-                        Text(
-                            faDate(day),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-                // The ledger records what happened, and tomorrow has not — the stepper simply
-                // stops at today rather than dimming into a control that needs explaining.
-                PillButton(
-                    "روز بعد",
-                    { if (day < today) day += 1 },
-                    fontSize = 12.sp,
-                    minHeight = 40.dp,
-                )
-            }
+            DayStepper(day, today) { day = it }
 
             Spacer(Modifier.height(Space.m))
             OutlinedTextField(
@@ -292,5 +261,52 @@ fun ManualTxnSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+/**
+ * A transaction's day, one step at a time.
+ *
+ * Two surfaces pick one now: the sheet that enters a transaction, and the page that corrects a
+ * day she typed in wrong. A stepper rather than a calendar because the answer is almost always
+ * today or one of the few days behind it — and because the platform's own picker is a Gregorian
+ * grid, which is the wrong calendar to ask an Iranian household a question in.
+ *
+ * The ledger records what happened, and tomorrow has not, so the stepper simply stops at
+ * [today] rather than dimming into a control that needs explaining.
+ */
+@Composable
+internal fun DayStepper(day: Long, today: Long, onDay: (Long) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        PillButton("روز قبل", { onDay(day - 1) }, fontSize = 12.sp, minHeight = 40.dp)
+        Column(
+            Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                faDay(day, today),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            // «امروز» is an answer, not a date — the date it stands for is stated under it, so
+            // what is about to be stored is on screen before it is stored. Two days back and
+            // further, the line above already *is* the written-out date and this one would
+            // repeat it.
+            if (day >= today - 1) {
+                Text(
+                    faWeekdayDate(day),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+        PillButton(
+            "روز بعد",
+            { if (day < today) onDay(day + 1) },
+            fontSize = 12.sp,
+            minHeight = 40.dp,
+        )
     }
 }

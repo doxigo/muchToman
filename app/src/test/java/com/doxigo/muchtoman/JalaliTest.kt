@@ -130,12 +130,43 @@ class JalaliTest {
         val midnight = tehranDayStart(firstOfMordad)
         // The clock is spelled through bidi() rather than written out, so this file never has to
         // carry the isolate characters the lint check exists to catch.
-        assertEquals("۱ مرداد ۱۴۰۵", faMoment(midnight, firstOfMordad))
-        assertEquals("۱ مرداد ۱۴۰۵، ${bidi("۰۰:۰۰")}", faMoment(midnight + 1, firstOfMordad))
+        assertEquals("پنج‌شنبه ۱ مرداد ۱۴۰۵", faMoment(midnight, firstOfMordad))
         assertEquals(
-            "۱ مرداد ۱۴۰۵، ${bidi("۱۴:۰۳")}",
+            "پنج‌شنبه ۱ مرداد ۱۴۰۵، ${bidi("۰۰:۰۰")}",
+            faMoment(midnight + 1, firstOfMordad),
+        )
+        assertEquals(
+            "پنج‌شنبه ۱ مرداد ۱۴۰۵، ${bidi("۱۴:۰۳")}",
             faMoment(midnight + (14 * 60 + 3) * 60_000L, firstOfMordad),
         )
+    }
+
+    @Test
+    fun `a transaction names the weekday it fell on`() {
+        // Checked against a real calendar rather than against the app's own week arithmetic:
+        // the whole point of the weekday on a transaction is that شنبه and جمعه are different
+        // kinds of day, and a list rotated by one would say so about the wrong ones.
+        val fa = mapOf(
+            DayOfWeek.SATURDAY to "شنبه",
+            DayOfWeek.SUNDAY to "یک‌شنبه",
+            DayOfWeek.MONDAY to "دوشنبه",
+            DayOfWeek.TUESDAY to "سه‌شنبه",
+            DayOfWeek.WEDNESDAY to "چهارشنبه",
+            DayOfWeek.THURSDAY to "پنج‌شنبه",
+            DayOfWeek.FRIDAY to "جمعه",
+        )
+        val from = LocalDate.of(2026, 3, 21).toEpochDay()
+        for (day in from..(from + 400)) {
+            assertEquals(fa[LocalDate.ofEpochDay(day).dayOfWeek], faWeekday(day))
+        }
+        // And the date it prefixes is the one [faDate] prints on its own — the weekday is added
+        // to the date, never instead of part of it.
+        val firstOfMordad = jalaliDay(1405, 5, 1)
+        assertEquals("پنج‌شنبه ${faDate(firstOfMordad)}", faWeekdayDate(firstOfMordad))
+        // «امروز» keeps the whole line: the one weekday she cannot need telling.
+        assertEquals("امروز", faDay(firstOfMordad, firstOfMordad))
+        assertEquals("دیروز", faDay(firstOfMordad - 1, firstOfMordad))
+        assertEquals("سه‌شنبه ${faDate(firstOfMordad - 2)}", faDay(firstOfMordad - 2, firstOfMordad))
     }
 
     /**
