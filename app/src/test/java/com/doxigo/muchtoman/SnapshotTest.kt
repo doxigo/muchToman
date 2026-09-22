@@ -41,6 +41,28 @@ class SnapshotTest {
     }
 
     @Test
+    fun `the dollar rate is recorded on the total's gate, never beside a refused day`() {
+        val list = listOf(Holding("usd", 10.0))
+        val rates = mapOf("usd" to 100.0)
+
+        // A good day writes both, on the same key.
+        val good = snapshotDay(emptyMap(), emptyMap(), list, rates, now, now)!!
+        assertEquals(1_000.0, good.history.getValue(now / day), 0.0)
+        assertEquals(100.0, good.rates.getValue(now / day), 0.0)
+
+        // A day the total refuses must not leave a rate behind — a month frozen against a price
+        // the chart had already decided not to trust is the whole failure this guards.
+        val stale = now - 25 * 60 * 60_000L
+        assertNull(snapshotDay(emptyMap(), emptyMap(), list, rates, stale, now))
+
+        // A good total with no dollar rate on the wire keeps the rates it had rather than
+        // writing a zero, which the report would read as «free» instead of «not known».
+        val kept = mapOf(90L to 90_000.0)
+        val noUsd = snapshotDay(emptyMap(), kept, listOf(Holding(TOMAN_ID, 5.0)), mapOf(TOMAN_ID to 1.0), now, now)!!
+        assertEquals(kept, noUsd.rates)
+    }
+
+    @Test
     fun `the bank row lands right after cash`() {
         val holdings = listOf(Holding("usd", 1.0), Holding(TOMAN_ID, 5.0), Holding("btc", 1.0))
         val list = listHoldings(holdings, true, listOf(anchored("SAMAN", 300.0)), emptySet())

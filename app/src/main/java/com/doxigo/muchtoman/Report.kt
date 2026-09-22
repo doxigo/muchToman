@@ -148,6 +148,17 @@ fun ReportScreen(
      * exclusion set also governs — see [ReportExclusions] for why that earns a clause.
      */
     capsTotal: Boolean = false,
+    /**
+     * Toman per dollar *today*, effective — a hand-typed override moves it with everything
+     * else — or null when no rate has been fetched. It prices the window she is standing in,
+     * which is the only one still moving.
+     */
+    usdRate: Double? = null,
+    /**
+     * One recorded dollar rate per day. A window that is over is priced from the days inside it
+     * rather than from today, so a month keeps the «≈ $» it ended on — see [ReportRange.usdRate].
+     */
+    rateHistory: Map<Long, Double> = emptyMap(),
     /** Her «می‌ارزید؟» answers, summed over this report's own window. */
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     /** The ledger itself, for the category drill-down — the rows behind every share bar. */
@@ -217,6 +228,8 @@ fun ReportScreen(
                     onExcluded = onExcluded,
                     householdShared = householdShared,
                     capsTotal = capsTotal,
+                    usdRate = usdRate,
+                    rateHistory = rateHistory,
                     worthIt = worthIt,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
@@ -641,6 +654,10 @@ private fun CashFlowReportContent(
     householdShared: Boolean = false,
     /** Whether she keeps a cap on «کل خرج» — see [ReportExclusions]. */
     capsTotal: Boolean = false,
+    /** Toman per dollar today — see [ReportScreen]. */
+    usdRate: Double? = null,
+    /** The recorded rates a closed window is frozen at — see [ReportScreen]. */
+    rateHistory: Map<Long, Double> = emptyMap(),
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
@@ -679,7 +696,7 @@ private fun CashFlowReportContent(
                 EmptyMonth(cash.range)
             }
         } else {
-            MonthSummary(period, cash.current)
+            MonthSummary(period, cash.current, cash.today, usdRate, rateHistory)
         }
 
         // Two months *with something in them* is the least a comparison can be made of. One
@@ -956,7 +973,18 @@ private fun EmptyMonth(range: ReportRange) {
  * as a second mechanism beside it.
  */
 @Composable
-private fun MonthSummary(month: PeriodReport, current: Boolean) {
+private fun MonthSummary(
+    month: PeriodReport,
+    current: Boolean,
+    today: Long,
+    usdRate: Double?,
+    rateHistory: Map<Long, Double>,
+) {
+    // Today's rate only for the window still being written. One that is over is read at the
+    // rates recorded while it ran, so its dollars stop moving the moment it ends — and one
+    // from before the app kept rates has none on file, so it shows no dollars at all rather
+    // than today's guess at what last spring cost. See [ReportRange.usdRate].
+    val rate = if (current) usdRate else month.range.usdRate(rateHistory)
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
     // «درآمد این ماه» on the month she is standing in, because a half-written month has to say
     // so where the figure is. On a longer window it is «درآمد» and nothing else: «۶ ماه گذشته»
@@ -969,6 +997,7 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
                 "درآمد$named",
                 month.incomeRial,
                 INCOME_TINT,
+                rate,
                 Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.m))
@@ -976,6 +1005,7 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
                 "خرج$named",
                 month.spentRial,
                 MaterialTheme.colorScheme.onSurface,
+                rate,
                 Modifier.weight(1f),
             )
         }
@@ -1032,6 +1062,64 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
                 .padding(top = Space.xs),
             textAlign = TextAlign.End,
         )
+        UsdAside(abs(month.netRial), rate, Modifier.fillMaxWidth(), TextAlign.End)
+
+        SpendPace(month, today)
+    }
+}
+
+/**
+ * The pace behind the خرج figure: what it came to per day, and per week.
+ *
+ * A total answers «how much», and on its own it answers nothing else — «۹۰ میلیون» over a month
+ * and «۹۰ میلیون» over six are the same words about two completely different habits. The pace is
+ * what makes windows of different lengths comparable at all, which is why it belongs on the card
+ * that already carries the window's name rather than in a panel of its own.
+ *
+ * Both figures come from [PeriodReport], stated per window and never averaged from the monthly
+ * figures — and both are simply absent where the window is too short for the word «میانگین» to
+ * be true, which is the whole of the honesty here. A window with nothing spent in it prints
+ * nothing: «روزی ۰» is not a habit, it is an empty window said a second way.
+ */
+@Composable
+private fun SpendPace(month: PeriodReport, today: Long) {
+    val daily = month.dailySpendRial(today) ?: return
+    val weekly = month.weeklySpendRial(today)
+    Spacer(Modifier.height(Space.m))
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    Spacer(Modifier.height(Space.m))
+    // Quieter than every figure above: this is the reading of them, not a third amount she
+    // earned or spent. Compact only — the exact Rial of an average is precision the division
+    // never had.
+    PaceLine("میانگین خرج روزانه", daily)
+    weekly?.let {
+        Spacer(Modifier.height(Space.xs))
+        PaceLine("میانگین خرج هفتگی", it)
+    }
+}
+
+/** One pace figure: the label leading, the amount trailing, on the card's own baseline grid. */
+@Composable
+private fun PaceLine(label: String, rial: Long) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(Space.m))
+        // The weight rides the figure, not the label, for the reason the مانده row above states:
+        // a Row measures its unweighted children first, so whichever carries the weight is the
+        // one that yields — and the figure is the half that grows by orders of magnitude.
+        BasicText(
+            text = bidi("${faCompact(tomanOf(rial))} تومان"),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 14.sp),
+            style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold)
+                .copy(textAlign = TextAlign.End),
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -1042,7 +1130,13 @@ private fun MonthSummary(month: PeriodReport, current: Boolean) {
  * the pair out of alignment — the rule the home card's halves already follow.
  */
 @Composable
-private fun FlowSide(label: String, rial: Long, tone: Color, modifier: Modifier = Modifier) {
+private fun FlowSide(
+    label: String,
+    rial: Long,
+    tone: Color,
+    usdRate: Double?,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier) {
         BasicText(
             text = label,
@@ -1080,7 +1174,41 @@ private fun FlowSide(label: String, rial: Long, tone: Color, modifier: Modifier 
             style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal),
             modifier = Modifier.padding(top = 2.dp),
         )
+        UsdAside(rial, usdRate)
     }
+}
+
+/**
+ * The same figure in the one other unit everyone here already thinks in, under the exact Toman.
+ *
+ * An aside, at the exact figure's size and never above it: the report is kept in Toman and this
+ * is a second reading of it. «≈» because one rate stands for a whole window, and absent — via
+ * [usdOf] — rather than standing on a rate that isn't there. Which rate reaches it is the
+ * caller's question, and the answer that matters is in [ReportRange.usdRate]: the window she is
+ * in is priced today, and one that is over is priced at the days it actually ran through.
+ */
+@Composable
+private fun UsdAside(
+    rial: Long,
+    rate: Double?,
+    modifier: Modifier = Modifier,
+    align: TextAlign = TextAlign.Start,
+) {
+    val usd = usdOf(tomanOf(rial), rate) ?: return
+    BasicText(
+        // The isolate keeps the number one opaque run; the "$" sits outside it so bidi puts it
+        // on the reading side of the figure, whether faRate returns digits or a magnitude.
+        text = "≈ \$${bidi(faRate(usd))}",
+        maxLines = 1,
+        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
+        style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal)
+            .copy(textAlign = align),
+        modifier = modifier
+            .padding(top = 2.dp)
+            // "$" is read out as punctuation or skipped entirely; the unit has to survive for
+            // anyone listening rather than looking.
+            .semantics { contentDescription = "حدود ${faRate(usd)} دلار" },
+    )
 }
 
 /**

@@ -60,6 +60,31 @@ class ReportsTest {
     private val first = jalaliDay(year, month, 1)
 
     @Test
+    fun `a window is priced from the rates recorded inside it, or not at all`() {
+        val range = ReportRange(here, here)
+        // Two days inside the month, one the day before it and one the day after: a window is
+        // priced by what it actually ran through, not by whatever is nearest.
+        val recorded = mapOf(
+            first - 1 to 500_000.0,
+            first to 100_000.0,
+            first + 1 to 120_000.0,
+            range.endDay to 900_000.0,
+        )
+        assertEquals(110_000.0, range.usdRate(recorded)!!, 0.001)
+
+        // The month before this one is priced by its own last day and nothing of this one's:
+        // `first - 1` belongs to it, which is the whole point of a closed-open window.
+        assertEquals(500_000.0, ReportRange(here.previous(), here.previous()).usdRate(recorded)!!, 0.001)
+
+        // A month that ran before the app started writing rates down cannot be priced at all —
+        // today's rate would silently re-price it every time she opened the report.
+        assertNull(ReportRange(ReportMonth(year, 3), ReportMonth(year, 3)).usdRate(recorded))
+        assertNull(range.usdRate(emptyMap()))
+        // A rate that is not a rate is not a day on file.
+        assertNull(range.usdRate(mapOf(first to 0.0, first + 1 to Double.NaN)))
+    }
+
+    @Test
     fun `income and spending are what the month actually moved`() {
         val rows = listOf(
             entry(first, 100_000_000),
@@ -118,6 +143,90 @@ class ReportsTest {
             assertTrue(rows.filter { lens.matches(it) }.none { it.transfer })
             assertTrue(rows.filter { lens.matches(it) }.all { it.txn.signedRial != null })
         }
+    }
+
+    /**
+     * The averages, which are the one pair of figures on the card that divides by a *date*
+     * rather than by the ledger — so the divisor is what has to be checked.
+     */
+    @Test
+    fun `the daily average divides by the days lived, not by the window's length`() {
+        val length = jalaliMonthLength(year, month).toLong()
+        // Three days in, thirty million spent. Over the days that have happened that is ten a
+        // day; over the whole month it would be under a million, and it would look better the
+        // earlier in the month she read it.
+        val rows = listOf(
+            entry(first, -10_000_000),
+            entry(first + 1, -10_000_000),
+            entry(first + 2, -10_000_000),
+        )
+        val r = monthReport(rows, year, month)
+        assertEquals(3, r.range.daysSoFar(first + 2))
+        assertEquals(10_000_000L, r.dailySpendRial(first + 2))
+        // And a month that is over divides by the whole of itself.
+        assertEquals(length.toInt(), r.range.daysSoFar(first + length))
+        assertEquals(30_000_000L / length, r.dailySpendRial(first + length))
+        // Days from outside the window cannot stretch or shrink the divisor either way.
+        assertEquals(length.toInt(), r.range.daysSoFar(first + length + 400))
+        assertEquals(1, r.range.daysSoFar(first - 10))
+    }
+
+    @Test
+    fun `an average is absent until the window is long enough to be one`() {
+        val rows = listOf(entry(first, -10_000_000), entry(first + 7, -60_000_000))
+        val r = monthReport(rows, year, month)
+        // One day in, «میانگین روزانه» is that day's خرج printed a second time under a word
+        // claiming it is a habit.
+        assertNull(r.dailySpendRial(first))
+        assertNotNull(r.dailySpendRial(first + 1))
+        // A weekly figure needs two whole weeks: at exactly one it restates the window's own
+        // خرج, and under one it is a claim about days that have not happened.
+        assertNull(r.weeklySpendRial(first + 6))
+        assertNull(r.weeklySpendRial(first + 12))
+        assertEquals(70_000_000L * 7 / 14, r.weeklySpendRial(first + 13))
+        // The week is taken off the days, not off the rounded daily figure — seven times a
+        // truncated average is not the same number.
+        assertEquals(70_000_000L * 7 / 20, r.weeklySpendRial(first + 19))
+
+        // A window where nothing was spent prints neither: «روزی ۰» is an empty window said a
+        // second way, not a habit.
+        val quiet = monthReport(listOf(entry(first, 90_000_000)), year, month)
+        assertNull(quiet.dailySpendRial(first + 20))
+        assertNull(quiet.weeklySpendRial(first + 20))
+    }
+
+    @Test
+    fun `the average counts exactly the خرج the card above it prints`() {
+        // Not a second definition of spending: a قرض and an excluded category are out of
+        // [spentRial], so they are out of the pace too — or the card would state a habit made
+        // of money it has just finished saying it is not counting.
+        val rows = listOf(
+            entry(first, -10_000_000),
+            loan(first + 1, -500_000_000),
+            entry(first + 2, -10_000_000, category = "قبض", categoryId = "cat_bill"),
+        )
+        val r = periodReport(rows, ReportRange(here, here), excluded = setOf("cat_bill"))
+        assertEquals(10_000_000L, r.spentRial)
+        assertEquals(10_000_000L / 10, r.dailySpendRial(first + 9))
+    }
+
+    @Test
+    fun `a week's report averages over the week and says nothing weekly about it`() {
+        val week = weekStart(first + 10)
+        val whole = periodReport((0..6).map { entry(week + it, -7_000_000) }, weekRange(week))
+        assertEquals(49_000_000L, whole.spentRial)
+        assertEquals(7, whole.range.daysSoFar(week + 6))
+        assertEquals(7_000_000L, whole.dailySpendRial(week + 6))
+        // The weekly average over one week is the week's own خرج printed twice.
+        assertNull(whole.weeklySpendRial(week + 6))
+
+        // Three days into the week she is standing in: the divisor is the days lived, never the
+        // seven the window is made of — which is the whole difference on the one span short
+        // enough for the two to be confused.
+        val sofar = periodReport((0..2).map { entry(week + it, -7_000_000) }, weekRange(week))
+        assertEquals(21_000_000L, sofar.spentRial)
+        assertEquals(3, sofar.range.daysSoFar(week + 2))
+        assertEquals(7_000_000L, sofar.dailySpendRial(week + 2))
     }
 
     @Test

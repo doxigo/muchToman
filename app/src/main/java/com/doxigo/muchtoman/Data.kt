@@ -303,6 +303,40 @@ fun snapshotHistory(
 
 const val WALLET_SNAPSHOT_MAX_AGE_MS = 10 * 60_000L
 
+/** What one recordable day adds to the two histories — see [snapshotDay]. */
+data class DayRecord(val history: Map<Long, Double>, val rates: Map<Long, Double>)
+
+/**
+ * Today's total and today's dollar rate, recorded together or not at all.
+ *
+ * The rate rides the total's own gate: [snapshotHistory] returning null means the day was not
+ * good enough to record — stale prices, a wallet nobody could reach, an asset with no rate —
+ * and a dollar rate written on a day the total refused would be a closed month frozen against
+ * a price this app had already decided not to trust. Both maps are pruned by [recordDay] to
+ * the same [HISTORY_KEEP_DAYS], so the frozen figures reach back exactly as far as the chart.
+ *
+ * A day with a good total but no dollar rate leaves the rate history untouched rather than
+ * writing a zero: the report reads a missing day as «no figure», which is the truth, where a
+ * zero would read as «free».
+ */
+fun snapshotDay(
+    history: Map<Long, Double>,
+    rateHistory: Map<Long, Double>,
+    list: List<Holding>,
+    rates: Map<String, Double>,
+    ratesUpdatedAt: Long,
+    now: Long,
+    stocksUpdatedAt: Long = now,
+): DayRecord? {
+    val next = snapshotHistory(history, list, rates, ratesUpdatedAt, now, stocksUpdatedAt)
+        ?: return null
+    val usd = rates["usd"]?.takeIf { it > 0.0 && it.isFinite() }
+    return DayRecord(
+        next,
+        if (usd == null) rateHistory else recordDay(rateHistory, now / DAY_MS, usd),
+    )
+}
+
 fun backupReminderDue(enabled: Boolean, lastExportAt: Long, now: Long): Boolean =
     enabled && (lastExportAt <= 0L || now - lastExportAt >= 30 * DAY_MS)
 
@@ -776,6 +810,18 @@ class Store(context: Context) {
         set(v) = write("history", v)
 
     /**
+     * One dollar rate per day, written beside [history] by [snapshotDay] and on the same gate.
+     *
+     * This is what lets a month that is over keep the «≈ $» it had when it ended, instead of
+     * every past month silently re-pricing itself each time the rial moves. It only ever grows
+     * forward: a month with no days on file gets no dollar figure at all, because nothing here
+     * can know what the dollar was worth before the app started writing this down.
+     */
+    var rateHistory: Map<Long, Double>
+        get() = read("rateHistory", emptyMap())
+        set(v) = write("rateHistory", v)
+
+    /**
      * Whether the first-run sheet has had its one turn.
      *
      * Written when she answers it *or* skips it, because the sheet's promise is that it appears
@@ -931,7 +977,7 @@ class Store(context: Context) {
  * key is a deliberate decision here rather than a drive-by.
  */
 val EXPORTED_PREFS: List<String> = listOf(
-    "holdings", "overrides", "history", "bankAccounts", "disabledBanks",
+    "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded",

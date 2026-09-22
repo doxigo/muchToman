@@ -12,6 +12,15 @@ import org.junit.Test
 class MoneyTest {
 
     @Test
+    fun `dollars are absent rather than wrong when the rate is`() {
+        // A month's income in Toman at a real rate, then the same figure with nothing to stand on.
+        assertEquals(2_022.46, usdOf(239_661_282.0, 118_500.0)!!, 0.01)
+        assertNull(usdOf(239_661_282.0, null))   // no rate fetched yet
+        assertNull(usdOf(239_661_282.0, 0.0))    // a rate of zero is not a rate
+        assertNull(usdOf(0.0, 118_500.0))        // "≈ $۰" is noise, not information
+    }
+
+    @Test
     fun `parses persian digits`() {
         assertEquals(3000.0, parseAmount("۳۰۰۰")!!, 0.0)
         assertEquals(3000.0, parseAmount("3000")!!, 0.0)

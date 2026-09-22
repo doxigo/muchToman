@@ -99,6 +99,44 @@ data class ReportRange(val first: ReportMonth, val last: ReportMonth, val week: 
     operator fun contains(month: ReportMonth): Boolean = month in first..last
 
     /**
+     * The dollar rate this window's figures are read at, or null when nothing was recorded in it.
+     *
+     * The mean of the days [Store.rateHistory] holds inside the window — which is what freezes a
+     * month once it is over. The rial can double between the day شهریور ends and the day she
+     * opens the report, and «۲۹۲ میلیون» has to keep meaning the dollars it meant then; a live
+     * rate would quietly re-price every month she has ever read, every time she looks.
+     *
+     * Null, never a fallback, when the window has no days on file: months that ran before the
+     * app started writing rates down cannot be priced honestly, and no figure is the only
+     * honest thing left to show. The gap fills itself as months pass.
+     *
+     * ponytail: one rate for the whole window, so the conversion stays a reading of the total
+     * rather than something the report has to carry through its own arithmetic. It parts from
+     * a per-transaction sum only when spending clusters in a stretch the rial moved hard —
+     * convert each entry at its own day if that difference ever matters.
+     */
+    fun usdRate(rateHistory: Map<Long, Double>): Double? = rateHistory
+        .filterKeys { it in this }
+        .values
+        .filter { it > 0.0 && it.isFinite() }
+        .takeIf { it.isNotEmpty() }
+        ?.average()
+
+    /**
+     * How many days of this window have actually been lived, read on [today].
+     *
+     * The whole length for a window that is over, and only the part written so far for the one
+     * she is standing in — which is the difference between an average and a lie. Three days into
+     * شهریور, dividing the month's خرج by thirty-one reports a daily habit a third of the real
+     * one, and the figure would look *better* the earlier in the month she read it.
+     *
+     * Never below one: a window is at least the day it starts on, and a zero here would divide
+     * every average by nothing.
+     */
+    fun daysSoFar(today: Long): Int =
+        (minOf(endDay, today + 1) - startDay).coerceAtLeast(1L).toInt()
+
+    /**
      * The window written out: «مرداد ۱۴۰۵», «خرداد تا مرداد ۱۴۰۵», «بهمن ۱۴۰۴ تا مرداد ۱۴۰۵».
      *
      * The year is said once where both ends share it, because «خرداد ۱۴۰۵ تا مرداد ۱۴۰۵» is the
@@ -293,7 +331,43 @@ data class PeriodReport(
     /** The share of transactions she never had to touch. The number the app is judged on. */
     val automaticShare: Double?
         get() = if (transactions > 0) handledAutomatically.toDouble() / transactions else null
+
+    /**
+     * What خرج came to per day over the window, read on [today] — or null when the window is
+     * too short for an average to be one.
+     *
+     * Divided by the days actually lived, never by the window's length — see
+     * [ReportRange.daysSoFar]. Everything the window already leaves out is already out of
+     * [spentRial], so an exclusion or a قرض is no more counted here than it is above.
+     *
+     * A single day is refused because «میانگین روزانه» over one day is that day's خرج printed a
+     * second time, under a word that claims it is a habit.
+     */
+    fun dailySpendRial(today: Long): Long? {
+        val days = range.daysSoFar(today)
+        return if (days >= MIN_AVERAGE_DAYS && spentRial > 0) spentRial / days else null
+    }
+
+    /**
+     * The same pace stated per week, which is the unit a household's spending actually has a
+     * rhythm in — rent lands monthly, but خواربار and بنزین land weekly.
+     *
+     * From the days rather than from [dailySpendRial], so the week is not the daily figure's
+     * rounding multiplied by seven. Refused under two whole weeks: at exactly one it is the
+     * window's own خرج said twice, and under one it is an extrapolation — «هفته‌ای ۱۲ میلیون»
+     * off three days of a week is a claim about four days that have not happened.
+     */
+    fun weeklySpendRial(today: Long): Long? {
+        val days = range.daysSoFar(today)
+        return if (days >= MIN_AVERAGE_WEEK_DAYS && spentRial > 0) spentRial * 7 / days else null
+    }
 }
+
+/** Two days is the least a daily average can be made of — see [PeriodReport.dailySpendRial]. */
+private const val MIN_AVERAGE_DAYS = 2
+
+/** And two whole weeks for a weekly one — see [PeriodReport.weeklySpendRial]. */
+private const val MIN_AVERAGE_WEEK_DAYS = 14
 
 /**
  * Entries that count as money moving, with transfers and hidden duplicates left out.

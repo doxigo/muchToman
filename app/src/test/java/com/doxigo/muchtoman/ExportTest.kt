@@ -216,7 +216,10 @@ class ExportTest {
     fun `the exported and excluded pref lists are pinned`() {
         assertEquals(
             listOf(
-                "holdings", "overrides", "history", "bankAccounts", "disabledBanks",
+                // rateHistory rides with history on purpose: it is what freezes a closed
+                // month's «≈ $», and a restored phone that kept its totals but lost its rates
+                // would silently re-price every month she has ever read.
+                "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
                 "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
                 "dismissedUpdate", "reportExcluded",

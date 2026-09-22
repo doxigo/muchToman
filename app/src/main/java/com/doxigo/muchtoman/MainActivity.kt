@@ -82,6 +82,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             name = store.name,
             themeMode = store.themeMode,
             history = store.history,
+            rateHistory = store.rateHistory,
             onboarded = store.onboarded,
             smsEnabled = store.smsEnabled,
             bankAccounts = store.bankAccounts,
@@ -952,6 +953,52 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Moves a row she typed in to another day, keeping the minute it was recorded at.
+     *
+     * Only ever a hand-entered row, and that is not a UI convenience — a message-derived one has
+     * no day to store. `at` and `day` on an `s:` row are read back off the message by every
+     * [derive], so an override written here would be erased by the next one; and the bank's own
+     * stamp is what orders the walk [deriveBalance] anchors on, so moving it would move a
+     * مانده the bank itself printed. A `f:` row belongs to another phone, which files its own.
+     *
+     * The minute survives the move: a row entered at ۱۴:۰۳ under the wrong date is still a row
+     * from ۱۴:۰۳, and one entered from a bare date keeps the bare midnight that makes
+     * [faMoment] print no clock for it.
+     */
+    fun setManualTxnDay(entry: LedgerEntry, day: Long) {
+        if (entry.txn.sourceKind != "manual" || !entry.txn.ref.startsWith("m:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                // The ledger records what happened, and tomorrow has not. The stepper stops at
+                // today and so does this — the two clocks can disagree by a midnight.
+                val moved = day.coerceAtMost(tehranDay(now))
+                val id = entry.txn.ref.removePrefix("m:")
+                val row = durable.manual().all().firstOrNull { it.id == id } ?: return@runCatching
+                // Every writer stamps `day` as `tehranDay(at)`, so this is inside the day it
+                // names — the clamp is only what guarantees the move lands on the day she
+                // picked even if some older row's two halves ever disagreed.
+                val minute = (row.at - tehranDayStart(row.day)).coerceIn(0L, DAY_MS - 1)
+                durable.manual().put(
+                    row.copy(
+                        at = tehranDayStart(moved) + minute,
+                        day = moved,
+                        // Monotonic, exactly as the delete's is: the stamp is what tells the
+                        // other phones this row changed.
+                        updatedAt = maxOf(now, row.updatedAt + 1),
+                    )
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "setManualTxnDay failed: $it") }
         }
     }
 
@@ -2263,7 +2310,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Remembers today's total for the report chart, via the same [snapshotHistory] the daily
+     * Remembers today's total for the report chart, via the same [snapshotDay] the daily
      * worker uses — and since this runs on every path that touches money, it is also the
      * moment the home-screen widget learns the new total.
      *
@@ -2288,18 +2335,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 // listHoldings, not holdings: someone whose only money is bank balances read from her
                 // messages has an empty holdings list and a perfectly good total, and guarding on the
                 // raw list left her report saying "هنوز نموداری نیست" for ever.
-                val next = snapshotHistory(
-                    base, s.listHoldings, s.effective, s.rates.updatedAt,
+                val day = snapshotDay(
+                    base, store.rateHistory, s.listHoldings, s.effective, s.rates.updatedAt,
                     System.currentTimeMillis(),
                     // The bourse snapshot's own clock — see [snapshotHistory] for why the rates'
                     // clock alone let shares ride week-old prices into the chart.
                     s.tse.updatedAt,
                     // Stale rates refuse today's point, but the rebase still stands: what the
                     // total counts changed whether or not the day could be recorded.
-                ) ?: base
+                )
+                val next = day?.history ?: base
                 if (next != store.history) {
                     store.history = next
                     _state.update { it.copy(history = next) }
+                }
+                // Beside the total and on its gate, so a month can keep the dollar figure it
+                // ended on — see [Store.rateHistory].
+                day?.rates?.takeIf { it != store.rateHistory }?.let {
+                    store.rateHistory = it
+                    _state.update { s2 -> s2.copy(rateHistory = it) }
                 }
             }
             updateTotalWidget(getApplication())
@@ -2321,6 +2375,8 @@ data class UiState(
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val history: Map<Long, Double> = emptyMap(),
+    /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
+    val rateHistory: Map<Long, Double> = emptyMap(),
     /** False only on a phone that has never been past the first-run sheet. See [Store.onboarded]. */
     val onboarded: Boolean = true,
     val smsEnabled: Boolean = false,

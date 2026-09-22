@@ -207,6 +207,16 @@ fun faRate(rate: Double): String =
     if (rate >= 1_000_000) faCompact(rate) else faNumber(rate)
 
 /**
+ * The same money in dollars, or nothing at all.
+ *
+ * Absent — not zero, not a dash — whenever it cannot be stated honestly: no rate fetched yet,
+ * a rate of zero, or nothing to convert. A converted figure is only ever as honest as the rate
+ * under it, so the guard lives here once and every card that prints dollars comes through it.
+ */
+fun usdOf(toman: Double, rate: Double?): Double? =
+    rate?.takeIf { it > 0.0 && it.isFinite() && toman > 0.0 }?.let { toman / it }
+
+/**
  * Wraps a run in Unicode isolates. A latin ticker dropped into Persian text drags the
  * numbers around it out of order — "۴۰ SOL • نرخ ۱۴ میلیون" renders as "SOL ۴۰ • نرخ..."
  * without this. FSI/PDI tells the bidi algorithm to treat the run as one opaque unit.

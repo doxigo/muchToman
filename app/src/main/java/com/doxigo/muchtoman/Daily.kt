@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 /**
  * The chart's safety net: one snapshot a day whether or not the app is opened, so a week of
  * not looking is a week of chart, not a hole. Runs the exact code path the app runs —
- * [snapshotHistory] guards against stale rates, and [recordDay] overwrites the same day, so
+ * [snapshotDay] guards against stale rates, and [recordDay] overwrites the same day, so
  * this and an app open on the same day converge on one entry instead of arguing.
  */
 class DailySnapshotWorker(context: Context, params: WorkerParameters) :
@@ -68,8 +68,9 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         // the app's own recordSnapshot does the same under the same gate — this worker landing
         // between its read and its write silently dropped the day it had just recorded.
         ledgerGate.withLock {
-            snapshotHistory(
+            snapshotDay(
                 store.history,
+                store.rateHistory,
                 listHoldings(
                     refreshedSnapshotHoldings(store.holdings, refreshedWallets),
                     store.smsEnabled, store.bankAccounts, store.disabledBanks,
@@ -81,7 +82,7 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
                 // while the phone was abroad or the fetch above failed — passed so a stockholder's
                 // "good" daily point cannot value shares at week-old prices. See [snapshotHistory].
                 store.cachedStocks.updatedAt,
-            )?.let { store.history = it }
+            )?.let { store.history = it.history; store.rateHistory = it.rates }
         }
         // AndWait: doWork returning is what makes this process killable again, and a
         // fire-and-forget redraw would race that.

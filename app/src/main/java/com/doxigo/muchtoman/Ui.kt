@@ -105,6 +105,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -543,6 +544,13 @@ private fun AppScreens(
     // the paper. The one full-bleed forest surface left is the lock screen, which wants light
     // icons in both themes.
     val listState = rememberLazyListState()
+    // Why the home list's state is hoisted this far up, generalised for the tabs that are their
+    // own screens. Every pushed page above — a transaction, the deck, تنظیمات — returns before
+    // the Scaffold, which takes the tab underneath out of composition and its state with it: the
+    // scroll, the lens, the category filter she set. Back then landed her at the top of a ledger
+    // that had quietly widened to «همه», which reads as the app having lost her place. The holder
+    // keeps each tab's saveable state while it is off screen and hands it back on the way in.
+    val screens = rememberSaveableStateHolder()
     val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     LaunchedEffect(state.locked, lightScheme) {
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
@@ -676,6 +684,7 @@ private fun AppScreens(
                     notices.show("تراکنش پاک شد", "برگردون") { vm.restoreTxn(deletedRef) }
                 },
                 onCreateCategory = vm::addCategory,
+                onDay = vm::setManualTxnDay,
             )
             return
         }
@@ -744,52 +753,58 @@ private fun AppScreens(
       // The tabs that are their own screens. They sit inside the Scaffold rather than
       // returning early, so the bar stays under them and there is always a way out.
       if (tab == Tab.LEDGER) {
-        WidthCap {
-          TimelineScreen(
-            ledger = state.ledger,
-            bottomInset = pad.calculateBottomPadding(),
-            // Only where there is something to be quiet about, exactly as on آینده: a ledger that
-            // fills itself is the only one that can have a transaction land while she is away.
-            notifyBlocked = state.smsEnabled && !canNote,
-            onReview = { deck = true },
-            onAskNotify = askNotify,
-            onOpen = { transactionRef = it.txn.ref },
-            onAddTxn = { addingTxn = true },
-            syncing = state.family.syncing,
-            // Silent for the family screen's state, but the pull itself answers with one toast —
-            // nothing new, n new, or no connection — because an empty result and a dead network
-            // would otherwise both look like the spinner going away.
-            onSync = ({ vm.pullFamilySync() }).takeIf { state.family.paired },
-          )
+        // Keyed to the tab so the ledger comes back as she left it: the same rows under the
+        // same lens, at the same offset. See [screens].
+        screens.SaveableStateProvider(Tab.LEDGER) {
+          WidthCap {
+            TimelineScreen(
+              ledger = state.ledger,
+              bottomInset = pad.calculateBottomPadding(),
+              // Only where there is something to be quiet about, exactly as on آینده: a ledger that
+              // fills itself is the only one that can have a transaction land while she is away.
+              notifyBlocked = state.smsEnabled && !canNote,
+              onReview = { deck = true },
+              onAskNotify = askNotify,
+              onOpen = { transactionRef = it.txn.ref },
+              onAddTxn = { addingTxn = true },
+              syncing = state.family.syncing,
+              // Silent for the family screen's state, but the pull itself answers with one toast —
+              // nothing new, n new, or no connection — because an empty result and a dead network
+              // would otherwise both look like the spinner going away.
+              onSync = ({ vm.pullFamilySync() }).takeIf { state.family.paired },
+            )
+          }
         }
         return@Scaffold
       }
       if (tab == Tab.BUDGET) {
-        WidthCap {
-          BudgetScreen(
-            budgets = state.ledger.budgets,
-            goals = state.ledger.goals,
-            categories = state.ledger.categories,
-            // The same set دخل و خرج reads — the figures on these cards were measured against
-            // it, and the total's sheet says so in words. See [budgetTotalNoteFa].
-            excluded = state.reportExcluded,
-            // Only ever raised where there is something to be quiet about: a phone with no budget
-            // has nothing to notify her of, and asking for the permission then would be the launch
-            // -time prompt this app deliberately does not do.
-            notifyBlocked = state.ledger.budgets.isNotEmpty() && !canNote,
-            // Paired, not «has a member id»: an unpaired phone keeps its identity from a
-            // household it has left, and offering to share with it would be offering to share
-            // with nobody.
-            hasHousehold = state.family.paired,
-            onAddBudget = vm::addBudget,
-            onEditBudget = vm::editBudget,
-            onKeepBudget = vm::keepBudget,
-            onAddGoal = vm::addGoal,
-            onEditGoal = vm::editGoal,
-            onDelete = vm::deleteGoal,
-            onAskNotify = askNotify,
-            bottomInset = pad.calculateBottomPadding(),
-          )
+        screens.SaveableStateProvider(Tab.BUDGET) {
+          WidthCap {
+            BudgetScreen(
+              budgets = state.ledger.budgets,
+              goals = state.ledger.goals,
+              categories = state.ledger.categories,
+              // The same set دخل و خرج reads — the figures on these cards were measured against
+              // it, and the total's sheet says so in words. See [budgetTotalNoteFa].
+              excluded = state.reportExcluded,
+              // Only ever raised where there is something to be quiet about: a phone with no budget
+              // has nothing to notify her of, and asking for the permission then would be the launch
+              // -time prompt this app deliberately does not do.
+              notifyBlocked = state.ledger.budgets.isNotEmpty() && !canNote,
+              // Paired, not «has a member id»: an unpaired phone keeps its identity from a
+              // household it has left, and offering to share with it would be offering to share
+              // with nobody.
+              hasHousehold = state.family.paired,
+              onAddBudget = vm::addBudget,
+              onEditBudget = vm::editBudget,
+              onKeepBudget = vm::keepBudget,
+              onAddGoal = vm::addGoal,
+              onEditGoal = vm::editGoal,
+              onDelete = vm::deleteGoal,
+              onAskNotify = askNotify,
+              bottomInset = pad.calculateBottomPadding(),
+            )
+          }
         }
         return@Scaffold
       }
@@ -832,34 +847,40 @@ private fun AppScreens(
                 state.ledger.worthIt,
             )
         }
-        WidthCap {
-          ReportScreen(
-            history = state.history,
-            current = state.totals.toman,
-            composition = composition,
-            cash = cash,
-            smsEnabled = state.smsEnabled,
-            mode = reportMode,
-            onMode = { reportMode = it },
-            onWindow = { day, span -> reportMonth = day; reportSpan = span },
-            bottomInset = pad.calculateBottomPadding(),
-            categories = state.ledger.categories,
-            excluded = state.reportExcluded,
-            onExcluded = vm::setReportExcluded,
-            // Paired is what makes the exclusion set a household setting — the sheet says so.
-            householdShared = state.family.paired,
-            // The one figure off this screen that the same set governs — see [budgetRows].
-            capsTotal = state.ledger.budgets.any { it.total },
-            worthIt = worthIt,
-            entries = state.ledger.entries,
-            // The drill-down's rows open the transaction's own page; closing it lands back on
-            // this report, because the tab underneath never moved.
-            onOpenEntry = { transactionRef = it.txn.ref },
-            // The bar is the way out wherever there is one. The lite edition has no bar and
-            // still opens this from the گزارش button on its field, so there it keeps the
-            // «برگشت» it had as an overlay — see [tabs].
-            onBack = ({ tab = tabs.first() }).takeIf { tabs.size == 1 },
-          )
+        screens.SaveableStateProvider(Tab.REPORT) {
+          WidthCap {
+            ReportScreen(
+              history = state.history,
+              current = state.totals.toman,
+              composition = composition,
+              cash = cash,
+              smsEnabled = state.smsEnabled,
+              mode = reportMode,
+              onMode = { reportMode = it },
+              onWindow = { day, span -> reportMonth = day; reportSpan = span },
+              bottomInset = pad.calculateBottomPadding(),
+              categories = state.ledger.categories,
+              excluded = state.reportExcluded,
+              onExcluded = vm::setReportExcluded,
+              // Paired is what makes the exclusion set a household setting — the sheet says so.
+              householdShared = state.family.paired,
+              // The one figure off this screen that the same set governs — see [budgetRows].
+              capsTotal = state.ledger.budgets.any { it.total },
+              // Today's rate, for the window she is standing in. Every window that is already
+              // over is frozen at the rates recorded while it ran — see [ReportRange.usdRate].
+              usdRate = effective["usd"],
+              rateHistory = state.rateHistory,
+              worthIt = worthIt,
+              entries = state.ledger.entries,
+              // The drill-down's rows open the transaction's own page; closing it lands back on
+              // this report, because the tab underneath never moved.
+              onOpenEntry = { transactionRef = it.txn.ref },
+              // The bar is the way out wherever there is one. The lite edition has no bar and
+              // still opens this from the گزارش button on its field, so there it keeps the
+              // «برگشت» it had as an overlay — see [tabs].
+              onBack = ({ tab = tabs.first() }).takeIf { tabs.size == 1 },
+            )
+          }
         }
         return@Scaffold
       }
@@ -1335,11 +1356,11 @@ internal fun HeroCard(
     val total = state.totals.toman +
         (if (familyMode) state.familyAssets.sumOf { it.totalToman } else 0.0)
 
-    // The same money in the one other unit everyone here already thinks in. It comes from the
-    // *effective* dollar rate, so a hand-typed override moves this figure with everything else,
-    // and it is simply absent when there is no dollar rate — a converted total is only ever as
-    // honest as the rate underneath it.
-    val usd = usdRate?.takeIf { it > 0.0 && total > 0.0 }?.let { total / it }
+    // The same money in the one other unit everyone here already thinks in, off the *effective*
+    // dollar rate so a hand-typed override moves this figure with everything else. [usdOf] is
+    // what decides it is absent rather than zero when there is no rate — the report's own
+    // dollar asides come through the same guard.
+    val usd = usdOf(total, usdRate)
 
     // "همین الان" must not still say that half an hour later. A slow tick keeps the label
     // honest; the minute granularity of faAgo means nothing finer would ever show anyway.
