@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -32,7 +32,7 @@ jobs:
       # the action treats as none: the run still passes, it just configures from scratch. Only
       # here, not in release.yml: a tag run is read-only, and its -P version properties could
       # never match an entry main wrote anyway.
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
       # Both editions, but only their debug variants: plain `test` would now run the same suite six
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
         with:
           node-version: "22"
           cache: npm
