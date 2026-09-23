@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasSetTextAction
@@ -19,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assume.assumeFalse
@@ -108,12 +111,28 @@ class UiSmokeTest {
      * frontmost one is the one being looked at. Roots are walked in the order they were
      * registered, which puts the newest window last. On a plain screen there is only one, and
      * last is that one.
+     *
+     * And on past where `performScrollToNode` stops, to the top of the list or as near as its
+     * end allows. It stops the moment the node is inside the list's bounds, but the lists run
+     * on under the floating tab bar, so a row stopped near the bottom is «in view» under the
+     * bar and a tap on it lands on a tab. Whether it stops there turned on how many lines the
+     * hero's total spelled out in words took, which is the price of gold that day. The bar's
+     * height is the list's bottom padding, so even the last row, at the end, clears it.
      */
     private fun scrollPageTo(matcher: SemanticsMatcher) {
-        rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+        val page = rule
+            .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
             .onLast()
-            .performScrollToNode(matcher)
+        page.performScrollToNode(matcher)
+        val list = page.fetchSemanticsNode()
+        val node = list.firstMatch(matcher) ?: return
+        page.performSemanticsAction(SemanticsActions.ScrollBy) {
+            it(0f, node.boundsInRoot.top - list.boundsInRoot.top)
+        }
     }
+
+    private fun SemanticsNode.firstMatch(matcher: SemanticsMatcher): SemanticsNode? =
+        children.firstNotNullOfOrNull { if (matcher.matches(it)) it else it.firstMatch(matcher) }
 
     /**
      * Walks the picker into an [EditSheet] for [typeFa] and saves [amountFa] — typed in Persian
@@ -122,10 +141,14 @@ class UiSmokeTest {
     private fun addHolding(typeFa: String, amountFa: String) {
         rule.onNodeWithContentDescription("اضافه کردن").performClick()
         waitForText("چی می‌خوای اضافه کنی؟")
-        // طلا is the fourth band, under a dozen capped رمزارز rows, so on a short screen the
-        // type is never composed and there is nothing to click until the sheet is scrolled.
-        scrollPageTo(hasText(typeFa))
-        rule.onNodeWithText(typeFa).performClick()
+        // Searched for, not scrolled to. The رمزارز band above طلا is filled by the rates fetch,
+        // and on a fresh install that fetch can land between the scroll and the tap: a dozen
+        // rows arrive above the one in view, the list keeps its first row still, and the type
+        // is pushed out of composition. The search list holds only what matches, so nothing the
+        // network brings can land in front of it. Its field is the one text field in the tree.
+        rule.onNode(hasSetTextAction()).performTextInput(typeFa)
+        // The field now carries the same words; the row is the match that is not the field.
+        rule.onNode(hasText(typeFa) and !hasSetTextAction()).performClick()
         // The picker plays itself out before the edit sheet is the only sheet standing; waiting
         // on both keeps the amount field the one text field in the tree.
         waitForText("ذخیره")
@@ -179,7 +202,7 @@ class UiSmokeTest {
         addHolding("طلای ۱۸ عیار", "۲۵٫۵")
         tab("دارایی").performClick()
         // The rows sit under the hero and the action circles in the screen's own lazy list,
-        // so the same scroll the picker needs is what brings the new one into composition.
+        // so it takes a scroll to bring the new one into composition.
         scrollPageTo(hasText("طلای ۱۸ عیار"))
         rule.onNodeWithText("طلای ۱۸ عیار").assertIsDisplayed()
     }
