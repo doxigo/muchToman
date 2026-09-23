@@ -1,5 +1,7 @@
 # چقدر تومن — MuchToman
 
+**English** · [فارسی](README.fa.md)
+
 An Android app that answers one question: *how much is all my money, in Toman?*
 
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
@@ -32,6 +34,11 @@ Sample data, live rates.
 | ![](docs/screenshots/report.png) | ![](docs/screenshots/budget.png) | ![](docs/screenshots/banks.png) |
 | ![](docs/screenshots/report-dark.png) | ![](docs/screenshots/budget-dark.png) | ![](docs/screenshots/banks-dark.png) |
 
+| قسط‌ها | پرداخت کدوم قسطه؟ | دسته‌بندی |
+| --- | --- | --- |
+| ![](docs/screenshots/installments.png) | ![](docs/screenshots/installment-link.png) | ![](docs/screenshots/categories.png) |
+| ![](docs/screenshots/installments-dark.png) | ![](docs/screenshots/installment-link-dark.png) | ![](docs/screenshots/categories-dark.png) |
+
 ## What it does
 
 - **One total, three ways.** Scannable ("۱۰٫۸ میلیون تومان"), spelled out in Persian words,
@@ -48,6 +55,18 @@ Sample data, live rates.
 - **Savings goals, with a deadline.** «۵۰ میلیون تا ۶ ماه» carries the monthly rate that gets you
   there, and every card states the date its progress is counted from. No points, no streaks, no
   confetti, and no comparison with anybody else.
+- **Installments, paid off by what the bank already reported.** A phone on twelve payments or a
+  loan on sixty is a plan: how much each month, how many are left, and which day they fall due.
+  Nothing is typed in twice. File a payment under «قسط و وام» and the app asks which plan it paid,
+  or offers to start one from it, with that payment as the first installment; a plan's own sheet
+  lists the transactions that could be its payments, the exact amount first. The card shows what is
+  paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
+  Cash payments go into the ledger by hand and are linked the same way.
+- **Where the money went, over any window.** دخل و خرج reads a week, a month, three, six or twelve,
+  income against spending and category by category. Under each figure sits its daily and weekly
+  pace, so windows of different lengths compare, and each closed window is also priced in dollars
+  at the rates of the days it ran through, so a month you read once does not re-price itself later.
+  Months from before that shipped have no rates on file and show no dollar figure.
 - **Optional family ledger.** Two or more people can join by one-time QR code. Each person chooses
   whether their parsed SMS transactions are shared. Every shared item names its owner, and any
   family member can categorize it or write a note on it — a shared note says who wrote it. Which
@@ -56,6 +75,9 @@ Sample data, live rates.
 - **Public-wallet tracking, or manual entry.** Save a public address and the app refreshes BTC,
   ETH/ERC-20, SOL, TRX/TRC-20, and supported EVM-token balances on BSC, Arbitrum, Polygon,
   Optimism, and Avalanche. Anything else can be entered by hand.
+- **Categories with their own marks.** Thirty-odd, from خواربار to شیرینی and گوشت و مرغ, each
+  with a mark and a colour of its own, plus any you add. Filing a transaction with «برای موارد
+  مشابه هم همین دسته» switched on files the ones like it the same way from then on.
 - **Your own names.** Any holding can carry a label of your own — "تتر شخصی" beside "تتر
   مشترک". The asset keeps its real name underneath, so the rate still applies.
 - **A year of history.** The total is remembered once a day, with 1/3/6/12-month change.
@@ -158,6 +180,9 @@ The notification permission is asked for when the first budget is saved, or from
 transactions waiting to be filed — never at launch. Denying it costs the alerts and nothing else:
 the آینده screen shows the same figures either way, and the badge on دفتر counts the same backlog.
 
+Installment plans, and which transactions paid them, stay on the phone. They are never part of
+the family sync.
+
 Wallet tracking is opt-in: when enabled, the public address is sent through the configured
 Worker to a public blockchain RPC or indexer. The app never asks for a recovery phrase or private
 key. Rates and coin logos come through the configured Worker. The only direct price-source
@@ -166,3 +191,8 @@ request is TSETMC, and only when the stock picker is opened or a stock is alread
 ## Building it yourself
 
 See [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Credits
+
+Category marks are [Lucide](https://lucide.dev)'s drawings (ISC), inked with the app's own pen.
+The licence ships inside the APK.
