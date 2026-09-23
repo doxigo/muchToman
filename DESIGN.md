@@ -106,8 +106,9 @@ heading than below it, everywhere.
 One pen (`pen()`: round caps, 2dp at 24, thinner in smaller boxes) draws everything: tab
 glyphs, category marks, the person, the check, the plus, the receipt. Category marks are
 Lucide's drawings (ISC, vendored as path data in `CategoryIcon.kt`, licence in
-`assets/licenses/lucide.txt`) inked with that pen, so they match the hand-drawn tab bar; three
-stay drawn by hand because no set has them (همسر's ring, خرج اتینا's face, the unknown dots).
+`assets/licenses/lucide.txt`) inked with that pen, so they match the hand-drawn tab bar; six
+stay drawn by hand because no set has them (همسر's ring, the unknown dots, and the faces:
+خرج اتینا's, مامان's bun, بابا's سبیل, پارتنر's heart eyes).
 **No emoji as icons**
 — empty states use the drawn glyphs on `primaryContainer` discs; settings rows use drawn
 marks or real logos (banks on white plates).

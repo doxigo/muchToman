@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
@@ -31,8 +32,9 @@ import androidx.compose.ui.unit.dp
  * with Lucide's stroke, so they stay one family with the hand-drawn tab bar. Lucide draws 2 on a
  * 24 grid, which is the same weight the pen lays down over this box.
  *
- * Three stay drawn by hand, because no set has them: همسر's ring, خرج اتینا's daft face, and the
- * dots that mean «unknown». They are the branches left in [drawGlyph].
+ * Six stay drawn by hand, because no set has them: همسر's ring, the dots that mean «unknown», and
+ * the faces — خرج اتینا's daft one, and مامان's, بابا's and پارتنر's beside it. They are the
+ * branches left in [drawGlyph].
  */
 
 /**
@@ -53,6 +55,9 @@ enum class CategoryGlyph {
     // picked. بازپرداخت اسنپ و تپسی is a taxi now, پس‌انداز و سرمایه a piggy bank. STACK stays a stack
     // of discs, which is also why Settings uses it for پشتیبان‌گیری.
     TAXI, PIGGY,
+    // The people she files money for, as faces beside خرج اتینا's: مامان with her hair up, بابا
+    // with his سبیل, and پارتنر smitten. Named for the picture, like every other entry.
+    BUN, MUSTACHE, SMITTEN,
     DOTS,
 }
 
@@ -115,6 +120,9 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "سود سرمایه‌گذاری" -> CategoryGlyph.CHART
     "سایر" -> CategoryGlyph.ASTERISK
     "همسر" -> CategoryGlyph.RING
+    "مامان", "مادر" -> CategoryGlyph.BUN
+    "بابا", "پدر" -> CategoryGlyph.MUSTACHE
+    "پارتنر" -> CategoryGlyph.SMITTEN
     "انتقال بین حساب‌ها" -> CategoryGlyph.SWAP
     else -> CategoryGlyph.DOTS
 }
@@ -332,6 +340,14 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         CategoryGlyph.BOOK -> if (dark) Color(0xFF94B8E8) else Color(0xFF3C6390)
         CategoryGlyph.DUMBBELL -> if (dark) Color(0xFFA3D486) else Color(0xFF55893A)
         CategoryGlyph.BROOM -> if (dark) Color(0xFF7ED3CB) else Color(0xFF267F77)
+        // The faces are hers to add, so no shipped cell decides their neighbours; each takes one of
+        // the three widest gaps the wheel had left (OKLCh hue, at the grid's lightness). پارتنر the
+        // rose between فروش's pink and سلامت's red, 10° off each; مامان the apricot between زیبایی's
+        // rust and رستوران و کافه's amber, 13° off each; بابا the cyan between نظافت's teal and
+        // انتقال's, 14° off each, its chroma held down to stay inside sRGB.
+        CategoryGlyph.SMITTEN -> if (dark) Color(0xFFFBA0AC) else Color(0xFFB3485D)
+        CategoryGlyph.BUN -> if (dark) Color(0xFFF4AB77) else Color(0xFFA55C1E)
+        CategoryGlyph.MUSTACHE -> if (dark) Color(0xFF64D1D7) else Color(0xFF208085)
         CategoryGlyph.DOTS -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
@@ -438,6 +454,18 @@ private fun DrawScope.drawLucide(path: Path, tint: Color, stroke: Dp) {
     }) { drawPath(path, tint, style = pen(stroke / k)) }
 }
 
+/** A filled heart [s] across from its centre to either side, point down, for [CategoryGlyph.SMITTEN]. */
+private fun heart(cx: Float, cy: Float, s: Float) = Path().apply {
+    moveTo(cx, cy + 0.8f * s)
+    cubicTo(cx - 0.1f * s, cy + 0.7f * s, cx - s, cy + 0.1f * s, cx - s, cy - 0.35f * s)
+    cubicTo(cx - s, cy - 0.75f * s, cx - 0.6f * s, cy - 0.95f * s, cx - 0.35f * s, cy - 0.9f * s)
+    cubicTo(cx - 0.15f * s, cy - 0.86f * s, cx, cy - 0.7f * s, cx, cy - 0.55f * s)
+    cubicTo(cx, cy - 0.7f * s, cx + 0.15f * s, cy - 0.86f * s, cx + 0.35f * s, cy - 0.9f * s)
+    cubicTo(cx + 0.6f * s, cy - 0.95f * s, cx + s, cy - 0.75f * s, cx + s, cy - 0.35f * s)
+    cubicTo(cx + s, cy + 0.1f * s, cx + 0.1f * s, cy + 0.7f * s, cx, cy + 0.8f * s)
+    close()
+}
+
 private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
     lucidePaths[glyph]?.let {
         drawLucide(it, tint, stroke)
@@ -473,6 +501,72 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                     moveTo(w * 0.32f, h * 0.6f)
                     quadraticTo(w * 0.48f, h * 0.75f, w * 0.6f, h * 0.63f)
                     quadraticTo(w * 0.72f, h * 0.76f, w * 0.57f, h * 0.88f)
+                },
+                tint,
+                style = ink,
+            )
+        }
+        // The faces that follow are drawn to that one's scale and weight, so four people in a grid
+        // read as one family, and each is told apart by one feature exaggerated past polite — the
+        // same lesson as the eyes above: whatever reads at 3x is too timid at 1x.
+        //
+        // مامان: a smaller face under a cap of hair and a bun. The bun alone read as a baby's curl;
+        // it is the hair around it that makes her a grown woman.
+        CategoryGlyph.BUN -> {
+            val r = w * 0.38f
+            val centre = Offset(w * 0.5f, h * 0.56f)
+            drawCircle(tint, r, centre, style = ink)
+            // The cap is the head's own circle from ear to ear over the top, closed by a fringe
+            // parted in the middle; filled and inked, so its edge melts into the face's outline.
+            val hair = Path().apply {
+                moveTo(w * 0.147f, h * 0.42f)
+                arcTo(Rect(centre, r), 201.6f, 136.8f, forceMoveTo = false)
+                quadraticTo(w * 0.68f, h * 0.35f, w * 0.5f, h * 0.45f)
+                quadraticTo(w * 0.32f, h * 0.35f, w * 0.147f, h * 0.42f)
+                close()
+            }
+            drawPath(hair, tint)
+            drawPath(hair, tint, style = ink)
+            drawCircle(tint, w * 0.11f, Offset(w * 0.5f, h * 0.12f))
+            drawCircle(tint, w * 0.055f, Offset(w * 0.37f, h * 0.6f))
+            drawCircle(tint, w * 0.055f, Offset(w * 0.63f, h * 0.6f))
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.38f, h * 0.74f)
+                    quadraticTo(w * 0.5f, h * 0.83f, w * 0.62f, h * 0.74f)
+                },
+                tint,
+                style = ink,
+            )
+        }
+        // بابا: a سبیل, solid, its ends turned up — and no mouth. Drooping, it made him glum; with a
+        // smile under it the two read as a goatee. Turned up, it is the smile.
+        CategoryGlyph.MUSTACHE -> {
+            drawCircle(tint, w * 0.42f, Offset(w * 0.5f, h * 0.5f), style = ink)
+            drawCircle(tint, w * 0.06f, Offset(w * 0.35f, h * 0.4f))
+            drawCircle(tint, w * 0.06f, Offset(w * 0.65f, h * 0.4f))
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.22f, h * 0.6f)
+                    cubicTo(w * 0.28f, h * 0.68f, w * 0.42f, h * 0.66f, w * 0.5f, h * 0.59f)
+                    cubicTo(w * 0.58f, h * 0.66f, w * 0.72f, h * 0.68f, w * 0.78f, h * 0.6f)
+                    cubicTo(w * 0.74f, h * 0.74f, w * 0.6f, h * 0.78f, w * 0.5f, h * 0.7f)
+                    cubicTo(w * 0.4f, h * 0.78f, w * 0.26f, h * 0.74f, w * 0.22f, h * 0.6f)
+                    close()
+                },
+                tint,
+            )
+        }
+        // پارتنر: hearts for eyes. RING's note below turns a heart down because on its own it means
+        // «favourite»; two of them looking out of a face mean a person somebody is soft on.
+        CategoryGlyph.SMITTEN -> {
+            drawCircle(tint, w * 0.42f, Offset(w * 0.5f, h * 0.5f), style = ink)
+            drawPath(heart(w * 0.33f, h * 0.42f, w * 0.13f), tint)
+            drawPath(heart(w * 0.67f, h * 0.42f, w * 0.13f), tint)
+            drawPath(
+                Path().apply {
+                    moveTo(w * 0.33f, h * 0.64f)
+                    quadraticTo(w * 0.5f, h * 0.8f, w * 0.67f, h * 0.64f)
                 },
                 tint,
                 style = ink,

@@ -46,13 +46,16 @@ class CategoryGlyphTest {
     }
 
     /**
-     * Every mark is Lucide's except the three drawn by hand, and drawGlyph's fallback is the three
+     * Every mark is Lucide's except the six drawn by hand, and drawGlyph's fallback is the three
      * dots — so a mark added to the enum with no Lucide line draws «unknown» without a word. This
      * is the word.
      */
     @Test
     fun `every mark has exactly one drawing`() {
-        val byHand = setOf(CategoryGlyph.RING, CategoryGlyph.PERSON, CategoryGlyph.DOTS)
+        val byHand = setOf(
+            CategoryGlyph.RING, CategoryGlyph.PERSON, CategoryGlyph.DOTS,
+            CategoryGlyph.BUN, CategoryGlyph.MUSTACHE, CategoryGlyph.SMITTEN,
+        )
         assertEquals("marks with no drawing", emptySet<CategoryGlyph>(), CategoryGlyph.entries.toSet() - LUCIDE.keys - byHand)
         assertEquals("marks drawn twice", emptySet<CategoryGlyph>(), LUCIDE.keys intersect byHand)
     }
