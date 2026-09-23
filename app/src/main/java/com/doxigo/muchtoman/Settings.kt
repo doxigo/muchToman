@@ -974,6 +974,9 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
         )
         Spacer(Modifier.height(Space.l))
         SettingCard(
+            // The house, not a bell: the reminder lives on صفحهٔ خانه, and a bell would promise
+            // the notification the line under it says never comes.
+            mark = { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onSurface, size = 22.dp) },
             title = "یادآوری پشتیبان در برنامه",
             subtitle = "بعد از ۳۰ روز، صفحهٔ خانه یادآوری می‌کنه. اعلانی فرستاده نمی‌شه.",
             checked = backup.reminderEnabled,
