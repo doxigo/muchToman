@@ -160,11 +160,25 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // she actually has about it («سفر امسال چقدر شد؟») has no line to answer from. One row is what
     // makes it answerable, because سفر is the thing she decided; its parts are only how it was paid.
     //
-    // Last of the ones she chooses, after قرض and before the two the app files for her. A trip is
+    // Late among the ones she chooses, after قرض. A trip is
     // occasional by definition, so this is where the shipped order can afford to put it —
     // [categoryChoices] floats it to the front of the grid for the weeks she is taking one, which
     // is exactly when she needs it under her thumb.
     Category("cat_travel", nameFa = "سفر", kind = CategoryKind.EXPENSE, sort = 185, builtin = true),
+    // Three kinds of food she keeps apart from the weekly shop, each with a shop of its own: the
+    // قنادی, the قصابی and مرغ‌فروشی, and the آبمیوه‌بستنی on the corner. Under خواربار they are
+    // one line with the rice and the detergent; under رستوران و کافه a box of شیرینی for guests
+    // reads as a meal out. Apart, each is a figure she can actually hold down.
+    //
+    // After سفر rather than beside خواربار, and that is the grid's arithmetic, not their rank: in
+    // the middle, three cells would move every cell after them and undo the hue each one was given
+    // against its neighbours (see [glyphHue]). Here only the five the app files for her move along,
+    // and [categoryChoices] floats these to the front once she uses them. No shipped rule behind any
+    // of the three, for the reason قسط و وام has none: a card purchase says only that money left,
+    // not what was bought. Each earns a rule the first time she files one and says «همیشه».
+    Category("cat_sweets", nameFa = "شیرینی", kind = CategoryKind.EXPENSE, sort = 186, builtin = true),
+    Category("cat_meat", nameFa = "گوشت و مرغ", kind = CategoryKind.EXPENSE, sort = 187, builtin = true),
+    Category("cat_juice", nameFa = "آبمیوه بستنی", kind = CategoryKind.EXPENSE, sort = 188, builtin = true),
 
     // ── what the app files for her, which she rarely has to pick ──
     Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 190, builtin = true),

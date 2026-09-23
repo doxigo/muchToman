@@ -47,6 +47,7 @@ enum class CategoryGlyph {
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
     RING, AIRPLANE, SCISSORS, BOTTLE, PIN, MUSCLE,
     BALL, MIRROR, BOOK, DUMBBELL, BROOM,
+    SWEET, MEAT, CONE,
     // A category that outgrew its old mark gets a new one rather than repurposing it: a category
     // she made stores the name, and PIN or STACK must go on drawing the pin and the stack she
     // picked. بازپرداخت اسنپ و تپسی is a taxi now, پس‌انداز و سرمایه a piggy bank. STACK stays a stack
@@ -94,6 +95,9 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "آموزش" -> CategoryGlyph.BOOK
     "باشگاه" -> CategoryGlyph.DUMBBELL
     "نظافت" -> CategoryGlyph.BROOM
+    "شیرینی" -> CategoryGlyph.SWEET
+    "گوشت و مرغ" -> CategoryGlyph.MEAT
+    "آبمیوه بستنی" -> CategoryGlyph.CONE
     "قرض" -> CategoryGlyph.LEND
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
@@ -265,6 +269,24 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // make further down this table, and the cheapest one left on a wheel this grid has now
         // divided twenty-eight ways.
         CategoryGlyph.MUSCLE, CategoryGlyph.BALL -> if (dark) Color(0xFFDBC768) else Color(0xFF917D17)
+        // شیرینی, گوشت و مرغ and آبمیوه بستنی went in after سفر, which moved the five after them —
+        // برداشت نقدی, کارمزد, همسر, سایر, انتقال — along by three. Measured over the whole grid
+        // (HSL hue, a cell's neighbours being beside it in its row and straight above and below it),
+        // that adds no pair under 60° to the five the grid already had, and the notes above those
+        // five describe where they sat before. Each of the three is its food's own colour where
+        // the neighbours allowed one:
+        //
+        // شیرینی closes the row under فرهنگی و هنری's pink, beside سفر's leaf, over کارمزد's grey.
+        // Violet, a candy wrapper's, 67° off the pink and nowhere near the leaf.
+        CategoryGlyph.SWEET -> if (dark) Color(0xFFD0ABF5) else Color(0xFF865AAC)
+        // گوشت و مرغ opens the next row, under دخانیات's plum and over همسر's yellow-green. Raw
+        // red, 81° and 63° off those two. قرض's red-orange is a diagonal away and the eye never
+        // compares a diagonal.
+        CategoryGlyph.MEAT -> if (dark) Color(0xFFFAA685) else Color(0xFFAE532D)
+        // آبمیوه بستنی sits between گوشت و مرغ and برداشت نقدی's jade, under قرض and over سایر's
+        // orchid. Cold periwinkle, which clears all four by 74° and more.
+        CategoryGlyph.CONE -> if (dark) Color(0xFFA9B8FF) else Color(0xFF5C69BC)
+
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
         // at least 60° from whatever ends up beside or under it once the seven are laid out.
@@ -391,6 +413,9 @@ internal val LUCIDE: Map<CategoryGlyph, String> = mapOf(
     CategoryGlyph.BOOK to "M12 5v16 M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z", // book-open
     CategoryGlyph.DUMBBELL to "M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z M2.5 21.5l1.4-1.4 M20.1 3.9l1.4-1.4 M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z M9.6 14.4l4.8-4.8", // dumbbell
     CategoryGlyph.BROOM to "M16 22l-1-4 M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z M8 22l1-4", // brush-cleaning
+    CategoryGlyph.SWEET to "M10 7v10.9 M14 6.1V17 M16 7V3a1 1 0 0 1 1.707-.707 2.5 2.5 0 0 0 2.152.717 1 1 0 0 1 1.131 1.131 2.5 2.5 0 0 0 .717 2.152A1 1 0 0 1 21 8h-4 M16.536 7.465a5 5 0 0 0-7.072 0l-2 2a5 5 0 0 0 0 7.07 5 5 0 0 0 7.072 0l2-2a5 5 0 0 0 0-7.07 M8 17v4a1 1 0 0 1-1.707.707 2.5 2.5 0 0 0-2.152-.717 1 1 0 0 1-1.131-1.131 2.5 2.5 0 0 0-.717-2.152A1 1 0 0 1 3 16h4", // candy
+    CategoryGlyph.MEAT to "M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23 M8.29 12.71l-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59", // drumstick
+    CategoryGlyph.CONE to "M7 11l4.08 10.35a1 1 0 0 0 1.84 0L17 11 M17 7A5 5 0 0 0 7 7 M17 7a2 2 0 0 1 0 4H7a2 2 0 0 1 0-4", // ice-cream-cone
     CategoryGlyph.TAXI to "M10 2h4 M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8 M7 14h.01 M17 14h.01 M5 10h14a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M5 18v2 M19 18v2", // car-taxi-front
     CategoryGlyph.PIGGY to "M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z M16 10h.01 M2 8v1a2 2 0 0 0 2 2h1", // piggy-bank
 )
