@@ -1944,6 +1944,58 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A plan she pays monthly. [count] is what is left to pay, from the next [dayOfMonth] — see
+     * [newInstallment]. Private, so there is no sync to ask for.
+     */
+    fun addInstallment(name: String, paymentRial: Long, count: Int, dayOfMonth: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val plan = newInstallment(uuid7(now), name, paymentRial, count, dayOfMonth, now, mineId)
+                    ?: return@runCatching
+                durable.goals().put(plan)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addInstallment failed: $it") }
+        }
+    }
+
+    /**
+     * Says this transaction paid plan [planId], or with null that it paid none.
+     *
+     * One decision per transaction, the way a category is: `ref` and `kind` are unique together, so
+     * linking a row to a second plan moves it rather than counting it twice, and unlinking retracts
+     * the same row instead of racing it. The amount goes onto the link — see [InstallmentLink].
+     */
+    fun setInstallmentPayment(entry: LedgerEntry, planId: String?) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                val value = planId?.let { id -> entry.txn.amountRial?.let { InstallmentLink(id, it).encode() } }
+                val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.INSTALLMENT)
+                if (value == null && (previous == null || previous.deleted)) return@runCatching
+                if (previous != null && !previous.deleted && previous.value == value) return@runCatching
+                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                durable.decisions().put(
+                    TxnDecision(
+                        id = previous?.id ?: uuid7(now),
+                        ref = entry.txn.ref,
+                        kind = DecisionKind.INSTALLMENT,
+                        value = value,
+                        createdAt = previous?.createdAt ?: now,
+                        updatedAt = now,
+                        deleted = value == null,
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setInstallmentPayment failed: $it") }
+        }
+    }
+
+    /**
      * Which screen a tapped notification was about, held until the UI has moved there.
      *
      * The same one-shot shape [FamilyState.pendingPairing] uses: the intent's extra becomes a piece

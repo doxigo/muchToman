@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -32,6 +33,7 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -140,6 +143,11 @@ fun BudgetScreen(
     onEditBudget: (String, BudgetPeriod, Long, Boolean) -> Unit,
     onAddGoal: (String, Long, GoalHorizon, Boolean) -> Unit,
     onEditGoal: (String, String, Long, GoalHorizon?, Boolean) -> Unit,
+    installments: List<InstallmentProgress>,
+    /** Name, one payment in Rial, how many are left, and the day of the month they fall due. */
+    onAddInstallment: (String, Long, Int, Int) -> Unit,
+    /** This transaction paid that plan — or, with null, paid none. */
+    onInstallmentPayment: (LedgerEntry, String?) -> Unit,
     onDelete: (String) -> Unit,
     onKeepBudget: (String) -> Unit,
     onAskNotify: () -> Unit,
@@ -153,6 +161,8 @@ fun BudgetScreen(
     // deleted elsewhere resolves to nothing and the sheet simply closes.
     var editingBudget by remember { mutableStateOf<String?>(null) }
     var editingGoal by remember { mutableStateOf<String?>(null) }
+    var addingInstallment by remember { mutableStateOf(false) }
+    var openInstallment by remember { mutableStateOf<String?>(null) }
     // Off the spending side alone, in the grid's own order: those are the only categories a roof
     // could have counted, so they are the only ones worth naming as left out of one. «پس‌گرفتن
     // قرض» is set aside on a fresh install too, and listing money coming back under a cap on
@@ -255,6 +265,33 @@ fun BudgetScreen(
                 onClick = { addingGoal = true },
             )
 
+            SectionLabel("قسط‌ها")
+            if (installments.isEmpty()) {
+                // Says where the payments come from, because that is the one thing about this
+                // section nobody would guess: nothing here is typed twice.
+                Text(
+                    "قسط گوشی، وام یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، " +
+                        "همین‌جا تیکش می‌زنی و می‌بینی چقدر مونده.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp,
+                )
+                Spacer(Modifier.height(Space.l))
+            }
+            val installmentRows = installments.size + 1
+            installments.forEachIndexed { i, progress ->
+                InstallmentCard(
+                    progress,
+                    shape = bandShape(i, installmentRows),
+                    divided = true,
+                    onOpen = { openInstallment = progress.plan.id },
+                )
+            }
+            AddRow(
+                label = if (installments.isEmpty()) "اولین قسط" else "قسط تازه",
+                shape = bandShape(installments.size, installmentRows),
+                onClick = { addingInstallment = true },
+            )
+
             Spacer(Modifier.height(Space.huge))
         }
     }
@@ -321,6 +358,30 @@ fun BudgetScreen(
             },
         )
     }
+
+    if (addingInstallment) {
+        InstallmentSheet(
+            onSave = { name, payment, count, day ->
+                addingInstallment = false
+                onAddInstallment(name, payment, count, day)
+            },
+            onDismiss = { addingInstallment = false },
+        )
+    }
+
+    // By id, like the budget and goal sheets: every tap on a payment republishes the ledger, and
+    // the rows have to move between the two lists under her finger rather than stay where they were.
+    installments.firstOrNull { it.plan.id == openInstallment }?.let { progress ->
+        InstallmentPaymentsSheet(
+            progress,
+            onChange = { entry, paid -> onInstallmentPayment(entry, progress.plan.id.takeIf { paid }) },
+            onDelete = {
+                openInstallment = null
+                onDelete(progress.plan.id)
+            },
+            onDismiss = { openInstallment = null },
+        )
+    }
 }
 
 /**
@@ -356,6 +417,7 @@ private fun BandCard(
     divided: Boolean,
     modifier: Modifier = Modifier,
     onOpen: (() -> Unit)? = null,
+    openLabel: String = "ویرایش",
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val open = onOpen
@@ -366,7 +428,7 @@ private fun BandCard(
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .then(
                 if (open != null) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = "ویرایش", onClick = open)
+                    Modifier.clickable(role = Role.Button, onClickLabel = openLabel, onClick = open)
                 } else {
                     Modifier
                 },
@@ -730,6 +792,98 @@ private fun goalNoteFa(progress: GoalProgress): Pair<String, Boolean>? = when {
     else -> null
 }
 
+// ─────────────────────────── one installment ───────────────────────────
+
+/**
+ * A goal card's construction, read as a plan: what her links add up to out of the whole, and
+ * which payment is next.
+ *
+ * The card opens on «پرداخت‌ها», not «ویرایش»: what she comes back to it for each month is to say
+ * which transaction paid it, and the sheet behind it is that list.
+ */
+@Composable
+private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided: Boolean, onOpen: () -> Unit) {
+    val tone = when {
+        progress.done -> MaterialTheme.colorScheme.tertiary
+        progress.overdueRial > 0L -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.primary
+    }
+    BandCard(shape = shape, divided = divided, onOpen = onOpen, openLabel = "پرداخت‌ها") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    progress.plan.nameFa,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            EditHint("پرداخت‌ها")
+        }
+        Spacer(Modifier.height(Space.s))
+        BasicText(
+            text = bidi("${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(progress.totalRial))}"),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
+            style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+        )
+        Spacer(Modifier.height(Space.s))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(progress.share)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(tone),
+            )
+        }
+        Spacer(Modifier.height(Space.s))
+        Text(
+            "${faNumber(progress.paidCount.toDouble())} از ${faNumber(progress.count.toDouble())} قسط",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        installmentNoteFa(progress)?.let { (text, loud) ->
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                text,
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                fontWeight = if (loud) FontWeight.Bold else FontWeight.Normal,
+                color = if (loud) tone else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The card's one line. Behind is said as a figure and a fact — what fell due and is not paid —
+ * never as a verdict, and only once a due day has actually passed: on the day itself she can still
+ * pay it, and the card says so rather than turning red at breakfast.
+ */
+private fun installmentNoteFa(
+    progress: InstallmentProgress,
+    today: Long = tehranDay(System.currentTimeMillis()),
+): Pair<String, Boolean>? = when {
+    progress.done -> "همه‌ی قسط‌ها پرداخت شد." to true
+    progress.overdueRial > 0L ->
+        "${faCompact(tomanOf(progress.overdueRial))} تومان از قسط‌هایی که سررسیدشون گذشته، " +
+            "هنوز پرداخت نشده." to true
+    progress.nextDue == today -> "سررسید قسط بعدی امروزه." to false
+    progress.nextDue != null -> "قسط بعدی: ${faDate(progress.nextDue)}" to false
+    else -> null
+}
+
 /**
  * «ویرایش», the same size and place on every card — the word for what tapping the card does.
  *
@@ -739,9 +893,9 @@ private fun goalNoteFa(progress: GoalProgress): Pair<String, Boolean>? = when {
  * same two-tap confirm the asset rows use.
  */
 @Composable
-private fun EditHint() {
+private fun EditHint(label: String = "ویرایش") {
     Text(
-        "ویرایش",
+        label,
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(vertical = Space.xs, horizontal = Space.s),
@@ -1255,6 +1409,268 @@ private fun GoalSheet(
             }
 
             if (editing != null) SheetDelete("حذف این هدف") { close(onDelete) }
+        }
+    }
+}
+
+/**
+ * A plan, in four answers: what for, how much each month, how many are left, and on which day.
+ *
+ * «چند قسط مونده؟» rather than the plan's full length, so a loan she is a year into is entered as
+ * what is left of it — the app never saw the first year's payments and has nothing to link them to.
+ * The day is a number rather than a picker for the reason [GoalSheet] gives, and the two dates it
+ * implies are written out under it before she saves, so what she stores is on screen first.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InstallmentSheet(onSave: (String, Long, Int, Int) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+
+    val today = remember { tehranDay(System.currentTimeMillis()) }
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var countText by remember { mutableStateOf("") }
+    // Today's day, because the likeliest moment to add a plan is the day a payment has just gone.
+    var dayText by remember { mutableStateOf(jalaliOf(today).day.toString()) }
+    val paymentRial = remember(amount) { tomanFieldToRial(amount) }
+    val count = remember(countText) { wholeIn(countText, 1..MAX_INSTALLMENTS) }
+    val dayOfMonth = remember(dayText) { wholeIn(dayText, 1..31) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .nestedScroll(SheetFlingGuard)
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("قسط تازه")
+
+            SheetLabel("قسطِ چی؟")
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(40) },
+                label = { Text("مثلاً گوشی، یا وام خونه") },
+                singleLine = true,
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SheetLabel("هر قسط چقدره، به تومان")
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("مبلغ هر قسط") },
+                singleLine = true,
+                visualTransformation = GroupedNumber,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                supportingText = when {
+                    amount.isNotBlank() && paymentRial == null -> ({
+                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
+                    })
+                    paymentRial != null -> ({ Text(faWordsToman(tomanOf(paymentRial)).orEmpty()) })
+                    else -> null
+                },
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "مبلغ هر قسط به تومان" },
+            )
+
+            SheetLabel("چند قسط مونده؟")
+            OutlinedTextField(
+                value = countText,
+                onValueChange = { countText = it.take(4) },
+                singleLine = true,
+                visualTransformation = GroupedNumber,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                supportingText = {
+                    Text(
+                        if (countText.isNotBlank() && count == null) {
+                            "یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس."
+                        } else {
+                            "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار."
+                        },
+                    )
+                },
+                isError = countText.isNotBlank() && count == null,
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SheetLabel("چندمِ هر ماه سررسیده؟")
+            OutlinedTextField(
+                value = dayText,
+                onValueChange = { dayText = it.take(2) },
+                singleLine = true,
+                visualTransformation = GroupedNumber,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = dayText.isNotBlank() && dayOfMonth == null,
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            // The two dates the answers imply, so a wrong count or day is caught before it is saved.
+            val first = dayOfMonth?.let { firstInstallmentDue(it, today) }
+            Text(
+                when {
+                    first == null -> "یه روز بین ۱ و ۳۱."
+                    count == null -> "اولین سررسید: ${faDate(first)}"
+                    else -> "اولین سررسید ${faDate(first)}، آخری ${faDate(jalaliMonthsAfter(first, count - 1))}."
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s, start = Space.xs),
+            )
+
+            Spacer(Modifier.height(Space.l))
+            Button(
+                onClick = {
+                    val payment = paymentRial ?: return@Button
+                    val n = count ?: return@Button
+                    val day = dayOfMonth ?: return@Button
+                    if (name.isBlank()) return@Button
+                    close { onSave(name.trim(), payment, n, day) }
+                },
+                enabled = name.isNotBlank() && paymentRial != null && count != null && dayOfMonth != null,
+                shape = RoundedCornerShape(Radius.pill),
+                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            ) {
+                Text("ذخیره قسط", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/** A whole number within [range] in whatever digits she typed, or null. */
+private fun wholeIn(text: String, range: IntRange): Int? =
+    parseAmount(text)
+        ?.takeIf { it % 1.0 == 0.0 && it >= range.first && it <= range.last }
+        ?.toInt()
+
+/**
+ * Which transactions paid this plan — the whole of what editing a plan means, plus delete.
+ *
+ * Two lists of the same row: the ones she has linked, ticked, and the ones that could be a payment,
+ * unticked, the plan's exact amount first. A tap moves a row from one to the other. Cash has no
+ * message, so a cash payment is entered in دفتر first like any other and then turns up here — one
+ * way in for every payment, and no figure typed twice.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InstallmentPaymentsSheet(
+    progress: InstallmentProgress,
+    onChange: (LedgerEntry, Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .nestedScroll(SheetFlingGuard)
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle(progress.plan.nameFa)
+            Text(
+                "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، " +
+                    "از ${faDate(progress.plan.startsOn)} تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (progress.payments.isNotEmpty() || progress.olderRial > 0L) {
+                SheetLabel("پرداخت‌هایی که وصل کردی")
+                progress.payments.forEach { entry ->
+                    PaymentRow(entry, paid = true) { onChange(entry, it) }
+                }
+                if (progress.olderRial > 0L) {
+                    Text(
+                        "${faCompact(tomanOf(progress.olderRial))} تومان هم از پرداخت‌های قدیمی‌تری " +
+                            "حساب شده که دیگه توی دفتر نیستن.",
+                        fontSize = 12.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.xs),
+                    )
+                }
+            }
+
+            if (!progress.done) {
+                SheetLabel("کدوم تراکنش پرداخت این قسط بود؟")
+                if (progress.candidates.isEmpty()) {
+                    Text(
+                        "تراکنشی پیدا نشد که بخوره. اگه نقدی دادی، اول توی دفتر دستی ثبتش کن.",
+                        fontSize = 13.sp,
+                        lineHeight = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    progress.candidates.forEach { entry ->
+                        PaymentRow(entry, paid = false) { onChange(entry, it) }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(Space.l))
+            SheetDelete("حذف این قسط") { close(onDelete) }
+        }
+    }
+}
+
+/** One transaction, ticked when it is a payment of the plan. The whole row is the checkbox. */
+@Composable
+private fun PaymentRow(entry: LedgerEntry, paid: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = paid, role = Role.Checkbox, onValueChange = onChange)
+            .heightIn(min = 56.dp)
+            .padding(vertical = Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = paid, onCheckedChange = null)
+        Spacer(Modifier.width(Space.s))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.txn.merchant.ifBlank { entry.categoryFa },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                faDay(entry.txn.day),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        entry.txn.amountRial?.let {
+            Spacer(Modifier.width(Space.s))
+            Text(
+                bidi(faCompact(tomanOf(it)) + " تومان"),
+                style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold),
+                fontSize = 14.sp,
+            )
         }
     }
 }

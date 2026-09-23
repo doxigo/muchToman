@@ -16,11 +16,12 @@ import androidx.room.Query
  * figure is one that can drift away from the transactions underneath it, and then the app is
  * congratulating her on a number it made up.
  *
- * Two shapes, and no more:
+ * Three shapes, and no more:
  *  - `save` — put this much aside by then. This file.
  *  - `cap`  — keep spending under this much, per week, month or فصل. That is a budget, and it
  *    lives in `Budget.kt`, which is one row of this same table read a different way. A cap names
  *    a category, or names none and is then the roof over all of them — see [Goal.total].
+ *  - `installment` — pay this much a month, this many times. `Installments.kt`; always private.
  *
  * They share a table because they share everything that matters — a target in Rial, a period, a
  * start, an end, and progress that is never written down — and they are two files because the
@@ -28,13 +29,15 @@ import androidx.room.Query
  * not reaching its own. Keeping both in one `when` is how the sign of that comparison gets
  * flipped by somebody who is reading the other half.
  *
- * Either shape is hers or the household's, and that is [Goal.shared] — one flag deciding both
+ * A goal or a cap is hers or the household's, and that is [Goal.shared] — one flag deciding both
  * who sees the figure and whose spending counts against it, because those are not two questions.
+ * An installment is only ever hers; `Installments.kt` says why.
  */
 
 object GoalKind {
     const val SAVE = "save"
     const val CAP = "cap"
+    const val INSTALLMENT = "installment"
 }
 
 /**

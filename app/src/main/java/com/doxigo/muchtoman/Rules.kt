@@ -583,6 +583,9 @@ object DecisionKind {
     const val WORTH_IT = "worth_it"
     const val ACCOUNT = "account"
     const val EXCLUDE = "exclude"
+
+    /** Which installment this payment paid, and how much of it — see [InstallmentLink]. */
+    const val INSTALLMENT = "installment"
 }
 
 /**

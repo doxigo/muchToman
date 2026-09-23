@@ -138,6 +138,23 @@ fun jalaliMonthsBack(day: Long, months: Int): Long {
     return jalaliDay(total / 12, total % 12 + 1, 1)
 }
 
+/**
+ * The same day of the month, [months] Jalali months after [day] (before it, when negative) —
+ * where an installment falls due.
+ *
+ * Clamped rather than rolled over: a payment due on the 31st of فروردین is due on the 30th of مهر
+ * and the 29th of an ordinary اسفند, never on the 1st of the month after. Rolling over would push a
+ * due date into the next month and then keep it there, one day late for good. Each step is measured
+ * from [day] itself, not from the step before, so the 31st comes back as soon as a month has one.
+ */
+fun jalaliMonthsAfter(day: Long, months: Int): Long {
+    val here = jalaliOf(day)
+    val total = here.year * 12 + (here.month - 1) + months
+    val year = total / 12
+    val month = total % 12 + 1
+    return jalaliDay(year, month, minOf(here.day, jalaliMonthLength(year, month)))
+}
+
 /** How many days the given Jalali month holds: 31, 30, or 29/30 for اسفند. */
 fun jalaliMonthLength(year: Int, month: Int): Int = when {
     month <= 6 -> 31

@@ -495,6 +495,8 @@ data class LedgerView(
      * cap is gone, so the one she needs is the one at the top of the screen.
      */
     val budgets: List<BudgetProgress> = emptyList(),
+    /** The same table a third way — see `Installments.kt`. In the order she added them. */
+    val installments: List<InstallmentProgress> = emptyList(),
     /** ref → yes | no | needed, for the ones she has answered. */
     val worthIt: Map<String, String> = emptyMap(),
     /**
@@ -654,11 +656,13 @@ suspend fun ledgerView(
     // on a phone that never paired, which is the answer there — see [scopedTo].
     val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
     val memberNames = durable.familyMembers().all().associate { it.id to it.name }
+    val links = installmentLinks(durable.decisions().ofKind(DecisionKind.INSTALLMENT), active)
     return LedgerView(
         entries = ledger.entries,
         categories = ledger.categories,
         managedCategories = ledger.managedCategories,
-        goals = active.filterNot { it.kind == GoalKind.CAP }
+        // SAVE by name, not «everything but a cap»: an installment is a row of this table too.
+        goals = active.filter { it.kind == GoalKind.SAVE }
             .map {
                 goalProgress(
                     goal = it,
@@ -672,6 +676,8 @@ suspend fun ledgerView(
                 )
             },
         budgets = budgetsOf(active, ledger.entries, today, names, mineId, memberNames, excluded),
+        installments = active.filter { it.kind == GoalKind.INSTALLMENT }
+            .map { installmentProgress(it, links, ledger.entries, today, mineId) },
         worthIt = answers,
         marks = ledger.marks,
         mineId = mineId,

@@ -407,6 +407,24 @@ stacked, and a genuine race between the worker and the app posts one note instea
 To watch an alert fire, set a cap below what the category has already cost this month: saving the
 budget publishes the ledger, which announces it on the spot.
 
+### Installments
+
+A plan is a `goal` row with `kind = 'installment'` — no table and no migration, like a budget:
+one payment in `target_rial`, the first due day in `starts_on`, the last in `ends_on`, and the
+count is the Jalali months between them. Due dates keep the first one's day of the month and
+clamp where a month is shorter (`jalaliMonthsAfter`), so the 31st is the 30th in مهر and back
+to the 31st in فروردین.
+
+A payment is never typed in. It is a transaction the ledger already holds, and a
+`txn_decision` with `kind = 'installment'` says which plan it paid, as `<planId>:<rial>`.
+Progress is summed from those decisions rather than from live rows, because sources are pruned
+at the thirteen-month horizon and a two-year loan must not start reading as overdue for payments
+the app watched her make. A cash payment goes into دفتر by hand first, then gets linked.
+
+Private only: plans are never `shared`, so the goal sync never publishes them, and the sync
+reads no `installment` decisions. A household plan would need its links to travel, which is a
+new record kind and therefore `sync/` first.
+
 ### Shared report exclusions
 
 Which categories دخل و خرج leaves out of its totals is one household record, `exclusion:report`
