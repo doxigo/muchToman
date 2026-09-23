@@ -998,6 +998,16 @@ class MoneyTest {
     }
 
     @Test
+    fun `a dynamic password names an amount and a purchase and is still not a spend`() {
+        // Approving it is what produces the real debit, as a message of its own.
+        assertNull(sms("بانک سامان\nرمز پویا: 48213967\nخرید مبلغ 1,250,000 ریال\nپذیرنده: فروشگاه اینترنتی"))
+        assertNull(sms("رمز‌دوم پویا 512093\nمبلغ 3,000,000 ریال\nمهلت 2 دقیقه"))
+        assertNull(sms("رمزپویا:771204 خرید به مبلغ 450,000 ریال"))
+        // The «رمز» inside «کارمزد» is not one.
+        assertEquals(-50_000.0, sms("کارمزد مبلغ 500,000 ریال")!!.delta!!, 0.01)
+    }
+
+    @Test
     fun `a stated balance wins over accumulating, so a missed message self-corrects`() {
         var accounts = listOf<BankAccount>()
         accounts = applyBankSms(accounts, sms("واریز 1,000,000 ریال\nمانده 5,000,000 ریال", at = 1)!!)

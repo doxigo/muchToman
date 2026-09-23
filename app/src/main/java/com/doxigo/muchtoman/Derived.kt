@@ -57,7 +57,10 @@ import kotlinx.coroutines.sync.withLock
 // titled every one of that bank's rows with it instead of the bank's name. The wrong merchant
 // is sitting in every stored row until this rebuild reads them again.
 // Rebuild duplicate and transfer classifications, including synced transfer flags.
-const val PARSER_VERSION = 8
+// 9: a رمز پویا is no longer a spend. It names a مبلغ and «خرید» from the bank's own number, and
+// every one already stored sits in the deck as a purchase that either never happened or is
+// counted twice beside the real debit. Only reading them again drops those rows.
+const val PARSER_VERSION = 9
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

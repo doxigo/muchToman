@@ -234,6 +234,17 @@ private val BALANCE_WORDS = listOf("مانده", "موجودی")
 private val AMOUNT_WORDS = listOf("مبلغ", "مقدار")
 
 /**
+ * A رمز پویا asks her to approve a purchase; it does not report one. It names the مبلغ and
+ * usually «خرید», from the same number the bank's transactions come from, so the sender gate
+ * lets it through and it read as a spend. If she approves, the real debit arrives as its own
+ * message, and if she walks away nothing moved at all.
+ *
+ * «رمز» as a word of its own, never the one inside «کارمزد» or «رمزارز». Glued to «پویا» or
+ * «دوم» counts too, because [normalise] strips the ZWNJ that «رمز‌پویا» is often written with.
+ */
+private val OTP = Regex("(?<!\\p{L})رمز(?!\\p{L})|رمز ?(?:پویا|دوم)")
+
+/**
  * What a bank owes on, not what it holds. "مانده بدهی" and "مانده تسهیلات" are a loan balance,
  * and reading one as cash adds the size of her debt to her wealth.
  */
@@ -476,6 +487,7 @@ fun parseBankSms(
     val bank = bankOf(sender, extra) ?: return null
 
     val text = normalise(body)
+    if (OTP.containsMatchIn(text)) return null
     val fallback = fallbackDivisor(text)
 
     // Zero is allowed here and nowhere else: an emptied account really does have a balance of
