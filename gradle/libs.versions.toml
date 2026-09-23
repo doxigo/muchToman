@@ -1,25 +1,25 @@
 [versions]
-agp = "9.4.0"
-kotlin = "2.4.10"
-composeBom = "2026.08.00"
+agp = "9.4.1"
+kotlin = "2.4.20"
+composeBom = "2026.09.00"
 coreKtx = "1.19.0"
 activityCompose = "1.13.0"
 lifecycle = "2.11.0"
 serializationJson = "1.11.0"
 junit = "4.13.2"
-coil = "3.6.0"
+coil = "3.6.3"
 biometric = "1.1.0"
 workManager = "2.11.2"
-room = "2.8.4"
+room = "2.8.5"
 # KSP decoupled from the Kotlin version at 2.3.0, so this no longer has to be bumped in
 # lockstep with `kotlin` above the way the old "2.2.21-2.0.5" scheme demanded.
-ksp = "2.3.11"
+ksp = "2.3.12"
 # Pure-Java QR *encoder*. The one new runtime dependency in the ledger work, and it exists
 # because pairing shows a code rather than typing one: the scope key is 32 bytes.
 zxing = "3.5.4"
 # Test-only: what lets the durable migrations run on the JVM against the committed schemas,
 # instead of being found out about on someone's phone.
-robolectric = "4.16.1"
+robolectric = "4.17"
 androidxTestCore = "1.7.0"
 # Instrumented-only: drives the on-device UI smoke suite (plan 008). Same release train as
 # androidxTestCore above, so the two halves of androidx.test stay in step.
