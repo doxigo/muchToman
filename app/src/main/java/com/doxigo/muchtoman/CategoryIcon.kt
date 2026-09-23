@@ -6,20 +6,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * A mark per category, because nineteen Persian pills in one grid is nineteen words to read.
@@ -28,10 +24,15 @@ import kotlin.math.sin
  * when she is looking for the one she already knows, and it is the same mark in the grid, in the
  * timeline and in the month's report, which is what makes it worth learning once.
  *
- * Drawn, not imported, for the reason the tab icons already are: the icons artifact this project
- * pins is the core set and has no basket, no receipt and no banknote, so most of these would have
- * had to be drawn anyway — and a drawn set beside an imported one is the mismatch you notice
- * without being able to name. Same pen as the tab bar ([pen]), so they are one family.
+ * The drawings are Lucide's — `lucide-static` 1.47.0, ISC, its licence shipped in
+ * `assets/licenses/lucide.txt` — kept here as path data ([LUCIDE]) rather than taken as a
+ * dependency: forty-odd marks do not need an icon library, and the core Material set this project
+ * pins has no basket, no receipt and no banknote. They are inked with this app's pen ([pen]), not
+ * with Lucide's stroke, so they stay one family with the hand-drawn tab bar. Lucide draws 2 on a
+ * 24 grid, which is the same weight the pen lays down over this box.
+ *
+ * Three stay drawn by hand, because no set has them: همسر's ring, خرج اتینا's daft face, and the
+ * dots that mean «unknown». They are the branches left in [drawGlyph].
  */
 
 /**
@@ -46,6 +47,11 @@ enum class CategoryGlyph {
     INSTALMENT, SMOKE, WHEEL, WIFI, ENVELOPE, STAR, SHOP, CHART, ASTERISK,
     RING, AIRPLANE, SCISSORS, BOTTLE, PIN, MUSCLE,
     BALL, MIRROR, BOOK, DUMBBELL, BROOM,
+    // A category that outgrew its old mark gets a new one rather than repurposing it: a category
+    // she made stores the name, and PIN or STACK must go on drawing the pin and the stack she
+    // picked. بازپرداخت اسنپ و تپسی is a taxi now, پس‌انداز و سرمایه a piggy bank. STACK stays a stack
+    // of discs, which is also why Settings uses it for پشتیبان‌گیری.
+    TAXI, PIGGY,
     DOTS,
 }
 
@@ -74,7 +80,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "قبض‌ها" -> CategoryGlyph.RECEIPT
     "سلامت" -> CategoryGlyph.CROSS
     "خرید روزانه" -> CategoryGlyph.TAG
-    "پس‌انداز و سرمایه" -> CategoryGlyph.STACK
+    "پس‌انداز و سرمایه" -> CategoryGlyph.PIGGY
     "انتقال وجه" -> CategoryGlyph.PLANE
     "هدیه و نیکوکاری" -> CategoryGlyph.GIFT
     "زیبایی" -> CategoryGlyph.MIRROR
@@ -91,7 +97,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "قرض" -> CategoryGlyph.LEND
     "پس‌گرفتن قرض" -> CategoryGlyph.PAYBACK
     "قسط و وام" -> CategoryGlyph.INSTALMENT
-    "بازپرداخت اسنپ و تپسی" -> CategoryGlyph.PIN
+    "بازپرداخت اسنپ و تپسی" -> CategoryGlyph.TAXI
     "دخانیات" -> CategoryGlyph.SMOKE
     "خودرو" -> CategoryGlyph.WHEEL
     "اینترنت" -> CategoryGlyph.WIFI
@@ -183,7 +189,7 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // ── row 2 ──
         CategoryGlyph.CROSS -> if (dark) Color(0xFFF2989B) else Color(0xFFB94A4E)
         CategoryGlyph.TAG -> if (dark) Color(0xFFEC96CC) else Color(0xFFAC4586)
-        CategoryGlyph.STACK -> if (dark) Color(0xFF85D993) else Color(0xFF2F8544)
+        CategoryGlyph.STACK, CategoryGlyph.PIGGY -> if (dark) Color(0xFF85D993) else Color(0xFF2F8544)
         CategoryGlyph.PLANE -> if (dark) Color(0xFF6FCFDE) else Color(0xFF14798C)
         // ── row 3: the row that forced the whole scheme ──
         CategoryGlyph.GIFT -> if (dark) Color(0xFFA5AEF2) else Color(0xFF4A52B8)
@@ -233,7 +239,7 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // is where this grid is already thickest. Between پس‌انداز's leaf and برداشت نقدی's
         // jade, about 11° off each: neither comes within a cell of it, and it clears قسط و وام
         // beside it by 66°, which is the number that decides the cell.
-        CategoryGlyph.PIN -> if (dark) Color(0xFF7ED39C) else Color(0xFF1E854B)
+        CategoryGlyph.PIN, CategoryGlyph.TAXI -> if (dark) Color(0xFF7ED39C) else Color(0xFF1E854B)
         // آرایشگاه sits beside زیبایی, with ورزش's gold above it and قرض's red-orange below.
         // Violet is what is left, and the free space in it is the gap between مد و پوشاک's purple
         // and دخانیات's plum — 12° off both, and neither is adjacent to this cell: مد و پوشاک is
@@ -259,7 +265,6 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // make further down this table, and the cheapest one left on a wheel this grid has now
         // divided twenty-eight ways.
         CategoryGlyph.MUSCLE, CategoryGlyph.BALL -> if (dark) Color(0xFFDBC768) else Color(0xFF917D17)
-
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
         // at least 60° from whatever ends up beside or under it once the seven are laid out.
@@ -336,294 +341,86 @@ fun GlyphIcon(
     }
 }
 
+/**
+ * Lucide's drawing for every mark but the three drawn by hand, on its 24-unit grid, named at the
+ * end of each line as `lucide-static` names it.
+ *
+ * Each icon's circles, rects and lines are folded into the one path, and every subpath starts with
+ * an absolute M: an SVG path's leading relative m is absolute only while it comes first, and joined
+ * after another subpath it would be measured from wherever that one stopped.
+ *
+ * Internal for [CategoryGlyphTest], which fails when a mark has no drawing here and no hand-drawn
+ * branch in [drawGlyph] — it would otherwise draw the three dots, silently.
+ */
+internal val LUCIDE: Map<CategoryGlyph, String> = mapOf(
+    CategoryGlyph.BASKET to "M15 11l-1 9 M19 11l-4-7 M2 11h20 M3.5 11l1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4 M4.5 15.5h15 M5 11l4-7 M9 11l1 9", // shopping-basket
+    CategoryGlyph.CUP to "M10 2v2 M14 2v2 M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1 M6 2v2", // coffee
+    CategoryGlyph.BUS to "M8 6v6 M15 6v6 M2 12h19.6 M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3 M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0 M9 18h5 M14 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", // bus
+    CategoryGlyph.RECEIPT to "M12 17V7 M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H8 M4 3a1 1 0 0 1 1-1 1.3 1.3 0 0 1 .7.2l.933.6a1.3 1.3 0 0 0 1.4 0l.934-.6a1.3 1.3 0 0 1 1.4 0l.933.6a1.3 1.3 0 0 0 1.4 0l.933-.6a1.3 1.3 0 0 1 1.4 0l.934.6a1.3 1.3 0 0 0 1.4 0l.933-.6A1.3 1.3 0 0 1 19 2a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1 1.3 1.3 0 0 1-.7-.2l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.934.6a1.3 1.3 0 0 1-1.4 0l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-1.4 0l-.934-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-.7.2 1 1 0 0 1-1-1z", // receipt
+    CategoryGlyph.CROSS to "M11 2v2 M5 2v2 M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1 M8 15a6 6 0 0 0 12 0v-3 M18 10a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", // stethoscope
+    CategoryGlyph.TAG to "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z M7 7.5a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0", // tag
+    CategoryGlyph.NOTE to "M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-8a2 2 0 0 1 2 -2z M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0 M6 12h.01M18 12h.01", // banknote
+    CategoryGlyph.PERCENT to "M19 5L5 19 M4 6.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0 M15 17.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0", // percent
+    CategoryGlyph.TRAY to "M12 15V3 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5", // download
+    CategoryGlyph.SWAP to "M8 3 4 7l4 4 M4 7h16 M16 21l4-4-4-4 M20 17H4", // arrow-left-right
+    CategoryGlyph.STACK to "M3 5a9 3 0 1 0 18 0a9 3 0 1 0 -18 0 M3 5V19A9 3 0 0 0 21 19V5 M3 12A9 3 0 0 0 21 12", // database
+    CategoryGlyph.PLANE to "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z M21.854 2.147l-10.94 10.939", // send
+    CategoryGlyph.GIFT to "M12 7v14 M20 11v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8 M7.5 7a1 1 0 0 1 0-5A4.8 8 0 0 1 12 7a4.8 8 0 0 1 4.5-5 1 1 0 0 1 0 5 M4 7h16a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1z", // gift
+    CategoryGlyph.BLOOM to "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M12 16.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 1 1 4.5 4.5 4.5 4.5 0 1 1-4.5 4.5 M12 7.5V9 M7.5 12H9 M16.5 12H15 M12 16.5V15 M8 8l1.88 1.88 M14.12 9.88 16 8 M8 16l1.88-1.88 M14.12 14.12 16 16", // flower
+    CategoryGlyph.SHIRT to "M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z", // shirt
+    CategoryGlyph.MUSIC to "M9 18V5l12-2v13 M3 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M15 16a3 3 0 1 0 6 0a3 3 0 1 0 -6 0", // music
+    CategoryGlyph.HOUSE to "M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8 M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", // house
+    CategoryGlyph.LEND to "M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17 M7 21l1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9 M2 16l6 6 M13.1 9a2.9 2.9 0 1 0 5.8 0a2.9 2.9 0 1 0 -5.8 0 M3 5a3 3 0 1 0 6 0a3 3 0 1 0 -6 0", // hand-coins
+    CategoryGlyph.PAYBACK to "M12 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5 M16 19l3 3 3-3 M18 12h.01 M19 16v6 M6 12h.01 M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", // banknote-arrow-down
+    CategoryGlyph.INSTALMENT to "M16 14v2.2l1.6 1 M16 2v3 M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338 M3 9h5.859 M8 2v3 M10 16a6 6 0 1 0 12 0a6 6 0 1 0 -12 0", // calendar-clock
+    CategoryGlyph.SMOKE to "M17 12H3a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h14 M18 8c0-2.5-2-2.5-2-5 M21 16a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1 M22 8c0-2.5-2-2.5-2-5 M7 12v4", // cigarette
+    CategoryGlyph.WHEEL to "M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2 M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0 M9 17h6 M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", // car
+    CategoryGlyph.WIFI to "M12 20h.01 M2 8.82a15 15 0 0 1 20 0 M5 12.859a10 10 0 0 1 14 0 M8.5 16.429a5 5 0 0 1 7 0", // wifi
+    CategoryGlyph.ENVELOPE to "M22 7l-8.991 5.727a2 2 0 0 1-2.009 0L2 7 M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2z", // mail
+    CategoryGlyph.STAR to "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z", // star
+    CategoryGlyph.SHOP to "M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5 M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244 M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05", // store
+    CategoryGlyph.CHART to "M16 7h6v6 M22 7l-8.5 8.5-5-5L2 17", // trending-up
+    CategoryGlyph.ASTERISK to "M12 5v14 M18.065 8.496l-12.125 7 M5.94 8.504l12.125 7", // asterisk
+    CategoryGlyph.AIRPLANE to "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z", // plane
+    CategoryGlyph.SCISSORS to "M3 6a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M8.12 8.12 12 12 M20 4 8.12 15.88 M3 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M14.8 14.8 20 20", // scissors
+    CategoryGlyph.BOTTLE to "M10.5 2v4 M14 2H7a2 2 0 0 0-2 2 M19.29 14.76A6.67 6.67 0 0 1 17 11a6.6 6.6 0 0 1-2.29 3.76c-1.15.92-1.71 2.04-1.71 3.19 0 2.22 1.8 4.05 4 4.05s4-1.83 4-4.05c0-1.16-.57-2.26-1.71-3.19 M9.607 21H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h7V7a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3", // soap-dispenser-droplet
+    CategoryGlyph.PIN to "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0 M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0", // map-pin
+    CategoryGlyph.MUSCLE to "M12.409 13.017A5 5 0 0 1 22 15c0 3.866-4 7-9 7-4.077 0-8.153-.82-10.371-2.462-.426-.316-.631-.832-.62-1.362C2.118 12.723 2.627 2 10 2a3 3 0 0 1 3 3 2 2 0 0 1-2 2c-1.105 0-1.64-.444-2-1 M15 14a5 5 0 0 0-7.584 2 M9.964 6.825C8.019 7.977 9.5 13 8 15", // biceps-flexed
+    CategoryGlyph.BALL to "M11 7a16 16 20 0 1 10.98 4.362 M12 12a13 13 0 0 1-8.66 5 M16.83 13.634a16 16 0 0 1-9.267 7.328 M20.66 17A13 13 0 0 0 12 12a13 13 0 0 1 0-10 M8.17 15.366a16 16 0 0 1-1.713-11.69 M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", // volleyball
+    CategoryGlyph.MIRROR to "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z M20 2v4 M22 4h-4 M2 20a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", // sparkles
+    CategoryGlyph.BOOK to "M12 5v16 M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z", // book-open
+    CategoryGlyph.DUMBBELL to "M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z M2.5 21.5l1.4-1.4 M20.1 3.9l1.4-1.4 M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z M9.6 14.4l4.8-4.8", // dumbbell
+    CategoryGlyph.BROOM to "M16 22l-1-4 M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z M8 22l1-4", // brush-cleaning
+    CategoryGlyph.TAXI to "M10 2h4 M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8 M7 14h.01 M17 14h.01 M5 10h14a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M5 18v2 M19 18v2", // car-taxi-front
+    CategoryGlyph.PIGGY to "M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z M16 10h.01 M2 8v1a2 2 0 0 0 2 2h1", // piggy-bank
+)
+
+/** Parsed once. The table never changes, and a mark is drawn on every row of every list. */
+private val lucidePaths: Map<CategoryGlyph, Path> by lazy {
+    LUCIDE.mapValues { PathParser().parsePathString(it.value).toPath() }
+}
+
+/**
+ * A Lucide mark in this box. Its 2-unit margin is dropped so the mark fills the box the hand-drawn
+ * ones fill, and the pen is divided by the scale so the ink comes out at this app's weight.
+ */
+private fun DrawScope.drawLucide(path: Path, tint: Color, stroke: Dp) {
+    val k = size.minDimension / 20f
+    withTransform({
+        scale(k, k, pivot = Offset.Zero)
+        translate(-2f, -2f)
+    }) { drawPath(path, tint, style = pen(stroke / k)) }
+}
+
 private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
+    lucidePaths[glyph]?.let {
+        drawLucide(it, tint, stroke)
+        return
+    }
     val w = size.width
     val h = size.height
     val ink = pen(stroke)
     when (glyph) {
-        // A basket: a trapezoid that is wider at the mouth, and the handle over the top.
-        CategoryGlyph.BASKET -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.28f, h * 0.36f)
-                    quadraticTo(w * 0.5f, h * 0.04f, w * 0.72f, h * 0.36f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.08f, h * 0.4f)
-                    lineTo(w * 0.92f, h * 0.4f)
-                    lineTo(w * 0.76f, h * 0.92f)
-                    lineTo(w * 0.24f, h * 0.92f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A cup on a saucer. Not a fork and knife: two crossed strokes at this size is a blob,
-        // and the category is «رستوران و کافه» — the cup covers both halves of it.
-        CategoryGlyph.CUP -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.14f, h * 0.24f)
-                    lineTo(w * 0.68f, h * 0.24f)
-                    lineTo(w * 0.6f, h * 0.74f)
-                    lineTo(w * 0.22f, h * 0.74f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.68f, h * 0.36f)
-                    quadraticTo(w * 0.96f, h * 0.46f, w * 0.66f, h * 0.58f)
-                },
-                tint,
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.08f, h * 0.9f), Offset(w * 0.84f, h * 0.9f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A bus, and the wheels are the whole point: they are what keeps it from reading as the
-        // banknote, which is otherwise the same rounded box.
-        CategoryGlyph.BUS -> {
-            drawRoundRect(
-                tint,
-                Offset(w * 0.12f, h * 0.14f),
-                Size(w * 0.76f, h * 0.58f),
-                CornerRadius(w * 0.14f),
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.14f, h * 0.46f), Offset(w * 0.86f, h * 0.46f), stroke.toPx(), StrokeCap.Butt)
-            drawCircle(tint, w * 0.09f, Offset(w * 0.3f, h * 0.8f), style = ink)
-            drawCircle(tint, w * 0.09f, Offset(w * 0.7f, h * 0.8f), style = ink)
-        }
-        // A torn-off receipt. The zigzag is the one thing that says «قبض» rather than «سند».
-        CategoryGlyph.RECEIPT -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.2f, h * 0.92f)
-                    lineTo(w * 0.2f, h * 0.08f)
-                    lineTo(w * 0.8f, h * 0.08f)
-                    lineTo(w * 0.8f, h * 0.92f)
-                    lineTo(w * 0.65f, h * 0.78f)
-                    lineTo(w * 0.5f, h * 0.92f)
-                    lineTo(w * 0.35f, h * 0.78f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.36f, h * 0.32f), Offset(w * 0.64f, h * 0.32f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.36f, h * 0.5f), Offset(w * 0.64f, h * 0.5f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A plus. A heart would have been «favourite» in every app she has ever used.
-        CategoryGlyph.CROSS -> {
-            drawLine(tint, Offset(w * 0.5f, h * 0.14f), Offset(w * 0.5f, h * 0.86f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.14f, h * 0.5f), Offset(w * 0.86f, h * 0.5f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A price tag, for «خرید روزانه» — a shopping bag would have been a second trapezoid with a
-        // second handle, and next to the grocery basket that is two of the same drawing.
-        CategoryGlyph.TAG -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.06f, h * 0.52f)
-                    lineTo(w * 0.52f, h * 0.06f)
-                    lineTo(w * 0.94f, h * 0.06f)
-                    lineTo(w * 0.94f, h * 0.48f)
-                    lineTo(w * 0.48f, h * 0.94f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawCircle(tint, w * 0.075f, Offset(w * 0.75f, h * 0.25f), style = ink)
-        }
-        // A banknote: what «برداشت نقدی» physically is.
-        CategoryGlyph.NOTE -> {
-            drawRoundRect(
-                tint,
-                Offset(w * 0.04f, h * 0.26f),
-                Size(w * 0.92f, h * 0.48f),
-                CornerRadius(w * 0.09f),
-                style = ink,
-            )
-            drawCircle(tint, w * 0.12f, Offset(w * 0.5f, h * 0.5f), style = ink)
-        }
-        // A percent sign, which is what a کارمزد always is.
-        CategoryGlyph.PERCENT -> {
-            drawLine(tint, Offset(w * 0.8f, h * 0.16f), Offset(w * 0.2f, h * 0.84f), stroke.toPx(), StrokeCap.Round)
-            drawCircle(tint, w * 0.11f, Offset(w * 0.3f, h * 0.27f), style = ink)
-            drawCircle(tint, w * 0.11f, Offset(w * 0.7f, h * 0.73f), style = ink)
-        }
-        // Money landing in a tray. Not an upward arrow: up is «more» everywhere else in the app,
-        // and درآمد is a direction, not a verdict.
-        CategoryGlyph.TRAY -> {
-            drawLine(tint, Offset(w * 0.5f, h * 0.08f), Offset(w * 0.5f, h * 0.56f), stroke.toPx(), StrokeCap.Round)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.32f, h * 0.38f)
-                    lineTo(w * 0.5f, h * 0.58f)
-                    lineTo(w * 0.68f, h * 0.38f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.12f, h * 0.66f)
-                    lineTo(w * 0.12f, h * 0.9f)
-                    lineTo(w * 0.88f, h * 0.9f)
-                    lineTo(w * 0.88f, h * 0.66f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // Two arrows past each other: her own money, moving, counting as neither side.
-        CategoryGlyph.SWAP -> {
-            drawLine(tint, Offset(w * 0.32f, h * 0.1f), Offset(w * 0.32f, h * 0.86f), stroke.toPx(), StrokeCap.Round)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.16f, h * 0.68f)
-                    lineTo(w * 0.32f, h * 0.88f)
-                    lineTo(w * 0.48f, h * 0.68f)
-                },
-                tint,
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.68f, h * 0.9f), Offset(w * 0.68f, h * 0.14f), stroke.toPx(), StrokeCap.Round)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.52f, h * 0.32f)
-                    lineTo(w * 0.68f, h * 0.12f)
-                    lineTo(w * 0.84f, h * 0.32f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A stack of coins, edge on. Money that stayed, drawn as the one shape that only makes
-        // sense in a pile — the banknote is a single note, and this is deliberately never one.
-        CategoryGlyph.STACK -> {
-            for (y in listOf(0.16f, 0.42f, 0.68f)) {
-                drawOval(tint, Offset(w * 0.12f, h * y), Size(w * 0.76f, h * 0.18f), style = ink)
-            }
-        }
-        // A paper plane: money leaving for someone else. The «انتقال بین حساب‌ها» mark is two
-        // arrows going nowhere in particular, and that is exactly the difference — this one
-        // goes out and does not come back.
-        CategoryGlyph.PLANE -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.94f, h * 0.08f)
-                    lineTo(w * 0.06f, h * 0.46f)
-                    lineTo(w * 0.44f, h * 0.58f)
-                    lineTo(w * 0.56f, h * 0.94f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.94f, h * 0.08f), Offset(w * 0.44f, h * 0.58f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A box with a bow. Charity has no picture of its own that is not a heart, and a heart
-        // is «favourite» — the gift covers both halves of «هدیه و نیکوکاری» honestly enough.
-        CategoryGlyph.GIFT -> {
-            drawRoundRect(
-                tint,
-                Offset(w * 0.1f, h * 0.4f),
-                Size(w * 0.8f, h * 0.5f),
-                CornerRadius(w * 0.1f),
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.5f, h * 0.4f), Offset(w * 0.5f, h * 0.9f), stroke.toPx(), StrokeCap.Butt)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.5f, h * 0.38f)
-                    quadraticTo(w * 0.14f, h * 0.32f, w * 0.28f, h * 0.12f)
-                    quadraticTo(w * 0.46f, h * 0.06f, w * 0.5f, h * 0.38f)
-                    quadraticTo(w * 0.54f, h * 0.06f, w * 0.72f, h * 0.12f)
-                    quadraticTo(w * 0.86f, h * 0.32f, w * 0.5f, h * 0.38f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // Four petals. A hand mirror is a circle on a stick, which at this size is the search
-        // glass every other app trained her to read it as.
-        CategoryGlyph.BLOOM -> {
-            drawCircle(tint, w * 0.19f, Offset(w * 0.5f, h * 0.26f), style = ink)
-            drawCircle(tint, w * 0.19f, Offset(w * 0.5f, h * 0.74f), style = ink)
-            drawCircle(tint, w * 0.19f, Offset(w * 0.26f, h * 0.5f), style = ink)
-            drawCircle(tint, w * 0.19f, Offset(w * 0.74f, h * 0.5f), style = ink)
-            drawCircle(tint, w * 0.075f, Offset(w * 0.5f, h * 0.5f))
-        }
-        // A t-shirt. The sleeves are what carry it: without them the body alone is a rectangle,
-        // and this grid already has enough of those.
-        CategoryGlyph.SHIRT -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.3f, h * 0.12f)
-                    lineTo(w * 0.06f, h * 0.32f)
-                    lineTo(w * 0.2f, h * 0.5f)
-                    lineTo(w * 0.28f, h * 0.42f)
-                    lineTo(w * 0.28f, h * 0.9f)
-                    lineTo(w * 0.72f, h * 0.9f)
-                    lineTo(w * 0.72f, h * 0.42f)
-                    lineTo(w * 0.8f, h * 0.5f)
-                    lineTo(w * 0.94f, h * 0.32f)
-                    lineTo(w * 0.7f, h * 0.12f)
-                    quadraticTo(w * 0.5f, h * 0.34f, w * 0.3f, h * 0.12f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A note, for «فرهنگی و هنری». A palette or a film reel says only one of the arts; this
-        // one says «هنر» to anyone at a glance, and it is the only filled head in the set.
-        CategoryGlyph.MUSIC -> {
-            drawLine(tint, Offset(w * 0.62f, h * 0.76f), Offset(w * 0.62f, h * 0.12f), stroke.toPx(), StrokeCap.Round)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.62f, h * 0.12f)
-                    quadraticTo(w * 0.92f, h * 0.2f, w * 0.86f, h * 0.44f)
-                },
-                tint,
-                style = ink,
-            )
-            drawCircle(tint, w * 0.16f, Offset(w * 0.46f, h * 0.76f))
-        }
-        // A house with its door. The roof is the whole mark — a body without it is the bus
-        // again, minus the wheels.
-        CategoryGlyph.HOUSE -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.06f, h * 0.46f)
-                    lineTo(w * 0.5f, h * 0.08f)
-                    lineTo(w * 0.94f, h * 0.46f)
-                    lineTo(w * 0.94f, h * 0.92f)
-                    lineTo(w * 0.06f, h * 0.92f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.38f, h * 0.92f)
-                    lineTo(w * 0.38f, h * 0.62f)
-                    lineTo(w * 0.62f, h * 0.62f)
-                    lineTo(w * 0.62f, h * 0.92f)
-                },
-                tint,
-                style = ink,
-            )
-        }
         // A face pulling a daft one, tongue out — the only glyph in the set that is a mood
         // rather than an object, because «خرج اتینا» is the only category that is a person.
         //
@@ -655,243 +452,6 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 style = ink,
             )
         }
-        // Three columns stepping down as they go left — a debt paid off in parts, read in the
-        // direction Persian is read. Not another coin: قرض beside it is already a coin, and the
-        // two categories that live next to each other are the two that must not share a drawing.
-        CategoryGlyph.INSTALMENT -> {
-            drawLine(tint, Offset(w * 0.08f, h * 0.9f), Offset(w * 0.92f, h * 0.9f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.74f, h * 0.9f), Offset(w * 0.74f, h * 0.2f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.5f, h * 0.9f), Offset(w * 0.5f, h * 0.42f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.26f, h * 0.9f), Offset(w * 0.26f, h * 0.64f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A coin, and an arrow leaving it. The pair below is the same coin with the arrow coming
-        // home, which is the whole of what a قرض is: one drawing read twice.
-        CategoryGlyph.LEND -> {
-            drawCircle(tint, w * 0.16f, Offset(w * 0.26f, h * 0.74f), style = ink)
-            drawLine(tint, Offset(w * 0.44f, h * 0.58f), Offset(w * 0.86f, h * 0.16f), stroke.toPx(), StrokeCap.Round)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.6f, h * 0.14f)
-                    lineTo(w * 0.88f, h * 0.14f)
-                    lineTo(w * 0.88f, h * 0.42f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // The same coin, and the money coming back around to it. Not a straight arrow pointing
-        // the other way — mirrored at this size is a mark she has to stop and read, and the
-        // U-turn is the one shape that says «returned» before the word beside it does.
-        CategoryGlyph.PAYBACK -> {
-            drawCircle(tint, w * 0.16f, Offset(w * 0.28f, h * 0.76f), style = ink)
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.88f, h * 0.72f)
-                    quadraticTo(w * 0.98f, h * 0.08f, w * 0.44f, h * 0.12f)
-                    quadraticTo(w * 0.24f, h * 0.14f, w * 0.28f, h * 0.42f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.14f, h * 0.28f)
-                    lineTo(w * 0.28f, h * 0.46f)
-                    lineTo(w * 0.42f, h * 0.28f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A cigarette with its lit end, and the smoke off it. The smoke is what carries it: the
-        // body alone at this size is the banknote lying down.
-        //
-        // Two wisps rather than one, and they take the whole upper half. Drawn once with a single
-        // curl off the corner it was the only mark in the set whose ink sat in one corner of its
-        // box — every other one here runs edge to edge, and beside them it read as a smaller icon
-        // rather than a different one.
-        CategoryGlyph.SMOKE -> {
-            drawRoundRect(
-                tint,
-                Offset(w * 0.06f, h * 0.7f),
-                Size(w * 0.6f, h * 0.22f),
-                CornerRadius(w * 0.05f),
-                style = ink,
-            )
-            // Filled, and the only filled thing in the mark: an outlined tip is another chamber
-            // of the same box, and what says «lit» is that this end is solid. The gap between the
-            // two is what makes it read as an end rather than as a lid. Kept to the area of the
-            // note-head in فرهنگی و هنری, which is the largest fill the set otherwise carries.
-            drawRoundRect(
-                tint,
-                Offset(w * 0.72f, h * 0.7f),
-                Size(w * 0.22f, h * 0.22f),
-                CornerRadius(w * 0.05f),
-            )
-            for (x in listOf(0.46f, 0.82f)) {
-                drawPath(
-                    Path().apply {
-                        moveTo(w * x, h * 0.6f)
-                        quadraticTo(w * (x - 0.16f), h * 0.46f, w * x, h * 0.32f)
-                        quadraticTo(w * (x + 0.14f), h * 0.18f, w * x, h * 0.06f)
-                    },
-                    tint,
-                    style = ink,
-                )
-            }
-        }
-        // A steering wheel. Not a car from the side: that is حمل و نقل's bus with a lower roof, and
-        // the two categories nearest in meaning are the two that must not share a drawing. The
-        // wheel is also the half of a car she is actually paying for — بنزین, سرویس, بیمه.
-        //
-        // Three spokes and not four: a four-spoke wheel at 18dp is سلامت's plus inside a circle.
-        CategoryGlyph.WHEEL -> {
-            drawCircle(tint, w * 0.42f, Offset(w * 0.5f, h * 0.5f), style = ink)
-            drawCircle(tint, w * 0.13f, Offset(w * 0.5f, h * 0.5f), style = ink)
-            drawLine(tint, Offset(w * 0.08f, h * 0.5f), Offset(w * 0.37f, h * 0.5f), stroke.toPx(), StrokeCap.Butt)
-            drawLine(tint, Offset(w * 0.63f, h * 0.5f), Offset(w * 0.92f, h * 0.5f), stroke.toPx(), StrokeCap.Butt)
-            drawLine(tint, Offset(w * 0.5f, h * 0.63f), Offset(w * 0.5f, h * 0.92f), stroke.toPx(), StrokeCap.Butt)
-        }
-        // The wifi fan: three arcs over a dot, which is the one mark nobody has to be taught. A
-        // globe would have been a circle with lines in it, and the wheel above is now exactly that.
-        //
-        // The arcs widen to the full box rather than staying a tidy fan, for the reason دخانیات's
-        // smoke does: ink that sits in the middle of its cell reads as a smaller icon beside marks
-        // that run edge to edge, not as a different one.
-        CategoryGlyph.WIFI -> {
-            drawCircle(tint, w * 0.075f, Offset(w * 0.5f, h * 0.84f))
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.34f, h * 0.66f)
-                    quadraticTo(w * 0.5f, h * 0.48f, w * 0.66f, h * 0.66f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.18f, h * 0.5f)
-                    quadraticTo(w * 0.5f, h * 0.22f, w * 0.82f, h * 0.5f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.04f, h * 0.34f)
-                    quadraticTo(w * 0.5f, h * -0.04f, w * 0.96f, h * 0.34f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // An envelope, for حقوق — a فیش, and the one shape that says «this arrives every month»
-        // rather than «money came in», which is درآمد's tray and already taken.
-        CategoryGlyph.ENVELOPE -> {
-            drawRoundRect(
-                tint,
-                Offset(w * 0.06f, h * 0.22f),
-                Size(w * 0.88f, h * 0.56f),
-                CornerRadius(w * 0.08f),
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.08f, h * 0.28f)
-                    lineTo(w * 0.5f, h * 0.58f)
-                    lineTo(w * 0.92f, h * 0.28f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A star. پاداش is the one category in the app that is money as a compliment, and the
-        // star is the only mark anybody has ever drawn for that.
-        CategoryGlyph.STAR -> {
-            val cx = w * 0.5f
-            val cy = h * 0.52f
-            drawPath(
-                Path().apply {
-                    for (i in 0 until 10) {
-                        // Alternating radii, from straight up: the outer points are the star and
-                        // the inner ones are where its edges meet.
-                        val r = if (i % 2 == 0) 0.44f else 0.18f
-                        val a = (-PI / 2 + i * PI / 5).toFloat()
-                        val x = cx + cos(a) * w * r
-                        val y = cy + sin(a) * h * r
-                        if (i == 0) moveTo(x, y) else lineTo(x, y)
-                    }
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // A stall's awning on two posts. Not a handshake, which at 1.6dp is a knot — and not a
-        // coin, because فروش is where the money came *from*, not what it is.
-        //
-        // Open underneath, and that is the whole mark. Drawn with a body under the awning it came
-        // out as خانه و کاشانه with a different roof; what says «shop» rather than «house» is the
-        // scalloped edge and the fact that you can see through it.
-        CategoryGlyph.SHOP -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.14f, h * 0.16f)
-                    lineTo(w * 0.86f, h * 0.16f)
-                    lineTo(w * 0.96f, h * 0.4f)
-                    quadraticTo(w * 0.85f, h * 0.52f, w * 0.73f, h * 0.4f)
-                    quadraticTo(w * 0.62f, h * 0.52f, w * 0.5f, h * 0.4f)
-                    quadraticTo(w * 0.39f, h * 0.52f, w * 0.27f, h * 0.4f)
-                    quadraticTo(w * 0.16f, h * 0.52f, w * 0.04f, h * 0.4f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawLine(tint, Offset(w * 0.22f, h * 0.5f), Offset(w * 0.22f, h * 0.92f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.78f, h * 0.5f), Offset(w * 0.78f, h * 0.92f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A line climbing, and it climbs to the left — the direction این صفحه is read, and the
-        // same direction قسط و وام's columns already step in.
-        CategoryGlyph.CHART -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.9f, h * 0.08f)
-                    lineTo(w * 0.9f, h * 0.9f)
-                    lineTo(w * 0.08f, h * 0.9f)
-                },
-                tint,
-                style = ink,
-            )
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.78f, h * 0.74f)
-                    lineTo(w * 0.58f, h * 0.5f)
-                    lineTo(w * 0.42f, h * 0.6f)
-                    lineTo(w * 0.18f, h * 0.24f)
-                },
-                tint,
-                style = ink,
-            )
-            // The head, squared about the direction the line arrives from. Barbs picked off that
-            // angle rather than drawn level: a level pair reads as a flag on a pole.
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.19f, h * 0.44f)
-                    lineTo(w * 0.18f, h * 0.24f)
-                    lineTo(w * 0.36f, h * 0.32f)
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // An asterisk, which is «and the rest» in every language that has footnotes. Six arms
-        // and not سلامت's four: a plus is a cross standing up, and this one never does.
-        CategoryGlyph.ASTERISK -> {
-            drawLine(tint, Offset(w * 0.5f, h * 0.08f), Offset(w * 0.5f, h * 0.92f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.14f, h * 0.29f), Offset(w * 0.86f, h * 0.71f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.14f, h * 0.71f), Offset(w * 0.86f, h * 0.29f), stroke.toPx(), StrokeCap.Round)
-        }
         // A ring with its stone. Not two interlocking rings, which is what the word wants and what
         // the دارایی tab already draws — two overlapping circles is «coins» in this app, and a mark
         // must not mean two things. Not a heart either, for the reason سلامت is not one: a heart is
@@ -912,193 +472,9 @@ private fun DrawScope.drawGlyph(glyph: CategoryGlyph, tint: Color, stroke: Dp) {
                 style = ink,
             )
         }
-        // An airliner from above, nose up. The other plane in this set is the retired «انتقال وجه»'s
-        // paper one, and the two are told apart by the thing a paper plane does not have: wings and
-        // a tailplane, swept at the same angle, on a fuselage running the height of the box. The
-        // paper one is a folded quadrilateral thrown up the diagonal; this one is symmetrical and
-        // stands upright, which is the difference read before either is identified.
-        //
-        // The fuselage is drawn far wider than a real one — a quarter of the box. At 16dp, the
-        // narrowest this mark is ever set, a scale fuselage is two 1.5dp strokes with nothing
-        // between them, and the plane fills in as a bar. What survives being small is the
-        // silhouette, not the proportions.
-        CategoryGlyph.AIRPLANE -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.5f, h * 0.03f)
-                    // The nose, rounded into the fuselage rather than pointed: a sharp one at this
-                    // size is a stroke join that thickens into a dot.
-                    quadraticTo(w * 0.62f, h * 0.1f, w * 0.62f, h * 0.3f)
-                    lineTo(w * 0.97f, h * 0.55f)
-                    lineTo(w * 0.97f, h * 0.66f)
-                    lineTo(w * 0.62f, h * 0.54f)
-                    lineTo(w * 0.62f, h * 0.72f)
-                    lineTo(w * 0.8f, h * 0.86f)
-                    lineTo(w * 0.8f, h * 0.98f)
-                    // The notch the two fins leave between them, which is what says «tail» rather
-                    // than «a second, smaller wing». Cut deep on purpose: at 16dp a shallow one
-                    // closes up into ink and the plane ends in a bar.
-                    lineTo(w * 0.5f, h * 0.8f)
-                    lineTo(w * 0.2f, h * 0.98f)
-                    lineTo(w * 0.2f, h * 0.86f)
-                    lineTo(w * 0.38f, h * 0.72f)
-                    lineTo(w * 0.38f, h * 0.54f)
-                    lineTo(w * 0.03f, h * 0.66f)
-                    lineTo(w * 0.03f, h * 0.55f)
-                    lineTo(w * 0.38f, h * 0.3f)
-                    quadraticTo(w * 0.38f, h * 0.1f, w * 0.5f, h * 0.03f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-        }
-        // Scissors, open. The two rings are the whole mark — blades on their own are an X — and
-        // they sit side by side at the foot of the box rather than diagonally, which is what
-        // keeps this off کارمزد's percent sign, the other two circles and a slash in this set.
-        // Each blade starts on its own ring's rim, so the two read as one tool rather than as
-        // four parts.
-        CategoryGlyph.SCISSORS -> {
-            drawCircle(tint, w * 0.14f, Offset(w * 0.3f, h * 0.8f), style = ink)
-            drawCircle(tint, w * 0.14f, Offset(w * 0.7f, h * 0.8f), style = ink)
-            drawLine(tint, Offset(w * 0.38f, h * 0.69f), Offset(w * 0.84f, h * 0.08f), stroke.toPx(), StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.62f, h * 0.69f), Offset(w * 0.16f, h * 0.08f), stroke.toPx(), StrokeCap.Round)
-        }
-        // A bottle with its cap — the shelf rather than the face, because «آرایشی و بهداشتی» is
-        // the shampoo as much as the lipstick, and a lipstick says only half of it. Drawn as one
-        // path so the shoulder is a curve and not two outlines crossing, and the body is kept
-        // wide: this set already has three rounded boxes, and what tells this one from the
-        // banknote at 16dp is the narrow neck standing above it.
-        CategoryGlyph.BOTTLE -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.38f, h * 0.06f)
-                    lineTo(w * 0.62f, h * 0.06f)
-                    lineTo(w * 0.62f, h * 0.3f)
-                    quadraticTo(w * 0.8f, h * 0.4f, w * 0.8f, h * 0.58f)
-                    lineTo(w * 0.8f, h * 0.86f)
-                    quadraticTo(w * 0.8f, h * 0.94f, w * 0.7f, h * 0.94f)
-                    lineTo(w * 0.3f, h * 0.94f)
-                    quadraticTo(w * 0.2f, h * 0.94f, w * 0.2f, h * 0.86f)
-                    lineTo(w * 0.2f, h * 0.58f)
-                    quadraticTo(w * 0.2f, h * 0.4f, w * 0.38f, h * 0.3f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            // The cap, as the one line across the neck. Without it the neck is a chimney.
-            drawLine(tint, Offset(w * 0.38f, h * 0.2f), Offset(w * 0.62f, h * 0.2f), stroke.toPx(), StrokeCap.Butt)
-        }
-        // A map pin, which is what اسنپ and تپسی both are before they are anything else. The
-        // repayment is what the row records, but «قسط» is already three columns stepping down one
-        // cell to the right of this one, and a second drawing of a debt beside it is two marks
-        // she has to read the words under. The brand is the thing she is looking for here.
-        //
-        // The hole is what makes it a pin and not a drop: at this weight a solid head reads as
-        // ink, and every other round mark in this set — the wheel, the coin, the face — is
-        // hollow the same way.
-        CategoryGlyph.PIN -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.5f, h * 0.96f)
-                    quadraticTo(w * 0.14f, h * 0.6f, w * 0.14f, h * 0.4f)
-                    quadraticTo(w * 0.14f, h * 0.06f, w * 0.5f, h * 0.06f)
-                    quadraticTo(w * 0.86f, h * 0.06f, w * 0.86f, h * 0.4f)
-                    quadraticTo(w * 0.86f, h * 0.6f, w * 0.5f, h * 0.96f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-            drawCircle(tint, w * 0.13f, Offset(w * 0.5f, h * 0.38f), style = ink)
-        }
-        // A flexed arm: the upper arm along the bottom, the bicep swelling over it, and the
-        // forearm standing up to a fist. The one drawing that says «ورزش» and not «باشگاه» — a
-        // dumbbell is equipment she may never touch, and this is the thing the equipment is for.
-        //
-        // The whole mark is the outline and nothing inside it. A dumbbell drawn in this pen comes
-        // out as four evenly spaced verticals and reads as a fence; an arm has two masses with a
-        // deep crook between them, and that notch is what the eye lands on at 17dp. The bicep
-        // peaks well left of the fist and the crook drops past the middle of the box on purpose:
-        // shallower, the two masses merge and the mark is a rounded square with a nick in it.
-        CategoryGlyph.MUSCLE -> {
-            drawPath(
-                Path().apply {
-                    moveTo(w * 0.05f, h * 0.66f)
-                    quadraticTo(w * 0.26f, h * 0.16f, w * 0.54f, h * 0.43f)
-                    // Into the crook of the elbow, which is the deepest point of the outline.
-                    quadraticTo(w * 0.62f, h * 0.7f, w * 0.67f, h * 0.66f)
-                    lineTo(w * 0.67f, h * 0.18f)
-                    // The fist, rounded across the top rather than knuckled: fingers at this size
-                    // are three strokes inside a shape two strokes wide.
-                    quadraticTo(w * 0.67f, h * 0.04f, w * 0.81f, h * 0.04f)
-                    quadraticTo(w * 0.95f, h * 0.04f, w * 0.95f, h * 0.18f)
-                    lineTo(w * 0.95f, h * 0.78f)
-                    quadraticTo(w * 0.95f, h * 0.94f, w * 0.79f, h * 0.94f)
-                    lineTo(w * 0.05f, h * 0.94f)
-                    close()
-                },
-                tint,
-                style = ink,
-            )
-        }
-        CategoryGlyph.BALL -> {
-            drawCircle(tint, w * 0.43f, Offset(w * 0.5f, h * 0.5f), style = ink)
-            drawPath(Path().apply {
-                moveTo(w * 0.5f, h * 0.07f)
-                lineTo(w * 0.5f, h * 0.93f)
-                moveTo(w * 0.07f, h * 0.5f)
-                lineTo(w * 0.93f, h * 0.5f)
-                moveTo(w * 0.21f, h * 0.18f)
-                cubicTo(w * 0.48f, h * 0.34f, w * 0.48f, h * 0.66f, w * 0.21f, h * 0.82f)
-                moveTo(w * 0.79f, h * 0.18f)
-                cubicTo(w * 0.52f, h * 0.34f, w * 0.52f, h * 0.66f, w * 0.79f, h * 0.82f)
-            }, tint, style = ink)
-        }
-        CategoryGlyph.MIRROR -> {
-            drawOval(tint, Offset(w * 0.22f, h * 0.06f), Size(w * 0.56f, h * 0.58f), style = ink)
-            drawRoundRect(tint, Offset(w * 0.43f, h * 0.64f), Size(w * 0.14f, h * 0.29f),
-                CornerRadius(w * 0.06f), style = ink)
-            drawLine(tint, Offset(w * 0.39f, h * 0.34f), Offset(w * 0.55f, h * 0.2f), ink.width, StrokeCap.Round)
-        }
-        CategoryGlyph.BOOK -> {
-            drawPath(Path().apply {
-                moveTo(w * 0.5f, h * 0.24f)
-                quadraticTo(w * 0.3f, h * 0.1f, w * 0.08f, h * 0.16f)
-                lineTo(w * 0.08f, h * 0.8f)
-                quadraticTo(w * 0.3f, h * 0.74f, w * 0.5f, h * 0.88f)
-                quadraticTo(w * 0.7f, h * 0.74f, w * 0.92f, h * 0.8f)
-                lineTo(w * 0.92f, h * 0.16f)
-                quadraticTo(w * 0.7f, h * 0.1f, w * 0.5f, h * 0.24f)
-                lineTo(w * 0.5f, h * 0.88f)
-            }, tint, style = ink)
-        }
-        CategoryGlyph.DUMBBELL -> {
-            drawLine(tint, Offset(w * 0.33f, h * 0.5f), Offset(w * 0.67f, h * 0.5f), ink.width, StrokeCap.Round)
-            for (x in listOf(0.13f, 0.67f)) {
-                drawRoundRect(tint, Offset(w * x, h * 0.23f), Size(w * 0.2f, h * 0.54f),
-                    CornerRadius(w * 0.05f), style = ink)
-            }
-            drawLine(tint, Offset(w * 0.04f, h * 0.4f), Offset(w * 0.04f, h * 0.6f), ink.width, StrokeCap.Round)
-            drawLine(tint, Offset(w * 0.96f, h * 0.4f), Offset(w * 0.96f, h * 0.6f), ink.width, StrokeCap.Round)
-        }
-        CategoryGlyph.BROOM -> {
-            drawLine(tint, Offset(w * 0.8f, h * 0.07f), Offset(w * 0.52f, h * 0.48f), ink.width, StrokeCap.Round)
-            drawPath(Path().apply {
-                moveTo(w * 0.4f, h * 0.41f)
-                lineTo(w * 0.67f, h * 0.6f)
-                lineTo(w * 0.53f, h * 0.94f)
-                quadraticTo(w * 0.26f, h * 0.9f, w * 0.08f, h * 0.65f)
-                close()
-                moveTo(w * 0.39f, h * 0.66f)
-                lineTo(w * 0.23f, h * 0.81f)
-                moveTo(w * 0.5f, h * 0.74f)
-                lineTo(w * 0.4f, h * 0.9f)
-            }, tint, style = ink)
-        }
-        // Nothing known yet. Three dots say «unset» without the alarm a «؟» carries.
-        CategoryGlyph.DOTS -> {
+        // DOTS, and anything that ever reaches here without a drawing: three dots say «unset»
+        // without the alarm a «؟» carries.
+        else -> {
             for (x in listOf(0.22f, 0.5f, 0.78f)) {
                 drawCircle(tint, w * 0.085f, Offset(w * x, h * 0.5f))
             }

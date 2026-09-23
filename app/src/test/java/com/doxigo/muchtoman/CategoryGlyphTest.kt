@@ -1,6 +1,8 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.ui.graphics.vector.PathParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -41,6 +43,31 @@ class CategoryGlyphTest {
         }
         assertEquals(null, glyphNamed("SPACESHIP"))
         assertEquals(null, glyphNamed(""))
+    }
+
+    /**
+     * Every mark is Lucide's except the three drawn by hand, and drawGlyph's fallback is the three
+     * dots — so a mark added to the enum with no Lucide line draws «unknown» without a word. This
+     * is the word.
+     */
+    @Test
+    fun `every mark has exactly one drawing`() {
+        val byHand = setOf(CategoryGlyph.RING, CategoryGlyph.PERSON, CategoryGlyph.DOTS)
+        assertEquals("marks with no drawing", emptySet<CategoryGlyph>(), CategoryGlyph.entries.toSet() - LUCIDE.keys - byHand)
+        assertEquals("marks drawn twice", emptySet<CategoryGlyph>(), LUCIDE.keys intersect byHand)
+    }
+
+    /**
+     * Each line is several SVG elements folded into one path. A subpath that began with a relative
+     * m would be measured from wherever the one before it stopped — the basket came out as three
+     * loose lines the first time this was built — so every line opens absolute, and parses.
+     */
+    @Test
+    fun `every Lucide line opens absolute and parses`() {
+        for ((glyph, d) in LUCIDE) {
+            assertTrue("$glyph opens with ${d.take(1)}", d.startsWith("M"))
+            assertTrue("$glyph parses to nothing", PathParser().parsePathString(d).toNodes().isNotEmpty())
+        }
     }
 
     @Test

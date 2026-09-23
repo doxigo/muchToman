@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.Dp
  * Two rules carried over from the category set. A mark must not mean two things: the currencies
  * are their own signs ($, €, £, ₺, kr, the new درهم mark) rather than flags, and دلار کانادا
  * cannot be a second $ — it is written C$, the way the money itself is. And where the
- * categories draw the same object (خانه, the خودرو wheel, the سود سرمایه‌گذاری chart), the
- * asset reuses that exact drawing rather than a sibling of it.
+ * categories draw the same object (خانه, the خودرو car, the سود سرمایه‌گذاری chart), the
+ * asset reuses that exact drawing rather than a sibling of it — Lucide's, since the categories switched.
  *
  * Real logos stay: crypto and bank rows never reach this table, and the toman keeps its own mark.
  */
