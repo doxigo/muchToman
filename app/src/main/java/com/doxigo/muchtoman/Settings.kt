@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -140,6 +141,12 @@ fun SettingsScreen(
     val context = LocalContext.current
     var page by rememberSaveable { mutableStateOf(SettingsRoom.INDEX) }
 
+    // The index's scroll lives up here, not in [SettingsIndex]: a room replaces the index
+    // outright, so a scroll remembered inside it died with every door opened, and backing out
+    // of پشتیبان‌گیری — the last band — put her at the top, a screen away from where she was on
+    // a short phone. Saveable for the same reason `page` is.
+    val indexScroll = rememberScrollState()
+
     // Whether READ_SMS is actually held, kept here rather than on [SmsPage] because the index
     // row reports the same fact: a permission revoked in Android's settings leaves `smsEnabled`
     // true, and a row reading «روشن» over a page reading «خاموش» is the page lying.
@@ -156,6 +163,7 @@ fun SettingsScreen(
             lockEnabled = lockEnabled,
             smsOn = smsEnabled && granted,
             family = family,
+            scroll = indexScroll,
             onCompanion = onCompanion,
             onNameChange = onNameChange,
             onThemeChange = onThemeChange,
@@ -213,6 +221,7 @@ private fun SettingsIndex(
     lockEnabled: Boolean,
     smsOn: Boolean,
     family: FamilyState,
+    scroll: ScrollState,
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
@@ -228,7 +237,7 @@ private fun SettingsIndex(
             Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = Space.xl),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
