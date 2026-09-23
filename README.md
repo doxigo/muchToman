@@ -1,68 +1,68 @@
-# چقدر تومن — MuchToman
+# MuchToman
 
 **English** · [فارسی](README.fa.md)
 
 An Android app that answers one question: *how much is all my money, in Toman?*
 
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
-say them ("۴٫۷ میلیارد تومان", not "۴٬۶۶۶٬۲۵۱٬۱۳۶"). Built for a Persian-speaking parent, so
+say them ("4.7 billion Toman", not "4,666,251,136"). Built for a Persian-speaking parent, so
 legibility beats density everywhere.
 
 Holds plain Toman, fiat (USD, EUR, GBP, NOK, TRY, AED, CAD), **any of the top 250
-cryptocurrencies**, 18k gold by the gram or the مثقال, silver by the gram at ۹۹۹ and ۹۲۵,
-Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), and سکه پارسیان in all fifteen sizes
-from ۱۰۰ to ۱۵۰۰ سوت. Everything is valued at **free-market** rates — the official ~42,000
+cryptocurrencies**, 18k gold by the gram or the mesghal, silver by the gram at 999 and 925,
+Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), and Parsian coins in all fifteen sizes
+from 100 to 1500 sut. Everything is valued at **free-market** rates — the official ~42,000
 IRR peg is not used anywhere.
 
-خودرو, خانه و ویلا and زمین are held too, and are the only rows with no price behind them:
+Cars, houses and villas, and land are held too, and are the only rows with no price behind them:
 nobody quotes *your* car, so you type what it is worth in Toman and that figure is the value.
 
-سکه پارسیان is quoted per size rather than weighed as gold: the اجرت is close to fixed per
-coin, so a ۱۰۰ سوت piece goes for about a quarter more than the gold in it.
+A Parsian coin is quoted per size rather than weighed as gold: the making charge is close to
+fixed per coin, so a 100-sut piece goes for about a quarter more than the gold in it.
 
 ## Screenshots
 
 Sample data, live rates.
 
-| خانه | دارایی | دفتر |
+| Home | Assets | Ledger |
 | --- | --- | --- |
 | ![](docs/screenshots/home.png) | ![](docs/screenshots/assets.png) | ![](docs/screenshots/ledger.png) |
 | ![](docs/screenshots/home-dark.png) | ![](docs/screenshots/assets-dark.png) | ![](docs/screenshots/ledger-dark.png) |
 
-| گزارش | آینده | حساب‌های بانکی |
+| Report | Future | Bank accounts |
 | --- | --- | --- |
 | ![](docs/screenshots/report.png) | ![](docs/screenshots/budget.png) | ![](docs/screenshots/banks.png) |
 | ![](docs/screenshots/report-dark.png) | ![](docs/screenshots/budget-dark.png) | ![](docs/screenshots/banks-dark.png) |
 
-| قسط‌ها | پرداخت کدوم قسطه؟ | دسته‌بندی |
+| Installments | Which installment did this pay? | Categories |
 | --- | --- | --- |
 | ![](docs/screenshots/installments.png) | ![](docs/screenshots/installment-link.png) | ![](docs/screenshots/categories.png) |
 | ![](docs/screenshots/installments-dark.png) | ![](docs/screenshots/installment-link-dark.png) | ![](docs/screenshots/categories-dark.png) |
 
 ## What it does
 
-- **One total, three ways.** Scannable ("۱۰٫۸ میلیون تومان"), spelled out in Persian words,
+- **One total, three ways.** Scannable ("10.8 million Toman"), spelled out in Persian words,
   and exact digits. Displayed figures truncate rather than round, so the number shown is never
   larger than the real one.
 - **Bank balances from SMS.** Read and parsed locally from the phone's inbox, with no bank API.
   SMS sharing is off by default.
-- **Budgets, per category.** Set a spending cap on «رستوران و کافه» — weekly, monthly, or by فصل,
-  the Jalali quarter that is also a season. The card shows what is gone against what is left, how
+- **Budgets, per category.** Set a spending cap on "Restaurants & cafés" — weekly, monthly, or by
+  season, the Jalali quarter. The card shows what is gone against what is left, how
   many days the window still has, and whether the spending is running ahead of the calendar. At 80%,
   at 95%, and once it goes past, the phone says so — once per window, never twice. The figure is the
-  same one the دخل و خرج report shows for that category, computed from the transactions each time
+  same one the Income & spending report shows for that category, computed from the transactions each time
   and never stored.
-- **Savings goals, with a deadline.** «۵۰ میلیون تا ۶ ماه» carries the monthly rate that gets you
+- **Savings goals, with a deadline.** "50 million in 6 months" carries the monthly rate that gets you
   there, and every card states the date its progress is counted from. No points, no streaks, no
   confetti, and no comparison with anybody else.
 - **Installments, paid off by what the bank already reported.** A phone on twelve payments or a
   loan on sixty is a plan: how much each month, how many are left, and which day they fall due.
-  Nothing is typed in twice. File a payment under «قسط و وام» and the app asks which plan it paid,
+  Nothing is typed in twice. File a payment under "Installments & loans" and the app asks which plan it paid,
   or offers to start one from it, with that payment as the first installment; a plan's own sheet
   lists the transactions that could be its payments, the exact amount first. The card shows what is
   paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
   Cash payments go into the ledger by hand and are linked the same way.
-- **Where the money went, over any window.** دخل و خرج reads a week, a month, three, six or twelve,
+- **Where the money went, over any window.** Income & spending reads a week, a month, three, six or twelve,
   income against spending and category by category. Under each figure sits its daily and weekly
   pace, so windows of different lengths compare, and each closed window is also priced in dollars
   at the rates of the days it ran through, so a month you read once does not re-price itself later.
@@ -70,16 +70,16 @@ Sample data, live rates.
 - **Optional family ledger.** Two or more people can join by one-time QR code. Each person chooses
   whether their parsed SMS transactions are shared. Every shared item names its owner, and any
   family member can categorize it or write a note on it — a shared note says who wrote it. Which
-  categories دخل و خرج sets aside is one choice the whole family shares, synced between the
+  categories Income & spending sets aside is one choice the whole family shares, synced between the
   phones — and what those categories moved stays visible on the report, just outside the totals.
 - **Public-wallet tracking, or manual entry.** Save a public address and the app refreshes BTC,
   ETH/ERC-20, SOL, TRX/TRC-20, and supported EVM-token balances on BSC, Arbitrum, Polygon,
   Optimism, and Avalanche. Anything else can be entered by hand.
-- **Categories with their own marks.** Thirty-odd, from خواربار to شیرینی and گوشت و مرغ, each
-  with a mark and a colour of its own, plus any you add. Filing a transaction with «برای موارد
-  مشابه هم همین دسته» switched on files the ones like it the same way from then on.
-- **Your own names.** Any holding can carry a label of your own — "تتر شخصی" beside "تتر
-  مشترک". The asset keeps its real name underneath, so the rate still applies.
+- **Categories with their own marks.** Thirty-odd, from groceries to sweets and meat & poultry, each
+  with a mark and a colour of its own, plus any you add. Filing a transaction with "Same category for
+  similar ones" switched on files the ones like it the same way from then on.
+- **Your own names.** Any holding can carry a label of your own — "Tether (mine)" beside
+  "Tether (joint)". The asset keeps its real name underneath, so the rate still applies.
 - **A year of history.** The total is remembered once a day, with 1/3/6/12-month change.
 - **A backup only you can read.** Everything — messages, balances, every decision — exports to
   one passphrase-encrypted file and restores from it on a new phone. Settings show the last
@@ -102,20 +102,20 @@ or header, never words in the body.
 
 | Bank | Sends from |
 | --- | --- |
-| بلو بانک | `0999 998 7641`, `90000258`, `+9890000258`, `98300087641` |
-| بانک سامان | `0999 992 0000`, `+989820000`, `9820000`, `6219` |
-| بانک رفاه | `100031`, `100032`, `Refah Bank`, `RefahBank` |
-| بانک پاسارگاد | `B.Pasargad` |
-| بانک اقتصاد نوین | `ENBank` |
-| بانک خاورمیانه | `20004861`, `+9820004861`, `+989820004860` |
-| بانک صادرات | `+98 9870 0719`, `98700719`, `+98 983 000 9419`, `BankSaderat` |
-| بانک رسالت | `ResalatBank` |
-| بانک پارسیان | `PARSIANBANK` |
-| بانک ملت | `Bank Mellat`, `6104` |
-| بانک ملی ایران | `6037`, `09830009417` |
-| بانک دی | `Day Bank`, `DayBank` |
+| Blu Bank | `0999 998 7641`, `90000258`, `+9890000258`, `98300087641` |
+| Saman Bank | `0999 992 0000`, `+989820000`, `9820000`, `6219` |
+| Refah Bank | `100031`, `100032`, `Refah Bank`, `RefahBank` |
+| Pasargad Bank | `B.Pasargad` |
+| Eghtesad Novin Bank | `ENBank` |
+| Middle East Bank | `20004861`, `+9820004861`, `+989820004860` |
+| Bank Saderat | `+98 9870 0719`, `98700719`, `+98 983 000 9419`, `BankSaderat` |
+| Resalat Bank | `ResalatBank` |
+| Parsian Bank | `PARSIANBANK` |
+| Bank Mellat | `Bank Mellat`, `6104` |
+| Bank Melli Iran | `6037`, `09830009417` |
+| Day Bank | `Day Bank`, `DayBank` |
 
-**Deliberately not read:** بانک آینده. Its messages are shaped like balance updates but are not.
+**Deliberately not read:** Ayandeh Bank. Its messages are shaped like balance updates but are not.
 
 **SMS only, not push notifications.** Some banks (Blu among them) let you take transaction
 alerts as notifications from their own app instead of as SMS. There is no message to read in
@@ -137,11 +137,11 @@ Two of them are published side by side:
 | File | What it is |
 | --- | --- |
 | `muchtoman-vX.Y.Z.apk` | everything below — the household ledger, goals, the companion phone |
-| `muchtoman-lite-vX.Y.Z.apk` | دارایی only: what you own and what it is worth today |
+| `muchtoman-lite-vX.Y.Z.apk` | Assets only: what you own and what it is worth today |
 
-Take the lite one if you want a portfolio and not a budget. It installs as «چقدر تومن دارم»
-beside «چقدر تومن», under its own package, so you can have both on one phone and try the full
-app without giving up the simple one. Both read the same bank پیامک and get the same detection
+Take the lite one if you want a portfolio and not a budget. It installs beside the full app
+under its own name and package, so you can have both on one phone and try the full
+app without giving up the simple one. Both read the same bank SMS and get the same detection
 fixes — they are one codebase, built twice.
 
 If you are already running an earlier version, the plain `muchtoman-` file is your update: it
@@ -176,9 +176,9 @@ Neither leaves the device or reaches the family sync — not the category, not t
 merchant, not the fact that either happened. They sit on separate channels, so you can silence the
 filing reminders and keep the budget alerts, or the other way round, in Android's own settings.
 
-The notification permission is asked for when the first budget is saved, or from دفتر once there are
+The notification permission is asked for when the first budget is saved, or from Ledger once there are
 transactions waiting to be filed — never at launch. Denying it costs the alerts and nothing else:
-the آینده screen shows the same figures either way, and the badge on دفتر counts the same backlog.
+the Future tab shows the same figures either way, and the badge on Ledger counts the same backlog.
 
 Installment plans, and which transactions paid them, stay on the phone. They are never part of
 the family sync.
