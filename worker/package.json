@@ -10,10 +10,10 @@
     "check": "npm run typecheck && npm run test && wrangler deploy --dry-run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260820.1",
+    "@cloudflare/workers-types": "^5.20260920.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.124.0"
+    "vitest": "^5.0.1",
+    "wrangler": "^4.135.0"
   },
   "overrides": {
     "undici": "7.29.0"
