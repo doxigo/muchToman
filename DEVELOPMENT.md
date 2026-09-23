@@ -266,6 +266,13 @@ gh secret set KEYSTORE_STORE_PASSWORD
 
 Plus `KEYSTORE_KEY_ALIAS` and `KEYSTORE_KEY_PASSWORD` the same way.
 
+One more, unrelated to signing: `check.yml` keeps Gradle's configuration cache between runs only
+if it can encrypt it. Any random key will do, and nothing else ever reads it:
+
+```bash
+openssl rand -base64 16 | gh secret set GRADLE_CACHE_ENCRYPTION_KEY
+```
+
 ## Typography
 
 The app is set in **Modam**, shipped as one variable font at
