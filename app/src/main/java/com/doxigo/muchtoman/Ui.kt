@@ -685,6 +685,9 @@ private fun AppScreens(
                 },
                 onCreateCategory = vm::addCategory,
                 onDay = vm::setManualTxnDay,
+                installments = state.ledger.installments,
+                onInstallmentPayment = (vm::setInstallmentPayment).takeIf { installmentPayable(entry, state.ledger.mineId) },
+                onCreateInstallment = (vm::addInstallmentFrom).takeIf { installmentPayable(entry, state.ledger.mineId) },
             )
             return
         }
@@ -703,6 +706,8 @@ private fun AppScreens(
             onAutoFile = vm::categoriseAll,
             onCreateCategory = vm::addCategory,
             onNote = vm::setNote,
+            onInstallmentPayment = vm::setInstallmentPayment,
+            onCreateInstallment = vm::addInstallmentFrom,
         )
         return
     }

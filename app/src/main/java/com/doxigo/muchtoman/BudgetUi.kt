@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +40,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1423,17 +1426,27 @@ private fun GoalSheet(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InstallmentSheet(onSave: (String, Long, Int, Int) -> Unit, onDismiss: () -> Unit) {
+private fun InstallmentSheet(
+    onSave: (String, Long, Int, Int) -> Unit,
+    onDismiss: () -> Unit,
+    /**
+     * Set when the plan is made from a payment she has just filed: the amount starts as that
+     * payment's, the plan starts on its day, and the day of the month is not asked — it is the day
+     * the money actually left. See [InstallmentLinkSheet].
+     */
+    fromPayment: LedgerEntry? = null,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf(fromPayment?.txn?.amountRial?.let { (it / 10).toString() } ?: "") }
     var countText by remember { mutableStateOf("") }
+    val firstDue = fromPayment?.txn?.day
     // Today's day, because the likeliest moment to add a plan is the day a payment has just gone.
-    var dayText by remember { mutableStateOf(jalaliOf(today).day.toString()) }
+    var dayText by remember { mutableStateOf(jalaliOf(firstDue ?: today).day.toString()) }
     val paymentRial = remember(amount) { tomanFieldToRial(amount) }
     val count = remember(countText) { wholeIn(countText, 1..MAX_INSTALLMENTS) }
     val dayOfMonth = remember(dayText) { wholeIn(dayText, 1..31) }
@@ -1486,7 +1499,7 @@ private fun InstallmentSheet(onSave: (String, Long, Int, Int) -> Unit, onDismiss
                     .semantics { contentDescription = "مبلغ هر قسط به تومان" },
             )
 
-            SheetLabel("چند قسط مونده؟")
+            SheetLabel(if (firstDue != null) "چند قسط، با همین یکی؟" else "چند قسط مونده؟")
             OutlinedTextField(
                 value = countText,
                 onValueChange = { countText = it.take(4) },
@@ -1495,10 +1508,11 @@ private fun InstallmentSheet(onSave: (String, Long, Int, Int) -> Unit, onDismiss
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 supportingText = {
                     Text(
-                        if (countText.isNotBlank() && count == null) {
-                            "یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس."
-                        } else {
-                            "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار."
+                        when {
+                            countText.isNotBlank() && count == null ->
+                                "یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس."
+                            firstDue != null -> "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
+                            else -> "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار."
                         },
                     )
                 },
@@ -1507,19 +1521,21 @@ private fun InstallmentSheet(onSave: (String, Long, Int, Int) -> Unit, onDismiss
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SheetLabel("چندمِ هر ماه سررسیده؟")
-            OutlinedTextField(
-                value = dayText,
-                onValueChange = { dayText = it.take(2) },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                isError = dayText.isNotBlank() && dayOfMonth == null,
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (firstDue == null) {
+                SheetLabel("چندمِ هر ماه سررسیده؟")
+                OutlinedTextField(
+                    value = dayText,
+                    onValueChange = { dayText = it.take(2) },
+                    singleLine = true,
+                    visualTransformation = GroupedNumber,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = dayText.isNotBlank() && dayOfMonth == null,
+                    shape = RoundedCornerShape(Radius.field),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             // The two dates the answers imply, so a wrong count or day is caught before it is saved.
-            val first = dayOfMonth?.let { firstInstallmentDue(it, today) }
+            val first = firstDue ?: dayOfMonth?.let { firstInstallmentDue(it, today) }
             Text(
                 when {
                     first == null -> "یه روز بین ۱ و ۳۱."
@@ -1672,6 +1688,175 @@ private fun PaymentRow(entry: LedgerEntry, paid: Boolean, onChange: (Boolean) ->
                 fontSize = 14.sp,
             )
         }
+    }
+}
+
+/**
+ * The other end of the link: from a payment to the plan it paid.
+ *
+ * A plan's own sheet asks «which of these transactions paid me?»; this asks the question the way it
+ * comes up while filing — she has just called a payment قسط و وام, and the next thing worth knowing
+ * is which قسط. Her unfinished plans, the one of exactly this amount first; the one this payment
+ * already pays ticked; and a way to make the plan right here when the payment is the first she has
+ * filed of it, which is the only moment the app knows both its amount and its day.
+ *
+ * Dismissing it is an answer too: the payment stays filed under قسط و وام and linked to nothing,
+ * and its own page keeps the offer open.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun InstallmentLinkSheet(
+    entry: LedgerEntry,
+    installments: List<InstallmentProgress>,
+    onLink: (planId: String?) -> Unit,
+    onCreate: (name: String, paymentRial: Long, count: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var creating by rememberSaveable(entry.txn.ref) { mutableStateOf(false) }
+    if (creating) {
+        // Back out of the form and she is back at the choice, not dropped out of both.
+        InstallmentSheet(
+            fromPayment = entry,
+            onSave = { name, payment, count, _ ->
+                creating = false
+                onCreate(name, payment, count)
+                onDismiss()
+            },
+            onDismiss = { creating = false },
+        )
+        return
+    }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    val amount = entry.txn.amountRial
+    val current = installmentPaidBy(entry.txn.ref, installments)
+    val offered = installments
+        .filter { !it.done || it.plan.id == current?.plan?.id }
+        .sortedBy { it.plan.targetRial != amount }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .nestedScroll(SheetFlingGuard)
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("پرداخت کدوم قسطه؟")
+            Text(
+                txnTitleFa(entry.txn) + "، " +
+                    (amount?.let { bidi(faCompact(tomanOf(it)) + " تومان") + "، " } ?: "") +
+                    faDay(entry.txn.day),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (offered.isEmpty()) {
+                Spacer(Modifier.height(Space.l))
+                Text(
+                    "هنوز قسطی نساختی. اگه این پرداختِ یه قسط ماهانه‌ست، با همین بسازش تا " +
+                        "ببینی چند تا مونده.",
+                    lineHeight = 26.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(Space.l))
+                Button(
+                    onClick = { creating = true },
+                    shape = RoundedCornerShape(Radius.pill),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) { Text("ساختن قسط", fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { close(onDismiss) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("فعلاً نه")
+                }
+                return@Column
+            }
+
+            Spacer(Modifier.height(Space.m))
+            offered.forEach { plan ->
+                val selected = plan.plan.id == current?.plan?.id
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .selectable(selected = selected, role = Role.RadioButton) {
+                            close { if (!selected) onLink(plan.plan.id); onDismiss() }
+                        }
+                        .heightIn(min = 56.dp)
+                        .padding(vertical = Space.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selected, onClick = null)
+                    Spacer(Modifier.width(Space.s))
+                    Column(Modifier.weight(1f)) {
+                        Text(plan.plan.nameFa, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            installmentLineFa(plan) + if (plan.plan.targetRial == amount) " • همین مبلغ" else "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.s)) {
+                Text("+ قسط تازه با همین پرداخت", fontWeight = FontWeight.Bold)
+            }
+            if (current != null) {
+                TextButton(
+                    onClick = { close { onLink(null); onDismiss() } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("از قسط جداش کن") }
+            }
+        }
+    }
+}
+
+/** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. */
+internal fun installmentLineFa(plan: InstallmentProgress): String =
+    "ماهی ${faCompact(tomanOf(plan.plan.targetRial))} تومان • " +
+        "${faNumber(plan.paidCount.toDouble())} از ${faNumber(plan.count.toDouble())} قسط"
+
+/**
+ * The link as the payment's own page shows it: which plan it paid, or that it paid none, and the
+ * card is the way to change either. Shown on a قسط و وام payment and on any payment already linked.
+ */
+@Composable
+internal fun InstallmentLinkRow(current: InstallmentProgress?, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.card))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(role = Role.Button, onClickLabel = if (current != null) "تغییر قسط" else "وصل کردن به قسط", onClick = onOpen)
+            .padding(Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                current?.let { "پرداخت قسطِ ${it.plan.nameFa}" } ?: "به هیچ قسطی وصل نیست",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                current?.let(::installmentLineFa) ?: "وصلش کن تا توی قسط‌ها حساب بشه.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            if (current != null) "تغییر" else "وصل کن",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = Space.s),
+        )
     }
 }
 

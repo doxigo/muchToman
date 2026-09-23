@@ -74,6 +74,9 @@ fun installmentLinks(decisions: List<TxnDecision>, plans: List<Goal>): Map<Strin
  *
  * [count] is what is **left** to pay, and the first due is the next [dayOfMonth] from today, today
  * included — so a plan already half paid is entered as its remainder, with nothing to reconstruct.
+ *
+ * [firstDue] overrides that, for a plan made from a payment she has just filed: the payment is the
+ * first installment, so the plan starts on its day — past or not — and [count] includes it.
  */
 fun newInstallment(
     id: String,
@@ -83,11 +86,12 @@ fun newInstallment(
     dayOfMonth: Int,
     now: Long,
     mineId: String = "",
+    firstDue: Long? = null,
 ): Goal? {
     val name = nameFa.trim().take(40)
     if (name.isEmpty() || paymentRial <= 0L || paymentRial > MAX_PLAUSIBLE_RIAL) return null
     if (count !in 1..MAX_INSTALLMENTS || dayOfMonth !in 1..31) return null
-    val first = firstInstallmentDue(dayOfMonth, tehranDay(now))
+    val first = firstDue ?: firstInstallmentDue(dayOfMonth, tehranDay(now))
     return Goal(
         id = id,
         nameFa = name,
@@ -117,6 +121,20 @@ fun firstInstallmentDue(dayOfMonth: Int, today: Long): Long {
     val next = jalaliOf(jalaliMonthsAheadEnd(today, 1))
     return jalaliDay(next.year, next.month, minOf(dayOfMonth, next.day))
 }
+
+/**
+ * Whether this row could be a payment of one of her plans: money out, of a known amount, hers, and
+ * neither a duplicate nor a move between her own accounts — [spendable] under [scopedTo]'s private
+ * rule. One test for both directions of the link: the rows a plan's sheet offers, and the rows whose
+ * own page offers a plan, so the two can never disagree about what counts.
+ */
+fun installmentPayable(entry: LedgerEntry, mineId: String): Boolean =
+    entry.txn.direction == "out" && entry.txn.amountRial != null && !entry.duplicate &&
+        !entry.transfer && entry.ownerMemberId == mineId
+
+/** The plan this transaction paid, if she linked it to one the ledger still shows. */
+fun installmentPaidBy(ref: String, installments: List<InstallmentProgress>): InstallmentProgress? =
+    installments.firstOrNull { plan -> plan.payments.any { it.txn.ref == ref } }
 
 /** How many payments the plan has — the months from its first due to its last, both counted. */
 fun installmentCount(plan: Goal): Int {
@@ -196,8 +214,8 @@ fun installmentProgress(
         share = if (total > 0L) (paid.toDouble() / total).coerceIn(0.0, 1.0).toFloat() else 0f,
         payments = payments,
         olderRial = minOf(total, mine.filterKeys { it !in held }.values.sumOf { it.rial }),
-        candidates = if (done) emptyList() else scopedTo(spendable(entries), mineId, shared = false)
-            .filter { it.txn.direction == "out" && it.txn.ref !in links && it.txn.day > after }
+        candidates = if (done) emptyList() else entries
+            .filter { installmentPayable(it, mineId) && it.txn.ref !in links && it.txn.day > after }
             .sortedWith(
                 compareBy<LedgerEntry> { it.txn.amountRial != plan.targetRial }
                     .thenByDescending { it.txn.day },

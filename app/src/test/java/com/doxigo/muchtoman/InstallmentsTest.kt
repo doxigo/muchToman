@@ -166,6 +166,31 @@ class InstallmentsTest {
     }
 
     @Test
+    fun `only her own outgoing payments can pay a plan, from either end of the link`() {
+        assertTrue(installmentPayable(entry(first, 10_000_000), mineId = ""))
+        assertFalse(installmentPayable(entry(first, 10_000_000, owner = "b".repeat(32)), mineId = ""))
+        assertFalse(installmentPayable(entry(first, 10_000_000, direction = "in"), mineId = ""))
+        assertFalse(installmentPayable(entry(first, 10_000_000).copy(transfer = true), mineId = ""))
+        assertFalse(installmentPayable(entry(first, 10_000_000).copy(duplicate = true), mineId = ""))
+    }
+
+    @Test
+    fun `a plan made from a payment starts on its day and counts it as the first installment`() {
+        // Filed as قسط three days ago; the plan made from it must not push its schedule a month on.
+        val paidOn = first - 3
+        val plan = newInstallment("p", "گوشی", 10_000_000, 12, jalaliOf(paidOn).day, tehranDayStart(first), firstDue = paidOn)!!
+        assertEquals(paidOn, plan.startsOn)
+        assertEquals(12, installmentCount(plan))
+        val payment = entry(paidOn, 10_000_000)
+        val progress = installmentProgress(plan, links(plan, payment.txn.ref to 10_000_000), listOf(payment), first)
+        assertEquals(1, progress.paidCount)
+        assertEquals(0L, progress.overdueRial)
+        assertEquals(installmentDueOn(plan, 1), progress.nextDue)
+        assertEquals("p", installmentPaidBy(payment.txn.ref, listOf(progress))?.plan?.id)
+        assertNull(installmentPaidBy("s:elsewhere:0", listOf(progress)))
+    }
+
+    @Test
     fun `only readable links to a plan that still exists are counted`() {
         val live = plan("phone")
         val gone = plan("tv").copy(deleted = true)

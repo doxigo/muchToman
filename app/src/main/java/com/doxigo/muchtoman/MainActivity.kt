@@ -1963,36 +1963,67 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Says this transaction paid plan [planId], or with null that it paid none.
-     *
-     * One decision per transaction, the way a category is: `ref` and `kind` are unique together, so
-     * linking a row to a second plan moves it rather than counting it twice, and unlinking retracts
-     * the same row instead of racing it. The amount goes onto the link — see [InstallmentLink].
+     * Says this transaction paid plan [planId], or with null that it paid none. Called from both
+     * ends of the link: a plan's own sheet, and the page of the transaction.
      */
     fun setInstallmentPayment(entry: LedgerEntry, planId: String?) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             runCatching {
-                val value = planId?.let { id -> entry.txn.amountRial?.let { InstallmentLink(id, it).encode() } }
-                val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.INSTALLMENT)
-                if (value == null && (previous == null || previous.deleted)) return@runCatching
-                if (previous != null && !previous.deleted && previous.value == value) return@runCatching
-                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
-                durable.decisions().put(
-                    TxnDecision(
-                        id = previous?.id ?: uuid7(now),
-                        ref = entry.txn.ref,
-                        kind = DecisionKind.INSTALLMENT,
-                        value = value,
-                        createdAt = previous?.createdAt ?: now,
-                        updatedAt = now,
-                        deleted = value == null,
-                    )
-                )
-                publishLedger(durable, DerivedDb.get(app))
+                if (writeInstallmentLink(durable, entry, planId)) publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "setInstallmentPayment failed: $it") }
         }
+    }
+
+    /**
+     * A plan made from the payment she has just filed, and that payment linked to it as the first
+     * installment: the plan starts on the payment's own day and [count] includes it. One write, so
+     * there is never a plan on the screen that the payment which prompted it is missing from.
+     */
+    fun addInstallmentFrom(entry: LedgerEntry, name: String, paymentRial: Long, count: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val plan = newInstallment(
+                    uuid7(now), name, paymentRial, count, jalaliOf(entry.txn.day).day, now, mineId,
+                    firstDue = entry.txn.day,
+                ) ?: return@runCatching
+                durable.goals().put(plan)
+                writeInstallmentLink(durable, entry, plan.id)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addInstallmentFrom failed: $it") }
+        }
+    }
+
+    /**
+     * The link itself, false when there was nothing to change.
+     *
+     * One decision per transaction, the way a category is: `ref` and `kind` are unique together, so
+     * linking a row to a second plan moves it rather than counting it twice, and unlinking retracts
+     * the same row instead of racing it. The amount goes onto the link — see [InstallmentLink].
+     */
+    private suspend fun writeInstallmentLink(durable: DurableDb, entry: LedgerEntry, planId: String?): Boolean {
+        val value = planId?.let { id -> entry.txn.amountRial?.let { InstallmentLink(id, it).encode() } }
+        val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.INSTALLMENT)
+        if (value == null && (previous == null || previous.deleted)) return false
+        if (previous != null && !previous.deleted && previous.value == value) return false
+        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+        durable.decisions().put(
+            TxnDecision(
+                id = previous?.id ?: uuid7(now),
+                ref = entry.txn.ref,
+                kind = DecisionKind.INSTALLMENT,
+                value = value,
+                createdAt = previous?.createdAt ?: now,
+                updatedAt = now,
+                deleted = value == null,
+            )
+        )
+        return true
     }
 
     /**

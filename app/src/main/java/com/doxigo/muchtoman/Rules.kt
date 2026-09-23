@@ -67,6 +67,8 @@ const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
 const val CAT_LOAN = "cat_loan"
 const val CAT_LOAN_BACK = "cat_loan_back"
+/** قسط و وام: filing a payment here asks which installment plan it paid — see `Installments.kt`. */
+const val CAT_INSTALMENT = "cat_instalment"
 
 /**
  * The categories the app ships with, in the order a household generally reaches for them.
@@ -112,7 +114,7 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     // and a قسط arrives as an ordinary برداشت on whichever channel the bank happened to use, so
     // there is nothing to key on that is not a guess. It earns a rule the first time she files
     // one and says «همیشه», which is the mechanism that already exists for exactly this.
-    Category("cat_instalment", nameFa = "قسط و وام", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
+    Category(CAT_INSTALMENT, nameFa = "قسط و وام", kind = CategoryKind.EXPENSE, sort = 110, builtin = true),
     // The اسنپ‌پی/تپسی bill, which is a قسط with a brand on it: a month of rides taken on credit
     // and settled in one payment. Filed under حمل و نقل it reads as a single fare the size of a
     // week's خواربار, and filed under قسط و وام it disappears into the debt she is actually

@@ -1230,10 +1230,21 @@ fun TransactionScreen(
     onDay: ((LedgerEntry, Long) -> Unit)? = null,
     /** A category of her own, made right here where its absence was discovered. */
     onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
+    /** Her installment plans, for the «قسط» section and [InstallmentLinkSheet]. */
+    installments: List<InstallmentProgress> = emptyList(),
+    /**
+     * Links this payment to a plan, or with null to none. Null when it cannot pay one — somebody
+     * else's row, or money that came in — and then the section is not offered at all.
+     */
+    onInstallmentPayment: ((LedgerEntry, String?) -> Unit)? = null,
+    /** A plan made from this payment, which becomes its first installment. */
+    onCreateInstallment: ((LedgerEntry, String, Long, Int) -> Unit)? = null,
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
     var learnSimilar by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    var linking by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    val paidPlan = installmentPaidBy(txn.ref, installments)
     var chosen by remember(txn.ref) { mutableStateOf(entry.categoryId) }
     var source by remember(txn.ref) { mutableStateOf<String?>(null) }
     var makingCategory by rememberSaveable(txn.ref) { mutableStateOf(false) }
@@ -1307,10 +1318,28 @@ fun TransactionScreen(
                     onPick = { category ->
                         chosen = category.id
                         onCategorise(entry, category.id, learnSimilar)
+                        // Filed as a قسط, the next question is which one — asked while the payment
+                        // is in front of her, and not again once it is answered.
+                        if (category.id == CAT_INSTALMENT && onInstallmentPayment != null && paidPlan == null) {
+                            linking = true
+                        }
                     },
                     modifier = gutter,
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
                 )
+            }
+
+            // Right under the grid that raised it: a قسط و وام payment, or any payment already
+            // linked, says which plan it paid, and the card is the way to change that.
+            if (onInstallmentPayment != null && (chosen == CAT_INSTALMENT || paidPlan != null)) {
+                item(key = "installment") {
+                    Column(gutter) {
+                        Spacer(Modifier.height(Space.xxl))
+                        SectionHeading("قسط")
+                        Spacer(Modifier.height(Space.m))
+                        InstallmentLinkRow(paidPlan, onOpen = { linking = true })
+                    }
+                }
             }
 
             if (onNote != null) {
@@ -1399,6 +1428,16 @@ fun TransactionScreen(
             initialKind = if (incoming) CategoryKind.INCOME else CategoryKind.EXPENSE,
             onAdd = onCreateCategory,
             onDismiss = { makingCategory = false },
+        )
+    }
+
+    if (linking && onInstallmentPayment != null && onCreateInstallment != null) {
+        InstallmentLinkSheet(
+            entry = entry,
+            installments = installments,
+            onLink = { onInstallmentPayment(entry, it) },
+            onCreate = { name, payment, count -> onCreateInstallment(entry, name, payment, count) },
+            onDismiss = { linking = false },
         )
     }
 }
@@ -1987,8 +2026,14 @@ fun ReviewDeck(
     onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
     /** Her note on the card, so the deck and the transaction page stay one screen. */
     onNote: ((LedgerEntry, String) -> Unit)? = null,
+    /** The two ends of the link a قسط و وام filing offers — see [InstallmentLinkSheet]. */
+    onInstallmentPayment: ((LedgerEntry, String?) -> Unit)? = null,
+    onCreateInstallment: ((LedgerEntry, String, Long, Int) -> Unit)? = null,
 ) {
     var skipped by remember { mutableStateOf(setOf<String>()) }
+    // The card she just filed as a قسط, held here because the deck has already moved past it: the
+    // question of which plan it paid outlives the card that raised it by one tap.
+    var linking by remember { mutableStateOf<LedgerEntry?>(null) }
     var autoFiling by remember { mutableStateOf(false) }
     var makingCategory by rememberSaveable { mutableStateOf(false) }
     // Always the head of what is left: answering or skipping a card changes [pending] itself,
@@ -2108,6 +2153,12 @@ fun ReviewDeck(
                     onPick = { category ->
                         picked = category.id
                         onDecide(entry, category.id, learnSimilar)
+                        if (category.id == CAT_INSTALMENT && onInstallmentPayment != null &&
+                            installmentPayable(entry, ledger.mineId) &&
+                            installmentPaidBy(entry.txn.ref, ledger.installments) == null
+                        ) {
+                            linking = entry
+                        }
                     },
                     selectedLabel = "انتخاب‌شده",
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
@@ -2181,6 +2232,17 @@ fun ReviewDeck(
             initialKind = if (entry?.txn?.direction == "in") CategoryKind.INCOME else CategoryKind.EXPENSE,
             onAdd = onCreateCategory,
             onDismiss = { makingCategory = false },
+        )
+    }
+
+    val paid = linking
+    if (paid != null && onInstallmentPayment != null && onCreateInstallment != null) {
+        InstallmentLinkSheet(
+            entry = paid,
+            installments = ledger.installments,
+            onLink = { onInstallmentPayment(paid, it) },
+            onCreate = { name, payment, count -> onCreateInstallment(paid, name, payment, count) },
+            onDismiss = { linking = null },
         )
     }
 }
