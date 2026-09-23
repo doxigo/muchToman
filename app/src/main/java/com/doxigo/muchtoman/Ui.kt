@@ -587,6 +587,7 @@ private fun AppScreens(
         CategoriesScreen(
             categories = state.ledger.managedCategories,
             onAdd = vm::addCategory,
+            onEdit = vm::editCategory,
             onArchive = vm::toggleCategoryArchived,
             onBack = { categoriesPage = false },
         )

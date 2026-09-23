@@ -1,7 +1,6 @@
 package com.doxigo.muchtoman
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -59,19 +57,21 @@ import kotlinx.coroutines.launch
 fun CategoriesScreen(
     categories: List<Category>,
     onAdd: (String, String, CategoryGlyph) -> Unit,
+    onEdit: (Category, String, CategoryGlyph) -> Unit,
     onArchive: (Category) -> Unit,
     onBack: () -> Unit,
 ) {
     var side by rememberSaveable { mutableStateOf(CategoryKind.EXPENSE) }
     var adding by rememberSaveable { mutableStateOf(false) }
-    var confirming by remember { mutableStateOf<String?>(null) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // «دسته‌بندی نشده» is the absence of an answer and «انتقال» is the escape hatch; neither is
-    // a thing to manage. Everything else shows, shipped and hers alike, in the picker's order.
-    val visible = remember(categories, side) {
+    // a thing to manage. Everything else shows, shipped and hers alike, in the picker's order —
+    // the ones she deleted in a band of their own underneath, where they can still be brought back.
+    val (deleted, live) = remember(categories, side) {
         categories.filter {
             it.id != CAT_UNCATEGORISED && it.id != "cat_send" && it.kind == side
-        }
+        }.partition { it.archived }
     }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -88,7 +88,7 @@ fun CategoriesScreen(
                 options = listOf(CategoryKind.EXPENSE, CategoryKind.INCOME),
                 selected = side,
                 label = { if (it == CategoryKind.INCOME) "دخل" else "خرج" },
-                onSelect = { side = it; confirming = null },
+                onSelect = { side = it },
                 role = Role.Tab,
                 modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.m),
             )
@@ -99,19 +99,43 @@ fun CategoriesScreen(
                     start = Space.xl, end = Space.xl, bottom = Space.l,
                 ),
             ) {
-                itemsIndexed(visible, key = { _, c -> c.id }) { i, category ->
+                itemsIndexed(live, key = { _, c -> c.id }) { i, category ->
                     CategoryRow(
                         category = category,
-                        shape = bandShape(i, visible.size),
-                        divided = i < visible.size - 1,
-                        confirming = confirming == category.id,
-                        onAsk = { confirming = category.id },
-                        onDismiss = { confirming = null },
-                        onArchive = {
-                            confirming = null
-                            onArchive(category)
-                        },
+                        shape = bandShape(i, live.size),
+                        divided = i < live.size - 1,
+                        onAction = { editingId = category.id },
                     )
+                }
+                if (deleted.isNotEmpty()) {
+                    item(key = "deleted") {
+                        Column(Modifier.padding(top = Space.xxl, bottom = Space.m, start = Space.xs)) {
+                            Text(
+                                "حذف‌شده‌ها",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                            // Words, because «حذف» here is not what it is elsewhere: the rows she
+                            // filed under it keep its name, and saying so is the difference
+                            // between a tidy list and history that seems to have vanished.
+                            Text(
+                                "دیگه موقع دسته‌بندی پیشنهاد نمی‌شن. تراکنش‌های قبلی با همین اسم می‌مونن.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Space.xs),
+                            )
+                        }
+                    }
+                    itemsIndexed(deleted, key = { _, c -> c.id }) { i, category ->
+                        CategoryRow(
+                            category = category,
+                            shape = bandShape(i, deleted.size),
+                            divided = i < deleted.size - 1,
+                            onAction = { onArchive(category) },
+                        )
+                    }
                 }
             }
 
@@ -136,11 +160,23 @@ fun CategoriesScreen(
     }
 
     if (adding) {
-        AddCategorySheet(
+        CategorySheet(
             taken = categories.map { it.nameFa },
             initialKind = side,
-            onAdd = onAdd,
+            onSave = onAdd,
             onDismiss = { adding = false },
+        )
+    }
+
+    categories.firstOrNull { it.id == editingId }?.let { editing ->
+        CategorySheet(
+            // Its own name is not a clash — keeping it while changing the mark is a real edit.
+            taken = categories.filter { it.id != editing.id }.map { it.nameFa },
+            initialKind = editing.kind,
+            editing = editing,
+            onSave = { name, _, glyph -> onEdit(editing, name, glyph) },
+            onDelete = { onArchive(editing) },
+            onDismiss = { editingId = null },
         )
     }
 }
@@ -150,10 +186,7 @@ private fun CategoryRow(
     category: Category,
     shape: androidx.compose.ui.graphics.Shape,
     divided: Boolean,
-    confirming: Boolean,
-    onAsk: () -> Unit,
-    onDismiss: () -> Unit,
-    onArchive: () -> Unit,
+    onAction: () -> Unit,
 ) {
     Box(
         Modifier
@@ -180,33 +213,15 @@ private fun CategoryRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = Space.m).weight(1f),
             )
-            when {
-                category.archived -> PillButton("فعال کن", onArchive, fontSize = 13.sp, minHeight = 40.dp)
-                // These pills draw at 40dp but are hit and announced at 48: Compose expands
-                // any smaller clickable to the minimum touch target. Growing their layout
-                // instead would push every row 4dp taller for a target the finger already has.
-                confirming -> Row {
-                    PillButton("بی‌خیال", onDismiss, fontSize = 13.sp, minHeight = 40.dp)
-                    Spacer(Modifier.width(Space.s))
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(Radius.pill))
-                            .background(MaterialTheme.colorScheme.errorContainer)
-                            .clickable(role = Role.Button, onClick = onArchive)
-                            .heightIn(min = 40.dp)
-                            .padding(horizontal = Space.l),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "مطمئنم",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
-                }
-                else -> PillButton("غیرفعال کن", onAsk, fontSize = 13.sp, minHeight = 40.dp)
-            }
+            // This pill draws at 40dp but is hit and announced at 48: Compose expands any
+            // smaller clickable to the minimum touch target. Growing its layout instead would
+            // push every row 4dp taller for a target the finger already has.
+            PillButton(
+                if (category.archived) "برگردون" else "ویرایش",
+                onAction,
+                fontSize = 13.sp,
+                minHeight = 40.dp,
+            )
         }
         if (divided) {
             HorizontalDivider(
@@ -222,6 +237,10 @@ private fun CategoryRow(
 /**
  * A category of her own: a name, which side of the ledger it lives on, and the mark it wears.
  *
+ * The same sheet edits one — any one, shipped or hers — with the name and mark filled in and
+ * the side left out, since that is the one answer that cannot change. Every filed row names a
+ * category by id, so a new name reaches everything already under it, last year included.
+ *
  * The marks offered are the ones the app already draws ([PICKABLE_GLYPHS]) rather than an emoji
  * keyboard — one pen and one weight is what keeps a category she invented from looking like a
  * sticker stuck on top of the app, and each mark arrives with the hue the grid, the timeline
@@ -232,20 +251,25 @@ private fun CategoryRow(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddCategorySheet(
+fun CategorySheet(
     taken: List<String>,
     initialKind: String,
-    onAdd: (String, String, CategoryGlyph) -> Unit,
+    onSave: (String, String, CategoryGlyph) -> Unit,
     onDismiss: () -> Unit,
+    editing: Category? = null,
+    onDelete: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
-    var draft by rememberSaveable { mutableStateOf("") }
+    // The mark it wears now, which on a shipped category is looked up by name rather than stored.
+    val worn = editing?.let { glyphOf(it.nameFa) }
+    var draft by rememberSaveable { mutableStateOf(editing?.nameFa.orEmpty()) }
     var kind by rememberSaveable { mutableStateOf(initialKind) }
-    var glyph by rememberSaveable { mutableStateOf(PICKABLE_GLYPHS.first()) }
-    var glyphChosen by rememberSaveable { mutableStateOf(false) }
+    var glyph by rememberSaveable { mutableStateOf(worn ?: PICKABLE_GLYPHS.first()) }
+    // Renaming one must not quietly swap the mark she already knows it by.
+    var glyphChosen by rememberSaveable { mutableStateOf(editing != null) }
 
     // ZWNJ and spaces vary by keyboard, so «پس‌انداز» typed three ways is one name.
     fun key(s: String) = faLetters(s).replace("‌", "").replace(" ", "").trim()
@@ -266,7 +290,7 @@ fun AddCategorySheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("دستهٔ تازه")
+            SheetTitle(if (editing != null) "ویرایش دسته" else "دستهٔ تازه")
 
             SheetLabel("اسمش چی باشه؟")
             OutlinedTextField(
@@ -298,13 +322,15 @@ fun AddCategorySheet(
 
             // Which side of the ledger it belongs to, and the only thing here she cannot change
             // later: the picker offers a category only on transactions that went that way.
-            SheetLabel("کدوم طرف دفتر؟")
-            SegmentedChoice(
-                options = listOf(CategoryKind.EXPENSE, CategoryKind.INCOME),
-                selected = kind,
-                label = { if (it == CategoryKind.INCOME) "دخل" else "خرج" },
-                onSelect = { kind = it },
-            )
+            if (editing == null) {
+                SheetLabel("کدوم طرف دفتر؟")
+                SegmentedChoice(
+                    options = listOf(CategoryKind.EXPENSE, CategoryKind.INCOME),
+                    selected = kind,
+                    label = { if (it == CategoryKind.INCOME) "دخل" else "خرج" },
+                    onSelect = { kind = it },
+                )
+            }
 
             SheetLabel("نشونه‌اش")
             FlowRow(
@@ -344,12 +370,12 @@ fun AddCategorySheet(
 
             Spacer(Modifier.height(Space.xl))
             PillButton(
-                "اضافه کن",
+                if (editing != null) "ذخیره تغییرات" else "اضافه کن",
                 {
                     if (usable) {
                         val name = draft.trim()
                         close {
-                            onAdd(name, kind, glyph)
+                            onSave(name, kind, glyph)
                             onDismiss()
                         }
                     }
@@ -365,6 +391,7 @@ fun AddCategorySheet(
                 { close(onDismiss) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (editing != null) SheetDelete("حذف این دسته") { close { onDelete(); onDismiss() } }
         }
     }
 }

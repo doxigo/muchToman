@@ -447,12 +447,23 @@ suspend fun needsDerive(derived: DerivedDb, durable: DurableDb? = null): Boolean
  * REPLACE by id, so a build that renames a category or retunes a shipped rule takes effect —
  * while anything she made, which carries an id of its own, is untouched. Archiving is how a
  * builtin retires; deleting one would orphan every row that named it.
+ *
+ * A shipped category she renamed or re-marked keeps her name and mark over the build's: the
+ * stored mark is how that is told apart (see [Category.glyph]), and the sort and kind still come
+ * from the build.
  */
 suspend fun seedBuiltins(durable: DurableDb, now: Long = System.currentTimeMillis()) {
     durable.withTransaction {
         val existing = durable.categories().withArchived().associateBy { it.id }
-        durable.categories().putAll(BUILTIN_CATEGORIES.map {
-            it.copy(archived = it.archived || existing[it.id]?.archived == true, updatedAt = now)
+        durable.categories().putAll(BUILTIN_CATEGORIES.map { shipped ->
+            val mine = existing[shipped.id]
+            val edited = mine?.takeIf { it.glyph.isNotBlank() }
+            shipped.copy(
+                nameFa = edited?.nameFa ?: shipped.nameFa,
+                glyph = edited?.glyph.orEmpty(),
+                archived = shipped.archived || mine?.archived == true,
+                updatedAt = now,
+            )
         })
         durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })
     }

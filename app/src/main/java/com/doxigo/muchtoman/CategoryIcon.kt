@@ -120,7 +120,8 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
 }
 
 /**
- * The marks she chose for the categories she made, keyed by name like the table above.
+ * The marks she chose — for the categories she made, and for any shipped one she renamed or
+ * re-marked — keyed by name like the table above.
  *
  * A composition local rather than a parameter because of where a mark gets drawn: the month's
  * report aggregates by name and never sees a row, and a timeline line has only the name it was
@@ -145,7 +146,7 @@ fun customGlyphs(categories: List<Category>): Map<String, CategoryGlyph> =
     }.toMap()
 
 @Composable
-private fun glyphOf(nameFa: String): CategoryGlyph =
+internal fun glyphOf(nameFa: String): CategoryGlyph =
     LocalCustomGlyphs.current[nameFa] ?: categoryGlyph(nameFa)
 
 /**

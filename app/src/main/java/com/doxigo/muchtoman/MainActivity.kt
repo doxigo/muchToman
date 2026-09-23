@@ -542,8 +542,36 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Archived, never deleted — every transaction she ever filed under it still names it, and the
-     * timeline reads that name off the row rather than off this table.
+     * Her name and mark for a category, shipped or hers.
+     *
+     * Nothing is re-derived: every row names its category by id and the name is read at display
+     * time, so the whole ledger, budgets included, says the new name on the next read. The mark
+     * is stored even when she kept it — on a shipped category that is what makes the rename
+     * survive [seedBuiltins], and a name no build knows would otherwise draw three dots.
+     */
+    fun editCategory(category: Category, nameFa: String, glyph: CategoryGlyph) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(
+                        category.copy(
+                            nameFa = nameFa.trim(),
+                            glyph = glyph.name,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "editCategory failed: $it") }
+        }
+    }
+
+    /**
+     * What «حذف» on a category does: archived, never deleted — every transaction she ever filed
+     * under it still names it, and the timeline reads that name off the row rather than off this
+     * table. The same call brings it back.
      */
     fun toggleCategoryArchived(category: Category) {
         val app = getApplication<Application>()

@@ -1423,10 +1423,10 @@ fun TransactionScreen(
     }
 
     if (makingCategory && onCreateCategory != null) {
-        AddCategorySheet(
+        CategorySheet(
             taken = categories.map { it.nameFa },
             initialKind = if (incoming) CategoryKind.INCOME else CategoryKind.EXPENSE,
-            onAdd = onCreateCategory,
+            onSave = onCreateCategory,
             onDismiss = { makingCategory = false },
         )
     }
@@ -2227,10 +2227,10 @@ fun ReviewDeck(
     }
 
     if (makingCategory && onCreateCategory != null) {
-        AddCategorySheet(
+        CategorySheet(
             taken = ledger.categories.map { it.nameFa },
             initialKind = if (entry?.txn?.direction == "in") CategoryKind.INCOME else CategoryKind.EXPENSE,
-            onAdd = onCreateCategory,
+            onSave = onCreateCategory,
             onDismiss = { makingCategory = false },
         )
     }

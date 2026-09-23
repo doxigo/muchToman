@@ -44,9 +44,13 @@ data class Category(
     val archived: Boolean = false,
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0L,
     /**
-     * The mark she picked for a category she made, as a [CategoryGlyph] name. Blank on everything
-     * that ships, which is looked up by name instead — a shipped category's mark is not a thing
-     * stored per install, or renaming one in a build would leave the old mark in the database.
+     * The mark she picked, as a [CategoryGlyph] name. Blank on a shipped category, which is looked
+     * up by name instead — a shipped category's mark is not a thing stored per install, or
+     * renaming one in a build would leave the old mark in the database.
+     *
+     * Until she edits one. Then it holds her mark, kept or changed, because a name she chose is in
+     * no build's table to look one up by — and a stored mark on a shipped row is what tells
+     * [seedBuiltins] that the name is hers now and not the build's to put back.
      */
     @ColumnInfo(defaultValue = "''") val glyph: String = "",
 )
