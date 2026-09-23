@@ -17,9 +17,9 @@ import androidx.core.content.ContextCompat
 /**
  * The only thing in this app that speaks while it is closed.
  *
- * There are exactly two channels and two reasons to use them: a budget she set has crossed a line
- * she asked to be told about, and a transaction has landed — filed by a rule, or waiting for her
- * to say what it was. Nothing here fires because the app was opened, because a price moved, or
+ * There are exactly three channels and three reasons to use them: a budget she set has crossed a line
+ * she asked to be told about, a transaction has landed — filed by a rule, or waiting for her
+ * to say what it was — and an installment of hers is about to fall due. Nothing here fires because the app was opened, because a price moved, or
  * because a week went by — the rule the reward system already runs on, applied to the one surface
  * that can interrupt her.
  *
@@ -62,6 +62,12 @@ private const val BUDGET_CHANNEL = "budget"
 
 /** «دسته‌بندی» — the quiet one. See [ensureFilingChannel] for why it is quiet. */
 private const val FILING_CHANNEL = "filing"
+
+/** «قسط» — the reminder before a payment falls due, silenceable on its own like the other two. */
+private const val INSTALLMENT_CHANNEL = "installment"
+
+/** One id for every reminder, with the plan's id as the tag — [BUDGET_NOTE_ID]'s arrangement. */
+private const val INSTALLMENT_NOTE_ID = 4
 
 /**
  * One id for every budget note, with the goal's id as the tag.
@@ -123,6 +129,8 @@ internal fun landedPublicTitle(): String = "تراکنش تازه"
 
 internal fun filingPublicTitle(count: Int): String =
     if (count > 1) "${faNumber(count.toDouble())} تراکنش تازه" else landedPublicTitle()
+
+internal fun installmentPublicTitle(): String = "یادآوری قسط"
 
 internal fun publicBody(): String = "جزئیات توی برنامه"
 
@@ -191,6 +199,23 @@ private fun ensureFilingChannel(context: Context) {
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             description = "وقتی تراکنش تازه‌ای می‌رسه — چه منتظر دسته‌بندی، چه خودکار ثبت‌شده."
+            setShowBadge(true)
+        },
+    )
+}
+
+/** The installment channel, made the way the other two are. */
+private fun ensureInstallmentChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return
+    if (manager.getNotificationChannel(INSTALLMENT_CHANNEL) != null) return
+    manager.createNotificationChannel(
+        NotificationChannel(
+            INSTALLMENT_CHANNEL,
+            "قسط",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "یادآوری سررسید قسط‌هایی که ثبت کردی."
             setShowBadge(true)
         },
     )
@@ -486,6 +511,41 @@ fun clearFilingNote(context: Context) {
 }
 
 /**
+ * Reminds her of one plan's next payment. Opens «آینده», where the plan's card is.
+ *
+ * Words from [installmentReminderTitle] and [installmentReminderBody], for [notifyBudget]'s reason.
+ */
+// [canNotify] checked in the body — see [notifyBudget].
+@SuppressLint("MissingPermission")
+fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long, now: Long) {
+    if (!canNotify(context)) return
+    ensureInstallmentChannel(context)
+    val title = installmentReminderTitle(progress.plan, due, tehranDay(now))
+    val body = installmentReminderBody(progress.plan, due)
+    val note = NotificationCompat.Builder(context, INSTALLMENT_CHANNEL)
+        .setSmallIcon(R.drawable.ic_toman)
+        .setColor(0xFF0A423B.toInt())
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        // She chose to be reminded, and when — exactly what the platform keeps this category for.
+        .setCategory(NotificationCompat.CATEGORY_REMINDER)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        // Gone when its day is: a «فرداست» still standing the day after is wrong.
+        // ponytail: it outlives a payment linked before then; cancel on link if that grates.
+        .setTimeoutAfter(tehranDayStart(due + 1) - now)
+        .setContentIntent(openBudgets(context))
+        .setTicker("$title. $body")
+        // Redacted on a secure lock screen — see [budgetNote] for why.
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(), openBudgets(context)))
+        .build()
+    runCatching { NotificationManagerCompat.from(context).notify(progress.plan.id, INSTALLMENT_NOTE_ID, note) }
+        .onFailure { android.util.Log.w("muchtoman", "installment notify failed: $it") }
+}
+
+/**
  * Takes back whatever was said about one budget.
  *
  * Called for every budget that is no longer near its cap, which is how a new month clears last
@@ -526,6 +586,23 @@ fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress
     // Anything back under the first threshold — a new window, or a receipt she refiled — has no
     // note to keep standing.
     for (budget in budgets) if (!budget.loud) clearBudgetNote(context, budget.goal.id)
+}
+
+/**
+ * [announceBudgets] for the reminders: what falls due within her chosen days, said once per date.
+ *
+ * Nothing is marked while the app cannot post — unlike a budget crossing, a reminder is worth
+ * nothing a day late, and one written down as said and never shown is a payment she was not told of.
+ * Runs under [ledgerGate], held by both callers, for [announceBudgets]'s reason.
+ */
+fun announceInstallments(context: Context, store: Store, installments: List<InstallmentProgress>) {
+    val days = store.installmentReminder
+    if (days < 0 || installments.isEmpty() || !canNotify(context)) return
+    ensureInstallmentChannel(context)
+    val now = System.currentTimeMillis()
+    val news = installmentNews(installments, days, store.installmentMarks, now)
+    store.installmentMarks = news.marks
+    for ((progress, due) in news.due) notifyInstallment(context, progress, due, now)
 }
 
 /**

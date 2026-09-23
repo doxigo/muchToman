@@ -126,6 +126,9 @@ fun SettingsScreen(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    /** Days ahead an installment is reminded of, -1 for never — see [INSTALLMENT_REMINDER_DAYS]. */
+    installmentReminder: Int,
+    onInstallmentReminderChange: (Int) -> Unit,
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
@@ -167,6 +170,8 @@ fun SettingsScreen(
             onCompanion = onCompanion,
             onNameChange = onNameChange,
             onThemeChange = onThemeChange,
+            installmentReminder = installmentReminder,
+            onInstallmentReminderChange = onInstallmentReminderChange,
             onCategories = onCategories,
             onOpen = { page = it },
             onBack = onBack,
@@ -225,12 +230,15 @@ private fun SettingsIndex(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    installmentReminder: Int,
+    onInstallmentReminderChange: (Int) -> Unit,
     onCategories: () -> Unit,
     onOpen: (SettingsRoom) -> Unit,
     onBack: () -> Unit,
 ) {
     var renaming by remember { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
+    var reminderSheet by remember { mutableStateOf(false) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -275,16 +283,23 @@ private fun SettingsIndex(
             IndexRow(
                 title = "ظاهر برنامه",
                 value = themeMode.fa,
-                shape = bandShape(0, 2),
+                shape = bandShape(0, 3),
                 divided = true,
                 onClick = { themeSheet = true },
             ) { AppearanceGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             IndexRow(
                 title = "قفل و امنیت",
                 value = if (lockEnabled) "روشن" else "خاموش",
-                shape = bandShape(1, 2),
+                shape = bandShape(1, 3),
+                divided = true,
                 onClick = { onOpen(SettingsRoom.SECURITY) },
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
+            IndexRow(
+                title = "یادآوری قسط",
+                value = installmentReminderFa(installmentReminder),
+                shape = bandShape(2, 3),
+                onClick = { reminderSheet = true },
+            ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
 
             SectionLabel("نگهداری")
             IndexRow(
@@ -344,6 +359,13 @@ private fun SettingsIndex(
             current = themeMode,
             onPick = { onThemeChange(it); themeSheet = false },
             onDismiss = { themeSheet = false },
+        )
+    }
+    if (reminderSheet) {
+        InstallmentReminderSheet(
+            current = installmentReminder,
+            onPick = { onInstallmentReminderChange(it); reminderSheet = false },
+            onDismiss = { reminderSheet = false },
         )
     }
 }
@@ -671,6 +693,43 @@ private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismis
                 label = { it.fa },
                 onSelect = onPick,
                 fontSize = 16.sp,
+            )
+        }
+    }
+}
+
+/** How far ahead an installment is reminded of — [ThemeSheet]'s shape, four choices instead of three. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("یادآوری قسط")
+            Text(
+                "قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            SegmentedChoice(
+                options = INSTALLMENT_REMINDER_DAYS,
+                selected = current,
+                label = ::installmentReminderFa,
+                onSelect = onPick,
+                fontSize = 15.sp,
             )
         }
     }

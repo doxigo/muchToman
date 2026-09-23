@@ -145,9 +145,9 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
  * that lands at the same moment as an app open produces the same rows.
  *
  * Nothing is written that she can see except a notification. No balance, no snapshot, no widget —
- * this worker's whole output is «a budget of yours crossed a line» and «something landed that
- * nobody has filed», and [announceBudgets] and [announceFiling] are what decide whether either is
- * worth saying.
+ * this worker's whole output is «a budget of yours crossed a line», «an installment falls due» and
+ * «something landed that nobody has filed», and [announceBudgets], [announceInstallments] and
+ * [announceFiling] are what decide whether any is worth saying.
  *
  * On a phone that belongs to a household, one more thing: the family sync runs here too, so a
  * spend reaches the rest of the family the minute its message lands rather than the next time
@@ -167,8 +167,11 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         // about. A household is its own reason to go on: the sync must not answer to the
         // notification permission, or turning alerts off would silently stop her spends reaching
         // the family.
-        val budgets = durable.goals().active().any { it.kind == GoalKind.CAP }
-        val announce = (budgets || store.smsEnabled) && canNotify(app)
+        val goals = durable.goals().active()
+        val budgets = goals.any { it.kind == GoalKind.CAP }
+        // An installment only has something to say while its reminder is on.
+        val reminders = store.installmentReminder >= 0 && goals.any { it.kind == GoalKind.INSTALLMENT }
+        val announce = (budgets || reminders || store.smsEnabled) && canNotify(app)
         val session = loadSession(durable)
         if (!announce && session == null) return Result.success()
 
@@ -189,6 +192,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                     // roof over money دخل و خرج leaves out — see [budgetRows].
                     val view = ledgerView(derived, durable, excluded = store.reportExcluded)
                     announceBudgets(app, store, view.budgets)
+                    announceInstallments(app, store, view.installments)
                     announceFiling(app, store, view)
                 }
             }
@@ -228,9 +232,9 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
  *
  * Scheduled by whether there is anything to say rather than KEEP-on-every-start, which is the one
  * place this differs from [scheduleDailySnapshot] and the reason is the asymmetry: the snapshot has
- * something to do on every phone, and this has something to do only on a phone that keeps a budget
- * or reads bank messages. Cancelling when the last of both goes is what keeps a feature she is not
- * using from waking her phone four times a day for ever.
+ * something to do on every phone, and this has something to do only on a phone that keeps a budget,
+ * wants an installment reminded, or reads bank messages. Cancelling when the last of those goes is
+ * what keeps a feature she is not using from waking her phone four times a day for ever.
  *
  * [wanted] is that question already answered by the caller, because the two halves of it live in
  * two different places — the goals table and her SMS switch — and the callers have both to hand.

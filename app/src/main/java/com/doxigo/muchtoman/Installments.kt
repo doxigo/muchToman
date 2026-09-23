@@ -223,3 +223,88 @@ fun installmentProgress(
             .take(INSTALLMENT_CANDIDATES),
     )
 }
+
+// ─────────────────────────── the reminder ───────────────────────────
+
+/**
+ * How many days before a due date the reminder comes — what تنظیمات offers, `-1` for never.
+ *
+ * On by default, a day ahead: the plan is one she made, as a budget is, and a budget speaks without
+ * being asked to as well.
+ */
+val INSTALLMENT_REMINDER_DAYS = listOf(-1, 0, 1, 3)
+const val INSTALLMENT_REMINDER_DEFAULT = 1
+
+/**
+ * The Tehran hours a reminder may be posted in. The watch sweeps every six hours round the clock,
+ * and a reminder is the one note that is not answering something that just happened — ungated, it
+ * would ring at whatever hour past midnight the day's first sweep landed. Thirteen hours is two
+ * sweeps wide, so a day whose first chance is lost to Doze still has another.
+ */
+private val REMIND_HOURS = 9..21
+
+/**
+ * The next payment she has not covered that falls due today or later.
+ *
+ * Not [InstallmentProgress.nextDue], which stops at the first unpaid payment: a plan she pays but
+ * never links would be reminded once, of a date already gone, and then never again. A reminder
+ * follows the calendar, and only a payment linked ahead holds it back.
+ */
+fun installmentUpcoming(progress: InstallmentProgress, today: Long): Long? =
+    (progress.paidCount until progress.count).asSequence()
+        .map { installmentDueOn(progress.plan, it) }
+        .firstOrNull { it >= today }
+
+/**
+ * Which plans are worth a reminder now, and what to remember having said: plan id → the due day it
+ * was last reminded of.
+ *
+ * The mark is the date, so next month's payment is a new date and a new reminder with nothing to
+ * reset, and a deleted plan simply stops producing one — [BudgetMark]'s arrangement.
+ */
+data class InstallmentNews(val due: List<Pair<InstallmentProgress, Long>>, val marks: Map<String, Long>)
+
+fun installmentNews(
+    installments: List<InstallmentProgress>,
+    daysBefore: Int,
+    said: Map<String, Long>,
+    now: Long,
+): InstallmentNews {
+    val today = tehranDay(now)
+    val awake = (now + TEHRAN_OFFSET_MS).mod(DAY_MS) / 3_600_000L in REMIND_HOURS
+    val due = mutableListOf<Pair<InstallmentProgress, Long>>()
+    val marks = HashMap<String, Long>()
+    for (progress in installments) {
+        val id = progress.plan.id
+        val next = installmentUpcoming(progress, today)
+        if (next != null && daysBefore >= 0 && awake && next - today <= daysBefore && said[id] != next) {
+            due += progress to next
+            marks[id] = next
+        } else {
+            said[id]?.let { marks[id] = it }
+        }
+    }
+    return InstallmentNews(due, marks)
+}
+
+/** «گوشی: سررسید قسط فرداست» — the card's own «سررسید قسط بعدی امروزه», said ahead. */
+fun installmentReminderTitle(plan: Goal, due: Long, today: Long): String {
+    val whenFa = when (val days = due - today) {
+        0L -> "امروزه"
+        1L -> "فرداست"
+        2L -> "پس‌فرداست"
+        else -> "${faNumber(days.toDouble())} روز دیگه‌ست"
+    }
+    return "${plan.nameFa}: سررسید قسط $whenFa"
+}
+
+/** How much, and on which date — what she needs in the banking app. */
+fun installmentReminderBody(plan: Goal, due: Long): String =
+    "${faCompact(tomanOf(plan.targetRial))} تومان • ${faDate(due)}"
+
+/** The setting's answer, on the تنظیمات row and in its sheet. */
+fun installmentReminderFa(days: Int): String = when {
+    days < 0 -> "خاموش"
+    days == 0 -> "همون روز"
+    else -> "${faNumber(days.toDouble())} روز قبل"
+}

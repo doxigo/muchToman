@@ -645,6 +645,13 @@ private fun AppScreens(
             onCompanion = { companion = true },
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
+            installmentReminder = state.installmentReminder,
+            // Switching it on is the moment to ask for notifications, as the messages switch
+            // asks for its own permission — never at launch.
+            onInstallmentReminderChange = { days ->
+                vm.setInstallmentReminder(days)
+                if (days >= 0 && !canNote) askNotify()
+            },
             onSmsChange = vm::setSmsEnabled,
             onBankChange = vm::setBankEnabled,
             onLockChange = { on ->
@@ -796,7 +803,10 @@ private fun AppScreens(
               // Only ever raised where there is something to be quiet about: a phone with no budget
               // has nothing to notify her of, and asking for the permission then would be the launch
               // -time prompt this app deliberately does not do.
-              notifyBlocked = state.ledger.budgets.isNotEmpty() && !canNote,
+              notifyBlocked = (
+                  state.ledger.budgets.isNotEmpty() ||
+                      (state.installmentReminder >= 0 && state.ledger.installments.any { !it.done })
+                  ) && !canNote,
               // Paired, not «has a member id»: an unpaired phone keeps its identity from a
               // household it has left, and offering to share with it would be offering to share
               // with nobody.

@@ -81,6 +81,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             locked = store.lockEnabled,
             name = store.name,
             themeMode = store.themeMode,
+            installmentReminder = store.installmentReminder,
             history = store.history,
             rateHistory = store.rateHistory,
             onboarded = store.onboarded,
@@ -166,7 +167,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // announce → mark sequence from its own coroutine, and the marks those helpers write are
         // get-then-set on prefs — interleaved, an alert is said twice or a mark is lost.
         // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
-        // scheduleLedgerWatch, announceBudgets and markFilingSeen have all been checked.
+        // scheduleLedgerWatch, announceBudgets, announceInstallments and markFilingSeen have all
+        // been checked.
         ledgerGate.withLock {
             // Her exclusion set rides along: a total is a roof over what دخل و خرج counts, so
             // the figure on the card, the sentence on home and the 3am notification all read the
@@ -186,8 +188,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // Watching is scheduled by whether there is anything left to watch, so deleting the last
             // budget on a phone that does not read messages stops the worker rather than leaving it to
             // wake up and find nothing four times a day.
-            scheduleLedgerWatch(app, view.budgets.isNotEmpty() || store.smsEnabled)
+            scheduleLedgerWatch(app, watchWanted())
             announceBudgets(app, store, view.budgets)
+            announceInstallments(app, store, view.installments)
             // The other half is deliberately not announced here: this line runs with the app in front
             // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
             // is being told, so the note comes down and the mark moves past everything on screen —
@@ -500,6 +503,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setThemeMode(mode: ThemeMode) {
         store.themeMode = mode
         _state.update { it.copy(themeMode = mode) }
+    }
+
+    fun setInstallmentReminder(days: Int) {
+        if (days !in INSTALLMENT_REMINDER_DAYS) return
+        store.installmentReminder = days
+        _state.update { it.copy(installmentReminder = days) }
+        // It may be the only reason left to watch, or the first one.
+        scheduleLedgerWatch(getApplication(), watchWanted())
+    }
+
+    /**
+     * Whether the watch has anything to do: messages to read, a cap to guard, or a payment to remind
+     * her of. Read off the published ledger, so call it after the state carries the latest view.
+     */
+    private fun watchWanted(): Boolean {
+        val ledger = _state.value.ledger
+        return store.smsEnabled || ledger.budgets.isNotEmpty() ||
+            (store.installmentReminder >= 0 && ledger.installments.any { !it.done })
     }
 
     /** Locked state is session-only; the *preference* is what persists. */
@@ -2366,10 +2387,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         recordSnapshot(countedBefore = before)
         // The switch is one of the two things the watch is scheduled by, and turning it off is the
         // only path that can take the last reason to watch away without touching a budget.
-        scheduleLedgerWatch(
-            getApplication<Application>(),
-            on || _state.value.ledger.budgets.isNotEmpty(),
-        )
+        scheduleLedgerWatch(getApplication<Application>(), watchWanted())
         if (on) scanSms()
     }
 
@@ -2485,6 +2503,8 @@ data class UiState(
     val locked: Boolean = false,
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
+    val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
     val history: Map<Long, Double> = emptyMap(),
     /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
     val rateHistory: Map<Long, Double> = emptyMap(),
