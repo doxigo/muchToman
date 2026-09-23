@@ -271,7 +271,7 @@ fun BudgetScreen(
                 // section nobody would guess: nothing here is typed twice.
                 Text(
                     "قسط گوشی، وام یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، " +
-                        "همین‌جا تیکش می‌زنی و می‌بینی چقدر مونده.",
+                        "همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp,
                 )
