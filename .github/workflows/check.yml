@@ -32,7 +32,7 @@ jobs:
       # the action treats as none: the run still passes, it just configures from scratch. Only
       # here, not in release.yml: a tag run is read-only, and its -P version properties could
       # never match an entry main wrote anyway.
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
       # Both editions, but only their debug variants: plain `test` would now run the same suite six
