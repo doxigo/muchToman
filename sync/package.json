@@ -12,10 +12,10 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@types/node": "^26.3.0",
+    "@types/node": "^26.6.2",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.124.0"
+    "vitest": "^5.0.1",
+    "wrangler": "^4.135.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
