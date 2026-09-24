@@ -177,7 +177,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // left to [refreshFamily], which runs after this, the roof stayed one sync behind
             // the report it must agree with.
             val synced = landReportExclusions(durable)
-            val view = ledgerView(derived, durable, excluded = synced ?: store.reportExcluded)
+            val view = ledgerView(
+                derived, durable,
+                excluded = synced ?: store.reportExcluded,
+                startsOn = store.ledgerStartsOn,
+            )
             // The mirror moves in the same update as the cards, so دخل و خرج and «کل خرج»
             // change together rather than a frame apart. Untouched when nothing landed: a
             // publish racing her own tap must not flip the set back under it.
@@ -1077,6 +1081,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Where the ledger starts — see [Store.ledgerStartsOn]. Nothing is deleted or read again, so
+     * this is a republish and nothing more: the view leaves the months before it out, and
+     * «از اول» brings every row back exactly as it was. Hers alone, unlike the exclusions below —
+     * a start chosen on her phone is not the household's.
+     */
+    fun setLedgerStartsOn(day: Long) {
+        store.ledgerStartsOn = day
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            publishLedger(DurableDb.get(app), DerivedDb.get(app))
         }
     }
 

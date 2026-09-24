@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -1088,32 +1090,253 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     }
 }
 
+/**
+ * «وضعیت دفتر» — where the ledger starts, what it holds, and how far the messages behind it go.
+ *
+ * It was seven «label: value» lines down a column, a paragraph and a button, in a room whose
+ * siblings are all bands. Now the one thing here she can change comes first — where the ledger
+ * starts — and the facts follow as two bands she can read down, the ledger's and the messages',
+ * each answer at the end of its row where the eye goes looking for one.
+ */
 @Composable
 private fun LedgerHealthPage(activity: FragmentActivity, onImport: () -> Unit, onBack: () -> Unit) {
     val vm = remember(activity) { ViewModelProvider(activity)[AppVm::class.java] }
     val state by vm.state.collectAsStateWithLifecycle()
     val health = state.ledger.health
+    val now = System.currentTimeMillis()
+    var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.runLedger() }
     SettingsPage("وضعیت دفتر", onBack) {
-        val rows = listOf(
-            "تراکنش‌های ذخیره‌شده" to faNumber(health.transactionCount.toDouble()),
-            "پیامک‌های نگه‌داشته‌شده" to faNumber(health.sourceCount.toDouble()),
+        DoorRow(
+            title = "شروع دفتر",
+            subtitle = ledgerStartFa(health),
+            glyph = CategoryGlyph.INSTALMENT,
+            shape = bandShape(0, 1),
+            divided = false,
+            enabled = true,
+            onClick = { picking = true },
+        )
+
+        SectionLabel("دفتر")
+        Facts(
+            "تراکنش‌ها" to faNumber(health.transactionCount.toDouble()),
             "قدیمی‌ترین تراکنش" to (health.oldestDay?.let(::faDate) ?: "هنوز ثبت نشده"),
-            "قدیمی‌ترین پیامک" to (health.oldestSourceAt?.let { faDate(tehranDay(it)) } ?: "هنوز ثبت نشده"),
-            "آخرین پیامک واردشده" to (health.lastIngestAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز وارد نشده"),
-            "مرز خواندن پیامک‌ها" to (health.scannedTo?.let { faDate(tehranDay(it)) } ?: "هنوز شروع نشده"),
-            "آخرین آماده‌سازی دفتر" to (health.derivedAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز آماده نشده"),
+            "آخرین آماده‌سازی" to (health.derivedAt?.let { faAgo(it, now) } ?: "هنوز آماده نشده"),
         )
-        rows.forEach { (label, value) ->
-            Text("$label: $value", fontSize = 15.sp, lineHeight = 26.sp,
-                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(vertical = Space.s))
-        }
         Text(
-            "گزارش‌ها همهٔ تراکنش‌های نگه‌داشته‌شده رو حساب می‌کنن. روزهای بدون پیامک لزوماً روزهای بدون خرج نیستن.",
-            fontSize = 14.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = Space.l),
+            "روزهای بدون پیامک لزوماً روزهای بدون خرج نیستن.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
         )
-        if (state.smsEnabled) PillButton("وارد کردن پیامک‌های قدیمی", onImport)
+
+        SectionLabel("پیامک‌ها")
+        Facts(
+            "نگه‌داشته‌شده" to faNumber(health.sourceCount.toDouble()),
+            "قدیمی‌ترین پیامک" to (health.oldestSourceAt?.let { faDate(tehranDay(it)) } ?: "هنوز ثبت نشده"),
+            "آخرین پیامک واردشده" to (health.lastIngestAt?.let { faAgo(it, now) } ?: "هنوز وارد نشده"),
+            "مرز خواندن" to (health.scannedTo?.let { faDate(tehranDay(it)) } ?: "هنوز شروع نشده"),
+        )
+        if (state.smsEnabled) {
+            // A row in the band vocabulary rather than the pill it was: it acts in place, like
+            // «بازخوانی همهٔ پیامک‌ها» on پیامک‌های بانک, and the notice upstairs is its receipt.
+            Spacer(Modifier.height(Space.l))
+            DoorRow(
+                title = "وارد کردن پیامک‌های قدیمی",
+                subtitle = "صندوق پیامک از اول خونده می‌شه؛ موجودی‌هایی که خودت نوشتی سر جاشون می‌مونن.",
+                glyph = CategoryGlyph.TRAY,
+                shape = bandShape(0, 1),
+                divided = false,
+                enabled = true,
+                onClick = onImport,
+                chevron = false,
+            )
+        }
+    }
+
+    if (picking) {
+        LedgerStartSheet(
+            health = health,
+            onPick = { vm.setLedgerStartsOn(it); picking = false },
+            onDismiss = { picking = false },
+        )
+    }
+}
+
+/** «از اول», or the month the ledger starts at and what that leaves out — the start row's line. */
+private fun ledgerStartFa(health: LedgerHealth): String = when {
+    health.startsOn <= 0L -> "از اول"
+    health.setAside > 0 ->
+        "از ${reportMonthOf(health.startsOn).fa} • ${faNumber(health.setAside.toDouble())} تراکنش کنار رفته"
+    else -> "از ${reportMonthOf(health.startsOn).fa}"
+}
+
+/**
+ * Facts, read-only, as one band: the name at the start of each row and the answer at its end.
+ * No disc — on these pages a disc marks something to press, and none of these is.
+ */
+@Composable
+private fun Facts(vararg rows: Pair<String, String>) {
+    rows.forEachIndexed { index, (label, value) ->
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(bandShape(index, rows.size))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .padding(horizontal = Space.l, vertical = Space.m)
+                    // One stop for TalkBack — «تراکنش‌ها، ۱٬۲۳۴» — not two.
+                    .semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.size(Space.m))
+                Text(
+                    value,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            if (index < rows.lastIndex) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = Space.l),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Where the ledger starts: «از اول», or the first of a month, newest first — the month she wants
+ * to start clean at is almost always a recent one — each saying what it would leave out before
+ * she picks it. Picking closes the sheet, as the theme sheet's does: every screen behind it
+ * re-reads at once, and «از اول» is always the top row, so the way back is never further than
+ * the way in.
+ *
+ * The months run from this one back to the oldest the ledger holds, gaps included: a month with
+ * nothing in it is still a month she may want to start from.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LedgerStartSheet(health: LedgerHealth, onPick: (Long) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val thisMonth = reportMonthOf(tehranDay(System.currentTimeMillis()))
+    val oldest = listOfNotNull(
+        health.months.firstOrNull()?.first?.let(::reportMonthOf),
+        health.startsOn.takeIf { it > 0L }?.let(::reportMonthOf),
+        thisMonth,
+    ).min()
+    val months = generateSequence(thisMonth) { if (it > oldest) it.previous() else null }.toList()
+    val options = listOf(0L to "از اول") + months.map { it.startDay to it.fa }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("شروع دفتر")
+            Text(
+                "تراکنش‌های قبل از ماهی که انتخاب کنی، دیگه توی دفتر و گزارش‌ها و بودجه‌ها نمیان. " +
+                    "چیزی پاک نمی‌شه؛ موجودی حساب‌ها و هدف‌ها دست نمی‌خورن و با «از اول» همه‌شون برمی‌گردن.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            options.forEachIndexed { index, (day, label) ->
+                val setAside = health.months.sumOf { (start, count) -> if (start < day) count else 0 }
+                StartChoice(
+                    label = label,
+                    detail = when {
+                        day == 0L -> null
+                        setAside > 0 -> "${faNumber(setAside.toDouble())} تراکنش قبلش کنار می‌ره"
+                        else -> "چیزی کنار نمی‌ره"
+                    },
+                    selected = day == health.startsOn,
+                    shape = bandShape(index, options.size),
+                    divided = index < options.lastIndex,
+                    onPick = { onPick(day) },
+                )
+            }
+        }
+    }
+}
+
+/** One choice in [LedgerStartSheet]: a radio row, the whole row the target. */
+@Composable
+private fun StartChoice(
+    label: String,
+    detail: String?,
+    selected: Boolean,
+    shape: Shape,
+    divided: Boolean,
+    onPick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onPick)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = Space.l, vertical = Space.m),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    fontSize = 16.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (detail != null) {
+                    Text(
+                        detail,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            RadioButton(selected = selected, onClick = null)
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l),
+            )
+        }
     }
 }
 

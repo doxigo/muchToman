@@ -222,7 +222,9 @@ class ExportTest {
                 "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
                 "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-                "dismissedUpdate", "reportExcluded", "installmentReminder",
+                // ledgerStartsOn rides because it is hers: a restored phone that forgot where
+                // she started clean would bring back every month she had put behind her.
+                "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
             ),
             EXPORTED_PREFS,
         )

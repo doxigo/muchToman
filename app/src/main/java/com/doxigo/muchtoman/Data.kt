@@ -950,6 +950,17 @@ class Store(context: Context) {
         get() = read("reportExcluded", PASS_THROUGH_CATEGORIES.keys)
         set(v) = write("reportExcluded", v)
 
+    /**
+     * The first Tehran day the ledger is read from — the first of the month she chose to start
+     * clean at — or 0 for everything this phone has kept. A way of reading, here beside
+     * [reportExcluded] for that one's reason: nothing about her money changes when it moves.
+     * Balances still read every message, goals still count every rial put aside, and 0 brings
+     * every row back as it was.
+     */
+    var ledgerStartsOn: Long
+        get() = prefs.getLong("ledgerStartsOn", 0L)
+        set(v) { prefs.edit().putLong("ledgerStartsOn", v).apply() }
+
     private inline fun <reified T> read(key: String, fallback: T): T {
         val raw = prefs.getString(key, null) ?: return fallback
         return runCatching { JSON.decodeFromString<T>(raw) }.getOrElse {
@@ -990,7 +1001,7 @@ val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-    "dismissedUpdate", "reportExcluded", "installmentReminder",
+    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
 )
 
 /**
