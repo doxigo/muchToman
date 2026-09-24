@@ -621,9 +621,6 @@ private fun AppScreens(
                     .groupingBy { it.ownerMemberId }
                     .eachCount()
             },
-            // No bar under this one any more: it is a pushed page, so it runs to the gesture
-            // area and takes that inset itself, as the report and the settings page do.
-            bottomInset = 0.dp,
             onBack = { companion = false },
         )
         return

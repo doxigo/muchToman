@@ -13,6 +13,7 @@ import android.util.LruCache
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,30 +22,34 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,10 +62,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -72,7 +80,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,7 +116,8 @@ fun qrBitmap(content: String, size: Int = 720): Bitmap {
 }
 
 /**
- * The two of them, on the row in تنظیمات that leads here.
+ * Her — on the home bar's way into تنظیمات and the card at the top of it. It used to be the mark
+ * on the way into خانواده, which is why it was drawn as a household first.
  *
  * This was a tab icon — two overlapping rounded rectangles first, her phone and the one she set
  * up for someone else, which is a perfectly good drawing of the mechanism and the universal
@@ -144,6 +156,22 @@ fun CompanionGlyph(tint: Color, size: Dp = 24.dp) {
     }
 }
 
+/**
+ * خانواده — a room behind تنظیمات, laid out the way its siblings are: the page frame, the section
+ * labels, the bands and the switch rows are [SettingsPage]'s own, so walking in from پیامک‌های
+ * بانک does not feel like changing apps.
+ *
+ * It used to be one tall column in its own dialect. My row in the member list carried the name
+ * field, the face picker, both sharing switches and the bank chips, so «who is in this family»
+ * was a form with somebody else's row dangling under it, and the page ended in three headed
+ * paragraphs each with a red button. Now the order is the order she needs it in: who is here and
+ * the way to add one, what this phone sends them, what never leaves it, and — last, quiet until
+ * touched — the two ways out.
+ *
+ * The rarely-changed things moved one tap in. My name and face open from my row ([MeSheet]); a
+ * member's removal opens from theirs ([MemberSheet]). Rows stay rows, and the page reads in a
+ * glance instead of a scroll.
+ */
 @Composable
 fun CompanionScreen(
     state: FamilyState,
@@ -158,7 +186,7 @@ fun CompanionScreen(
     onAvatarChange: (String) -> Unit,
     onShareSmsChange: (Boolean) -> Unit,
     onShareAssetsChange: (Boolean) -> Unit,
-    /** The banks this phone tracks, for the set-aside chips. Enum names, not Persian. */
+    /** The banks this phone tracks, for the set-aside rows. Enum names, not Persian. */
     banks: List<String>,
     onExcludedBankToggle: (String) -> Unit,
     onInvite: () -> Unit,
@@ -169,13 +197,13 @@ fun CompanionScreen(
     onRenew: () -> Unit,
     /** How many ledger entries each member id has put in, for the rows to report. */
     contributions: Map<String, Int>,
-    bottomInset: androidx.compose.ui.unit.Dp,
     onBack: () -> Unit,
 ) {
+    // The draft for the two forms that come before a household. Once there is one, the name is
+    // edited in [MeSheet], which keeps a draft of its own.
     var name by remember(state.memberId, state.memberName, state.pendingPairing, suggestedName) {
         mutableStateOf(state.memberName.ifBlank { suggestedName })
     }
-    val cleanName = name.trim()
 
     // Removal runs from here rather than through the ViewModel: it is a leaf action — read
     // the session, speak to the server, write the ledger — with nothing the ViewModel
@@ -206,240 +234,449 @@ fun CompanionScreen(
         }
     }
 
-    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = Space.xl)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = bottomInset + Space.l),
-        ) {
-            // This was a tab, and the bar was its way out. Pushed from تنظیمات it needs one of
-            // its own, in the same corner every other pushed page in the app puts it.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ScreenTitle(
-                    "خانواده",
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = Space.m),
-                )
-                PillButton("برگشت", onBack)
-            }
-            Text(
-                "تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 25.sp,
-            )
-            Spacer(Modifier.height(Space.l))
+    val me = state.members.firstOrNull { it.id == state.memberId }
+    val myName = state.memberName.ifBlank { me?.name.orEmpty() }
+    val others = state.members.filterNot { it.id == state.memberId }
+    var editingMe by remember { mutableStateOf(false) }
+    var openMember by remember { mutableStateOf<String?>(null) }
+    val household = state.paired && state.pendingRejoin == null && state.pendingPairing == null
 
-            when {
-                // Before the plain join: a link on a phone that already belongs somewhere is
-                // this question, whatever the rest of the state says.
-                state.pendingRejoin != null -> RejoinCard(
+    SettingsPage("خانواده", onBack) {
+        when {
+            // Before the plain join: a link on a phone that already belongs somewhere is
+            // this question, whatever the rest of the state says.
+            state.pendingRejoin != null -> {
+                Lead(FAMILY_LEAD)
+                RejoinBlock(
                     working = state.working,
                     onConfirm = onRejoin,
                     onDismiss = onDismissRejoin,
                 )
-                state.pendingPairing != null -> JoinCard(
+            }
+
+            state.pendingPairing != null -> {
+                Welcome("پیوستن به خانواده")
+                NameForm(
                     name = name,
+                    caption = "این اسم کنار تراکنش‌های تو دیده می‌شه.",
+                    action = if (state.working) "در حال پیوستن..." else "پیوستن",
                     working = state.working,
                     onNameChange = { name = it.take(32) },
-                    onJoin = { onJoin(cleanName) },
+                    onSubmit = { onJoin(name.trim()) },
                 )
-                !state.paired -> StartCard(
+            }
+
+            !state.paired -> {
+                Welcome("خرج‌های خونه رو با هم توی یک دفتر ببینید")
+                NameForm(
                     name = name,
+                    // Why the name is asked for is the sentence right above it; this says what comes next.
+                    caption = "اعضای بعدی با کد دعوت وارد می‌شن.",
+                    action = if (state.working) "در حال ساختن..." else "ساختن خانواده",
                     working = state.working,
                     onNameChange = { name = it.take(32) },
-                    onStart = { onStart(cleanName) },
+                    onSubmit = { onStart(name.trim()) },
                 )
-                else -> {
-                    // The family and my place in it are one subject, not a list plus a settings
-                    // section further down the page: the controls on my own row are exactly the
-                    // ones that change what the other rows see. Mine leads because it is the
-                    // only one anybody can act on.
-                    val others = state.members.filterNot { it.id == state.memberId }
-                    val count = others.size + 1
-                    SectionHeading("اعضای خانواده", count)
-                    Spacer(Modifier.height(Space.s))
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        OwnMemberBlock(
-                            member = state.members.firstOrNull { it.id == state.memberId },
-                            name = name,
-                            savedName = state.memberName,
-                            contributions = contributions[state.memberId] ?: 0,
-                            sharing = state.sharesSms,
-                            sharingAssets = state.sharesAssets,
-                            primary = state.memberId == state.primaryMemberId,
-                            banks = banks,
-                            excludedBanks = state.excludedBanks,
-                            working = state.working,
-                            onNameChange = { name = it.take(32) },
-                            onSave = { onNameChange(cleanName) },
-                            onAvatarChange = onAvatarChange,
-                            onSharingChange = onShareSmsChange,
-                            onSharingAssetsChange = onShareAssetsChange,
-                            onExcludedBankToggle = onExcludedBankToggle,
-                            shape = bandShape(0, count),
-                        )
-                        others.forEachIndexed { index, member ->
-                            FamilyMemberRow(
-                                member = member,
-                                contributions = contributions[member.id] ?: 0,
-                                // The founder's row carries no removal for anyone else — the
-                                // server would refuse it, so the button would be a lie.
-                                primary = member.id == state.primaryMemberId,
-                                shape = bandShape(index + 1, count),
-                                enabled = !state.working && !acting,
-                                onRemove = {
-                                    familyAction("حذف نشد. اینترنتت رو چک کن.", after = onSync) { session, durable ->
-                                        removeFamilyMember(session, durable, member.id)
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(Space.l))
+            }
 
-                    state.pairingUrl?.let { url ->
-                        val bitmap = remember(url) { qrBitmap(url) }
-                        Text(
-                            "عضو جدید این کد رو اسکن کنه",
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Spacer(Modifier.height(Space.m))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(Radius.card))
-                                .background(androidx.compose.ui.graphics.Color.White)
-                                .padding(Space.l),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier
-                                    .size(240.dp)
-                                    .semantics { contentDescription = "کد دعوت خانواده" },
-                            )
-                        }
-                        Spacer(Modifier.height(Space.s))
-                        Text(
-                            "در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.",
-                            fontSize = 13.sp,
-                            lineHeight = 22.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(Space.l))
-                    }
-
-                    Button(
-                        onClick = onInvite,
-                        enabled = !state.working,
-                        shape = RoundedCornerShape(Radius.pill),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = Cta.fill,
-                            contentColor = Cta.ink,
-                        ),
-                        // Material's own default is 40dp, under the floor for a touch target.
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                    ) {
-                        Text(
-                            if (state.pairingUrl == null) "دعوت عضو جدید" else "ساختن کد تازه",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-
-                    Spacer(Modifier.height(Space.s))
-                    TextButton(
-                        onClick = onSync,
-                        enabled = !state.working,
-                        shape = RoundedCornerShape(Radius.pill),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                    ) {
-                        Text(
-                            if (state.working) "در حال همگام‌سازی..." else "همگام‌سازی الان",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
+            else -> {
+                Lead(FAMILY_LEAD)
+                // One band: me first, because mine is the only row anybody can change, then
+                // everyone else, then the way to add one — a list and the way to grow it are
+                // one object, as on بودجه.
+                val rows = others.size + 2
+                SectionHeading("اعضای خانواده", others.size + 1)
+                MemberRow(
+                    name = myName,
+                    avatar = me?.avatar.orEmpty(),
+                    mine = true,
+                    founder = state.memberId == state.primaryMemberId,
+                    contributions = contributions[state.memberId] ?: 0,
+                    sharing = null,
+                    shape = bandShape(0, rows),
+                    divided = others.isNotEmpty(),
+                    onClickLabel = "تغییر اسم و چهره",
+                    onClick = { editingMe = true },
+                )
+                others.forEachIndexed { index, member ->
+                    val founder = member.id == state.primaryMemberId
+                    MemberRow(
+                        name = member.name,
+                        avatar = member.avatar,
+                        mine = false,
+                        founder = founder,
+                        contributions = contributions[member.id] ?: 0,
+                        sharing = member.sharesSms,
+                        shape = bandShape(index + 1, rows),
+                        divided = index < others.lastIndex,
+                        onClickLabel = "حذف از خانواده",
+                        // The founder's row opens nothing: removal is all the sheet offers,
+                        // and the server refuses it for them, so the door would be a lie.
+                        onClick = if (founder) null else ({ openMember = member.id }),
+                    )
                 }
-            }
-
-            state.lastSync?.takeIf { state.paired }?.let {
-                Spacer(Modifier.height(Space.s))
-                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            state.error?.let {
-                Spacer(Modifier.height(Space.m))
-                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            }
-            actionError?.let {
-                Spacer(Modifier.height(Space.m))
-                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-            }
-
-            Spacer(Modifier.height(Space.xxl))
-            SectionHeading("حریم خصوصی")
-            Spacer(Modifier.height(Space.s))
-            Text(
-                "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. " +
-                    "از دارایی‌ها هم فقط اسم و ارزش تومنی می‌ره؛ مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت نه. " +
-                    "خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.",
-                fontSize = 13.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            if (state.paired) {
-                Spacer(Modifier.height(Space.xxl))
-                SectionHeading("خروج از خانواده")
-                Spacer(Modifier.height(Space.s))
-                Text(
-                    "دسترسی همین گوشی قطع می‌شه و دفتر مشترک از روش پاک می‌شه؛ تراکنش‌های خودت سر جاشون می‌مونن. " +
-                        "چیزی که بقیه قبلاً دیدن پس گرفته نمی‌شه.",
-                    fontSize = 13.sp,
-                    lineHeight = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                AddMemberRow(
+                    label = if (state.pairingUrl == null) "دعوت عضو جدید" else "ساختن کد تازه",
+                    enabled = !state.working,
+                    shape = bandShape(rows - 1, rows),
+                    onClick = onInvite,
                 )
-                Spacer(Modifier.height(Space.s))
-                ArmedAction(
-                    label = "خروج از خانواده",
-                    armedLabel = "مطمئنی؟ برای خروج دوباره بزن",
-                    enabled = !state.working && !acting,
-                    onConfirmed = onLeave,
-                )
-            }
+                state.pairingUrl?.let { InviteCode(it) }
 
-            if (state.paired) {
-                Spacer(Modifier.height(Space.xxl))
-                SectionHeading("نو کردن خانواده")
-                Spacer(Modifier.height(Space.s))
-                Text(
-                    // Plain about the mechanism, because the whole point of the action is a
-                    // promise about keys: removing someone does not take back the key they
-                    // already hold; this does.
-                    "یک خانواده تازه با کلید تازه ساخته می‌شه و فقط تراکنش‌های همین گوشی دوباره فرستاده می‌شن. " +
-                        "بقیه اعضا باید کد تازه رو دوباره اسکن کنن؛ خانواده قبلی دیگه به‌روز نمی‌شه و دفتر مشترک از نو شروع می‌شه. " +
-                        "برای وقتی که کسی رو حذف کردی و می‌خوای مطمئن باشی چیز تازه‌ای بهش نمی‌رسه.",
-                    fontSize = 13.sp,
-                    lineHeight = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(Space.s))
-                ArmedAction(
-                    label = "نو کردن خانواده",
-                    armedLabel = "مطمئنی؟ برای نو کردن دوباره بزن",
-                    enabled = !state.working && !acting,
-                    onConfirmed = onRenew,
+                Spacer(Modifier.height(Space.l))
+                DoorRow(
+                    title = if (state.working) "در حال همگام‌سازی..." else "همگام‌سازی الان",
+                    subtitle = state.lastSync.orEmpty(),
+                    glyph = CategoryGlyph.SWAP,
+                    shape = bandShape(0, 1),
+                    divided = false,
+                    enabled = !state.working,
+                    onClick = onSync,
+                    chevron = false,
                 )
             }
         }
+
+        listOfNotNull(state.error, actionError).forEach { problem ->
+            Text(
+                problem,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                modifier = Modifier
+                    .padding(top = Space.m, start = Space.xs, end = Space.xs)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+
+        if (household) {
+            // What this phone sends, as the switch rows every other settings room uses. Titles
+            // are what is sent — the label above already says «sharing», and «اشتراک …» twice
+            // over ran the titles past one line on a small phone. The lines under them are the
+            // switch's state in words, one vocabulary for this band and the banks under it —
+            // «فرستاده می‌شه» or «فقط روی همین گوشی» — short enough to stay one line, so no
+            // verb is left hanging alone on a second.
+            SectionHeading("اشتراک‌گذاری")
+            SettingCard(
+                mark = { TabMark { drawLedger(it) } },
+                title = "تراکنش‌های پیامکی",
+                subtitle = if (state.sharesSms) "برای خانواده فرستاده می‌شن" else "فقط روی همین گوشی می‌مونن",
+                checked = state.sharesSms,
+                onChange = onShareSmsChange,
+                shape = bandShape(0, 2),
+                divided = true,
+            )
+            SettingCard(
+                mark = { TabMark { drawAssets(it) } },
+                title = "دارایی‌ها",
+                subtitle = if (state.sharesAssets) "فقط اسم و ارزش تومنی‌شون می‌ره" else "فقط روی همین گوشی می‌مونن",
+                checked = state.sharesAssets,
+                onChange = onShareAssetsChange,
+                shape = bandShape(1, 2),
+            )
+
+            // The set-aside banks, only while something is being shared for them to be set
+            // aside from. One veto for both directions: an excluded bank's transactions and its
+            // balance stay home together. Switches rather than the chips they were — «on» for
+            // «goes to the family» — so the rows read the way پیامک‌های بانک's already do, and
+            // the bank's own logo replaces the category mark the chips could only guess at.
+            if (banks.isNotEmpty() && (state.sharesSms || state.sharesAssets)) {
+                SectionHeading("بانک‌ها")
+                banks.forEachIndexed { index, bank ->
+                    val shared = bank !in state.excludedBanks
+                    SettingCard(
+                        title = bankNameOf(bank),
+                        subtitle = if (shared) "برای خانواده فرستاده می‌شه" else "فقط روی همین گوشی می‌مونه",
+                        checked = shared,
+                        onChange = { onExcludedBankToggle(bank) },
+                        shape = bandShape(index, banks.size),
+                        divided = index < banks.lastIndex,
+                        badge = { BankLogo(bank, size = 44.dp) },
+                    )
+                }
+                Helper("از بانک خاموش، نه تراکنشی فرستاده می‌شه نه موجودی.")
+            }
+        }
+
+        SectionHeading("حریم خصوصی")
+        Text(
+            "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. " +
+                "از دارایی‌ها هم فقط اسم و ارزش تومنی می‌ره؛ مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت نه. " +
+                "خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = Space.xs, end = Space.xs),
+        )
+
+        if (state.paired) {
+            // The two ways out, in one band at the foot of the page. Each row says what it is
+            // for; the first tap turns it into the question and adds what cannot be undone, so
+            // the page is not three paragraphs of consequences for things nobody is doing.
+            Spacer(Modifier.height(Space.xxl))
+            DangerRow(
+                title = "خروج از خانواده",
+                armedTitle = "مطمئنی؟ برای خروج دوباره بزن",
+                subtitle = "دسترسی همین گوشی قطع می‌شه و دفتر مشترک از روش پاک می‌شه؛ تراکنش‌های خودت سر جاشون می‌مونن.",
+                detail = "چیزی که بقیه قبلاً دیدن پس گرفته نمی‌شه.",
+                shape = bandShape(0, 2),
+                divided = true,
+                enabled = !state.working && !acting,
+                onConfirmed = onLeave,
+            )
+            DangerRow(
+                title = "نو کردن خانواده",
+                armedTitle = "مطمئنی؟ برای نو کردن دوباره بزن",
+                subtitle = "برای وقتی که کسی رو حذف کردی و می‌خوای مطمئن باشی چیز تازه‌ای بهش نمی‌رسه.",
+                // Plain about the mechanism, because the whole point of the action is a
+                // promise about keys: removing someone does not take back the key they
+                // already hold; this does.
+                detail = "یک خانواده تازه با کلید تازه ساخته می‌شه و فقط تراکنش‌های همین گوشی دوباره فرستاده می‌شن. " +
+                    "بقیه اعضا باید کد تازه رو دوباره اسکن کنن؛ خانواده قبلی دیگه به‌روز نمی‌شه و دفتر مشترک از نو شروع می‌شه.",
+                shape = bandShape(1, 2),
+                divided = false,
+                enabled = !state.working && !acting,
+                onConfirmed = onRenew,
+            )
+        }
     }
+
+    if (editingMe) {
+        MeSheet(
+            name = myName,
+            avatar = me?.avatar.orEmpty(),
+            onName = onNameChange,
+            onAvatar = onAvatarChange,
+            onDismiss = { editingMe = false },
+        )
+    }
+    others.firstOrNull { it.id == openMember }?.let { member ->
+        MemberSheet(
+            member = member,
+            contributions = contributions[member.id] ?: 0,
+            enabled = !state.working && !acting,
+            error = actionError,
+            onRemove = {
+                familyAction("حذف نشد. اینترنتت رو چک کن.", after = { openMember = null; onSync() }) { session, durable ->
+                    removeFamilyMember(session, durable, member.id)
+                }
+            },
+            onDismiss = { openMember = null },
+        )
+    }
+}
+
+private const val FAMILY_LEAD =
+    "تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد."
+
+/** The sentence under the page title, at the size the other rooms open with. */
+@Composable
+private fun Lead(text: String) {
+    Text(
+        text,
+        fontSize = 15.sp,
+        lineHeight = 26.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = Space.xs, end = Space.xs),
+    )
+}
+
+/** A qualifying sentence under a band, where the settings rooms put theirs. */
+@Composable
+private fun Helper(text: String) {
+    Text(
+        text,
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+    )
+}
+
+/**
+ * The page before there is a household: what it is, in the shape every empty screen in the app
+ * already has — the room's own mark on the quiet green disc, a line, and the sentence that says
+ * what happens. The house is the mark on the تنظیمات row that led here.
+ */
+@Composable
+private fun Welcome(heading: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = Space.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                CategoryGlyph.HOUSE,
+                MaterialTheme.colorScheme.onPrimaryContainer,
+                size = 40.dp,
+                stroke = 2.dp,
+            )
+        }
+        Spacer(Modifier.height(Space.xl))
+        Text(
+            heading,
+            fontSize = 22.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.ExtraBold,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.s))
+        Text(
+            FAMILY_LEAD,
+            fontSize = 15.sp,
+            lineHeight = 25.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Her name and the one button, for starting a household or joining one. The field is
+ * pre-filled with the name تنظیمات greets her by, so most of the time this is one tap.
+ */
+@Composable
+private fun NameForm(
+    name: String,
+    caption: String,
+    action: String,
+    working: Boolean,
+    onNameChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    val ready = name.isNotBlank() && !working
+    Spacer(Modifier.height(Space.xxl))
+    OutlinedTextField(
+        value = name,
+        onValueChange = onNameChange,
+        singleLine = true,
+        label = { Text("اسمت") },
+        shape = RoundedCornerShape(Radius.field),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { if (ready) onSubmit() }),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        caption,
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
+    )
+    Spacer(Modifier.height(Space.xl))
+    CtaButton(action, enabled = ready, onClick = onSubmit)
+}
+
+/** The page's one «press this»: [Cta] green, pill-shaped, a thumb tall. */
+@Composable
+private fun CtaButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(Radius.pill),
+        colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+    ) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+}
+
+/**
+ * The QR for a new member, under the band it adds a row to. The code sits on a white plate in
+ * both themes — a scanner reads dark modules on light, and a dark card would invert it — inside
+ * the same surface the rows above wear, so it reads as part of the list rather than a poster.
+ */
+@Composable
+private fun InviteCode(url: String) {
+    val bitmap = remember(url) { qrBitmap(url) }
+    Spacer(Modifier.height(Space.l))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(Space.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "عضو جدید این کد رو اسکن کنه",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(Space.l))
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(Radius.card))
+                .background(Color.White)
+                .padding(Space.m),
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "کد دعوت خانواده",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(232.dp),
+            )
+        }
+        Spacer(Modifier.height(Space.l))
+        Text(
+            "در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * A pairing link scanned on a phone that already has a household — the other side of
+ * «نو کردن خانواده»: one member renewed, and this phone's QR-in-hand is the invitation to
+ * follow. Nothing replaces anything silently; the words say what stops, and the confirm is
+ * the same armed two-tap every destructive thing here wears. Her display name rides along,
+ * so there is no name field to fill twice.
+ */
+@Composable
+private fun RejoinBlock(
+    working: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    SectionHeading("پیوستن به خانواده جدید")
+    Text(
+        "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: " +
+            "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. " +
+            "تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
+        fontSize = 13.sp,
+        lineHeight = 22.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = Space.xs, end = Space.xs),
+    )
+    Spacer(Modifier.height(Space.m))
+    ArmedAction(
+        label = if (working) "در حال پیوستن..." else "پیوستن به خانواده جدید",
+        armedLabel = "مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن",
+        enabled = !working,
+        onConfirmed = onConfirm,
+    )
+    TextButton(
+        onClick = onDismiss,
+        enabled = !working,
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("بی‌خیال", fontSize = 15.sp) }
 }
 
 /**
@@ -473,110 +710,34 @@ private fun ArmedAction(
 }
 
 /**
- * A section heading, at the size every other screen sets one.
- *
- * They were 16sp here — one Bold, one SemiBold, neither announced as a heading — so the page
- * read as a stack of cards with labels rather than as sections anyone could navigate by.
+ * A band's name, in the voice the settings rooms give theirs — more air above than below, and
+ * announced as a heading so TalkBack can jump between them. A copy of تنظیمات's `SectionLabel`
+ * rather than that one shared: بودجه keeps a private `SectionLabel(text, top)`, and a shared
+ * one-argument overload would quietly win every call there.
  */
 @Composable
 private fun SectionHeading(title: String, count: Int? = null) {
     Text(
         if (count == null) title else "$title (${faNumber(count.toDouble())})",
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Bold,
+        fontSize = 15.sp,
+        fontWeight = FontWeight.ExtraBold,
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.semantics { heading() },
+        modifier = Modifier
+            .padding(top = Space.xxl, bottom = Space.m, start = Space.xs)
+            .semantics { heading() },
     )
 }
 
+/** A tab's own mark in a settings disc — the دفتر slip, the دارایی coins — in the pen's ink. */
 @Composable
-private fun StartCard(
-    name: String,
-    working: Boolean,
-    onNameChange: (String) -> Unit,
-    onStart: () -> Unit,
-) {
-    Panel {
-        Text("ساختن خانواده", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(Space.s))
-        Text(
-            "اسم خودت رو بنویس. اعضای بعدی با کد دعوت وارد می‌شن.",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Space.m))
-        NameField(name, onNameChange)
-        Spacer(Modifier.height(Space.m))
-        Button(onClick = onStart, enabled = name.isNotBlank() && !working, modifier = Modifier.fillMaxWidth()) {
-            Text(if (working) "در حال ساختن..." else "ساختن خانواده")
-        }
-    }
-}
-
-@Composable
-private fun JoinCard(
-    name: String,
-    working: Boolean,
-    onNameChange: (String) -> Unit,
-    onJoin: () -> Unit,
-) {
-    Panel {
-        Text("پیوستن به خانواده", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(Space.s))
-        Text("این اسم کنار تراکنش‌های تو دیده می‌شه.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(Space.m))
-        NameField(name, onNameChange)
-        Spacer(Modifier.height(Space.m))
-        Button(onClick = onJoin, enabled = name.isNotBlank() && !working, modifier = Modifier.fillMaxWidth()) {
-            Text(if (working) "در حال پیوستن..." else "پیوستن")
-        }
-    }
-}
-
-/**
- * A pairing link scanned on a phone that already has a household — the other side of
- * «نو کردن خانواده»: one member renewed, and this phone's QR-in-hand is the invitation to
- * follow. Nothing replaces anything silently; the words say what stops, and the confirm is
- * the same armed two-tap every destructive thing here wears. Her display name rides along,
- * so there is no name field to fill twice.
- */
-@Composable
-private fun RejoinCard(
-    working: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Panel {
-        Text(
-            "پیوستن به خانواده جدید",
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(Space.s))
-        Text(
-            "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: " +
-                "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. " +
-                "تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
-            fontSize = 13.sp,
-            lineHeight = 22.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Space.s))
-        ArmedAction(
-            label = if (working) "در حال پیوستن..." else "پیوستن به خانواده جدید",
-            armedLabel = "مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن",
-            enabled = !working,
-            onConfirmed = onConfirm,
-        )
-        TextButton(
-            onClick = onDismiss,
-            enabled = !working,
-            colors = ButtonDefaults.textButtonColors(
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("بی‌خیال", fontSize = 15.sp) }
-    }
+private fun TabMark(draw: DrawScope.(Color) -> Unit) {
+    val ink = MaterialTheme.colorScheme.onSurface
+    Canvas(
+        Modifier
+            .size(24.dp)
+            // The coins knock a hole out of the glyph, not the disc under it.
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+    ) { inset(3.dp.toPx()) { draw(ink) } }
 }
 
 /**
@@ -771,115 +932,310 @@ private fun ShareStatus(sharing: Boolean) {
 }
 
 /** How much of the family ledger came from this person. */
-@Composable
-private fun MemberContribution(count: Int) {
-    Text(
-        if (count > 0) "${faNumber(count.toDouble())} تراکنش" else "هنوز تراکنشی نفرستاده",
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
+private fun contributionsFa(count: Int): String =
+    if (count > 0) "${faNumber(count.toDouble())} تراکنش" else "هنوز تراکنشی نفرستاده"
 
 /**
- * Somebody else in the family: what they are called, what they contribute, what they share —
- * and the way out. Removal sits on the row it removes, behind the same two-tap confirm as every
- * other destructive thing here, with the honest sentence under the question: it cuts their
- * phone's sync, and it cannot un-see anything.
+ * One person in the household, as a row: face, name, what they have put in, what they share.
+ *
+ * Every row is the same height and the same anatomy, mine included — the list is a list of
+ * peers, and it only reads as one when no row is a form. The founder is said in words on the
+ * second line rather than as a second chip beside «من»: two pills and a face on one line was
+ * the busiest thing on the page, and neither pill was something to press.
  */
 @Composable
-private fun FamilyMemberRow(
-    member: FamilyMember,
+private fun MemberRow(
+    name: String,
+    avatar: String,
+    mine: Boolean,
+    founder: Boolean,
     contributions: Int,
-    /** The founder. Their row wears the tag and carries no removal — the server refuses it. */
-    primary: Boolean,
+    /** Theirs, as the pill. Null on my own row, where the switches further down say it. */
+    sharing: Boolean?,
     shape: Shape,
-    enabled: Boolean,
-    onRemove: () -> Unit,
+    divided: Boolean,
+    onClickLabel: String,
+    /** Null when the row leads nowhere — the founder's, seen by anyone else. */
+    onClick: (() -> Unit)?,
 ) {
-    var armed by remember(member.id) { mutableStateOf(false) }
-    Column(
+    Box(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(Space.l),
+            .background(MaterialTheme.colorScheme.surface),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MemberFace(member.name, member.avatar)
-            Spacer(Modifier.size(Space.m))
-            Column(Modifier.weight(1f)) {
+        Row(
+            Modifier
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = Space.l, vertical = Space.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MemberFace(name, avatar)
+            Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        member.name,
+                        name,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (primary) {
+                    if (mine) {
                         Spacer(Modifier.size(Space.s))
-                        FounderTag()
+                        Text(
+                            "من",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(Radius.pill))
+                                .background(MaterialTheme.colorScheme.primary)
+                                .padding(horizontal = Space.s, vertical = 2.dp),
+                        )
                     }
                 }
-                Spacer(Modifier.height(2.dp))
-                MemberContribution(contributions)
-            }
-            Spacer(Modifier.size(Space.m))
-            ShareStatus(member.sharesSms)
-        }
-        if (!primary) {
-            TextButton(
-                onClick = { if (armed) { armed = false; onRemove() } else armed = true },
-                enabled = enabled,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.align(Alignment.End),
-            ) {
                 Text(
-                    if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف از خانواده",
+                    if (founder) "سرپرست • ${contributionsFa(contributions)}" else contributionsFa(contributions),
                     fontSize = 13.sp,
-                    fontWeight = if (armed) FontWeight.Bold else FontWeight.Normal,
-                    // Announced, or the safeguard is invisible to TalkBack.
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            if (sharing != null) ShareStatus(sharing)
+            if (onClick != null) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        if (armed) {
-            Text(
-                "همگام‌سازی گوشی این عضو قطع می‌شه، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
-                fontSize = 12.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // Inset to where the text starts, like every band in the app: a rule under the face
+        // cuts the row in half instead of separating it from the next one.
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l + 44.dp + Space.m),
             )
         }
     }
 }
 
 /**
- * My own place in the family, and everything I can actually change about it.
- *
- * The name field and the sharing switch used to be two more cards in a settings section further
- * down the page, which meant «who is in this family» and «what I share with them» were two
- * different subjects on one screen. They are one subject: this row is me, and the controls on it
- * are the ones that change what the other rows see.
+ * The member band's last row: the way to add one. A quiet well with the pen's «+», the shape
+ * بودجه ends its bands with — the loud green is kept for the answer inside a sheet, and a filled
+ * slab under the list read as the page's main event on a household that is already whole.
  */
 @Composable
-private fun OwnMemberBlock(
-    member: FamilyMember?,
-    name: String,
-    savedName: String,
-    contributions: Int,
-    sharing: Boolean,
-    sharingAssets: Boolean,
-    primary: Boolean,
-    banks: List<String>,
-    excludedBanks: Set<String>,
-    working: Boolean,
-    onNameChange: (String) -> Unit,
-    onSave: () -> Unit,
-    onAvatarChange: (String) -> Unit,
-    onSharingChange: (Boolean) -> Unit,
-    onSharingAssetsChange: (Boolean) -> Unit,
-    onExcludedBankToggle: (String) -> Unit,
+private fun AddMemberRow(label: String, enabled: Boolean, shape: Shape, onClick: () -> Unit) {
+    val ink = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        PlusMark(ink, size = 18.dp)
+        Spacer(Modifier.size(Space.s))
+        Text(label, fontWeight = FontWeight.Bold, color = ink)
+    }
+}
+
+/**
+ * One of the two ways out, as a row that is its own confirm.
+ *
+ * At rest it says what it is for, in one line. The first tap turns the title into the question
+ * and adds the part that cannot be taken back, so the consequence is on screen at the one moment
+ * it is being decided — not as a standing paragraph over a button nobody is about to press. The
+ * title is announced, or the armed state is invisible to TalkBack.
+ */
+@Composable
+private fun DangerRow(
+    title: String,
+    armedTitle: String,
+    subtitle: String,
+    detail: String,
     shape: Shape,
+    divided: Boolean,
+    enabled: Boolean,
+    onConfirmed: () -> Unit,
 ) {
+    var armed by remember { mutableStateOf(false) }
+    val tone = MaterialTheme.colorScheme.error.let { if (enabled) it else it.copy(alpha = 0.38f) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, enabled = enabled) {
+                    if (armed) {
+                        armed = false
+                        onConfirmed()
+                    } else {
+                        armed = true
+                    }
+                }
+                .animateContentSize(Motion.settle())
+                .padding(Space.l),
+        ) {
+            Text(
+                if (armed) armedTitle else title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = tone,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            Text(
+                subtitle,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            if (armed) {
+                Text(
+                    detail,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = Space.s),
+                )
+            }
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l),
+            )
+        }
+    }
+}
+
+/**
+ * Somebody else in the household, and the one thing I can do about them.
+ *
+ * Removal used to sit on every row as a red line of its own, so a household of four was a list
+ * with three warnings in it. It is here now, one tap in, behind the same two-tap confirm as
+ * every other destructive thing on the page, with the honest sentence above it: it cuts their
+ * phone's sync, and it cannot un-see anything.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MemberSheet(
+    member: FamilyMember,
+    contributions: Int,
+    enabled: Boolean,
+    error: String?,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MemberFace(member.name, member.avatar, size = 56.dp)
+                Spacer(Modifier.size(Space.l))
+                Column(Modifier.weight(1f)) {
+                    SheetTitle(member.name)
+                    Text(
+                        contributionsFa(contributions),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ShareStatus(member.sharesSms)
+            }
+            Spacer(Modifier.height(Space.xl))
+            Text(
+                "همگام‌سازی گوشی این عضو قطع می‌شه، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.s))
+            ArmedAction(
+                label = "حذف از خانواده",
+                armedLabel = "مطمئنی؟ برای حذف دوباره بزن",
+                enabled = enabled,
+                onConfirmed = onRemove,
+            )
+            error?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
+    }
+}
+
+/** The faces in [MeSheet], a size up from the rows: here they are the thing being chosen. */
+private val PICK_FACE = 56.dp
+
+/**
+ * My name and face as the household sees them, in a sheet off my own row.
+ *
+ * They were an always-open field and a picker in the middle of the member list — set once, and
+ * then in the way of every visit after. The name commits on every way out, the swipe-down
+ * included, the care تنظیمات's own name sheet takes; a face commits the moment it is picked,
+ * so the ring moves under her finger. Everyone picks their own on their own phone, the way
+ * everyone types their own name, which is why only my row opens this.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MeSheet(
+    name: String,
+    avatar: String,
+    onName: (String) -> Unit,
+    onAvatar: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var draft by remember { mutableStateOf(name) }
+    // Blank is not a name, so it keeps the old one rather than clearing it.
+    val close = {
+        val clean = draft.trim()
+        if (clean.isNotBlank() && clean != name) onName(clean)
+        onDismiss()
+    }
     val appContext = LocalContext.current.applicationContext
     val photoScope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(
@@ -888,221 +1244,88 @@ private fun OwnMemberBlock(
         if (uri != null) {
             photoScope.launch {
                 withContext(Dispatchers.IO) { avatarThumbnail(appContext, uri) }
-                    ?.let(onAvatarChange)
+                    ?.let(onAvatar)
             }
         }
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(Space.l),
+
+    ModalBottomSheet(
+        onDismissRequest = close,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MemberFace(name.ifBlank { member?.name.orEmpty() }, member?.avatar.orEmpty())
-            Spacer(Modifier.size(Space.m))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        savedName.ifBlank { name },
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.size(Space.s))
-                    Text(
-                        "من",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(Radius.pill))
-                            .background(MaterialTheme.colorScheme.primary)
-                            .padding(horizontal = Space.s, vertical = 2.dp),
-                    )
-                    if (primary) {
-                        Spacer(Modifier.size(Space.s))
-                        FounderTag()
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("اسم و چهره")
+            Text(
+                "کنار تراکنش‌هات و توی دفتر مشترک دیده می‌شه.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it.take(32) },
+                singleLine = true,
+                label = { Text("اسم") },
+                shape = RoundedCornerShape(Radius.field),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { close() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(Space.xl))
+            // Four discs, not a list: the whole space of choices fits on one line, and the one
+            // in use wears the ring. The initial previews the name as it is being typed.
+            val display = draft.ifBlank { name }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Space.m, Alignment.CenterHorizontally),
+            ) {
+                FaceChoice(selected = avatar.isBlank(), label = "حرف اول اسم", onPick = { onAvatar("") }) {
+                    MemberFace(display, "", size = PICK_FACE)
+                }
+                FaceChoice(selected = avatar == AVATAR_MAN, label = "مرد", onPick = { onAvatar(AVATAR_MAN) }) {
+                    MemberFace(display, AVATAR_MAN, size = PICK_FACE)
+                }
+                FaceChoice(selected = avatar == AVATAR_WOMAN, label = "زن", onPick = { onAvatar(AVATAR_WOMAN) }) {
+                    MemberFace(display, AVATAR_WOMAN, size = PICK_FACE)
+                }
+                FaceChoice(
+                    selected = avatar.startsWith(AVATAR_PHOTO_PREFIX),
+                    label = "انتخاب عکس از گالری",
+                    onPick = {
+                        photoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                ) {
+                    // The photo in use, or the pen's «+» as the invitation to pick one — it was a
+                    // camera emoji, the one sticker left in a room drawn entirely in the pen.
+                    if (avatar.startsWith(AVATAR_PHOTO_PREFIX)) {
+                        MemberFace(display, avatar, size = PICK_FACE)
+                    } else {
+                        Box(
+                            Modifier
+                                .size(PICK_FACE)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                            contentAlignment = Alignment.Center,
+                        ) { PlusMark(MaterialTheme.colorScheme.onSurfaceVariant, size = 20.dp) }
                     }
                 }
-                Spacer(Modifier.height(2.dp))
-                MemberContribution(contributions)
             }
-        }
-
-        Spacer(Modifier.height(Space.l))
-        NameField(name, onNameChange)
-        // Only once it is actually a change: a save button that is always there reads as work
-        // she has left undone.
-        if (name.trim().isNotBlank() && name.trim() != savedName) {
-            Spacer(Modifier.height(Space.s))
-            TextButton(
-                onClick = onSave,
-                enabled = !working,
-                modifier = Modifier.align(Alignment.End),
-            ) { Text("ذخیره اسم") }
-        }
-
-        Spacer(Modifier.height(Space.l))
-        // The face choices, on my row only: everyone picks their own on their own phone, the
-        // way everyone types their own name. Four discs, not a sheet — the whole space of
-        // choices fits on one line, and the one in use wears the ring.
-        Text(
-            "چهره",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(Space.xs))
-        Text(
-            "کنار تراکنش‌هات و توی دفتر مشترک دیده می‌شه.",
-            fontSize = 12.sp,
-            lineHeight = 20.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Space.m))
-        val avatar = member?.avatar.orEmpty()
-        val display = name.ifBlank { member?.name.orEmpty() }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
-            FaceChoice(selected = avatar.isBlank(), label = "حرف اول اسم", onPick = { onAvatarChange("") }) {
-                MemberFace(display, "")
-            }
-            FaceChoice(selected = avatar == AVATAR_MAN, label = "مرد", onPick = { onAvatarChange(AVATAR_MAN) }) {
-                MemberFace(display, AVATAR_MAN)
-            }
-            FaceChoice(selected = avatar == AVATAR_WOMAN, label = "زن", onPick = { onAvatarChange(AVATAR_WOMAN) }) {
-                MemberFace(display, AVATAR_WOMAN)
-            }
-            FaceChoice(
-                selected = avatar.startsWith(AVATAR_PHOTO_PREFIX),
-                label = "انتخاب عکس از گالری",
-                onPick = {
-                    photoPicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-            ) {
-                // The slot shows the photo in use, or the camera as the invitation to pick one.
-                if (avatar.startsWith(AVATAR_PHOTO_PREFIX)) MemberFace(display, avatar)
-                else MemberFace("", "📷")
-            }
-        }
-
-        Spacer(Modifier.height(Space.l))
-        ShareSwitch(
-            title = "اشتراک تراکنش‌های پیامکی",
-            caption = if (sharing) "موارد استخراج‌شده برای خانواده فرستاده می‌شن."
-            else "پیامک‌های تو فقط روی همین گوشی می‌مونن.",
-            checked = sharing,
-            onChange = onSharingChange,
-        )
-        Spacer(Modifier.height(Space.s))
-        ShareSwitch(
-            title = "اشتراک دارایی‌ها",
-            caption = if (sharingAssets) "فهرست دارایی‌هات با ارزش تومنی‌شون برای خانواده فرستاده می‌شه."
-            else "دارایی‌هات فقط روی همین گوشی می‌مونن.",
-            checked = sharingAssets,
-            onChange = onSharingAssetsChange,
-        )
-
-        // The set-aside banks, only while something is being shared for them to be set aside
-        // from. One veto for both directions: an excluded bank's transactions and its balance
-        // stay home together.
-        if (banks.isNotEmpty() && (sharing || sharingAssets)) {
-            Spacer(Modifier.height(Space.l))
-            Text(
-                "بانک‌های کنارگذاشته",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                "تراکنش‌ها و موجودی بانکی که علامت بزنی هیچ‌وقت فرستاده نمی‌شن.",
-                fontSize = 12.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(Space.m))
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                banks.forEach { bank ->
-                    FilterCategoryChip(
-                        name = bankNameOf(bank),
-                        chosen = bank in excludedBanks,
-                        onToggle = { onExcludedBankToggle(bank) },
-                    )
-                }
-            }
+            Spacer(Modifier.height(Space.xxl))
+            CtaButton("ذخیره", enabled = true, onClick = close)
         }
     }
-}
-
-/** «سرپرست» — the founder's mark, on their row wherever it appears. */
-@Composable
-private fun FounderTag() {
-    Text(
-        "سرپرست",
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f))
-            .padding(horizontal = Space.s, vertical = 2.dp),
-    )
-}
-
-/** One sharing switch, said the way the block's first one always said it. */
-@Composable
-private fun ShareSwitch(
-    title: String,
-    caption: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            // Concentric with the band it sits in: 28dp group radius less the 16dp
-            // of padding around it. Equal radii would make the inner surface look pinched.
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
-            .padding(Space.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                caption,
-                fontSize = 12.sp,
-                lineHeight = 20.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.size(Space.m))
-        Switch(checked = checked, onCheckedChange = null)
-    }
-}
-
-@Composable
-private fun NameField(value: String, onValueChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text("اسم") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 data class FamilyState(

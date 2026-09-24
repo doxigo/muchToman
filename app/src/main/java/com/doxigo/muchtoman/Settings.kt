@@ -515,7 +515,7 @@ private fun IndexRow(
  * out is two apps.
  */
 @Composable
-private fun SettingsPage(
+internal fun SettingsPage(
     title: String,
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
@@ -1335,7 +1335,7 @@ private fun CachePage(onClear: () -> Unit, onBack: () -> Unit) {
 
 /** One switched setting: its mark, what it does, what it currently means, and the switch. */
 @Composable
-private fun SettingCard(
+internal fun SettingCard(
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -1413,7 +1413,7 @@ private fun SettingCard(
 
 /** A row that is a door, in the band the switches wear — same shape, groupable, with a subtitle. */
 @Composable
-private fun DoorRow(
+internal fun DoorRow(
     title: String,
     subtitle: String,
     glyph: CategoryGlyph,
@@ -1440,13 +1440,16 @@ private fun DoorRow(
             ) { GlyphIcon(glyph, MaterialTheme.colorScheme.onSurface, size = 22.dp) }
             Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    subtitle,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                // Blank until there is something to say — خانواده's sync row before its first run.
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
             if (chevron) {
                 Icon(
