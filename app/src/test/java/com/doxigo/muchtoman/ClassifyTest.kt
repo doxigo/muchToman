@@ -221,6 +221,21 @@ class ClassifyTest {
         assertEquals(BUILTIN_CATEGORIES.size - 2, categoryChoices(BUILTIN_CATEGORIES, null).size)
     }
 
+    @Test
+    fun `a category she made is offered on both sides, whichever she made it on`() {
+        val gym = customCategory("باشگاه", CategoryKind.EXPENSE, CategoryGlyph.DOTS, now = 1L)
+        val side = customCategory("کار آزاد", CategoryKind.INCOME, CategoryGlyph.DOTS, now = 2L)
+        val all = BUILTIN_CATEGORIES + gym + side
+        for (direction in listOf("in", "out", null)) {
+            val offered = categoryChoices(all, direction).map { it.id }
+            assertTrue(gym.id in offered)
+            assertTrue(side.id in offered)
+        }
+        // Only hers: the shipped ones still keep to the side they were shipped on.
+        assertTrue("خواربار" !in categoryChoices(all, "in").map { it.nameFa })
+        assertTrue("حقوق" !in categoryChoices(all, "out").map { it.nameFa })
+    }
+
     /**
      * The picker learns where her money goes, and the two guards that keep it an order rather
      * than a shuffle: nothing moves on a single filing, and the ways out never move at all.

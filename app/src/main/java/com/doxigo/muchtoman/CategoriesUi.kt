@@ -67,10 +67,11 @@ fun CategoriesScreen(
 
     // «دسته‌بندی نشده» is the absence of an answer and «انتقال» is the escape hatch; neither is
     // a thing to manage. Everything else shows, shipped and hers alike, in the picker's order —
-    // the ones she deleted in a band of their own underneath, where they can still be brought back.
+    // hers on both tabs, since the picker offers them both ways — and the ones she deleted in a
+    // band of their own underneath, where they can still be brought back.
     val (deleted, live) = remember(categories, side) {
         categories.filter {
-            it.id != CAT_UNCATEGORISED && it.id != "cat_send" && it.kind == side
+            it.id != CAT_UNCATEGORISED && it.id != "cat_send" && (it.kind == side || offeredBothWays(it))
         }.partition { it.archived }
     }
 
@@ -139,8 +140,7 @@ fun CategoriesScreen(
                 }
             }
 
-            // The one loud control on the page, pinned where her thumb already is. It names the
-            // side it will add to, because that is the one thing the sheet cannot guess wrong.
+            // The one loud control on the page, pinned where her thumb already is.
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -148,7 +148,7 @@ fun CategoriesScreen(
                     .navigationBarsPadding(),
             ) {
                 PillButton(
-                    if (side == CategoryKind.INCOME) "افزودن دستهٔ دخل" else "افزودن دستهٔ خرج",
+                    "افزودن دسته",
                     { adding = true },
                     voice = ButtonVoice.PRIMARY,
                     modifier = Modifier.fillMaxWidth(),
@@ -235,11 +235,12 @@ private fun CategoryRow(
 }
 
 /**
- * A category of her own: a name, which side of the ledger it lives on, and the mark it wears.
+ * A category of her own: a name and the mark it wears. No side of the ledger to pick — hers are
+ * offered both ways ([customCategory]), so [initialKind] is only recorded, never asked.
  *
- * The same sheet edits one — any one, shipped or hers — with the name and mark filled in and
- * the side left out, since that is the one answer that cannot change. Every filed row names a
- * category by id, so a new name reaches everything already under it, last year included.
+ * The same sheet edits one — any one, shipped or hers — with the name and mark filled in. Every
+ * filed row names a category by id, so a new name reaches everything already under it, last year
+ * included.
  *
  * The marks offered are the ones the app already draws ([PICKABLE_GLYPHS]) rather than an emoji
  * keyboard — one pen and one weight is what keeps a category she invented from looking like a
@@ -266,7 +267,6 @@ fun CategorySheet(
     // The mark it wears now, which on a shipped category is looked up by name rather than stored.
     val worn = editing?.let { glyphOf(it.nameFa) }
     var draft by rememberSaveable { mutableStateOf(editing?.nameFa.orEmpty()) }
-    var kind by rememberSaveable { mutableStateOf(initialKind) }
     var glyph by rememberSaveable { mutableStateOf(worn ?: PICKABLE_GLYPHS.first()) }
     // Renaming one must not quietly swap the mark she already knows it by.
     var glyphChosen by rememberSaveable { mutableStateOf(editing != null) }
@@ -320,18 +320,6 @@ fun CategorySheet(
                 )
             }
 
-            // Which side of the ledger it belongs to, and the only thing here she cannot change
-            // later: the picker offers a category only on transactions that went that way.
-            if (editing == null) {
-                SheetLabel("کدوم طرف دفتر؟")
-                SegmentedChoice(
-                    options = listOf(CategoryKind.EXPENSE, CategoryKind.INCOME),
-                    selected = kind,
-                    label = { if (it == CategoryKind.INCOME) "دخل" else "خرج" },
-                    onSelect = { kind = it },
-                )
-            }
-
             SheetLabel("نشونه‌اش")
             FlowRow(
                 Modifier.fillMaxWidth(),
@@ -375,7 +363,7 @@ fun CategorySheet(
                     if (usable) {
                         val name = draft.trim()
                         close {
-                            onSave(name, kind, glyph)
+                            onSave(name, initialKind, glyph)
                             onDismiss()
                         }
                     }

@@ -265,6 +265,11 @@ val PASS_THROUGH_CATEGORIES: Map<String, String> = linkedMapOf(
  * `sort = 500`, past every shipped category, and the same number [applyCategory] gives one that
  * arrives from another phone in the household: hers land after the app's in the picker, in the
  * order the database returns them, which is by name.
+ *
+ * Offered on both sides of the ledger, whichever one she made it on: a باشگاه she pays into can
+ * also refund her, and a name she chose is one she should not have to make twice to file money
+ * coming back under it. `kind` only records the side she was on, the way همسر's does — what a row
+ * counts as is read off the amount's sign.
  */
 fun customCategory(nameFa: String, kind: String, glyph: CategoryGlyph, now: Long): Category =
     Category(
@@ -275,6 +280,13 @@ fun customCategory(nameFa: String, kind: String, glyph: CategoryGlyph, now: Long
         glyph = glyph.name,
         updatedAt = now,
     )
+
+/**
+ * A category she made, or one that arrived from another phone in the household — never a shipped
+ * one. The TRANSFER guard is for a synced row, which carries whatever kind the sender stored.
+ */
+fun offeredBothWays(category: Category): Boolean =
+    !category.builtin && category.kind != CategoryKind.TRANSFER
 
 /**
  * Half of a category's weight is gone this many days later.
@@ -368,6 +380,8 @@ fun categoryChoices(
             // side of the ledger can need. All three are carried by id — their `kind` names the
             // side they shipped on and nothing more.
             it.id == CAT_TRANSFER || it.id == CAT_SPOUSE || it.id == CAT_OTHER -> true
+            // Hers ignore it too — see [customCategory].
+            offeredBothWays(it) -> true
             direction == "in" -> it.kind == CategoryKind.INCOME
             direction == "out" -> it.kind == CategoryKind.EXPENSE
             else -> it.kind != CategoryKind.TRANSFER
