@@ -54,6 +54,33 @@ class InstallmentsTest {
         paid.associate { (ref, rial) -> ref to InstallmentLink(plan.id, rial) }
 
     @Test
+    fun `a reminder comes once per due date, inside her days and waking hours`() {
+        val p = plan()
+        val second = jalaliMonthsAfter(first, 1)
+        fun at(day: Long, hour: Int) = tehranDayStart(day) + hour * 3_600_000L
+        val unpaid = installmentProgress(p, emptyMap(), emptyList(), first - 1)
+
+        val news = installmentNews(listOf(unpaid), 1, emptyMap(), at(first - 1, 10))
+        assertEquals(listOf(unpaid to first), news.due)
+        assertEquals("گوشی: سررسید قسط فرداست", installmentReminderTitle(p, first, first - 1))
+        // Said once: the next sweep that day, and the one on the due day itself, stay quiet.
+        assertTrue(installmentNews(listOf(unpaid), 1, news.marks, at(first - 1, 16)).due.isEmpty())
+        assertTrue(installmentNews(listOf(unpaid), 1, news.marks, at(first, 10)).due.isEmpty())
+        assertEquals(news.marks, installmentNews(listOf(unpaid), 1, news.marks, at(first, 10)).marks)
+        // Not at three in the morning, not two days out on «a day before», not when off.
+        assertTrue(installmentNews(listOf(unpaid), 1, emptyMap(), at(first - 1, 3)).due.isEmpty())
+        assertTrue(installmentNews(listOf(unpaid), 1, emptyMap(), at(first - 2, 10)).due.isEmpty())
+        assertTrue(installmentNews(listOf(unpaid), -1, emptyMap(), at(first - 1, 10)).due.isEmpty())
+
+        // Paid ahead and linked: nothing to remind of until the payment after it.
+        val paid = installmentProgress(p, links(p, "a" to 10_000_000), emptyList(), first - 1)
+        assertTrue(installmentNews(listOf(paid), 1, emptyMap(), at(first - 1, 10)).due.isEmpty())
+        // Paid but never linked: the calendar still moves on to next month's date.
+        val behind = installmentProgress(p, emptyMap(), emptyList(), second - 1)
+        assertEquals(listOf(behind to second), installmentNews(listOf(behind), 1, news.marks, at(second - 1, 10)).due)
+    }
+
+    @Test
     fun `a due date keeps its day where the month has one and clamps where it does not`() {
         assertEquals(JalaliDate(1405, 7, 30), jalaliOf(jalaliMonthsAfter(first, 1)))
         assertEquals(JalaliDate(1405, 12, 29), jalaliOf(jalaliMonthsAfter(first, 6)))

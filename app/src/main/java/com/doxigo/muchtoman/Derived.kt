@@ -447,12 +447,23 @@ suspend fun needsDerive(derived: DerivedDb, durable: DurableDb? = null): Boolean
  * REPLACE by id, so a build that renames a category or retunes a shipped rule takes effect —
  * while anything she made, which carries an id of its own, is untouched. Archiving is how a
  * builtin retires; deleting one would orphan every row that named it.
+ *
+ * A shipped category she renamed or re-marked keeps her name and mark over the build's: the
+ * stored mark is how that is told apart (see [Category.glyph]), and the sort and kind still come
+ * from the build.
  */
 suspend fun seedBuiltins(durable: DurableDb, now: Long = System.currentTimeMillis()) {
     durable.withTransaction {
         val existing = durable.categories().withArchived().associateBy { it.id }
-        durable.categories().putAll(BUILTIN_CATEGORIES.map {
-            it.copy(archived = it.archived || existing[it.id]?.archived == true, updatedAt = now)
+        durable.categories().putAll(BUILTIN_CATEGORIES.map { shipped ->
+            val mine = existing[shipped.id]
+            val edited = mine?.takeIf { it.glyph.isNotBlank() }
+            shipped.copy(
+                nameFa = edited?.nameFa ?: shipped.nameFa,
+                glyph = edited?.glyph.orEmpty(),
+                archived = shipped.archived || mine?.archived == true,
+                updatedAt = now,
+            )
         })
         durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })
     }
@@ -634,8 +645,8 @@ suspend fun ledgerView(
     durable: DurableDb,
     limit: Int = LEDGER_VIEW_LIMIT,
     /**
-     * The categories دخل و خرج leaves out — `Store.reportExcluded`, the one preference this
-     * database-only read takes.
+     * The categories دخل و خرج leaves out — `Store.reportExcluded`, one of the two preferences
+     * this database-only read takes.
      *
      * It is here rather than read off the screen because a total is measured twice: once for the
      * card she is looking at and once by [LedgerWatchWorker] at 3am for the notification. Left to
@@ -643,8 +654,20 @@ suspend fun ledgerView(
      * setting's own default — see [budgetRows].
      */
     excluded: Set<String> = PASS_THROUGH_CATEGORIES.keys,
+    /**
+     * The first day she reads the ledger from — `Store.ledgerStartsOn`, 0 for all of it. Taken
+     * here for [excluded]'s reason: the 3am worker counts the same caps and the same backlog, and
+     * a start the screen honoured and the worker did not would announce money she set aside.
+     */
+    startsOn: Long = 0L,
 ): LedgerView {
     val ledger = ledgerEntries(derived, durable, limit)
+    // Set aside here, at the view, and nowhere earlier. Below this line the months before the
+    // start are gone from the timeline, the deck, the reports and the caps; above it nothing
+    // moved — derived.db still holds them, so every balance still reads every message, and the
+    // family publication, which reads [ledgerEntries] itself, never mistakes a start she chose on
+    // her own phone for deletions to pass on to everyone else's.
+    val kept = startingFrom(ledger.entries, startsOn)
     val answers = durable.decisions().ofKind(DecisionKind.WORTH_IT)
         .mapNotNull { d -> d.value?.let { d.ref to it } }
         .toMap()
@@ -661,10 +684,13 @@ suspend fun ledgerView(
     val memberNames = durable.familyMembers().all().associate { it.id to it.name }
     val links = installmentLinks(durable.decisions().ofKind(DecisionKind.INSTALLMENT), active)
     return LedgerView(
-        entries = ledger.entries,
+        entries = kept,
         categories = ledger.categories,
         managedCategories = ledger.managedCategories,
         // SAVE by name, not «everything but a cap»: an installment is a row of this table too.
+        // Goals and installments read the whole record, not [kept]: what she has put aside and
+        // what she has paid off is money that exists, and choosing where to start reading must
+        // not take any of it back.
         goals = active.filter { it.kind == GoalKind.SAVE }
             .map {
                 goalProgress(
@@ -678,7 +704,7 @@ suspend fun ledgerView(
                         .orEmpty(),
                 )
             },
-        budgets = budgetsOf(active, ledger.entries, today, names, mineId, memberNames, excluded),
+        budgets = budgetsOf(active, kept, today, names, mineId, memberNames, excluded),
         installments = active.filter { it.kind == GoalKind.INSTALLMENT }
             .map { installmentProgress(it, links, ledger.entries, today, mineId) },
         worthIt = answers,
@@ -686,17 +712,28 @@ suspend fun ledgerView(
         mineId = mineId,
         ready = true,
         health = LedgerHealth(
-            oldestDay = ledger.entries.minOfOrNull { it.txn.day },
-            transactionCount = ledger.entries.size,
+            oldestDay = kept.minOfOrNull { it.txn.day },
+            transactionCount = kept.size,
             sourceCount = durable.smsSource().count(),
             oldestSourceAt = durable.smsSource().oldestAt(),
             lastIngestAt = durable.smsSource().newestIngestedAt(),
             scannedTo = durable.meta().get(SOURCE_SCANNED_TO)?.toLongOrNull(),
             derivedAt = derived.meta().get(META_DERIVED_AT)?.toLongOrNull(),
             deriveMs = derived.meta().get(META_DERIVE_MS)?.toLongOrNull(),
+            startsOn = startsOn,
+            setAside = ledger.entries.size - kept.size,
+            months = monthCounts(ledger.entries),
         ),
     )
 }
+
+/** The ledger from [startsOn] on — every entry when that is 0, which is «از اول». */
+fun startingFrom(entries: List<LedgerEntry>, startsOn: Long): List<LedgerEntry> =
+    if (startsOn <= 0L) entries else entries.filter { it.txn.day >= startsOn }
+
+/** How many entries each Jalali month holds, keyed by the month's first day, oldest first. */
+fun monthCounts(entries: List<LedgerEntry>): List<Pair<Long, Int>> =
+    entries.groupingBy { jalaliMonthStart(it.txn.day) }.eachCount().toSortedMap().toList()
 
 data class LedgerHealth(
     val oldestDay: Long? = null,
@@ -707,6 +744,12 @@ data class LedgerHealth(
     val scannedTo: Long? = null,
     val derivedAt: Long? = null,
     val deriveMs: Long? = null,
+    /** The day the ledger is read from, as this view was read with it — 0 for all of it. */
+    val startsOn: Long = 0L,
+    /** How many entries that start leaves out of every screen. */
+    val setAside: Int = 0,
+    /** The whole ledger per month, the start notwithstanding — what the start picker offers. */
+    val months: List<Pair<Long, Int>> = emptyList(),
 )
 
 /**

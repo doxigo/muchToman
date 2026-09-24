@@ -81,6 +81,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             locked = store.lockEnabled,
             name = store.name,
             themeMode = store.themeMode,
+            installmentReminder = store.installmentReminder,
             history = store.history,
             rateHistory = store.rateHistory,
             onboarded = store.onboarded,
@@ -166,7 +167,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // announce → mark sequence from its own coroutine, and the marks those helpers write are
         // get-then-set on prefs — interleaved, an alert is said twice or a mark is lost.
         // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
-        // scheduleLedgerWatch, announceBudgets and markFilingSeen have all been checked.
+        // scheduleLedgerWatch, announceBudgets, announceInstallments and markFilingSeen have all
+        // been checked.
         ledgerGate.withLock {
             // Her exclusion set rides along: a total is a roof over what دخل و خرج counts, so
             // the figure on the card, the sentence on home and the 3am notification all read the
@@ -175,7 +177,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // left to [refreshFamily], which runs after this, the roof stayed one sync behind
             // the report it must agree with.
             val synced = landReportExclusions(durable)
-            val view = ledgerView(derived, durable, excluded = synced ?: store.reportExcluded)
+            val view = ledgerView(
+                derived, durable,
+                excluded = synced ?: store.reportExcluded,
+                startsOn = store.ledgerStartsOn,
+            )
             // The mirror moves in the same update as the cards, so دخل و خرج and «کل خرج»
             // change together rather than a frame apart. Untouched when nothing landed: a
             // publish racing her own tap must not flip the set back under it.
@@ -186,8 +192,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // Watching is scheduled by whether there is anything left to watch, so deleting the last
             // budget on a phone that does not read messages stops the worker rather than leaving it to
             // wake up and find nothing four times a day.
-            scheduleLedgerWatch(app, view.budgets.isNotEmpty() || store.smsEnabled)
+            scheduleLedgerWatch(app, watchWanted())
             announceBudgets(app, store, view.budgets)
+            announceInstallments(app, store, view.installments)
             // The other half is deliberately not announced here: this line runs with the app in front
             // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
             // is being told, so the note comes down and the mark moves past everything on screen —
@@ -502,6 +509,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(themeMode = mode) }
     }
 
+    fun setInstallmentReminder(days: Int) {
+        if (days !in INSTALLMENT_REMINDER_DAYS) return
+        store.installmentReminder = days
+        _state.update { it.copy(installmentReminder = days) }
+        // It may be the only reason left to watch, or the first one.
+        scheduleLedgerWatch(getApplication(), watchWanted())
+    }
+
+    /**
+     * Whether the watch has anything to do: messages to read, a cap to guard, or a payment to remind
+     * her of. Read off the published ledger, so call it after the state carries the latest view.
+     */
+    private fun watchWanted(): Boolean {
+        val ledger = _state.value.ledger
+        return store.smsEnabled || ledger.budgets.isNotEmpty() ||
+            (store.installmentReminder >= 0 && ledger.installments.any { !it.done })
+    }
+
     /** Locked state is session-only; the *preference* is what persists. */
     fun setLockEnabled(on: Boolean) {
         store.lockEnabled = on
@@ -542,8 +567,36 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Archived, never deleted — every transaction she ever filed under it still names it, and the
-     * timeline reads that name off the row rather than off this table.
+     * Her name and mark for a category, shipped or hers.
+     *
+     * Nothing is re-derived: every row names its category by id and the name is read at display
+     * time, so the whole ledger, budgets included, says the new name on the next read. The mark
+     * is stored even when she kept it — on a shipped category that is what makes the rename
+     * survive [seedBuiltins], and a name no build knows would otherwise draw three dots.
+     */
+    fun editCategory(category: Category, nameFa: String, glyph: CategoryGlyph) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(
+                        category.copy(
+                            nameFa = nameFa.trim(),
+                            glyph = glyph.name,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "editCategory failed: $it") }
+        }
+    }
+
+    /**
+     * What «حذف» on a category does: archived, never deleted — every transaction she ever filed
+     * under it still names it, and the timeline reads that name off the row rather than off this
+     * table. The same call brings it back.
      */
     fun toggleCategoryArchived(category: Category) {
         val app = getApplication<Application>()
@@ -1028,6 +1081,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Where the ledger starts — see [Store.ledgerStartsOn]. Nothing is deleted or read again, so
+     * this is a republish and nothing more: the view leaves the months before it out, and
+     * «از اول» brings every row back exactly as it was. Hers alone, unlike the exclusions below —
+     * a start chosen on her phone is not the household's.
+     */
+    fun setLedgerStartsOn(day: Long) {
+        store.ledgerStartsOn = day
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            publishLedger(DurableDb.get(app), DerivedDb.get(app))
         }
     }
 
@@ -2338,10 +2405,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         recordSnapshot(countedBefore = before)
         // The switch is one of the two things the watch is scheduled by, and turning it off is the
         // only path that can take the last reason to watch away without touching a budget.
-        scheduleLedgerWatch(
-            getApplication<Application>(),
-            on || _state.value.ledger.budgets.isNotEmpty(),
-        )
+        scheduleLedgerWatch(getApplication<Application>(), watchWanted())
         if (on) scanSms()
     }
 
@@ -2457,6 +2521,8 @@ data class UiState(
     val locked: Boolean = false,
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
+    val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
     val history: Map<Long, Double> = emptyMap(),
     /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
     val rateHistory: Map<Long, Double> = emptyMap(),

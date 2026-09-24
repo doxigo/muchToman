@@ -222,13 +222,15 @@ class ExportTest {
                 "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
                 "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-                "dismissedUpdate", "reportExcluded",
+                // ledgerStartsOn rides because it is hers: a restored phone that forgot where
+                // she started clean would bring back every month she had put behind her.
+                "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
             ),
             EXPORTED_PREFS,
         )
         // Refetchable caches and this-phone announcement marks stay off other phones for ever.
         assertEquals(
-            listOf("rates", "stocks", "budgetMarks", "filingMark", "strangers"),
+            listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers"),
             EXCLUDED_PREFS,
         )
         assertTrue(EXPORTED_PREFS.intersect(EXCLUDED_PREFS.toSet()).isEmpty())

@@ -917,6 +917,16 @@ class Store(context: Context) {
         get() = prefs.getLong("filingMark", 0L)
         set(v) { prefs.edit().putLong("filingMark", v).apply() }
 
+    /** Days before an installment falls due that its reminder comes, -1 for never. Hers, so exported. */
+    var installmentReminder: Int
+        get() = prefs.getInt("installmentReminder", INSTALLMENT_REMINDER_DEFAULT)
+        set(v) { prefs.edit().putInt("installmentReminder", v).apply() }
+
+    /** Plan id → the due day this phone last reminded her of. [budgetMarks]'s kind, kept off the backup for its reason. */
+    var installmentMarks: Map<String, Long>
+        get() = read("installmentMarks", emptyMap())
+        set(v) = write("installmentMarks", v)
+
     /** How far the inbox has been read, so each scan only looks at what arrived since. */
     var smsFoldNeedsRefresh: Boolean
         get() = prefs.getBoolean("smsFoldNeedsRefresh", false)
@@ -939,6 +949,17 @@ class Store(context: Context) {
     var reportExcluded: Set<String>
         get() = read("reportExcluded", PASS_THROUGH_CATEGORIES.keys)
         set(v) = write("reportExcluded", v)
+
+    /**
+     * The first Tehran day the ledger is read from — the first of the month she chose to start
+     * clean at — or 0 for everything this phone has kept. A way of reading, here beside
+     * [reportExcluded] for that one's reason: nothing about her money changes when it moves.
+     * Balances still read every message, goals still count every rial put aside, and 0 brings
+     * every row back as it was.
+     */
+    var ledgerStartsOn: Long
+        get() = prefs.getLong("ledgerStartsOn", 0L)
+        set(v) { prefs.edit().putLong("ledgerStartsOn", v).apply() }
 
     private inline fun <reified T> read(key: String, fallback: T): T {
         val raw = prefs.getString(key, null) ?: return fallback
@@ -980,14 +1001,14 @@ val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-    "dismissedUpdate", "reportExcluded",
+    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
 )
 
 /**
  * Deliberately left out, and pinned by ExportTest so nobody quietly adds one back:
  *
  * - `rates`, `stocks` — caches of public prices; the restored phone refetches them in seconds.
- * - `budgetMarks`, `filingMark` — what *this phone* has already announced. Imported onto another
+ * - `budgetMarks`, `filingMark`, `installmentMarks` — what *this phone* has already announced. Imported onto another
  *   phone they would silence alerts it never said, or say ones it already had.
  * - `strangers` — suggestions read off this phone's inbox; the next scan rebuilds them.
  *
@@ -996,7 +1017,7 @@ val EXPORTED_PREFS: List<String> = listOf(
  * in Ledger.kt): a restored phone is a new device and must re-pair, or two phones would write to
  * the household as one.
  */
-val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "strangers")
+val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers")
 
 /**
  * One preference as the backup stores it, or null for a shape [Store] never writes. Pure, so the

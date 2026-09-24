@@ -198,7 +198,9 @@ fun BudgetScreen(
             // nobody reads. Only ever shown when there is something to be silent about.
             if (notifyBlocked) {
                 NotifyBlockedCard(
-                    "بودجه‌هات همین‌جا حساب می‌شن، ولی تا اعلان روشن نباشه بیرون از برنامه " +
+                    // No budget means it was raised for the installment reminders alone.
+                    if (budgets.isEmpty()) "تا اعلان روشن نباشه، یادآوری سررسید قسط‌ها بهت نمی‌رسه."
+                    else "بودجه‌هات همین‌جا حساب می‌شن، ولی تا اعلان روشن نباشه بیرون از برنامه " +
                         "خبری بهت نمی‌رسه.",
                     onAskNotify,
                 )

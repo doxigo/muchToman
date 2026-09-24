@@ -411,7 +411,7 @@ fun TimelineScreen(
             }
 
             if (everything.isEmpty()) {
-                EmptyLedger()
+                EmptyLedger(ledger.health.startsOn)
                 return@Column
             }
 
@@ -501,6 +501,22 @@ fun TimelineScreen(
                     // belonged to the day composable but the heading.
                     items(rows, key = { it.txn.ref }, contentType = { "txn" }) { entry ->
                         TimelineRow(entry) { onOpen(entry) }
+                    }
+                }
+                // Where the list stops because she chose where it starts, said where the older
+                // months would have been — a ledger that simply ends reads as money gone missing.
+                if (ledger.health.startsOn > 0L) {
+                    item(key = "starts-on", contentType = "note") {
+                        Text(
+                            setAsideFa(ledger.health.startsOn),
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = Space.xl, horizontal = Space.l),
+                        )
                     }
                 }
             }
@@ -1173,26 +1189,44 @@ internal fun TimelineRow(
     }
 }
 
+/**
+ * Nothing to show. When that is because of where she started the ledger, it says so instead —
+ * «turn the messages on» would be the wrong answer to a ledger she emptied on purpose.
+ */
 @Composable
-private fun EmptyLedger() {
+private fun EmptyLedger(startsOn: Long) {
     Column(
         Modifier.fillMaxSize().padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-                "هنوز هیچ تراکنشی نیست",
+            if (startsOn > 0L) "از ${reportMonthOf(startsOn).fa} به بعد هنوز تراکنشی نیست"
+            else "هنوز هیچ تراکنشی نیست",
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(Modifier.height(Space.s))
         Text(
-            "از تنظیمات، پیامک‌های بانکی رو روشن کن تا دفترت خودش پر بشه.",
+            if (startsOn > 0L) setAsideFa(startsOn)
+            else "از تنظیمات، پیامک‌های بانکی رو روشن کن تا دفترت خودش پر بشه.",
             fontSize = 13.sp,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
+
+/**
+ * What a start leaves out of دفتر and where it comes back — said wherever the months would be.
+ * The room's name is held together, so «وضعیت» and «دفتر» never land on two lines of a centred
+ * note: an ordinary space with a word joiner after it, because a no-break space draws wider than
+ * Modam's own space and left a visible hole in the name.
+ */
+internal fun setAsideFa(startsOn: Long): String =
+    "تراکنش‌های قبل از ${reportMonthOf(startsOn).fa} کنار گذاشته شدن؛ از «وضعیت \u2060دفتر» توی تنظیمات برمی‌گردن."
+
 
 internal fun bankNameOf(bank: String): String =
     runCatching { Bank.valueOf(bank) }.getOrDefault(Bank.OTHER).fa
@@ -1423,10 +1457,10 @@ fun TransactionScreen(
     }
 
     if (makingCategory && onCreateCategory != null) {
-        AddCategorySheet(
+        CategorySheet(
             taken = categories.map { it.nameFa },
             initialKind = if (incoming) CategoryKind.INCOME else CategoryKind.EXPENSE,
-            onAdd = onCreateCategory,
+            onSave = onCreateCategory,
             onDismiss = { makingCategory = false },
         )
     }
@@ -2227,10 +2261,10 @@ fun ReviewDeck(
     }
 
     if (makingCategory && onCreateCategory != null) {
-        AddCategorySheet(
+        CategorySheet(
             taken = ledger.categories.map { it.nameFa },
             initialKind = if (entry?.txn?.direction == "in") CategoryKind.INCOME else CategoryKind.EXPENSE,
-            onAdd = onCreateCategory,
+            onSave = onCreateCategory,
             onDismiss = { makingCategory = false },
         )
     }

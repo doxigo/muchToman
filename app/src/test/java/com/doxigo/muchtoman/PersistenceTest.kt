@@ -40,6 +40,26 @@ class PersistenceTest {
         }
     }
 
+    @Test
+    fun `a renamed or re-marked default keeps her name and mark through reseeding`() = runBlocking {
+        DurableDb.builder(context, "category-edit.db").build().use { db ->
+            seedBuiltins(db, now)
+            val groceries = db.categories().get("cat_groceries")!!
+            db.categories().putAll(listOf(groceries.copy(nameFa = "بقالی", glyph = CategoryGlyph.BASKET.name)))
+            val dining = db.categories().get("cat_dining")!!
+            db.categories().putAll(listOf(dining.copy(nameFa = "an older build's name")))
+            seedBuiltins(db, now + 1)
+
+            val kept = db.categories().get("cat_groceries")!!
+            assertEquals("بقالی", kept.nameFa)
+            assertEquals(groceries.sort, kept.sort)
+            // A name no build knows still draws her mark rather than three dots.
+            assertEquals(CategoryGlyph.BASKET, customGlyphs(db.categories().withArchived())["بقالی"])
+            // Untouched, a default still takes whatever the build ships.
+            assertEquals("رستوران و کافه", db.categories().get("cat_dining")!!.nameFa)
+        }
+    }
+
     private fun schemaDatabase(version: Int, name: String, body: String = "saved message"): File {
         val schema = requireNotNull(javaClass.classLoader!!.getResourceAsStream("com.doxigo.muchtoman.DurableDb/$version.json"))
             .bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonObject["database"]!!.jsonObject }

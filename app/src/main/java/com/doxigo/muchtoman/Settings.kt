@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,16 +33,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -126,6 +126,9 @@ fun SettingsScreen(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    /** Days ahead an installment is reminded of, -1 for never — see [INSTALLMENT_REMINDER_DAYS]. */
+    installmentReminder: Int,
+    onInstallmentReminderChange: (Int) -> Unit,
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
@@ -167,6 +170,8 @@ fun SettingsScreen(
             onCompanion = onCompanion,
             onNameChange = onNameChange,
             onThemeChange = onThemeChange,
+            installmentReminder = installmentReminder,
+            onInstallmentReminderChange = onInstallmentReminderChange,
             onCategories = onCategories,
             onOpen = { page = it },
             onBack = onBack,
@@ -225,12 +230,15 @@ private fun SettingsIndex(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    installmentReminder: Int,
+    onInstallmentReminderChange: (Int) -> Unit,
     onCategories: () -> Unit,
     onOpen: (SettingsRoom) -> Unit,
     onBack: () -> Unit,
 ) {
     var renaming by remember { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
+    var reminderSheet by remember { mutableStateOf(false) }
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -250,41 +258,58 @@ private fun SettingsIndex(
             }
 
             Spacer(Modifier.height(Space.l))
-            IdentityCard(
-                name = name,
-                family = family,
-                onRename = { renaming = true },
-                onCompanion = onCompanion,
-            )
+            IdentityCard(name = name, onRename = { renaming = true })
 
+            // خانواده is the ledger shared, so it sits with the ledger's doors — one door among
+            // them, not the card on top. Most people keep this book alone; the household is
+            // there for whoever opens it, not the first thing everybody is asked about.
+            val ledgerDoors = if (BuildConfig.LITE) 2 else 3
             SectionLabel("دفترت")
             IndexRow(
                 title = "پیامک‌های بانک",
                 value = if (smsOn) "روشن" else "خاموش",
-                shape = bandShape(0, 2),
+                shape = bandShape(0, ledgerDoors),
                 divided = true,
                 onClick = { onOpen(SettingsRoom.SMS) },
             ) { GlyphIcon(CategoryGlyph.ENVELOPE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             IndexRow(
                 title = "دسته‌بندی‌ها",
-                shape = bandShape(1, 2),
+                shape = bandShape(1, ledgerDoors),
+                divided = !BuildConfig.LITE,
                 onClick = onCategories,
             ) { GlyphIcon(CategoryGlyph.TAG, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            if (!BuildConfig.LITE) {
+                IndexRow(
+                    title = "خانواده",
+                    // No value until there is a household: an unpaired phone is not a setting
+                    // left «خاموش», it is simply somebody's own book.
+                    value = if (family.paired) "${faNumber(family.members.size.toDouble())} عضو" else null,
+                    shape = bandShape(2, ledgerDoors),
+                    onClick = onCompanion,
+                ) { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            }
 
             SectionLabel("برنامه")
             IndexRow(
                 title = "ظاهر برنامه",
                 value = themeMode.fa,
-                shape = bandShape(0, 2),
+                shape = bandShape(0, 3),
                 divided = true,
                 onClick = { themeSheet = true },
             ) { AppearanceGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             IndexRow(
                 title = "قفل و امنیت",
                 value = if (lockEnabled) "روشن" else "خاموش",
-                shape = bandShape(1, 2),
+                shape = bandShape(1, 3),
+                divided = true,
                 onClick = { onOpen(SettingsRoom.SECURITY) },
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
+            IndexRow(
+                title = "یادآوری قسط",
+                value = installmentReminderFa(installmentReminder),
+                shape = bandShape(2, 3),
+                onClick = { reminderSheet = true },
+            ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
 
             SectionLabel("نگهداری")
             IndexRow(
@@ -346,35 +371,26 @@ private fun SettingsIndex(
             onDismiss = { themeSheet = false },
         )
     }
+    if (reminderSheet) {
+        InstallmentReminderSheet(
+            current = installmentReminder,
+            onPick = { onInstallmentReminderChange(it); reminderSheet = false },
+            onDismiss = { reminderSheet = false },
+        )
+    }
 }
 
 /**
  * Her, at the top of her own settings — the one card on the page that is about a person rather
  * than about a switch.
  *
- * It carries two things because they are one thing: the name the app greets her by, and the
- * household that name appears under. The card opens خانواده, which is the room; the ✎ opens the
- * name, which is a field. The household line is never the same sentence twice — an unpaired
- * phone gets the offer in the words she would use for it, a household of one is an unfinished
- * setup and says so, and a real household just reports its size. That promotion is the whole
- * compensation for خانواده giving up its tab, and it used to be a row of its own; on the card it
- * is the first thing on the page instead of the second.
- *
- * In the lite edition there is no household at all, so the card is only the name and opens it.
+ * Only her. It used to carry the household too and open خانواده, with the name behind a ✎,
+ * which made every phone a family waiting to be set up — and most of them are one person who
+ * wants to type a name and be done. The household is a door in «دفترت» now; this card is the
+ * name, and it opens the name.
  */
 @Composable
-private fun IdentityCard(
-    name: String,
-    family: FamilyState,
-    onRename: () -> Unit,
-    onCompanion: () -> Unit,
-) {
-    val household = when {
-        BuildConfig.LITE -> "بالای برنامه باهاش بهت سلام می‌کنیم"
-        !family.paired -> "خرج‌های خونه رو با هم توی یک دفتر ببینید"
-        family.members.size < 2 -> "هنوز کسی اضافه نشده — دعوتش کن"
-        else -> "${faNumber(family.members.size.toDouble())} عضو خانواده"
-    }
+private fun IdentityCard(name: String, onRename: () -> Unit) {
     val named = name.isNotBlank()
 
     Box(
@@ -385,11 +401,7 @@ private fun IdentityCard(
     ) {
         Row(
             Modifier
-                .clickable(
-                    role = Role.Button,
-                    onClickLabel = if (BuildConfig.LITE) "تغییر اسم" else "خانواده",
-                    onClick = if (BuildConfig.LITE) onRename else onCompanion,
-                )
+                .clickable(role = Role.Button, onClickLabel = "تغییر اسم", onClick = onRename)
                 .padding(horizontal = Space.l, vertical = Space.l),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -410,28 +422,6 @@ private fun IdentityCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    household,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            // Its own target inside the card, because the card leads somewhere else. In the
-            // lite edition the card *is* this, so a second way in would be two buttons for one
-            // action sitting next to each other.
-            if (!BuildConfig.LITE) {
-                IconButton(onClick = onRename) {
-                    Icon(
-                        Icons.Rounded.Edit,
-                        contentDescription = "تغییر اسم",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
             }
             Icon(
                 Icons.AutoMirrored.Rounded.KeyboardArrowRight,
@@ -525,7 +515,7 @@ private fun IndexRow(
  * out is two apps.
  */
 @Composable
-private fun SettingsPage(
+internal fun SettingsPage(
     title: String,
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
@@ -598,13 +588,6 @@ private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> U
                 .padding(bottom = Space.l),
         ) {
             SheetTitle("اسمت")
-            Text(
-                "بالای برنامه باهاش بهت سلام می‌کنیم.",
-                fontSize = 13.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.xs),
-            )
             Spacer(Modifier.height(Space.l))
             OutlinedTextField(
                 value = draft,
@@ -671,6 +654,43 @@ private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismis
                 label = { it.fa },
                 onSelect = onPick,
                 fontSize = 16.sp,
+            )
+        }
+    }
+}
+
+/** How far ahead an installment is reminded of — [ThemeSheet]'s shape, four choices instead of three. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("یادآوری قسط")
+            Text(
+                "قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            SegmentedChoice(
+                options = INSTALLMENT_REMINDER_DAYS,
+                selected = current,
+                label = ::installmentReminderFa,
+                onSelect = onPick,
+                fontSize = 15.sp,
             )
         }
     }
@@ -974,6 +994,9 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
         )
         Spacer(Modifier.height(Space.l))
         SettingCard(
+            // The house, not a bell: the reminder lives on صفحهٔ خانه, and a bell would promise
+            // the notification the line under it says never comes.
+            mark = { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onSurface, size = 22.dp) },
             title = "یادآوری پشتیبان در برنامه",
             subtitle = "بعد از ۳۰ روز، صفحهٔ خانه یادآوری می‌کنه. اعلانی فرستاده نمی‌شه.",
             checked = backup.reminderEnabled,
@@ -1026,32 +1049,253 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     }
 }
 
+/**
+ * «وضعیت دفتر» — where the ledger starts, what it holds, and how far the messages behind it go.
+ *
+ * It was seven «label: value» lines down a column, a paragraph and a button, in a room whose
+ * siblings are all bands. Now the one thing here she can change comes first — where the ledger
+ * starts — and the facts follow as two bands she can read down, the ledger's and the messages',
+ * each answer at the end of its row where the eye goes looking for one.
+ */
 @Composable
 private fun LedgerHealthPage(activity: FragmentActivity, onImport: () -> Unit, onBack: () -> Unit) {
     val vm = remember(activity) { ViewModelProvider(activity)[AppVm::class.java] }
     val state by vm.state.collectAsStateWithLifecycle()
     val health = state.ledger.health
+    val now = System.currentTimeMillis()
+    var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.runLedger() }
     SettingsPage("وضعیت دفتر", onBack) {
-        val rows = listOf(
-            "تراکنش‌های ذخیره‌شده" to faNumber(health.transactionCount.toDouble()),
-            "پیامک‌های نگه‌داشته‌شده" to faNumber(health.sourceCount.toDouble()),
+        DoorRow(
+            title = "شروع دفتر",
+            subtitle = ledgerStartFa(health),
+            glyph = CategoryGlyph.INSTALMENT,
+            shape = bandShape(0, 1),
+            divided = false,
+            enabled = true,
+            onClick = { picking = true },
+        )
+
+        SectionLabel("دفتر")
+        Facts(
+            "تراکنش‌ها" to faNumber(health.transactionCount.toDouble()),
             "قدیمی‌ترین تراکنش" to (health.oldestDay?.let(::faDate) ?: "هنوز ثبت نشده"),
-            "قدیمی‌ترین پیامک" to (health.oldestSourceAt?.let { faDate(tehranDay(it)) } ?: "هنوز ثبت نشده"),
-            "آخرین پیامک واردشده" to (health.lastIngestAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز وارد نشده"),
-            "مرز خواندن پیامک‌ها" to (health.scannedTo?.let { faDate(tehranDay(it)) } ?: "هنوز شروع نشده"),
-            "آخرین آماده‌سازی دفتر" to (health.derivedAt?.let { faAgo(it, System.currentTimeMillis()) } ?: "هنوز آماده نشده"),
+            "آخرین آماده‌سازی" to (health.derivedAt?.let { faAgo(it, now) } ?: "هنوز آماده نشده"),
         )
-        rows.forEach { (label, value) ->
-            Text("$label: $value", fontSize = 15.sp, lineHeight = 26.sp,
-                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(vertical = Space.s))
-        }
         Text(
-            "گزارش‌ها همهٔ تراکنش‌های نگه‌داشته‌شده رو حساب می‌کنن. روزهای بدون پیامک لزوماً روزهای بدون خرج نیستن.",
-            fontSize = 14.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = Space.l),
+            "روزهای بدون پیامک لزوماً روزهای بدون خرج نیستن.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
         )
-        if (state.smsEnabled) PillButton("وارد کردن پیامک‌های قدیمی", onImport)
+
+        SectionLabel("پیامک‌ها")
+        Facts(
+            "نگه‌داشته‌شده" to faNumber(health.sourceCount.toDouble()),
+            "قدیمی‌ترین پیامک" to (health.oldestSourceAt?.let { faDate(tehranDay(it)) } ?: "هنوز ثبت نشده"),
+            "آخرین پیامک واردشده" to (health.lastIngestAt?.let { faAgo(it, now) } ?: "هنوز وارد نشده"),
+            "مرز خواندن" to (health.scannedTo?.let { faDate(tehranDay(it)) } ?: "هنوز شروع نشده"),
+        )
+        if (state.smsEnabled) {
+            // A row in the band vocabulary rather than the pill it was: it acts in place, like
+            // «بازخوانی همهٔ پیامک‌ها» on پیامک‌های بانک, and the notice upstairs is its receipt.
+            Spacer(Modifier.height(Space.l))
+            DoorRow(
+                title = "وارد کردن پیامک‌های قدیمی",
+                subtitle = "صندوق پیامک از اول خونده می‌شه؛ موجودی‌هایی که خودت نوشتی سر جاشون می‌مونن.",
+                glyph = CategoryGlyph.TRAY,
+                shape = bandShape(0, 1),
+                divided = false,
+                enabled = true,
+                onClick = onImport,
+                chevron = false,
+            )
+        }
+    }
+
+    if (picking) {
+        LedgerStartSheet(
+            health = health,
+            onPick = { vm.setLedgerStartsOn(it); picking = false },
+            onDismiss = { picking = false },
+        )
+    }
+}
+
+/** «از اول», or the month the ledger starts at and what that leaves out — the start row's line. */
+private fun ledgerStartFa(health: LedgerHealth): String = when {
+    health.startsOn <= 0L -> "از اول"
+    health.setAside > 0 ->
+        "از ${reportMonthOf(health.startsOn).fa} • ${faNumber(health.setAside.toDouble())} تراکنش کنار رفته"
+    else -> "از ${reportMonthOf(health.startsOn).fa}"
+}
+
+/**
+ * Facts, read-only, as one band: the name at the start of each row and the answer at its end.
+ * No disc — on these pages a disc marks something to press, and none of these is.
+ */
+@Composable
+private fun Facts(vararg rows: Pair<String, String>) {
+    rows.forEachIndexed { index, (label, value) ->
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(bandShape(index, rows.size))
+                .background(MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .padding(horizontal = Space.l, vertical = Space.m)
+                    // One stop for TalkBack — «تراکنش‌ها، ۱٬۲۳۴» — not two.
+                    .semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.size(Space.m))
+                Text(
+                    value,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            if (index < rows.lastIndex) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = Space.l),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Where the ledger starts: «از اول», or the first of a month, newest first — the month she wants
+ * to start clean at is almost always a recent one — each saying what it would leave out before
+ * she picks it. Picking closes the sheet, as the theme sheet's does: every screen behind it
+ * re-reads at once, and «از اول» is always the top row, so the way back is never further than
+ * the way in.
+ *
+ * The months run from this one back to the oldest the ledger holds, gaps included: a month with
+ * nothing in it is still a month she may want to start from.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LedgerStartSheet(health: LedgerHealth, onPick: (Long) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val thisMonth = reportMonthOf(tehranDay(System.currentTimeMillis()))
+    val oldest = listOfNotNull(
+        health.months.firstOrNull()?.first?.let(::reportMonthOf),
+        health.startsOn.takeIf { it > 0L }?.let(::reportMonthOf),
+        thisMonth,
+    ).min()
+    val months = generateSequence(thisMonth) { if (it > oldest) it.previous() else null }.toList()
+    val options = listOf(0L to "از اول") + months.map { it.startDay to it.fa }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("شروع دفتر")
+            Text(
+                "تراکنش‌های قبل از ماهی که انتخاب کنی، دیگه توی دفتر و گزارش‌ها و بودجه‌ها نمیان. " +
+                    "چیزی پاک نمی‌شه؛ موجودی حساب‌ها و هدف‌ها دست نمی‌خورن و با «از اول» همه‌شون برمی‌گردن.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            options.forEachIndexed { index, (day, label) ->
+                val setAside = health.months.sumOf { (start, count) -> if (start < day) count else 0 }
+                StartChoice(
+                    label = label,
+                    detail = when {
+                        day == 0L -> null
+                        setAside > 0 -> "${faNumber(setAside.toDouble())} تراکنش قبلش کنار می‌ره"
+                        else -> "چیزی کنار نمی‌ره"
+                    },
+                    selected = day == health.startsOn,
+                    shape = bandShape(index, options.size),
+                    divided = index < options.lastIndex,
+                    onPick = { onPick(day) },
+                )
+            }
+        }
+    }
+}
+
+/** One choice in [LedgerStartSheet]: a radio row, the whole row the target. */
+@Composable
+private fun StartChoice(
+    label: String,
+    detail: String?,
+    selected: Boolean,
+    shape: Shape,
+    divided: Boolean,
+    onPick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onPick)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = Space.l, vertical = Space.m),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    fontSize = 16.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (detail != null) {
+                    Text(
+                        detail,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            RadioButton(selected = selected, onClick = null)
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l),
+            )
+        }
     }
 }
 
@@ -1091,7 +1335,7 @@ private fun CachePage(onClear: () -> Unit, onBack: () -> Unit) {
 
 /** One switched setting: its mark, what it does, what it currently means, and the switch. */
 @Composable
-private fun SettingCard(
+internal fun SettingCard(
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -1169,7 +1413,7 @@ private fun SettingCard(
 
 /** A row that is a door, in the band the switches wear — same shape, groupable, with a subtitle. */
 @Composable
-private fun DoorRow(
+internal fun DoorRow(
     title: String,
     subtitle: String,
     glyph: CategoryGlyph,
@@ -1196,13 +1440,16 @@ private fun DoorRow(
             ) { GlyphIcon(glyph, MaterialTheme.colorScheme.onSurface, size = 22.dp) }
             Column(Modifier.padding(horizontal = Space.m).weight(1f)) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    subtitle,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                // Blank until there is something to say — خانواده's sync row before its first run.
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
             if (chevron) {
                 Icon(
