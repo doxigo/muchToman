@@ -33,13 +33,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -260,26 +258,36 @@ private fun SettingsIndex(
             }
 
             Spacer(Modifier.height(Space.l))
-            IdentityCard(
-                name = name,
-                family = family,
-                onRename = { renaming = true },
-                onCompanion = onCompanion,
-            )
+            IdentityCard(name = name, onRename = { renaming = true })
 
+            // خانواده is the ledger shared, so it sits with the ledger's doors — one door among
+            // them, not the card on top. Most people keep this book alone; the household is
+            // there for whoever opens it, not the first thing everybody is asked about.
+            val ledgerDoors = if (BuildConfig.LITE) 2 else 3
             SectionLabel("دفترت")
             IndexRow(
                 title = "پیامک‌های بانک",
                 value = if (smsOn) "روشن" else "خاموش",
-                shape = bandShape(0, 2),
+                shape = bandShape(0, ledgerDoors),
                 divided = true,
                 onClick = { onOpen(SettingsRoom.SMS) },
             ) { GlyphIcon(CategoryGlyph.ENVELOPE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             IndexRow(
                 title = "دسته‌بندی‌ها",
-                shape = bandShape(1, 2),
+                shape = bandShape(1, ledgerDoors),
+                divided = !BuildConfig.LITE,
                 onClick = onCategories,
             ) { GlyphIcon(CategoryGlyph.TAG, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            if (!BuildConfig.LITE) {
+                IndexRow(
+                    title = "خانواده",
+                    // No value until there is a household: an unpaired phone is not a setting
+                    // left «خاموش», it is simply somebody's own book.
+                    value = if (family.paired) "${faNumber(family.members.size.toDouble())} عضو" else null,
+                    shape = bandShape(2, ledgerDoors),
+                    onClick = onCompanion,
+                ) { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            }
 
             SectionLabel("برنامه")
             IndexRow(
@@ -376,29 +384,13 @@ private fun SettingsIndex(
  * Her, at the top of her own settings — the one card on the page that is about a person rather
  * than about a switch.
  *
- * It carries two things because they are one thing: the name the app greets her by, and the
- * household that name appears under. The card opens خانواده, which is the room; the ✎ opens the
- * name, which is a field. The household line is never the same sentence twice — an unpaired
- * phone gets the offer in the words she would use for it, a household of one is an unfinished
- * setup and says so, and a real household just reports its size. That promotion is the whole
- * compensation for خانواده giving up its tab, and it used to be a row of its own; on the card it
- * is the first thing on the page instead of the second.
- *
- * In the lite edition there is no household at all, so the card is only the name and opens it.
+ * Only her. It used to carry the household too and open خانواده, with the name behind a ✎,
+ * which made every phone a family waiting to be set up — and most of them are one person who
+ * wants to type a name and be done. The household is a door in «دفترت» now; this card is the
+ * name, and it opens the name.
  */
 @Composable
-private fun IdentityCard(
-    name: String,
-    family: FamilyState,
-    onRename: () -> Unit,
-    onCompanion: () -> Unit,
-) {
-    val household = when {
-        BuildConfig.LITE -> "بالای برنامه باهاش بهت سلام می‌کنیم"
-        !family.paired -> "خرج‌های خونه رو با هم توی یک دفتر ببینید"
-        family.members.size < 2 -> "هنوز کسی اضافه نشده — دعوتش کن"
-        else -> "${faNumber(family.members.size.toDouble())} عضو خانواده"
-    }
+private fun IdentityCard(name: String, onRename: () -> Unit) {
     val named = name.isNotBlank()
 
     Box(
@@ -409,11 +401,7 @@ private fun IdentityCard(
     ) {
         Row(
             Modifier
-                .clickable(
-                    role = Role.Button,
-                    onClickLabel = if (BuildConfig.LITE) "تغییر اسم" else "خانواده",
-                    onClick = if (BuildConfig.LITE) onRename else onCompanion,
-                )
+                .clickable(role = Role.Button, onClickLabel = "تغییر اسم", onClick = onRename)
                 .padding(horizontal = Space.l, vertical = Space.l),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -434,28 +422,6 @@ private fun IdentityCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    household,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            // Its own target inside the card, because the card leads somewhere else. In the
-            // lite edition the card *is* this, so a second way in would be two buttons for one
-            // action sitting next to each other.
-            if (!BuildConfig.LITE) {
-                IconButton(onClick = onRename) {
-                    Icon(
-                        Icons.Rounded.Edit,
-                        contentDescription = "تغییر اسم",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
             }
             Icon(
                 Icons.AutoMirrored.Rounded.KeyboardArrowRight,
@@ -622,13 +588,6 @@ private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> U
                 .padding(bottom = Space.l),
         ) {
             SheetTitle("اسمت")
-            Text(
-                "بالای برنامه باهاش بهت سلام می‌کنیم.",
-                fontSize = 13.sp,
-                lineHeight = 22.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.xs),
-            )
             Spacer(Modifier.height(Space.l))
             OutlinedTextField(
                 value = draft,
