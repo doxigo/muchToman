@@ -161,14 +161,16 @@ fixes — they are one codebase, built twice.
 If you are already running an earlier version, the plain `muchtoman-` file is your update: it
 keeps its package, so the balances you typed in and every category you confirmed carry over.
 
-New releases show up as a line under your total the next time you open the app. To be notified
+New releases show up as a line under your total the next time you open the app. A copy installed
+from Cafe Bazaar or Myket skips that line: the store updates it once its review passes. To be notified
 without opening it, add `https://github.com/doxigo/muchToman` to
 [Obtainium](https://github.com/ImranR98/Obtainium).
 
-**On an iPhone**, open <https://sync.muchtoman.com> in Safari and add it to the Home Screen
-(Share → Add to Home Screen). It is the same app in the browser — every screen and figure above —
+**On an iPhone**, use the PWA: open <https://sync.muchtoman.com> in the browser and add it to the
+Home Screen (Share → Add to Home Screen). It is the same app, installed from the browser — every
+screen and figure above —
 except that iOS lets no app read your SMS, so you paste a bank message into the ledger instead.
-Added to the Home Screen, its data is kept; in a plain Safari tab iOS may clear it after weeks
+Added to the Home Screen, its data is kept; in a plain browser tab iOS may clear it after weeks
 unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
 Android.
 
@@ -186,7 +188,7 @@ choose, holding everything — and readable by nobody without it, including the 
 
 The app tells its author two things about itself, and nothing else. The first rates request of
 each day carries one header: the app's version and the store that installed it (Cafe Bazaar,
-Myket, or Android's package installer for an APK from GitHub). The web app sends its version and
+Myket, or Android's package installer for an APK from GitHub). The PWA sends its version and
 `pwa`. There is no identifier, so two phones on the same version from the same store send the same
 bytes, and the totals are public at [muchtoman.com/usage](https://muchtoman.com/usage). After a
 crash, the next launch shows the crash report and asks whether to send it: class names and code
