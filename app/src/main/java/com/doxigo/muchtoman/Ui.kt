@@ -80,6 +80,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -1212,6 +1214,7 @@ private fun AppScreens(
             onToggle = vm::setBankEnabled,
             onForget = vm::forgetBankAccount,
             onAddNumber = vm::addBankNumber,
+            loadSenders = vm::loadSenderCandidates,
             onDismissSender = vm::dismissSender,
             onRescan = vm::rescanSms,
             onDismiss = { banks = false },
@@ -2147,6 +2150,7 @@ private fun BankSheet(
     onToggle: (String, Boolean) -> Unit,
     onForget: (String) -> Unit,
     onAddNumber: (String, String) -> Unit,
+    loadSenders: suspend () -> List<SenderCandidate>?,
     onDismissSender: (String) -> Unit,
     onRescan: () -> Unit,
     onDismiss: () -> Unit,
@@ -2165,6 +2169,16 @@ private fun BankSheet(
         }
     }
     var fixing by remember { mutableStateOf<String?>(null) }
+    // The picker reads the inbox only once she opens it; null afterwards means the app may not
+    // read messages at all.
+    var picking by remember { mutableStateOf(false) }
+    var reading by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<List<SenderCandidate>?>(null) }
+    LaunchedEffect(picking) {
+        if (!picking) return@LaunchedEffect
+        found = loadSenders()
+        reading = false
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2303,6 +2317,60 @@ private fun BankSheet(
                     }
                 }
 
+                // A bank that never names itself (صادرات, پاسارگاد) or stars out its مانده
+                // (خاورمیانه) never earns a suggestion card, so a new number of theirs could not
+                // be added at all. This lists every unknown sender whose messages would be read,
+                // and she names the bank.
+                if (!picking) {
+                    item {
+                        TextButton(
+                            onClick = { picking = true; reading = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = Space.l),
+                        ) {
+                            Text(
+                                "اضافه کردن شمارهٔ بانک از پیامک‌ها",
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                } else {
+                    // One card per sender: one that is already a suggestion above stays there.
+                    val offered = found.orEmpty().filterNot { c ->
+                        strangers.any { senderKey(it.sender) == senderKey(c.sender) }
+                    }
+                    item {
+                        Text(
+                            when {
+                                reading -> "در حال خوندن پیامک‌ها…"
+                                found == null -> "برای این کار باید اجازهٔ خوندن پیامک رو بدی."
+                                offered.isEmpty() -> "پیامکی با مبلغ از شمارهٔ تازه‌ای پیدا نشد."
+                                else -> "این شماره‌ها پیامکی با مبلغ فرستادن ولی هنوز توی فهرست نیستن. " +
+                                    "بانکش رو انتخاب کنی، پیامک‌هاش خونده می‌شه."
+                            },
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            color = muted,
+                            modifier = Modifier
+                                .padding(top = Space.l)
+                                .semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
+                    items(offered, key = { "c_${it.sender}" }) { candidate ->
+                        SenderCandidateCard(
+                            candidate = candidate,
+                            now = now,
+                            onOpen = { openSmsThread(context, candidate.sender) },
+                            onAdd = { bank ->
+                                onAddNumber(bank.name, candidate.sender)
+                                found = found?.minus(candidate)
+                            },
+                        )
+                    }
+                }
+
                 // A message is read once and skipped ever after, so a balance that has gone
                 // wrong stays wrong on its own. This is the way back: forget the lot and read
                 // her messages again from the start.
@@ -2328,6 +2396,91 @@ private fun BankSheet(
         }
     }
 
+}
+
+/**
+ * One sender the picker offers: the newest of its messages that reads as money, and which bank it
+ * is. The bank the message names comes preselected. Adding is its own tap, worded as on a
+ * suggestion card, because a number cannot be taken back off a bank once it is on one.
+ */
+@Composable
+private fun SenderCandidateCard(
+    candidate: SenderCandidate,
+    now: Long,
+    onOpen: () -> Unit,
+    onAdd: (Bank) -> Unit,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    var bank by remember(candidate.sender) { mutableStateOf(candidate.guess) }
+    var choosing by remember(candidate.sender) { mutableStateOf(false) }
+    Card(
+        onClick = onOpen,
+        shape = RoundedCornerShape(Radius.card),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(Space.l)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    bidi(candidate.sender),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(Space.s))
+                Text(faAgo(candidate.at, now), fontSize = 12.sp, color = muted)
+            }
+            Text(
+                "«${candidate.snippet}»",
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Text(
+                "باز کردن پیامک‌ها",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier.padding(top = Space.s),
+            )
+            // Stacked, not side by side: beside «بانک دیگه» a long name like خاورمیانه cut the
+            // confirm off before «اضافه‌اش کن», the one word that says what the button does.
+            Column {
+                bank?.let { b ->
+                    TextButton(onClick = { onAdd(b) }) {
+                        Text(
+                            "این شماره مال ${b.fa} هست؛ اضافه‌اش کن",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                Box {
+                    TextButton(onClick = { choosing = true }) {
+                        Text(
+                            if (bank == null) "انتخاب بانک" else "بانک دیگه",
+                            fontSize = 14.sp,
+                            fontWeight = if (bank == null) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                    DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                        for (b in PICKABLE_BANKS) {
+                            DropdownMenuItem(
+                                text = { Text(b.fa) },
+                                leadingIcon = { BankLogo(b.name, size = 24.dp) },
+                                onClick = { bank = b; choosing = false },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -8,11 +8,11 @@
       "body": [
         "پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04"
       ],
-      "why": "Direction is a trailing + rather than a word, so no delta is stated — the مانده it prints is what the balance comes from. No unit anywhere reads as Rial.",
+      "why": "Direction is a + glued to the back of the figure rather than a word, and that sign is the direction — the مانده it prints is still what the balance comes from. No unit anywhere reads as Rial.",
       "expect": {
         "bank": "SADERAT",
-        "direction": null,
-        "amountRial": null,
+        "direction": "in",
+        "amountRial": 1479680,
         "balanceRial": 32203090,
         "feeRial": null,
         "mask": "",
@@ -32,10 +32,11 @@
       "body": [
         "پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06"
       ],
-      "why": "The same shape the other way, from the lettered header rather than the shortcode. «پايانه فروش» is a POS terminal — the only hint of a merchant in the whole message.",
+      "why": "The same shape the other way, from the lettered header rather than the shortcode: the - behind the figure makes it money leaving. «پايانه فروش» is a POS terminal — the only hint of a merchant in the whole message.",
       "expect": {
         "bank": "SADERAT",
-        "amountRial": null,
+        "direction": "out",
+        "amountRial": 4100000,
         "balanceRial": 28103090,
         "feeRial": null,
         "mask": "",

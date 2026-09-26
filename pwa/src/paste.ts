@@ -57,12 +57,44 @@ function normalise(s: string): string {
 const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]/g;
 
 /**
- * The amount with the bank's own sign glued to it, at the start of a line — "+6,000,000" from
- * خاورمیانه, "-30,000,000" from پاسارگاد and رسالت. The sign is the direction and outranks the
- * words: «انتقال از اینترنت بانک از کارت 9295» is money arriving. Thousands separators are
- * required so a "+98…" phone number on its own line is not a deposit.
+ * The amount with the bank's own sign glued to it — in front on a line of its own, "+6,000,000"
+ * from خاورمیانه, پاسارگاد and رسالت, or behind after a label, «پایانه فروش: 4,100,000-» and
+ * «سود:2,472,328+» from صادرات and ملی. The sign is the direction and outranks the words:
+ * «انتقال از اینترنت بانک از کارت 9295» is money arriving. Thousands separators are required so a
+ * "+98…" phone number is not a deposit, and only whitespace or a colon may stand in front of it.
  */
-const SIGNED = /^\s*([+-])([0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+)(?![0-9۰-۹٠-٩])/m;
+const GROUPED = '[0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+';
+const SIGNED = new RegExp(`(?<![^\\s:])(?:([+-])(${GROUPED})|(${GROUPED})([+-]))(?![0-9۰-۹٠-٩])`, 'g');
+
+/**
+ * The first signed figure that is not a balance: one with «مانده» or «موجودی» in front of it on its
+ * own line is the balance being stated, and reading it as the amount would report everything the
+ * account holds as the sum that moved.
+ */
+function signedAmount(text: string): { value: number; divisor: number | null; plus: boolean } | null {
+  for (const m of text.matchAll(SIGNED)) {
+    const lineStart = text.lastIndexOf('\n', m.index! - 1) + 1;
+    if (BALANCE_WORDS.some((w) => text.slice(lineStart, m.index).includes(w))) continue;
+    return {
+      value: Number(digitsOf(m[2] ?? m[3])),
+      divisor: unitAfter(text, m.index! + m[0].length),
+      plus: (m[1] ?? m[4]) === '+',
+    };
+  }
+  return null;
+}
+
+/**
+ * Which way a Blu box move went: true into the account, false out of it, null when it is not one.
+ * A box is her own money set aside inside Blu, and «از حساب در باکس … نشست» is money leaving the
+ * account whatever «نشست» says — the side the money left decides. A purchase («پرید») never is.
+ */
+function boxMove(text: string): boolean | null {
+  if (!text.includes('باکس') || text.includes('پرید')) return null;
+  const fromBox = /از\s+باکس/.test(text);
+  const fromAccount = /از\s+حساب/.test(text);
+  return fromBox && !fromAccount ? true : fromAccount && !fromBox ? false : null;
+}
 
 const PRINTED_AT =
   /(?<![0-9۰-۹٠-٩.\/\-_])[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?(?![0-9۰-۹٠-٩])/;
@@ -250,9 +282,9 @@ export function parsePasted(body: string): Pasted {
   const withdrawal = statesDirection(text, OUT_WORDS);
   const inWords = deposit ? IN_WORDS : [];
   const outWords = withdrawal ? OUT_WORDS : [];
-  const signed = SIGNED.exec(text);
+  const signed = signedAmount(text);
   const amount =
-    (signed && { value: Number(digitsOf(signed[2])), divisor: unitAfter(text, signed.index + signed[0].length) }) ??
+    signed ??
     figureAfter(text, AMOUNT_WORDS, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, inWords, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, outWords, { stopAt: BALANCE_WORDS }) ??
@@ -264,9 +296,11 @@ export function parsePasted(body: string): Pasted {
 
   // Both or neither means the message did not say which way the money went, and guessing is how
   // a deposit becomes a withdrawal.
+  const box = boxMove(text);
   const direction =
     amount == null ? null
-    : signed ? (signed[1] === '+' ? 'in' : 'out')
+    : signed ? (signed.plus ? 'in' : 'out')
+    : box != null ? (box ? 'in' : 'out')
     : deposit && !withdrawal ? 'in'
     : withdrawal && !deposit ? 'out'
     : null;

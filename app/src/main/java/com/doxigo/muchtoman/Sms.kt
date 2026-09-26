@@ -384,19 +384,66 @@ private const val MIN_MONEY_FIGURE = 1000.0
 private val NUMBER = Regex("[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]")
 
 /**
- * The amount with the bank's own sign glued to it, at the start of a line: خاورمیانه, پاسارگاد
- * and رسالت print "+6,000,000" or "-30,000,000" like that. The sign is the direction and
- * outranks the words. خاورمیانه heads a transfer in «انتقال از اینترنت بانک از کارت 9295», and
- * reading «انتقال» as a spend took the card's last four digits as the amount. It also names
- * nothing at all on «سود صندوق», so the words left the amount unknown.
+ * The amount with the bank's own sign glued to it. خاورمیانه, پاسارگاد and رسالت put it in front,
+ * on a line of its own: "+6,000,000", "-30,000,000". صادرات and ملی put it behind, after a label:
+ * «پایانه فروش: 4,100,000-», «سود:2,472,328+». Either way the sign is the direction and outranks
+ * the words. خاورمیانه heads a transfer in «انتقال از اینترنت بانک از کارت 9295», and reading
+ * «انتقال» as a spend took the card's last four digits as the amount. It also names nothing at
+ * all on «سود صندوق», and صادرات names no direction on a POS purchase or a PAYA deposit, so the
+ * words left the amount unknown.
  *
- * Thousands separators are required, which keeps a "+98…" phone number on a line of its own
- * from reading as a deposit. A figure without them falls through to the words, as before.
+ * Thousands separators are required, which keeps a "+98…" phone number from reading as a
+ * deposit, and only whitespace, a colon or the start of the text may stand in front of it. A
+ * figure without them falls through to the words, as before.
  */
-private val SIGNED = Regex(
-    "^\\s*([+-])([0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+)(?![0-9۰-۹٠-٩])",
-    RegexOption.MULTILINE,
-)
+private const val GROUPED = "[0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+"
+private val SIGNED = Regex("(?<![^\\s:])(?:([+-])($GROUPED)|($GROUPED)([+-]))(?![0-9۰-۹٠-٩])")
+
+private class Signed(val figure: Figure, val plus: Boolean)
+
+/**
+ * The first [SIGNED] figure that is not a balance. One with «مانده» or «موجودی» in front of it on
+ * its own line is the balance being stated — an overdrawn one, or a bank that signs every figure —
+ * and reading it as the amount would report everything the account holds as the sum that moved.
+ */
+private fun signedAmount(text: String): Signed? {
+    val m = SIGNED.findAll(text).firstOrNull { m ->
+        val lineStart = text.lastIndexOf('\n', m.range.first - 1) + 1
+        BALANCE_WORDS.none { text.substring(lineStart, m.range.first).contains(it) }
+    } ?: return null
+    val (leadSign, leadFigure, trailFigure, trailSign) = m.destructured
+    return Signed(
+        Figure(moneyOf(leadFigure.ifEmpty { trailFigure })!!, unitAfter(text, m.range.last + 1)),
+        plus = leadSign.ifEmpty { trailSign } == "+",
+    )
+}
+
+private val FROM_BOX = Regex("از\\s+باکس")
+private val FROM_ACCOUNT = Regex("از\\s+حساب")
+
+/**
+ * Which way a Blu box move went: true when money came out of a box into the account, false when it
+ * went from the account into a box, null when the message is not a box move.
+ *
+ * A box is money she keeps aside inside Blu — savings, or a pot for one purpose — so a move either
+ * way is her own money changing drawers, filed with transfers rather than as income or spending.
+ * The words cannot say which way it went: Blu writes a move into a box as «از حساب در باکس …
+ * نشست», and «نشست» is its word for money arriving, so it read as a deposit. The side the money
+ * left does say: «از حساب» out of the account, «از باکس» back into it.
+ *
+ * A purchase is never one, whatever box it mentions: «… از حساب شما پرید» is money spent, and a
+ * round-up into a box beside it is not the amount that moved.
+ */
+private fun boxMove(text: String): Boolean? {
+    if (!text.contains("باکس") || text.contains("پرید")) return null
+    val fromBox = FROM_BOX.containsMatchIn(text)
+    val fromAccount = FROM_ACCOUNT.containsMatchIn(text)
+    return when {
+        fromBox && !fromAccount -> true
+        fromAccount && !fromBox -> false
+        else -> null
+    }
+}
 
 /**
  * A money figure out of a body, with the unit printed next to it.
@@ -613,9 +660,9 @@ fun parseBankSms(
     val withdrawal = statesDirection(text, OUT_WORDS)
     val inWords = IN_WORDS.takeIf { deposit } ?: emptyList()
     val outWords = OUT_WORDS.takeIf { withdrawal } ?: emptyList()
-    val signed = SIGNED.find(text)
+    val signed = signedAmount(text)
     val amount = (
-        signed?.let { Figure(moneyOf(it.groupValues[2])!!, unitAfter(text, it.range.last + 1)) }
+        signed?.figure
             ?: figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
             ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
             ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
@@ -626,9 +673,11 @@ fun parseBankSms(
             ?: figureBefore(text, outWords)
         )?.takeIf { it.value >= MIN_MONEY_FIGURE }
     val moved = amount?.let { it.value / (it.divisor ?: fallback) }
+    val box = boxMove(text)
     val delta = when {
         moved == null -> null
-        signed != null -> if (signed.groupValues[1] == "+") moved else -moved
+        signed != null -> if (signed.plus) moved else -moved
+        box != null -> if (box) moved else -moved
         deposit && !withdrawal -> moved
         withdrawal && !deposit -> -moved
         else -> null // both or neither: the message does not say which way the money went
@@ -674,8 +723,11 @@ fun parseBankSms(
 // *cannot* move a number. A guarantee that holds because of the shape of the code beats one
 // that holds because everyone remembered.
 
-/** How the money moved, as far as the message says. */
-enum class Channel { UNKNOWN, POS, ATM, PAYA, SATNA, CARD, TRANSFER, FEE, BILL }
+/**
+ * How the money moved, as far as the message says. [BOX] is Blu moving money between the account
+ * and one of its boxes — see [boxMove].
+ */
+enum class Channel { UNKNOWN, POS, ATM, PAYA, SATNA, CARD, TRANSFER, FEE, BILL, BOX }
 
 /** What the message named the account by. Both collapse into one [BankSms.mask] string. */
 enum class Instrument { UNKNOWN, CARD, ACCOUNT }
@@ -782,6 +834,8 @@ private fun instrumentOf(mask: String): Instrument = when {
  * beat the "انتقال" it usually appears beside, or every transfer reads as a generic one.
  */
 private fun channelOf(text: String): Channel = when {
+    // First, because a box move can be headed «انتقال» and is still no transfer to anyone.
+    boxMove(text) != null -> Channel.BOX
     text.contains("خودپرداز") || text.contains("atm") -> Channel.ATM
     text.contains("پایانه فروش") || text.contains("پایانه") -> Channel.POS
     text.contains("کارت به کارت") -> Channel.CARD
@@ -938,6 +992,43 @@ data class StrangeSender(
 )
 
 fun snippetOf(body: String): String = body.trim().replace(Regex("\\s+"), " ").take(64)
+
+/** A sender she could add by hand, with the newest of its messages that reads as money. */
+data class SenderCandidate(val sender: String, val snippet: String, val at: Long, val guess: Bank?)
+
+/**
+ * The senders in [recent], newest first, that nothing here knows yet but whose messages would be
+ * read — what the bank sheet offers when a bank's new number never became a suggestion.
+ *
+ * A suggestion needs the message to name its bank and state a مانده of a hundred thousand or more,
+ * and three banks never manage both: صادرات and پاسارگاد do not name themselves, and خاورمیانه
+ * stars its مانده out. A new number from any of them can only ever be added here.
+ *
+ * Each message is read as though its sender were already one of hers. [Bank.OTHER] stands in,
+ * because which bank it is changes nothing the parser takes, so a sender is offered exactly when
+ * adding it would make its messages count: one-time codes, chat and adverts with no amount are
+ * declined there and never listed.
+ */
+fun senderCandidates(recent: List<RawSms>, extra: Map<String, Bank>, limit: Int = 20): List<SenderCandidate> {
+    val offered = mutableSetOf<String>()
+    val out = mutableListOf<SenderCandidate>()
+    for (m in recent) {
+        val sender = m.from.trim()
+        val key = senderKey(sender)
+        if (key.isEmpty() || key in offered || bankOf(sender, extra) != null) continue
+        // آینده is ignored on purpose; offering it here would undo that with one tap.
+        if (isIgnoredBankSms(sender, m.body)) continue
+        parseBankSms(sender, m.body, m.at, mapOf(key to Bank.OTHER)) ?: continue
+        offered += key
+        out += SenderCandidate(sender, snippetOf(m.body), m.at, guessBank(m.body))
+        if (out.size == limit) break
+    }
+    return out
+}
+
+/** The banks a sender can be added to by hand: every one listed, bar [Bank.OTHER] and the ignored. */
+val PICKABLE_BANKS: List<Bank> =
+    Bank.entries.filter { b -> b != Bank.OTHER && IGNORED_BANKS.none { it.name == b.fa } }
 
 /**
  * Sender numbers she confirmed herself, folded into the same lookup the built-ins use.

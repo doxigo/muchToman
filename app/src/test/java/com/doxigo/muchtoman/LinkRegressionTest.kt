@@ -53,7 +53,7 @@ class LinkRegressionTest {
         val random = Random(54321)
         repeat(100) { round ->
             val rows = (0 until 80).map { i ->
-                val channel = listOf("unknown", "paya", "satna")[random.nextInt(3)]
+                val channel = listOf("unknown", "paya", "satna", "box")[random.nextInt(4)]
                 txn(
                     "$round-$i", random.nextLong(0, 100 * 3_600_000L),
                     (if (random.nextBoolean()) 1 else -1) * random.nextLong(1, 6) * 100_000,
@@ -72,8 +72,20 @@ class LinkRegressionTest {
         }
     }
 
-    private fun bruteTransfers(rows: List<Txn>): List<LinkCandidate> {
+    @Test
+    fun `a box move is never taken for half of a transfer`() {
+        // Money into a Blu box never left Blu. A deposit of the same size at another bank a minute
+        // later is income, not its other half.
+        val intoBox = txn("box", 1_000, -5_000_000, "BLU", "box")
+        val salary = txn("pay", 61_000, 5_000_000, "SAMAN")
+        assertTrue(findTransfers(listOf(intoBox, salary)).isEmpty())
+        // The same two legs with an ordinary outgoing one are the transfer they look like.
+        assertEquals(1, findTransfers(listOf(intoBox.copy(channel = "unknown"), salary)).size)
+    }
+
+    private fun bruteTransfers(all: List<Txn>): List<LinkCandidate> {
         fun rail(a: Txn, b: Txn) = listOf(a.channel, b.channel).firstOrNull { it == "paya" || it == "satna" }
+        val rows = all.filter { it.channel != "box" }
         val candidates = rows.filter { it.direction == "out" && it.amountRial != null }.map { sent ->
             sent to rows.filter { received ->
                 val slow = rail(sent, received) != null

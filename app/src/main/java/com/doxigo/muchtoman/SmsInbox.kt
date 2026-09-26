@@ -50,21 +50,38 @@ fun openSmsThread(context: Context, sender: String): Boolean {
  * provider stamps it with the phone's, so a receiver that ingested what it heard would store
  * every message twice under two [srcHash]es.
  */
-suspend fun readSmsInbox(context: Context, since: Long): List<RawSms> = withContext(Dispatchers.IO) {
+suspend fun readSmsInbox(context: Context, since: Long): List<RawSms> =
+    queryInbox(context, "${Telephony.Sms.DATE} >= ?", arrayOf(since.toString()), "${Telephony.Sms.DATE} ASC")
+
+/**
+ * The newest [limit] messages, newest first, for the bank sheet's picker to look through. Read
+ * for that sheet and gone with it: nothing here is stored, so a body still only ever reaches the
+ * database from a sender she reads.
+ */
+suspend fun readRecentSms(context: Context, limit: Int): List<RawSms> =
+    queryInbox(context, null, null, "${Telephony.Sms.DATE} DESC", limit)
+
+private suspend fun queryInbox(
+    context: Context,
+    selection: String?,
+    args: Array<String>?,
+    order: String,
+    limit: Int = Int.MAX_VALUE,
+): List<RawSms> = withContext(Dispatchers.IO) {
     if (!canReadSms(context)) return@withContext emptyList()
     val rows = mutableListOf<RawSms>()
     runCatching {
         context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-            "${Telephony.Sms.DATE} >= ?",
-            arrayOf(since.toString()),
-            "${Telephony.Sms.DATE} ASC",
+            selection,
+            args,
+            order,
         )?.use { c ->
             val from = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
             val body = c.getColumnIndexOrThrow(Telephony.Sms.BODY)
             val date = c.getColumnIndexOrThrow(Telephony.Sms.DATE)
-            while (c.moveToNext()) {
+            while (rows.size < limit && c.moveToNext()) {
                 rows += RawSms(
                     c.getString(from).orEmpty(),
                     c.getString(body).orEmpty(),

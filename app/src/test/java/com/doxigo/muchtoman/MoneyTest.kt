@@ -548,6 +548,28 @@ class MoneyTest {
     }
 
     @Test
+    fun `the picker offers unknown senders whose messages would be read, newest first`() {
+        // صادرات names no bank and خاورمیانه stars out its مانده, so neither ever becomes a
+        // suggestion card. Picking by hand is the only way a new number of theirs gets added.
+        val recent = listOf(
+            RawSms("20004001", "بانک خاورمیانه\nبرداشت وجه از خودپرداز\n-5,025,000\nمانده **********", 9),
+            RawSms("+989121234567", "سلام قربونت برم", 8),                         // nothing to read
+            RawSms("10001", "رمز پویا: 48213\nمبلغ: 1,500,000 ریال", 7),            // a code, declined
+            RawSms("B.Pasargad", "-30,000,000\nمانده: 33,916,067", 6),             // built in already
+            RawSms("98700799", "پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090", 5),
+            RawSms("20004001", "بانک خاورمیانه\n+6,000,000\nمانده **********", 4),   // offered once
+            RawSms("AyandehBank", "مانده 5,000,000 ریال", 3),                       // ignored on purpose
+            RawSms("MEB2024", "واریز 2,000,000 ریال\nمانده 9,000,000 ریال", 2),      // she added it
+        )
+        val offered = senderCandidates(recent, extraLookup(mapOf("KHAVARMIANEH" to listOf("MEB2024"))))
+        assertEquals(listOf("20004001", "98700799"), offered.map { it.sender })
+        assertEquals(9L, offered[0].at)                     // its newest message, not the older one
+        assertEquals(Bank.KHAVARMIANEH, offered[0].guess)   // it names its bank
+        assertNull(offered[1].guess)                        // صادرات never does
+        assertTrue(Bank.OTHER !in PICKABLE_BANKS && Bank.AYANDEH !in PICKABLE_BANKS)
+    }
+
+    @Test
     fun `parsian's lettered header matches whatever case it arrives in`() {
         // No sample message for پارسیان yet, so only the gate is claimed here: messages from
         // this header reach the parser at all. Whether its body shape reads is untested until
@@ -619,15 +641,17 @@ class MoneyTest {
         assertEquals(Bank.SADERAT, bankOf("BankSaderat"))
         assertNull(bankOf("Saderat"))
 
-        // Direction is a trailing +/- rather than a word, so neither message states a delta —
-        // the مانده it prints is what the balance comes from.
+        // Direction is a +/- glued to the back of the figure rather than a word, and it says which
+        // way the money went as surely as خاورمیانه's sign in front does. The مانده it prints is
+        // still what the balance comes from.
         val deposit = parseBankSms("98700719", "پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04", 1L)!!
         assertEquals(3_220_309.0, deposit.balance!!, 0.01)   // no unit anywhere reads as Rial
-        assertNull(deposit.delta)
+        assertEquals(147_968.0, deposit.delta!!, 0.01)
         assertTrue(!deposit.inferred)
 
         val purchase = parseBankSms("BankSaderat", "پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06", 2L)!!
         assertEquals(2_810_309.0, purchase.balance!!, 0.01)
+        assertEquals(-410_000.0, purchase.delta!!, 0.01)
 
         val accounts = applyBankSms(applyBankSms(emptyList(), deposit), purchase)
         assertTrue(accounts.single().trusted)
@@ -655,6 +679,40 @@ class MoneyTest {
         val account = applyBankSms(emptyList(), message).single()
         assertTrue(account.trusted)
         assertEquals("ENBank", account.sender)
+    }
+
+    @Test
+    fun `a blu box move goes the way the money left, not the way نشست says`() {
+        // Blu's wording for a box move, not yet a message off a real phone — the corpus takes one
+        // when it turns up. A box is her own money set aside inside Blu: into one is out of the
+        // account, back out of one is in, and classify() files both as transfers.
+        val intoBox = parseBankSms(
+            "90000258",
+            "بلو\nمبلغ 5,000,000 ریال از حساب در باکس «سفر» نشست.\nموجودی: 95,000,000 ریال",
+            1L,
+        )!!
+        assertEquals(-500_000.0, intoBox.delta!!, 0.01)
+        assertEquals(5_000_000L, intoBox.amountRial)
+        assertEquals(9_500_000.0, intoBox.balance!!, 0.01)
+        assertEquals(Channel.BOX, intoBox.channel)
+
+        val outOfBox = parseBankSms(
+            "90000258",
+            "بلو\nمبلغ 2,000,000 ریال از باکس «سفر» به حساب شما نشست.\nموجودی: 97,000,000 ریال",
+            2L,
+        )!!
+        assertEquals(200_000.0, outOfBox.delta!!, 0.01)
+        assertEquals(Channel.BOX, outOfBox.channel)
+
+        // A purchase that rounds up into a box is still a purchase, at the price paid — filed as
+        // a box move it would vanish from spending.
+        val roundUp = parseBankSms(
+            "90000258",
+            "بلو\nخرید\n1,230,000 ریال از حساب شما پرید. 70,000 ریال هم رند شد و به باکس رفت.\nموجودی: 93,700,000 ریال",
+            3L,
+        )!!
+        assertEquals(-123_000.0, roundUp.delta!!, 0.01)
+        assertEquals(Channel.POS, roundUp.channel)
     }
 
     @Test

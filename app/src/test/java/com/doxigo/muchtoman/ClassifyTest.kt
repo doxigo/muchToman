@@ -57,6 +57,21 @@ class ClassifyTest {
     }
 
     @Test
+    fun `a box move is filed as a transfer whichever way it goes`() {
+        // Money into or out of a Blu box is hers either way, so neither is income or spending —
+        // not even under a rule she made for Blu's deposits, which keys on sender and direction.
+        val hers = Rule("r_blu_in", Priority.USER_OTHER, CAT_INCOME, pBank = "BLU", pDirection = "in")
+        for (signed in listOf(-5_000_000L, 2_000_000L)) {
+            val move = txn(signed = signed, account = "BLU", channel = "box")
+            val filed = classify(move, BUILTIN_RULES + hers)
+            assertEquals(CAT_TRANSFER, filed.categoryId)
+            assertTrue(!filed.needsReview)
+            // Pinning that one row is still hers to do.
+            assertEquals("cat_shopping", classify(move, BUILTIN_RULES, pinned = "cat_shopping").categoryId)
+        }
+    }
+
+    @Test
     fun `an amount predicate cannot match a transaction with no amount`() {
         // A balance-only message states no amount, and a rule about size must not fire on it.
         val rule = Rule("r1", Priority.USER_OTHER, "cat_shopping", pMinRial = 1)

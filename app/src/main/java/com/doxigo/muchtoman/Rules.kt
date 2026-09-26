@@ -551,6 +551,12 @@ fun classify(
     if (txn.ref in transferRefs) {
         return TxnClass(txn.ref, CAT_TRANSFER, null, Confidence.USER_PINNED, needsReview = false)
     }
+    // So is a Blu box move: her own money set aside inside Blu, never income and never spending.
+    // Ahead of the rules, because a rule she made for Blu's other messages keys on its sender and
+    // direction alone, and would otherwise file the way back out of a box as income.
+    if (txn.channel == "box") {
+        return TxnClass(txn.ref, CAT_TRANSFER, null, Confidence.BUILTIN_EXACT, needsReview = false)
+    }
     // Neither is a مانده announcement: no amount means no money moved, and the row is kept only
     // because its balance is what anchors the account — see [deriveBalance]. There is nothing to
     // file, and whatever she answered every total would still read it as zero, so the deck must

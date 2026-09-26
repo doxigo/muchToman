@@ -67,7 +67,12 @@ import kotlinx.coroutines.sync.withLock
 // 11: a code worded «کد تایید», «کد یکبار مصرف» and the like is a one-time code too, unless the
 // message states a مانده. Any one already stored was being read as a spend exactly as a رمز پویا
 // was before 9; the rebuild drops it, and [sweepSources], keyed to this number, deletes it.
-const val PARSER_VERSION = 11
+// 12: a sign glued behind a figure, or in front of one after a label, is its direction just as a
+// sign on a line of its own already was — صادرات's «پايانه فروش: 4,100,000-», ملی's
+// «سود:2,472,328+». Those purchases, deposits and interest had been stored with no amount at all.
+// 13: a Blu box move goes the way the money left — «از حساب در باکس … نشست» is out of the
+// account, not the deposit «نشست» made it — and is filed as a transfer on channel «box».
+const val PARSER_VERSION = 13
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

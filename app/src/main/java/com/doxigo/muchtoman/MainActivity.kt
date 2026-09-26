@@ -2407,6 +2407,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         restartScan { store.smsScannedTo = 0L }
     }
 
+    /**
+     * What the bank sheet's picker offers — see [senderCandidates]. Null without permission to
+     * read messages, so the sheet can say so rather than claim it found nothing.
+     */
+    suspend fun loadSenderCandidates(): List<SenderCandidate>? {
+        val app = getApplication<Application>()
+        if (!canReadSms(app)) return null
+        // ponytail: the newest 2,000 messages. A bank quiet for longer than that on a busy phone
+        // is not offered; read deeper if one ever goes missing.
+        val recent = readRecentSms(app, limit = 2_000)
+        return withContext(Dispatchers.Default) {
+            senderCandidates(recent, extraLookup(store.extraBankNumbers))
+        }
+    }
+
     /** Turning it off leaves the balances where they are; it stops them moving on their own. */
     /**
      * The first-run sheet has had its turn — answered or skipped, which are the same thing to it.

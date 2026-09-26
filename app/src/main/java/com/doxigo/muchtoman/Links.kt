@@ -235,8 +235,11 @@ private class TransferTimes(rows: List<Txn>) {
 }
 
 fun findTransfers(transactions: List<Txn>): List<LinkCandidate> {
-    val outgoing = transactions.filter { it.direction == "out" && it.amountRial != null }
-    val incoming = transactions.filter { it.direction == "in" && it.amountRial != null }
+    // A box move never leaves Blu, so it has no leg at another bank. Offered one, a deposit of the
+    // same size elsewhere would pair with it and drop out of income as the other half.
+    val legs = transactions.filter { it.channel != "box" }
+    val outgoing = legs.filter { it.direction == "out" && it.amountRial != null }
+    val incoming = legs.filter { it.direction == "in" && it.amountRial != null }
     val allTimes = TransferTimes(incoming)
     val slowTimes = TransferTimes(incoming.filter { it.channel in SLOW_RAILS })
     val instantTimes = TransferTimes(incoming.filter { it.channel !in SLOW_RAILS })

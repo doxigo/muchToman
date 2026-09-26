@@ -123,6 +123,9 @@ or header, never words in the body.
 
 **Deliberately not read:** Ayandeh Bank. Its messages are shaped like balance updates but are not.
 
+**Blu boxes** are your own money set aside inside Blu, so moving money into or out of a box is
+filed as a transfer between accounts, never as income or spending.
+
 **SMS only, not push notifications.** Some banks (Blu among them) let you take transaction
 alerts as notifications from their own app instead of as SMS. There is no message to read in
 that case, so the balance quietly stops at the last real SMS rather than reporting anything
@@ -131,7 +134,9 @@ wrong. Turn SMS alerts back on in that bank's own settings.
 <img src="docs/screenshots/banks.png" width="280">
 
 A bank that starts sending from a new shortcode becomes a suggestion card in the app; your tap
-is what adds it, on that phone only.
+is what adds it, on that phone only. Some banks never earn a card, because their messages don't name
+the bank or star out the balance. For those, the bank accounts sheet lists every unknown sender
+whose messages carry an amount, and you say which bank it is.
 
 ## Install
 

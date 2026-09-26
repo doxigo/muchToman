@@ -67,6 +67,15 @@ describe('quick paste', () => {
     expect(parsePasted('سلام قربونت برم').balanceRial).toBeNull();
   });
 
+  it('reads a blu box move the way the money left', () => {
+    // Blu's wording, not yet a message off a real phone. «نشست» is its word for money arriving,
+    // but into a box is out of the account and back out of one is in.
+    const into = parsePasted('بلو\nمبلغ 5,000,000 ریال از حساب در باکس «سفر» نشست.\nموجودی: 95,000,000 ریال');
+    expect(into.direction).toBe('out');
+    expect(into.amountRial).toBe(5_000_000);
+    expect(parsePasted('بلو\nمبلغ 2,000,000 ریال از باکس «سفر» به حساب شما نشست.').direction).toBe('in');
+  });
+
   it('never reads a loan balance as money', () => {
     const got = parsePasted('قسط تسهیلات پرداخت مبلغ 3,000,000 ریال\nمانده بدهی 2,400,000,000 ریال');
     expect(got.balanceRial).toBeNull();
