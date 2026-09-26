@@ -188,6 +188,31 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `leave keeps every goal she made while paired and drops only theirs`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val other = "b".repeat(32)
+        // Everything she makes while paired carries her member id, shared or not.
+        fun goal(id: String, kind: String, shared: Boolean, owner: String) = Goal(
+            id = id, nameFa = id, targetRial = 1_000_000, kind = kind, period = GoalPeriod.MONTH,
+            startsOn = 0, createdAt = 1, updatedAt = 1, shared = shared, ownerMemberId = owner,
+        )
+        durable.goals().put(goal("cap-private", GoalKind.CAP, shared = false, owner = session.member))
+        durable.goals().put(goal("save-shared", GoalKind.SAVE, shared = true, owner = session.member))
+        durable.goals().put(goal("instalment", GoalKind.INSTALLMENT, shared = false, owner = session.member))
+        durable.goals().put(goal("theirs", GoalKind.CAP, shared = true, owner = other))
+
+        leaveFamily(session, durable)
+
+        for (id in listOf("cap-private", "save-shared", "instalment")) {
+            val kept = durable.goals().anyById(id)!!
+            assertFalse("$id was deleted", kept.deleted)
+            assertFalse(kept.shared)
+            assertEquals("", kept.ownerMemberId)
+        }
+        assertTrue(durable.goals().anyById("theirs")!!.deleted)
+    }
+
+    @Test
     fun `a failed leave keeps the session`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         server.script("/v1/leave", 503)

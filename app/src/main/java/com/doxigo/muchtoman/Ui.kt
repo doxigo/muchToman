@@ -645,8 +645,8 @@ private fun AppScreens(
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
             installmentReminder = state.installmentReminder,
-            // Switching it on is the moment to ask for notifications, as the messages switch
-            // asks for its own permission — never at launch.
+            // Switching it on is the moment to ask for notifications if they are off, as the
+            // messages switch does for its own permissions.
             onInstallmentReminderChange = { days ->
                 vm.setInstallmentReminder(days)
                 if (days >= 0 && !canNote) askNotify()
@@ -800,8 +800,8 @@ private fun AppScreens(
               // it, and the total's sheet says so in words. See [budgetTotalNoteFa].
               excluded = state.reportExcluded,
               // Only ever raised where there is something to be quiet about: a phone with no budget
-              // has nothing to notify her of, and asking for the permission then would be the launch
-              // -time prompt this app deliberately does not do.
+              // has nothing to notify her of, and asking for the permission then would be the nag
+              // the first-run sheet refuses to be.
               notifyBlocked = (
                   state.ledger.budgets.isNotEmpty() ||
                       (state.installmentReminder >= 0 && state.ledger.installments.any { !it.done })

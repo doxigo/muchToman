@@ -1,81 +1,70 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import type { OutboxRecord } from '../src/db';
+import type { StoredRecord } from '../src/db';
 
 let db: typeof import('../src/db');
-const session = (household: string) => ({ base: 'https://example.test', token: `${household}.secret`, scope: `family:${household}`, member: 'member', device: 'device' });
-const row = (id: string, at = 100, scope = 'family:a'): OutboxRecord => ({
+const session = (household: string) => ({ base: 'https://example.test', token: `${household}.secret`, scope: `family:${household}`, member: 'member' });
+const row = (id: string, at = 100, scope = 'family:a'): StoredRecord & { nonce: string; body: string } => ({
   id, scope, updatedAt: at, device: 'device', kind: 'transaction', ownerMemberId: 'member',
   deleted: false, value: { at, amountRial: 1000 }, nonce: `nonce-${at}`, body: `body-${at}`,
 });
 beforeEach(async () => { vi.resetModules(); globalThis.indexedDB = new IDBFactory(); db = await import('../src/db'); });
 
-describe('IndexedDB household and revision boundaries', () => {
-  it('keeps colliding IDs, cursors and pending writes separate across household switches', async () => {
-    const a = session('a'); const b = session('b'); const pa = db.partition(a); const pb = db.partition(b);
-    await db.activateSession(a); await db.enqueue(row('same'), pa); await db.setMeta('seq', 987, pa);
-    await db.activateSession(b); await db.enqueue(row('same', 200, b.scope), pb);
-    expect((await db.getRecord('same', pb))?.updatedAt).toBe(200);
-    expect(await db.getMeta('seq', pb)).toBeUndefined();
-    await db.activateSession(a);
-    expect((await db.outbox(pa))[0].body).toBe('body-100');
-    expect(await db.getMeta('seq', pa)).toBe(987);
-    expect(await db.savedSessions()).toHaveLength(2);
+/** The database as a version of the companion left it, written with that version's own schema. */
+function seed(version: number, build: (db: IDBDatabase) => void, fill: (tx: IDBTransaction) => void, stores: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('muchtoman', version);
+    request.onupgradeneeded = () => build(request.result);
+    request.onsuccess = () => {
+      const old = request.result; const tx = old.transaction(stores, 'readwrite');
+      fill(tx);
+      tx.oncomplete = () => { old.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+
+describe('the v3 upgrade', () => {
+  it('adds the browser\'s own tables and leaves every v2 row, unsent write and cursor where it was', async () => {
+    const space = db.partition(session('a'));
+    await seed(2, (old) => {
+      for (const name of ['records_v2', 'outbox_v2']) old.createObjectStore(name, { keyPath: ['partition', 'id'] }).createIndex('partition', 'partition');
+      old.createObjectStore('meta');
+    }, (tx) => {
+      tx.objectStore('records_v2').put({ ...row('kept'), partition: space });
+      tx.objectStore('outbox_v2').put({ ...row('kept'), partition: space });
+      tx.objectStore('meta').put(44, `${space}:seq`);
+    }, ['records_v2', 'outbox_v2', 'meta']);
+
+    const opened = await db.open();
+    expect([...opened.objectStoreNames].sort()).toEqual(['local_v3', 'meta', 'outbox_v2', 'prefs_v3', 'records_v2']);
+    expect((await db.legacyRecords(space)).map((r) => r.id)).toEqual(['kept']);
+    expect((await db.legacyOutbox(space))[0].body).toBe('body-100');
+    expect(await db.getMeta('seq', space)).toBe(44);
   });
 
-  it('migrates v1 records and unsent outbox to the old household before a new pairing', async () => {
-    const a = session('a'); const b = session('b');
-    await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('muchtoman', 1);
-      request.onupgradeneeded = () => {
-        const old = request.result;
-        old.createObjectStore('record', { keyPath: 'id' }); old.createObjectStore('outbox', { keyPath: 'id' }); old.createObjectStore('meta');
-      };
-      request.onsuccess = () => {
-        const old = request.result; const tx = old.transaction(['record', 'outbox', 'meta'], 'readwrite');
-        tx.objectStore('record').put(row('legacy')); tx.objectStore('outbox').put(row('legacy'));
-        tx.objectStore('meta').put(a, 'session'); tx.objectStore('meta').put(55, 'seq');
-        tx.oncomplete = () => { old.close(); resolve(); }; tx.onerror = () => reject(tx.error);
-      };
-    });
-    await db.activateSession(b);
-    expect(await db.allRecords(db.partition(b))).toEqual([]);
-    expect(await db.outbox(db.partition(a))).toHaveLength(1);
+  it('moves a v1 browser\'s rows and cursor to the household that was active', async () => {
+    await seed(1, (old) => {
+      old.createObjectStore('record', { keyPath: 'id' }); old.createObjectStore('outbox', { keyPath: 'id' }); old.createObjectStore('meta');
+    }, (tx) => {
+      tx.objectStore('record').put(row('legacy')); tx.objectStore('outbox').put(row('legacy'));
+      tx.objectStore('record').put(row('elsewhere', 100, 'family:b'));
+      tx.objectStore('meta').put(55, 'seq');
+    }, ['record', 'outbox', 'meta']);
+    const a = session('a');
+    await db.partitionLegacyStores(a);
+    await db.partitionLegacyStores(a);
+    expect((await db.legacyRecords(db.partition(a))).map((r) => r.id)).toEqual(['legacy']);
+    expect(await db.legacyOutbox(db.partition(a))).toHaveLength(1);
+    expect(await db.legacyRecords('legacy-unassigned:family:b')).toHaveLength(1);
     expect(await db.getMeta('seq', db.partition(a))).toBe(55);
-  });
-
-  it('does not acknowledge or clamp an edit made while its older version was being sent', async () => {
-    const p = db.partition(session('a')); const sent = row('one');
-    await db.enqueue(sent, p); await db.enqueue(row('one', 200), p);
-    await db.acknowledge([sent], p, [{ id: sent.id, updatedAt: 50 }]);
-    expect((await db.outbox(p))[0].updatedAt).toBe(200);
-    expect((await db.getRecord('one', p))?.updatedAt).toBe(200);
-    await db.acknowledge(await db.outbox(p), p);
-    expect(await db.pendingCount(p)).toBe(0);
-  });
-
-  it('does not let a pulled echo overwrite a pending edit and commits its cursor with the page', async () => {
-    const p = db.partition(session('a'));
-    await db.enqueue(row('one', 200), p); await db.putRecords([row('one', 100)], p, 44);
-    expect((await db.getRecord('one', p))?.updatedAt).toBe(200);
-    expect(await db.getMeta('seq', p)).toBe(44);
-  });
-
-  it('paginates a date index without leaking other scopes or skipping tied timestamps', async () => {
-    const p = db.partition(session('a')); const other = db.partition(session('b'));
-    await db.putRecords(Array.from({ length: 123 }, (_, i) => row(`r-${String(i).padStart(3, '0')}`, 100)), p);
-    await db.enqueue(row('foreign', 200), other);
-    const first = await db.recordPage(p, 50); const second = await db.recordPage(p, 50, first.next); const third = await db.recordPage(p, 50, second.next);
-    expect([first.rows.length, second.rows.length, third.rows.length]).toEqual([50, 50, 23]);
-    expect(new Set([...first.rows, ...second.rows, ...third.rows].map((r) => r.id)).size).toBe(123);
-    expect(third.next).toBeUndefined();
   });
 });
 
-it('does not restore an obsolete credential when switching with an old session snapshot', async () => {
-  const a = { ...session('a'), issuedAt: 10 }; await db.activateSession(a);
-  await db.persistSession({ ...a, token: 'a.new-secret', issuedAt: 20 });
-  await db.activateSession(session('b')); await db.activateSession(a);
-  expect((await db.getMeta<{ token: string }>('session'))?.token).toBe('a.new-secret');
+it('lets one sync hold the lock at a time', async () => {
+  const order: string[] = [];
+  const slow = db.withSyncLock('family', async () => { order.push('a:start'); await new Promise((r) => setTimeout(r, 20)); order.push('a:end'); });
+  const fast = db.withSyncLock('family', async () => { order.push('b'); });
+  await Promise.all([slow, fast]);
+  expect(order).toEqual(['a:start', 'a:end', 'b']);
 });

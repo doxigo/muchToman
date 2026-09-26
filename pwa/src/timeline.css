@@ -1,0 +1,119 @@
+/* دفتر (Timeline.kt): the tab, one transaction's page, the review deck. Tokens only. */
+
+/* ---- the pinned top: title line, lens + search + filter, the narrowings ---- */
+.ledger-top {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  margin: calc(-1 * env(safe-area-inset-top)) calc(-1 * var(--edge)) 0;
+  padding: env(safe-area-inset-top) var(--edge) 0;
+  container: ledger-top / inline-size;
+}
+.ledger-head { display: flex; align-items: center; gap: var(--s); padding: var(--m) 0; }
+.ledger-head .screen-title { flex: 1; }
+.ledger-pill { min-height: 48px; font-size: 14px; flex: none; }
+.ledger-pill.add { background: var(--surface-container); gap: var(--xs); }
+.ledger-pill.active { background: var(--primary); color: var(--on-primary); }
+/* Four things want the title line and a narrow phone has room for three and a half: the words on
+   the add pills yield first — «پیامک» before «تراکنش», which the phone keeps longest — leaving
+   square discs; the review count never goes. */
+@container ledger-top (max-width: 419px) {
+  .ledger-head.crowded .ledger-pill.paste { width: 48px; padding: 0; }
+  .ledger-head.crowded .ledger-pill.paste .word { display: none; }
+}
+@container ledger-top (max-width: 344px) {
+  .ledger-head.crowded .ledger-pill.add { width: 48px; padding: 0; }
+  .ledger-head.crowded .ledger-pill.add .word { display: none; }
+}
+.ledger-head .screen-title { min-width: 3em; }
+.ledger-controls { display: flex; align-items: center; gap: var(--s); padding-bottom: var(--m); }
+.ledger-disc { flex: none; width: 48px; height: 48px; border: 0; border-radius: var(--r-pill); display: grid; place-items: center; background: var(--surface-container); color: var(--on-surface); }
+.ledger-disc.active { background: var(--primary); color: var(--on-primary); }
+.ledger-search { margin-bottom: var(--m); }
+.narrowed { display: flex; align-items: center; gap: var(--s); padding-bottom: var(--m); }
+.narrowed p { font-size: 12px; line-height: 18px; color: var(--on-surface-variant); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.clear-pill { flex: none; min-height: 48px; padding: 0; border: 0; background: none; }
+.clear-pill > span { display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--l); border-radius: var(--r-pill); background: var(--surface-variant); color: var(--on-surface); font-size: 12px; font-weight: 700; white-space: nowrap; transition: transform var(--fast) var(--enter); }
+.clear-pill:active > span { transform: scale(.97); }
+
+.ledger-answer { min-height: 50dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--m); text-align: center; padding: var(--xl); }
+.ledger-answer .strong { font-weight: 700; color: var(--on-bg); }
+.ledger-answer .strong + .muted { margin-top: calc(var(--s) - var(--m)); }
+.ledger-aside { font-size: 13px; line-height: 20px; text-align: center; color: var(--on-surface-variant); padding: var(--xl) var(--l); }
+
+/* ---- the stream: day headings over plain rows on the paper ---- */
+.day-heading { display: flex; align-items: center; padding: var(--xl) var(--xs) var(--xs); }
+.day-heading h2 { font-size: 13px; font-weight: 700; color: var(--on-surface-variant); }
+.day-heading .figure { font-size: 13px; font-weight: 700; }
+
+.txn-row { display: flex; align-items: center; width: 100%; padding: 10px var(--xs); border: 0; border-radius: var(--r-field); background: none; color: inherit; text-align: start; }
+.txn-row:active { background: color-mix(in srgb, var(--on-surface) 6%, transparent); }
+.txn-disc { position: relative; flex: none; width: 44px; height: 44px; margin-inline-end: var(--m); border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--hue) 16%, transparent); }
+/* On the disc's line, not inside it: pushed out along the diagonal until its centre lands on the circumference. */
+.owner-badge { position: absolute; inset-inline-start: calc(-1 * var(--xs)); bottom: -7px; width: 24px; height: 24px; padding: 1.5px; border-radius: 50%; background: var(--bg); }
+.txn-text { display: flex; flex-direction: column; }
+.txn-title { font-size: 16px; font-weight: 600; color: var(--on-bg); }
+.txn-line { display: flex; align-items: center; gap: var(--xs); margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); min-width: 0; }
+.txn-owner { flex: none; font-weight: 600; color: var(--primary); white-space: nowrap; }
+.review-dot { flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--secondary); }
+.txn-amount { flex: none; margin-inline-start: var(--s); font-size: 15px; font-weight: 700; color: var(--on-bg); white-space: nowrap; }
+.txn-amount.gain { color: var(--tertiary); }
+.txn-amount.transfer { color: var(--on-surface-variant); text-decoration: line-through; }
+.txn-balance { flex: none; margin-inline-start: var(--s); font-size: 12px; }
+
+.member-face { display: grid; place-items: center; border-radius: 50%; overflow: hidden; background: var(--surface-highest); color: var(--on-surface); line-height: 1; }
+.member-face img { width: 100%; height: 100%; object-fit: cover; }
+.member-face b { font-weight: 700; }
+
+.filter-chips { display: flex; flex-wrap: wrap; gap: var(--s); margin-top: var(--l); }
+.filter-chip { display: inline-flex; align-items: center; gap: var(--xs); min-height: 44px; padding: 0 var(--m); border: 0; border-radius: var(--r-pill); background: var(--surface-variant); color: var(--on-surface); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.filter-chip[aria-checked="true"] { background: var(--primary); color: var(--on-primary); }
+
+/* ---- one transaction ---- */
+.txn-page, .deck { padding-top: calc(env(safe-area-inset-top) + var(--s)); }
+.txn-hero .txn-when { font-size: 15px; }
+.txn-hero-title { margin-top: var(--s); font-size: 20px; font-weight: 700; line-height: 1.4; color: var(--hero-strong); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.txn-figure { margin-top: var(--xs); font-weight: 900; line-height: 1.2; white-space: nowrap; font-size: clamp(24px, calc(100cqi / var(--fit, 8)), 52px); }
+.txn-figure .magnitude { font-size: .58em; font-weight: 700; }
+.txn-figure .unit { font-size: .42em; font-weight: 700; opacity: .75; margin: 0; }
+.txn-words { padding-top: var(--s); font-size: 14px; line-height: 24px; color: color-mix(in srgb, var(--hero-strong) 93%, transparent); }
+.txn-no-amount { padding-top: var(--s); font-size: 18px; font-weight: 700; color: var(--hero-warn); }
+.txn-section { margin-top: var(--xxl); font-size: 18px; font-weight: 700; color: var(--on-bg); }
+.txn-caption { margin-top: var(--xs); font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
+
+.learn-toggle { display: flex; align-items: center; gap: var(--m); padding: var(--m); border-radius: var(--r-field); background: var(--surface-variant); cursor: pointer; }
+.learn-toggle .title { display: block; font-weight: 600; color: var(--on-surface); }
+.learn-toggle .caption { display: block; font-size: 12px; line-height: 19px; color: var(--on-surface-variant); }
+
+.details { border-radius: var(--r-card); background: var(--surface-variant); padding: var(--m) var(--l); }
+.detail-row { display: flex; align-items: flex-start; padding: var(--s) 0; font-size: 13px; }
+.detail-row > span:first-child { flex: 1; color: var(--on-surface-variant); }
+.detail-row > span:last-child { flex: 1.4; font-weight: 600; color: var(--on-surface); overflow-wrap: anywhere; }
+
+.source { display: block; width: 100%; border: 0; text-align: start; color: inherit; }
+.source-text { display: block; font-size: 13px; line-height: 23px; color: var(--on-surface-variant); white-space: pre-line; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.source-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.source-more { display: block; margin-top: var(--s); font-size: 12px; font-weight: 700; color: var(--primary); }
+
+/* ---- the deck ---- */
+.deck { padding-bottom: 0; }
+.deck-question { margin-top: var(--xl); font-size: 18px; font-weight: 700; color: var(--on-bg); }
+.deck-foot { position: sticky; bottom: 0; display: flex; gap: var(--s); margin: 0 calc(-1 * var(--edge)); padding: var(--s) var(--edge) calc(var(--m) + env(safe-area-inset-bottom)); background: var(--bg); }
+.deck-answer { flex: 1; min-height: 52px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); font-size: 15px; font-weight: 700; transition: transform var(--fast) var(--enter); }
+.deck-answer:active { transform: scale(.97); }
+.deck-answer.primary { background: var(--cta-fill); color: var(--cta-ink); }
+.deck-answer.secondary { background: var(--surface-variant); color: var(--on-surface); }
+/* Not a surface of its own: it is the answer that changes nothing, and a fill would promise it does. */
+.deck-answer.quiet { background: transparent; color: var(--on-surface-variant); font-weight: 500; }
+
+.deck-done { display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: calc(var(--m) + env(safe-area-inset-bottom)); }
+.deck-done-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.done-disc { width: 96px; height: 96px; background: color-mix(in srgb, var(--tertiary) 16%, transparent); }
+.done-title { margin-top: var(--xl); font-size: 26px; font-weight: 900; color: var(--on-bg); }
+.done-caption { margin-top: var(--s); font-size: 14px; line-height: 23px; }
+.done-share { width: 100%; margin-top: var(--xxl); padding: var(--xl); border-radius: var(--r-group); background: var(--surface-variant); }
+.done-share .figure { display: block; font-size: 36px; font-weight: 900; color: var(--on-surface); }
+.done-share p { margin-top: var(--xs); font-size: 13px; line-height: 21px; }
+.done-back { min-height: 56px; font-size: 16px; }
+
+.autofile-lines { margin-top: var(--l); padding: var(--s) var(--l); border-radius: var(--r-field); background: var(--surface-variant); }
+.autofile-line { display: flex; align-items: center; gap: var(--m); padding: var(--s) 0; font-size: 14px; line-height: 22px; color: var(--on-surface); }
+.autofile-line .figure { font-size: 17px; font-weight: 800; }

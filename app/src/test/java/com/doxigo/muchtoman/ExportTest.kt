@@ -4,12 +4,18 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.nio.ByteBuffer
 import java.security.SecureRandom
+import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
 
 /**
  * The backup envelope, off-device. This file is the only copy of her data once the phone is
@@ -31,7 +37,7 @@ class ExportTest {
             "smsScannedTo" to BackupPref("l", "1723000000000"),
         ),
         // Real binary, not text: the database bytes must survive base64 and the cipher intact.
-        durableDbB64 = kotlin.io.encoding.Base64.encode(ByteArray(512) { (it * 7).toByte() }),
+        durableDbB64 = Base64.encode(ByteArray(512) { (it * 7).toByte() }),
     )
 
     private fun seal(
@@ -130,6 +136,32 @@ class ExportTest {
     fun `a backup from a newer format asks for an update, not a shrug`() {
         val sealed = seal(formatVersion = BACKUP_FORMAT_VERSION + 1)
         assertEquals(BackupFault.NEWER_FORMAT, faultOf { openBackup(sealed, "قند و نبات") })
+    }
+
+    /** A browser's file, sealed as backup.ts seals it: the same envelope around its own JSON. */
+    private fun sealBrowserFile(json: String, passphrase: String): ByteArray {
+        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
+        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+        val header = ("""{"formatVersion":1,"createdAt":1700000000000,"kdf":{"algo":"$BACKUP_KDF_ALGO",""" +
+            """"iterations":$fastIterations,"saltB64":"${Base64.encode(salt)}"},""" +
+            """"cipher":{"algo":"$BACKUP_CIPHER_ALGO","ivB64":"${Base64.encode(iv)}"}}""").toByteArray()
+        val key = deriveBackupKey(passphrase.toCharArray(), salt, fastIterations)
+        val cipher = Cipher.getInstance(BACKUP_CIPHER_ALGO)
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+        cipher.updateAAD(header)
+        val body = cipher.doFinal(gzip(json.toByteArray()))
+        return BACKUP_MAGIC.toByteArray() + ByteBuffer.allocate(4).putInt(header.size).array() + header + body
+    }
+
+    @Test
+    fun `a browser's backup is named, not blamed on the passphrase`() {
+        val sealed = sealBrowserFile("""{"pwa":1,"prefs":{"smsEnabled":true},"tables":{}}""", "قند و نبات")
+        // The wrong passphrase still gets the wrong-passphrase words: the browser is only named
+        // once the file has decrypted and said so itself.
+        assertEquals(BackupFault.WRONG_PASSPHRASE_OR_CORRUPT, faultOf { openBackup(sealed, "قند و نباد") })
+        val e = assertThrows(BackupException::class.java) { openBackup(sealed, "قند و نبات") }
+        assertEquals(BackupFault.BROWSER_BACKUP, e.fault)
+        assertEquals("این پشتیبان مال نسخهٔ مرورگره و توی اپ اندروید باز نمی‌شه.", backupFaultFa(e))
     }
 
     @Test

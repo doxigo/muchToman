@@ -1,0 +1,7 @@
+/* ManualTxnUi.kt: the day stepper and the sheet's own refusals. */
+.day-stepper { display: flex; align-items: center; gap: var(--s); }
+.day-stepper .pill { min-height: 40px; font-size: 12px; }
+.day-stepper .grow { text-align: center; }
+.day-main { font-weight: 700; color: var(--on-surface); }
+.day-sub { font-size: 12px; color: var(--on-surface-variant); }
+.paste-link { padding-inline: var(--xs); font-size: 14px; }

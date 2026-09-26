@@ -1,0 +1,18 @@
+/* CategoryGrid (Timeline.kt:1849): four equal columns, rows as tall as their tallest label. */
+.cat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s); }
+.cat-tile {
+  --mark: var(--hue);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s);
+  min-height: 92px; padding: var(--m) var(--xs); border: 0; border-radius: var(--r-field);
+  background: var(--surface-variant); color: var(--on-surface);
+  transition: background var(--fast) var(--enter), color var(--fast) var(--enter);
+}
+.cat-tile.selected { --mark: var(--on-primary); background: var(--primary); color: var(--on-primary); }
+.cat-tile .disc { width: 36px; height: 36px; background: color-mix(in srgb, var(--mark) 18%, transparent); transition: background var(--fast) var(--enter); }
+.cat-tile .disc svg { transition: color var(--fast) var(--enter); }
+.cat-label {
+  font-size: 12px; line-height: 16px; font-weight: 600; text-align: center;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.cat-tile.add { --mark: var(--primary); background: transparent; border: 1px solid var(--outline-variant); color: var(--primary); }
+.cat-tile.add .disc { background: color-mix(in srgb, var(--primary) 14%, transparent); }

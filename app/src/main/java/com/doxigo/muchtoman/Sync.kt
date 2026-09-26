@@ -155,6 +155,7 @@ data class FamilyAssetView(
 
 fun decodeAssetItems(json: String): List<AssetShareItem> =
     runCatching { SYNC_JSON.decodeFromString<List<AssetShareItem>>(json) }.getOrDefault(emptyList())
+        .map { it.copy(name = undoubledBankName(it.name)) }
 
 /**
  * One shared budget or savings goal, whole — the row itself, not a diff against it.
@@ -727,7 +728,7 @@ suspend fun rejoinHousehold(
     withFamilySync {
         val session = pairHousehold(link, allowedBase)
         durable.withTransaction {
-            buryHousehold(durable, keepMember = null)
+            buryHousehold(durable, keepMember = null, formerMember = loadSession(durable)?.member)
             commitJoin(durable, session, memberName)
         }
         session
@@ -801,7 +802,7 @@ suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFa
         SYNC_JSON.encodeToString(LeaveBody(tombstone)),
     )
     durable.withTransaction {
-        buryHousehold(durable, keepMember = null)
+        buryHousehold(durable, keepMember = null, formerMember = active.member)
         // loadSession treats any stored base as a session to resume, so the keys must go, not blank.
         durable.meta().delete(META_SYNC_BASE)
         durable.meta().delete(META_SYNC_TOKEN)
@@ -829,7 +830,7 @@ suspend fun renewHousehold(durable: DurableDb): SyncSession = withFamilySync {
         saveSession(durable, session)
         // The device keeps its identity here, so its own member row rides into the new
         // household; everything else about the old one is buried.
-        buryHousehold(durable, keepMember = session.member)
+        buryHousehold(durable, keepMember = session.member, formerMember = old.member)
     }
     session
 }
@@ -840,7 +841,7 @@ suspend fun renewHousehold(durable: DurableDb): SyncSession = withFamilySync {
  * into the next household under the same identity. Callers run this inside the transaction
  * that writes the replacement session, so a crash can never leave half a household.
  */
-private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
+private suspend fun buryHousehold(durable: DurableDb, keepMember: String?, formerMember: String?) {
     // The cursor and the identity registration belong to a server this device will never
     // speak to again; the publications are buried rather than deleted so the same rows keep
     // their monotonic stamps when they are re-published under the new key.
@@ -880,7 +881,11 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     // still marked shared would start publishing to the next household the day she joined it.
     for (goal in durable.goals().all()) {
         if (goal.deleted) continue
-        val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember
+        // Her own goals carry the member id she had in the household being left — every one she
+        // made while paired, private caps and instalment plans included — so that id is hers too,
+        // or leaving would delete everything she ever planned while she had a family.
+        val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember ||
+            goal.ownerMemberId == formerMember
         durable.goals().put(
             if (hers) {
                 goal.copy(

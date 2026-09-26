@@ -242,8 +242,18 @@ fun assetShareItems(
     if (!smsEnabled) return safeAssetShareItems(own)
     val banks = bankAccounts
         .filter { it.anchored && it.bank !in disabledBanks && it.bank !in familyExcluded }
-        .map { AssetShareItem("بانک ${bankNameOf(it.bank)}", it.balance) }
+        .map { AssetShareItem(bankNameOf(it.bank), it.balance) }
     return safeAssetShareItems(own + banks)
+}
+
+/**
+ * Builds before this one sent «بانک » in front of a name that already carries it («بانک بانک سامان»),
+ * and a member on such a build keeps sending it. Folded where the row is read, so a stored or
+ * freshly arrived line reads as the bank's own name either way.
+ */
+internal fun undoubledBankName(name: String): String {
+    val rest = name.removePrefix("بانک ")
+    return if (rest != name && Bank.entries.any { it.fa == rest }) rest else name
 }
 
 /** Keeps malformed or overflowing values out of the JSON serializer and the receiving ledger. */

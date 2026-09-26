@@ -7,7 +7,7 @@ non-negotiable). When this file and those disagree, they win — fix the drift h
 ## What this is
 
 A Persian-UI Android app that answers «چقدر تومن دارم؟» — how much is all my money, in
-Toman — plus two Cloudflare Workers and a PWA companion. The users are in Iran; privacy is
+Toman — plus two Cloudflare Workers and a PWA that is the same app for iPhone users. The users are in Iran; privacy is
 the product: no accounts, no analytics, sync is ciphertext the server cannot read.
 
 ## Layout
@@ -17,7 +17,7 @@ the product: no accounts, no analytics, sync is ciphertext the server cannot rea
 | `app/` | Android app (Kotlin + Compose) |
 | `worker/` | Cloudflare Worker that serves prices and public-wallet balances |
 | `sync/` | Cloudflare Worker + Durable Object for encrypted family sync |
-| `pwa/` | browser companion served by `sync/` |
+| `pwa/` | the same app in the browser (iPhone users), served by `sync/` |
 
 ## Verify your change
 
@@ -34,6 +34,14 @@ cd pwa && npm run build && cd ../sync && npm ci && npm run check   # sync/ serve
 change needs both the Gradle and the pwa blocks run.
 
 ## Hard rules (data loss / user harm)
+
+- **Every feature ships on both: `app/` and `pwa/`, in the same change.** The PWA is the app for
+  iPhone users, not a companion: same screens, same behaviour, same Persian copy, same numbers.
+  A user-facing change to one is unfinished until the other has it, and its tests run in both
+  blocks below. The only standing exceptions are what a browser cannot do — reading SMS
+  automatically (the PWA takes a pasted message instead), the home-screen widget, background
+  work and notifications while closed, and TSETMC prices (geo-blocked, no CORS). Anything else
+  that cannot be ported gets said in the change, never silently dropped.
 
 - **Never bump `SMS_SCHEMA`; never add a destructive migration to `durable.db`.** Hand-written,
   tested migrations only — a destructive fallback deletes balances no rescan can rebuild.

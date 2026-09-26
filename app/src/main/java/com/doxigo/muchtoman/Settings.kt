@@ -734,8 +734,8 @@ private fun SmsPage(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Switching it on is the moment to ask for the permissions — not at launch, where she has
-    // no idea what an app about money wants with her messages. Denied leaves it switched off.
+    // Switching it on asks for the permissions the first-run sheet did not get — that sheet asks
+    // once, and this is where a mind changed later goes. Denied leaves it switched off.
     // Asked as a pair, but only READ_SMS is load-bearing: it is what every balance is read from.
     // RECEIVE_SMS alone being denied just means notifications ride the six-hour sweep instead of
     // arriving with the message — see [SmsReceiver] — so it gets no say in `granted`.

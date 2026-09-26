@@ -1,0 +1,163 @@
+/* خانه and دارایی (Ui.kt 906-1190, Home.kt) and their sheets. Tokens only; sizes are Compose's dp/sp. */
+
+/* ---- the top bar: her, and the door to تنظیمات ---------------------------------------------- */
+.home-top { display: inline-flex; align-items: center; gap: var(--m); min-height: 48px; max-width: 100%; padding: 0; padding-inline-end: var(--s); background: none; border: 0; border-radius: var(--r-pill); color: var(--on-surface); }
+.home-top .disc { width: 40px; height: 40px; background: var(--surface-variant); }
+.home-top .name { font-size: 17px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-top > svg:last-child { color: var(--on-surface-variant); }
+.backup-due { display: block; width: 100%; margin-top: var(--s); font-size: 14px; line-height: 22px; font-weight: 400; }
+
+/* ---- the hero card ------------------------------------------------------------------------------ */
+.home-hero { margin-top: var(--s); }
+.home-hero .label-row { display: flex; align-items: center; min-height: 32px; }
+.home-hero .label-row .label { flex: 1; min-width: 0; font-size: 15px; color: var(--hero-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-hero .usd { flex: none; margin-inline-start: var(--s); font-size: 14px; font-weight: 600; color: var(--hero-muted); white-space: nowrap; }
+.home-hero .fig { display: block; margin-top: var(--xs); overflow: hidden; animation: figure-in var(--medium) var(--enter); }
+.home-hero .fig > .unit { margin-inline-start: .22em; }
+@keyframes figure-in { from { transform: translateY(33%); opacity: 0; } }
+.home-hero .words { margin-top: var(--s); font-size: 15px; line-height: 25px; color: color-mix(in srgb, var(--hero-strong) 93%, transparent); }
+.home-hero .full { margin-top: var(--xs); font-size: 13px; color: var(--hero-muted); }
+.home-hero .hero-strip { margin-top: var(--l); }
+.home-hero .hero-strip .dot.trouble { background: var(--hero-warn); }
+.home-hero .hero-strip .warn { color: var(--hero-warn); }
+.home-hero .stale-note { margin-top: var(--xs); font-size: 12px; line-height: 19px; color: var(--hero-muted); }
+
+.scope { display: flex; gap: var(--xs); flex: 1; min-width: 0; }
+.scope > button { border: 0; border-radius: var(--r-pill); padding: 6px var(--m); background: transparent; color: var(--hero-muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.scope > button[aria-checked="true"] { background: var(--hero-well); color: var(--hero-strong); font-weight: 700; }
+
+/* A door, not a statistic: the row carries the 48px target, the pill stays 32 tall. */
+.hero-door { display: inline-flex; align-items: center; min-height: 48px; margin-top: var(--m); padding: 0; padding-inline-end: var(--m); background: none; border: 0; border-radius: var(--r-pill); color: var(--hero-muted); font-size: 13px; white-space: nowrap; max-width: 100%; }
+.hero-door.link { margin-top: 0; }
+.hero-door .pillbox { display: inline-flex; align-items: center; gap: 6px; padding: 6px var(--m); border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 18%, transparent); color: var(--tone); font-size: 14px; font-weight: 700; margin-inline-end: var(--s); }
+
+.home .action-circles { gap: var(--s); flex-wrap: nowrap; margin: var(--l) 0 0; }
+/* 108 each, clustered; on a phone narrower than three of them they give way together rather than wrap. */
+.home .action-circle { flex: 0 1 108px; min-width: 0; }
+.home .action-circle > span:last-child { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- خانه: the month, the story ----------------------------------------------------------------- */
+.month-flow { display: block; width: 100%; margin-top: var(--xl); padding: var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); text-align: start; }
+.month-flow .head { display: flex; align-items: center; font-size: 15px; font-weight: 800; }
+.month-flow .head > span { flex: 1; }
+.month-flow .head > svg { color: var(--on-surface-variant); }
+.month-flow .halves { display: flex; gap: var(--m); margin-top: var(--m); }
+.month-flow .half { flex: 1; min-width: 0; }
+.month-flow .half > span { display: block; font-size: 12px; color: var(--on-surface-variant); }
+.month-flow .half > div { margin-top: var(--xs); font-size: 26px; font-weight: 800; line-height: 1.3; white-space: nowrap; overflow: hidden; }
+.flow-bar { display: flex; gap: 3px; height: 8px; margin-top: var(--l); }
+.flow-bar > span { border-radius: var(--r-pill); }
+
+.quiet-start { margin-top: var(--xl); }
+
+.story { display: flex; gap: var(--m); margin-top: var(--m); }
+.story > * { flex: 1; min-width: 0; }
+.missing-note { margin-top: var(--l); padding: var(--l); border-radius: var(--r-card); background: var(--error-container); color: var(--on-error-container); font-size: 13px; line-height: 21px; }
+
+/* ---- دارایی: the bands ---------------------------------------------------------------------------- */
+.home .section h2 { font-size: 15px; }
+.home .section .sub { font-size: 13px; font-weight: 600; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.band-gap { height: var(--xl); }
+.holdings.band { background: var(--surface); }
+/* The hairline starts where the text does, not under the badge (Space.l + 44 + Space.m). */
+.holdings.band > .band-row + .band-row::before { inset-inline: calc(var(--l) + 44px + var(--m)) 0; }
+.holdings.band.family > .band-row + .band-row::before { inset-inline: var(--l) 0; }
+.holdings.band.family > .band-row { padding: var(--m) var(--l); display: flex; align-items: center; gap: var(--s); }
+.holding { display: flex; align-items: flex-start; gap: var(--m); }
+.holding .body { flex: 1; min-width: 0; }
+.holding .top { display: flex; align-items: flex-start; gap: var(--s); }
+.holding .ends { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.holding .ends > .state { font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; }
+.holding .ends > .missing { font-size: 14px; color: var(--error); white-space: nowrap; }
+.holding .sub { display: flex; margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; }
+.holding .sub > .held { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.holding .sub > .rate { flex: none; padding-inline-start: var(--s); }
+.holding .sub > .rate b { font-weight: 500; color: var(--on-surface); }
+.holding .wallet { margin-top: 2px; font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.holding .wallet.error { color: var(--error); }
+.holding .dim { opacity: .55; }
+
+.row-title { display: block; min-width: 0; font-weight: 700; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-amount { display: block; font-weight: 700; line-height: 1.35; white-space: nowrap; overflow: hidden; }
+.row-amount.struck { text-decoration: line-through; }
+.row-amount .unit { font-size: .7em; font-weight: 500; color: var(--on-surface-variant); }
+
+.empty-hint { text-align: center; padding: var(--huge) 0 var(--xxl); }
+.empty-hint .disc { width: 84px; height: 84px; margin: 0 auto var(--xl); background: var(--primary-container); color: var(--on-primary-container); }
+.empty-hint .disc svg { width: 40px; height: 40px; }
+.empty-hint h2 { font-size: 22px; font-weight: 800; }
+.empty-hint p { margin-top: var(--s); font-size: 15px; line-height: 25px; color: var(--on-surface-variant); }
+
+/* ---- the asset badge ------------------------------------------------------------------------------ */
+.asset-icon { position: relative; flex: none; display: inline-block; }
+.asset-icon > .disc { display: grid; place-items: center; overflow: hidden; }
+.asset-icon > .disc > * { grid-area: 1 / 1; }
+.asset-icon .letters { font-size: 12px; font-weight: 700; color: var(--on-surface-variant); }
+.asset-icon img { display: block; animation: fade 250ms ease-out; }
+.asset-icon .chain { position: absolute; bottom: 0; inset-inline-end: 0; display: flex; padding: 1.5px; border-radius: 50%; background: var(--surface); }
+
+/* ---- sheets --------------------------------------------------------------------------------------- */
+.home-sheet .text-btn { padding: var(--s) var(--m); font-size: 14px; font-weight: 500; }
+.home-sheet .text-btn:disabled { opacity: .38; cursor: default; }
+.home-sheet .text-btn.muted { color: var(--on-surface-variant); }
+.home-sheet .text-btn.strong { font-weight: 700; }
+.home-sheet .btn-row { display: flex; align-items: center; gap: var(--m); flex-wrap: wrap; }
+.home-sheet .btn-row > .spacer { flex: 1; }
+.home-sheet .note { font-size: 13px; line-height: 20px; color: var(--on-surface-variant); padding: 0 var(--xs); }
+.home-sheet .note.small { font-size: 12px; line-height: 19px; padding: var(--xs); }
+.home-sheet .err { font-size: 13px; line-height: 20px; color: var(--error); padding: var(--s) var(--xs); }
+/* The prompt above names the field; the label rides along for screen readers only. */
+.bare-label .field > .label { display: none; }
+.big-amount .field > input { font-size: 26px; font-weight: 700; }
+
+.pick-body { min-height: calc(88dvh - 34px); }
+.pick-head { position: sticky; top: 34px; z-index: 1; background: var(--surface-high); padding-bottom: var(--xs); }
+.pick-head .field { margin-top: var(--m); }
+.pick-kind { font-size: 15px; font-weight: 800; color: var(--on-surface); padding: var(--xxl) var(--xs) var(--s); }
+.pick-row { display: flex; align-items: center; gap: var(--m); width: 100%; padding: var(--m) var(--s); border: 0; border-radius: var(--r-field); background: none; color: var(--on-surface); text-align: start; }
+.pick-row:active { background: color-mix(in srgb, var(--on-surface) 6%, transparent); }
+.pick-row .grow > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-row .grow > span:first-child { font-size: 17px; font-weight: 600; }
+.pick-row .grow > span + span { font-size: 12px; color: var(--on-surface-variant); }
+.pick-row .held { flex: none; padding: 5px var(--m); border-radius: var(--r-pill); background: var(--surface-highest); color: var(--on-surface-variant); font-size: 12px; font-weight: 500; }
+.pick-none { padding: var(--xxl) 0; font-size: 15px; line-height: 24px; color: var(--on-surface-variant); }
+.pick-more { padding: var(--s) var(--xs) 0; font-size: 13px; color: var(--on-surface-variant); }
+
+.edit-head { display: flex; align-items: center; gap: var(--m); }
+.edit-head .grow > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edit-head .grow > span:first-child { font-size: 26px; font-weight: 900; line-height: 1.3; }
+.edit-head .grow > span + span { font-size: 13px; color: var(--on-surface-variant); }
+.edit-words { padding: var(--s) var(--xs) 0; font-size: 14px; line-height: 22px; color: var(--on-surface-variant); }
+.edit-caption { padding: var(--s) 0 0; font-size: 14px; color: var(--on-surface-variant); }
+.edit-box { padding: var(--l); border-radius: var(--r-field); background: var(--surface-container); font-size: 14px; line-height: 22px; color: var(--on-surface-variant); }
+.edit-card { margin-top: var(--l); padding: var(--l); border-radius: var(--r-card); background: var(--primary-container); color: var(--on-primary-container); }
+.edit-card .fit { display: block; white-space: nowrap; overflow: hidden; font-weight: 800; line-height: 1.3; }
+.edit-card .sub { opacity: .8; font-weight: 600; margin-top: var(--xs); }
+.edit-card .status { font-size: 12px; line-height: 19px; }
+.edit-card .status.error { color: var(--error); }
+.edit-rate { display: flex; align-items: center; gap: var(--s); margin-top: var(--m); }
+.edit-rate > span { flex: 1; font-size: 14px; color: var(--on-surface-variant); }
+
+.networks { display: grid; grid-template-columns: 1fr 1fr; gap: var(--m); }
+.networks[aria-disabled="true"] { opacity: .6; }
+.networks > button { display: flex; align-items: center; gap: var(--s); min-width: 0; min-height: 56px; padding: 0 var(--m); border: 2px solid transparent; border-radius: var(--r-field); background: var(--surface-container); color: var(--on-surface); font-size: 14px; font-weight: 500; }
+.networks > button > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.networks > button[aria-checked="true"] { background: var(--primary-container); border-color: var(--primary); font-weight: 700; }
+
+.toggle-row { display: flex; align-items: center; gap: var(--l); width: 100%; min-height: 48px; padding: 0; border: 0; background: none; color: var(--on-surface); text-align: start; }
+.toggle-row .grow > span { display: block; }
+.toggle-row .grow > span + span { font-size: 12px; color: var(--on-surface-variant); }
+.toggle-row .switch { display: inline-block; }
+
+.save-btn.pill.block { min-height: 60px; font-size: 18px; margin-top: var(--xl); }
+.ring { width: 20px; height: 20px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 900ms linear infinite; }
+
+.bank-list { display: flex; flex-direction: column; gap: var(--s); padding: var(--l) 0 var(--xxl); }
+.bank-card { padding: var(--l); border-radius: var(--r-card); background: var(--surface); }
+.bank-card .top { display: flex; align-items: flex-start; gap: var(--s); }
+.bank-card .top .grow > span:last-child { display: block; margin-top: 2px; font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bank-card .toggle-row { margin-top: var(--xs); font-size: 14px; }
+.bank-card .doubt { margin-top: var(--s); font-size: 12px; line-height: 19px; color: var(--error); }
+.bank-card .btn-row { margin-top: var(--xs); gap: 0; }
+.bank-card .text-btn.danger { color: var(--error); }
+.off { color: var(--on-surface-variant); }

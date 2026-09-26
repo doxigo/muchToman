@@ -1,0 +1,279 @@
+<!doctype html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<title>Store listing images</title>
+<style>
+@font-face {
+  font-family: Modam;
+  src: url('../../pwa/public/modam.woff2') format('woff2');
+  font-weight: 200 900;
+  font-stretch: 70% 100%;
+}
+:root { --forest: #163300; --bright: #9fe870; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #6b6b6b; font-family: Modam, sans-serif; }
+[data-out] { display: none; position: relative; overflow: hidden; }
+[data-out].on { display: block; }
+h1 { font-weight: 900; font-stretch: 92%; line-height: 1.3; }
+.num { font-stretch: 90%; font-variant-numeric: tabular-nums; }
+
+.bright { background: var(--bright); color: var(--forest); }
+.forest { background: var(--forest); color: var(--bright); }
+.bright p { color: rgba(22, 51, 0, .8); }
+.forest p { color: #dfeccf; }
+
+/* ---- portrait 1080×1920: copy zone above, phone from y=700 down past the edge ---- */
+.tall { width: 1080px; height: 1920px; }
+.copy { position: absolute; top: 60px; left: 60px; right: 60px; height: 600px; display: flex; flex-direction: column; justify-content: center; text-align: center; }
+.copy h1 { font-size: 96px; }
+.copy p { margin-top: 28px; font-weight: 500; font-size: 44px; line-height: 1.6; }
+.hero .copy h1 { font-size: 124px; }
+
+/* ---- wide: header 5:2 and promo 16:9 ---- */
+.wcopy { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; text-align: start; }
+.wcopy p { margin-top: 26px; font-weight: 500; font-size: 44px; line-height: 1.6; }
+
+/* ---- phone ---- */
+.phone { position: absolute; background: #0b0d0a; }
+.phone .screen { position: relative; overflow: hidden; }
+.phone .screen img { display: block; width: 100%; }
+.phone svg.sbar { position: absolute; top: 0; left: 0; width: 100%; height: auto; }
+.bright .phone { box-shadow: inset 0 0 0 2px #2e3329, 0 60px 110px -30px rgba(12, 32, 0, .55), 0 18px 40px -10px rgba(12, 32, 0, .25); }
+.forest .phone { box-shadow: inset 0 0 0 2px #3a4034, 0 60px 110px -20px rgba(0, 0, 0, .6); }
+
+/* ---- a piece of a screen, lifted out of it ---- */
+.callout { position: absolute; background-repeat: no-repeat; }
+.bright .callout { box-shadow: 0 50px 90px -25px rgba(12, 32, 0, .55), 0 14px 30px -8px rgba(12, 32, 0, .22); }
+.forest .callout { box-shadow: 0 0 0 2px rgba(255, 255, 255, .07), 0 50px 90px -20px rgba(0, 0, 0, .7); }
+
+/* ---- a heads-up SMS, same size logic as a callout ---- */
+.notif { position: absolute; padding: 30px 46px 34px; border-radius: 54px; background: #fafbf7; color: #131711;
+  box-shadow: 0 50px 90px -20px rgba(0, 0, 0, .7); }
+.notif .head { display: flex; align-items: center; gap: 16px; font-size: 30px; font-weight: 500; color: #59614f; }
+.notif .dot { width: 50px; height: 50px; border-radius: 50%; background: #dcf2c0; display: grid; place-items: center; }
+.notif .who { margin-top: 14px; font-size: 44px; font-weight: 800; }
+.notif .body { margin-top: 4px; font-size: 38px; font-weight: 500; line-height: 1.55; }
+.notif .body b { font-weight: 800; }
+
+/* ---- privacy slide ---- */
+.facts { position: absolute; top: 470px; left: 60px; right: 60px; display: flex; flex-direction: column; gap: 30px; }
+.fact { display: flex; align-items: center; gap: 36px; padding: 44px 44px; border-radius: 48px; background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .07); }
+.fact .disc { flex: none; width: 128px; height: 128px; border-radius: 50%; background: #2a3a1d; display: grid; place-items: center; }
+.fact strong { display: block; font-size: 50px; font-weight: 800; color: #f2f3ef; line-height: 1.35; }
+.fact span { display: block; margin-top: 8px; font-size: 35px; font-weight: 500; color: #a9c295; line-height: 1.5; }
+.signoff { position: absolute; bottom: 150px; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 28px; }
+.signoff img { width: 116px; height: 116px; border-radius: 30px; box-shadow: 0 0 0 2px rgba(159, 232, 112, .25); }
+.signoff b { display: block; font-size: 56px; font-weight: 900; color: var(--bright); line-height: 1.3; }
+.signoff small { display: block; font-size: 34px; font-weight: 500; color: #a9c295; }
+</style>
+</head>
+<body>
+
+<!-- ======================= portrait screenshots, 1080×1920 ======================= -->
+
+<section data-out="01-total" class="tall bright hero">
+  <div class="copy">
+    <h1>چقدر تومن داری؟</h1>
+    <p>موجودی بانک، طلا و سکه، دلار و کریپتو؛<br>جمع همه‌ش یک عدد، به تومن.</p>
+  </div>
+  <div class="phone" data-src="home.png" data-top="700"></div>
+  <div class="callout" data-src="home.png" data-crop="53,304,974,867" data-r="89" data-w="950" data-dy="-20"></div>
+</section>
+
+<section data-out="02-sms" class="tall forest">
+  <div class="copy">
+    <h1>پیامک بانک،<br>خودش دفتر می‌شه</h1>
+    <p>روی خود گوشی خونده می‌شه و متنش<br>به هیچ سروری نمی‌رسه.</p>
+  </div>
+  <div class="phone" data-src="ledger-dark.png" data-top="700" data-theme="dark"></div>
+  <div class="notif" style="left: 66px; width: 948px; top: 812px">
+    <div class="head">
+      <span class="dot"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#163300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"/></svg></span>
+      <span>پیامک · الان</span>
+    </div>
+    <div class="who">بانک</div>
+    <div class="body">برداشت <b class="num">۲٬۴۳۲٬۰۰۰</b> ریال، قبض برق<br>مانده <span class="num">۴۸٬۲۵۰٬۰۰۰</span> ریال</div>
+  </div>
+</section>
+
+<section data-out="03-assets" class="tall bright">
+  <div class="copy">
+    <h1>هر چی داری،<br>به نرخ آزاد</h1>
+    <p>طلا و سکه، دلار و یورو، کریپتو و سهام بورس.<br>نرخ دولتی هیچ جای این اپ نیست.</p>
+  </div>
+  <div class="phone" data-src="family-assets.png" data-top="700" data-bar="168"></div>
+  <div class="callout" data-src="family-assets.png" data-crop="53,740,974,211" data-r="58" data-w="960"></div>
+</section>
+
+<section data-out="04-report" class="tall forest">
+  <div class="copy">
+    <h1>دخل و خرج،<br>ماه‌به‌ماه</h1>
+    <p>چی اومد، چی رفت، چی موند؛<br>هر ماه و هر دسته جدا.</p>
+  </div>
+  <div class="phone" data-src="report-dark.png" data-top="700" data-theme="dark"></div>
+  <div class="callout" data-src="report-dark.png" data-crop="53,861,974,666" data-r="58" data-w="950"></div>
+</section>
+
+<section data-out="05-budget" class="tall bright">
+  <div class="copy">
+    <h1>بودجه و هدف،<br>بدون بازی</h1>
+    <p>برای هر دسته سقف بذار؛ اپ می‌گه تا آخر ماه<br>روزی چقدر جا داری.</p>
+  </div>
+  <div class="phone" data-src="budget.png" data-top="700"></div>
+  <div class="callout" data-src="budget.png" data-crop="53,419,974,503" data-r="58" data-w="950"></div>
+</section>
+
+<section data-out="06-installments" class="tall forest">
+  <div class="copy">
+    <h1>قسط و وام،<br>یک‌جا</h1>
+    <p>ماهی چقدر، چندتا مونده، قسط بعدی کی.<br>پرداخت‌ها هم از همون پیامک بانک وصل می‌شن.</p>
+  </div>
+  <div class="phone" data-src="installments-dark.png" data-top="700" data-theme="dark" data-scroll="624"></div>
+  <div class="callout" data-src="installments-dark.png" data-crop="53,1251,974,492" data-r="58" data-w="950"></div>
+</section>
+
+<section data-out="07-family" class="tall bright">
+  <div class="copy">
+    <h1>یک دفتر،<br>همهٔ خانواده</h1>
+    <p>با یک <bdi>QR</bdi> یک‌بارمصرف عضو می‌شن و هر کس<br>خودش انتخاب می‌کنه چی به اشتراک بذاره.</p>
+  </div>
+  <div class="phone" data-src="family.png" data-top="700"></div>
+  <div class="callout" data-src="family.png" data-crop="53,985,974,466" data-r="58" data-w="950"></div>
+</section>
+
+<section data-out="08-privacy" class="tall forest">
+  <div class="copy" style="height: 360px">
+    <h1>مال خودت می‌مونه</h1>
+  </div>
+  <div class="facts">
+    <div class="fact">
+      <span class="disc"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#9fe870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"/><path d="M3 3l18 18"/></svg></span>
+      <div><strong>بدون ثبت‌نام، بدون ردیابی</strong><span>نه حساب کاربری در کاره، نه آنالیتیکس</span></div>
+    </div>
+    <div class="fact">
+      <span class="disc"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#9fe870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg></span>
+      <div><strong>پیامک‌ها روی گوشیت می‌مونن</strong><span>متن پیامک به هیچ سروری فرستاده نمی‌شه</span></div>
+    </div>
+    <div class="fact">
+      <span class="disc"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#9fe870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.6v2.4"/></svg></span>
+      <div><strong>دفتر خانوادگی سرتاسر رمزشده</strong><span>سرور فقط متن رمزشده می‌بینه</span></div>
+    </div>
+    <div class="fact">
+      <span class="disc"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#9fe870" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8l7.5 3v5.6c0 4.6-3.1 8.2-7.5 9.8-4.4-1.6-7.5-5.2-7.5-9.8V5.8z"/><path d="M8.6 12.2l2.4 2.4 4.4-4.6"/></svg></span>
+      <div><strong>پشتیبان با رمزی که فقط خودت داری</strong><span>بدون رمزت حتی خود اپ هم نمی‌تونه بازش کنه</span></div>
+    </div>
+  </div>
+  <div class="signoff">
+    <img src="../../pwa/public/icon-512.png" alt="">
+    <div><b>چقدر تومن</b><small>متن‌باز و بدون تبلیغ</small></div>
+  </div>
+</section>
+
+<!-- ======================= header image, 5:2 ======================= -->
+
+<section data-out="header" class="forest" style="width: 2000px; height: 800px">
+  <div class="wcopy" style="right: 110px; width: 800px">
+    <h1 style="font-size: 106px">چقدر تومن داری؟</h1>
+    <p>موجودی بانک، طلا و سکه، دلار و کریپتو؛<br>جمع همه‌ش یک عدد، به تومن.</p>
+  </div>
+  <div class="phone" data-src="report-dark.png" data-theme="dark" data-w="500" data-left="580" data-top="196"></div>
+  <div class="phone" data-src="home.png" data-w="540" data-left="120" data-top="100"></div>
+</section>
+
+<!-- ======================= promo screenshots, 16:9 ======================= -->
+
+<section data-out="promo-total" class="bright" style="width: 1920px; height: 1080px">
+  <div class="wcopy" style="right: 130px; width: 860px">
+    <h1 style="font-size: 120px">چقدر تومن داری؟</h1>
+    <p>موجودی بانک، طلا و سکه، دلار و کریپتو؛<br>جمع همه‌ش یک عدد، به تومن.</p>
+  </div>
+  <div class="phone" data-src="home.png" data-w="640" data-left="250" data-top="150"></div>
+  <div class="callout" data-src="home.png" data-crop="53,304,974,867" data-r="89" data-w="740"></div>
+</section>
+
+<section data-out="promo-sms" class="forest" style="width: 1920px; height: 1080px">
+  <div class="wcopy" style="right: 130px; width: 860px">
+    <h1 style="font-size: 108px">پیامک بانک،<br>خودش دفتر می‌شه</h1>
+    <p>روی خود گوشی خونده می‌شه و متنش<br>به هیچ سروری نمی‌رسه.</p>
+  </div>
+  <div class="phone" data-src="ledger-dark.png" data-theme="dark" data-w="640" data-left="250" data-top="150"></div>
+  <div class="notif" style="left: 200px; width: 740px; top: 238px; padding: 28px 38px 32px; border-radius: 44px">
+    <div class="head" style="font-size: 26px"><span class="dot" style="width: 44px; height: 44px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#163300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"/></svg></span><span>پیامک · الان</span></div>
+    <div class="who" style="font-size: 38px">بانک</div>
+    <div class="body" style="font-size: 33px">برداشت <b class="num">۲٬۴۳۲٬۰۰۰</b> ریال، قبض برق<br>مانده <span class="num">۴۸٬۲۵۰٬۰۰۰</span> ریال</div>
+  </div>
+</section>
+
+<!-- ======================= store icon, 512 square ======================= -->
+
+<section data-out="icon-512" style="width: 512px; height: 512px; background: var(--forest)">
+  <img src="../../worker/public/icon.svg" alt="" style="position: absolute; width: 658px; left: -73px; top: -73px">
+</section>
+
+<script>
+const SHOT = new URL('../../docs/screenshots/', location.href).href;
+const SRC_W = 1080, SRC_H = 2400, BAR = 130;
+
+// The captures' status bar says "no internet" and wears a VPN shield; draw a clean one in the
+// capture's own pixel space (1080 wide) so it scales with the screen.
+function statusBar(dark, h) {
+  const ink = dark ? '#f2f3ef' : '#1b1c1a', bg = dark ? '#121511' : '#ffffff';
+  return `<svg class="sbar" viewBox="0 0 ${SRC_W} ${h}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="${SRC_W}" height="${h}" fill="${bg}"/>
+    <text x="84" y="86" direction="ltr" font-family="Roboto, 'Google Sans', system-ui, sans-serif" font-size="44" font-weight="500" fill="${ink}">12:00</text>
+    <circle cx="540" cy="68" r="23" fill="#050605"/>
+    <g fill="${ink}">
+      <path d="M833 90 L808 64 A36 36 0 0 1 858 64 Z"/>
+      <path d="M874 88 L920 88 L920 50 Z"/>
+      <rect x="938" y="54" width="60" height="30" rx="10"/>
+      <rect x="1000" y="63" width="5" height="12" rx="2"/>
+    </g>
+  </svg>`;
+}
+
+function buildPhone(p) {
+  const w = +(p.dataset.w || 840);
+  const b = Math.round(w * .0225), R = Math.round(w * .145), sw = w - 2 * b, s = sw / SRC_W;
+  const dark = p.dataset.theme === 'dark', scroll = +(p.dataset.scroll || 0);
+  const left = p.dataset.left != null ? +p.dataset.left : (p.parentElement.offsetWidth - w) / 2;
+  Object.assign(p.style, { left: left + 'px', top: p.dataset.top + 'px', width: w + 'px', padding: b + 'px', borderRadius: R + 'px' });
+  p.innerHTML = `<div class="screen" style="width:${sw}px;height:${Math.round(SRC_H * s)}px;border-radius:${R - b}px;background:${dark ? '#121511' : '#fff'}">
+    <img src="${SHOT + p.dataset.src}" style="margin-top:${-scroll * s}px" alt="">${statusBar(dark, +(p.dataset.bar || BAR))}</div>`;
+  Object.assign(p.dataset, { scale: s, screenTop: +p.dataset.top + b, centreX: left + w / 2 });
+  // side keys, scaled with the body: power, then volume
+  [[.19, .06], [.29, .11]].forEach(([t, l]) => {
+    const k = document.createElement('i');
+    Object.assign(k.style, { position: 'absolute', right: -Math.round(w * .008) + 'px', top: Math.round(w * 2.2 * t) + 'px',
+      width: Math.round(w * .008) + 'px', height: Math.round(w * 2.2 * l) + 'px', background: '#0b0d0a', borderRadius: '0 4px 4px 0' });
+    p.appendChild(k);
+  });
+}
+
+// A callout is the same pixels the phone shows, larger, centred on the spot it was lifted from.
+function buildCallout(c) {
+  const phone = [...c.parentElement.querySelectorAll('.phone')].find(p => p.dataset.src === c.dataset.src);
+  const [x, y, w, h] = c.dataset.crop.split(',').map(Number);
+  const W = +c.dataset.w, k = W / w, H = h * k;
+  const s = +phone.dataset.scale, scroll = +(phone.dataset.scroll || 0);
+  const centreY = +phone.dataset.screenTop + (y - scroll + h / 2) * s + +(c.dataset.dy || 0);
+  Object.assign(c.style, {
+    width: W + 'px', height: H + 'px', left: +phone.dataset.centreX - W / 2 + 'px', top: centreY - H / 2 + 'px',
+    borderRadius: +c.dataset.r * k + 'px', backgroundImage: `url(${SHOT + c.dataset.src})`,
+    backgroundSize: `${SRC_W * k}px auto`, backgroundPosition: `${-x * k}px ${-y * k}px`,
+  });
+}
+
+function show(id) {
+  for (const el of document.querySelectorAll('[data-out]')) el.classList.toggle('on', el.dataset.out === id);
+  const slide = document.querySelector(`[data-out="${id}"]`);
+  slide.querySelectorAll('.phone').forEach(buildPhone);
+  slide.querySelectorAll('.callout').forEach(buildCallout);
+  return { w: slide.offsetWidth, h: slide.offsetHeight };
+}
+window.show = show;
+window.ids = () => [...document.querySelectorAll('[data-out]')].map(e => e.dataset.out);
+show(location.hash.slice(1) || window.ids()[0]);
+</script>
+</body>
+</html>

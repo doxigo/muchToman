@@ -4,7 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-        Both asked for together, and only when she switches bank messages on in settings. READ_SMS
+        Both asked for together: once on the first-run sheet, which says what each is for, and
+        after that from the bank-messages switch in settings — see Onboarding.kt. READ_SMS
         is the one that matters: everything the app knows comes from reading the message store.
         RECEIVE_SMS buys exactly one thing — SmsReceiver hears a message land and runs the ledger
         watch now instead of at the next six-hour tick, which is what makes «۸۰٪ رفته» arrive at
@@ -16,8 +17,9 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
     <!--
-        Asked for when she saves her first بودجه, or from دفتر once transactions are waiting to be
-        filed — never at launch, which is the same rule READ_SMS follows. There are exactly two
+        Asked for once, on the first-run sheet together with READ_SMS — see Onboarding.kt. After
+        that only when she reaches for it: the card آینده and دفتر raise while notifications are
+        off, or switching on the installment reminder in settings. There are exactly two
         things the app will ever post, on two channels she can silence separately: a budget she set
         has crossed a line she asked to be told about, and a transaction has landed — filed by a
         rule, or waiting for her to say what it was. See Notify.kt.

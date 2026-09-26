@@ -1,0 +1,16 @@
+/* CategoriesUi.kt: the manager's rows, its archived band, the mark picker. */
+.cat-band { background: var(--surface); }
+.cat-row { display: flex !important; align-items: center; padding: var(--m) var(--l) !important; }
+.band > .cat-row + .cat-row::before { inset-inline-start: calc(var(--l) + 44px + var(--m)); }
+.cat-row .disc { width: 44px; height: 44px; background: color-mix(in srgb, var(--hue) 18%, transparent); }
+.cat-name { padding: 0 var(--m); font-size: 17px; font-weight: 700; color: var(--on-surface); }
+.cat-name.muted { color: var(--on-surface-variant); }
+.cat-action { min-height: 40px; font-size: 13px; flex: none; }
+.cat-deleted-head { padding: var(--xxl) var(--xs) var(--m); }
+.cat-deleted-head h2 { font-size: 15px; font-weight: 800; color: var(--on-bg); }
+.cat-deleted-head p { margin-top: var(--xs); }
+.cat-add { position: sticky; bottom: 0; margin: var(--l) calc(-1 * var(--edge)) 0; padding: var(--m) var(--edge) calc(var(--m) + env(safe-area-inset-bottom)); background: var(--bg); }
+.cat-add .pill { min-height: 56px; font-size: 16px; }
+.glyph-picker { display: flex; flex-wrap: wrap; gap: var(--s); }
+.glyph-option { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--hue) 18%, transparent); transition: background var(--fast) var(--enter); }
+.glyph-option[aria-checked="true"] { background: var(--primary); }

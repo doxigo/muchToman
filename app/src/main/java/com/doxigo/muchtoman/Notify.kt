@@ -29,8 +29,8 @@ import androidx.core.content.ContextCompat
  * the till, and by the time she next opens the app the decision it was for has been made. The
  * backlog is the same argument on a different clock: «این چی بود؟» is one tap on the day it happened
  * — see `Filing.kt`. Both have to reach her where she is, which on Android means a notification and
- * therefore a permission, and the permission is asked for at the moment one of the two becomes
- * possible — never at launch, exactly as `READ_SMS` is asked for when she switches the messages on.
+ * therefore a permission. It is asked for once, beside `READ_SMS`, on the first-run sheet that says
+ * what each is for — see `Onboarding.kt` — and after that only when she reaches for it.
  *
  * ## Two channels, so either can be silenced without the other
  *

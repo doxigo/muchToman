@@ -29,6 +29,14 @@ self.addEventListener('push', (event) => {
     body: 'بررسی هفتگی‌ات آماده است.', tag: 'weekly-close', dir: 'rtl', lang: 'fa',
   }));
 });
+// A note's tap lands on the tab it is about (Notify.kt's open-tab extra): an open window is
+// focused and told where to go; otherwise the app opens there.
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close(); event.waitUntil(self.clients.openWindow('/'));
+  event.notification.close();
+  const tab = event.notification.data?.tab;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+    const open = windows[0];
+    if (open) { if (tab) open.postMessage({ type: 'open-tab', tab }); return open.focus(); }
+    return self.clients.openWindow(tab ? `/?tab=${encodeURIComponent(tab)}` : '/');
+  }));
 });

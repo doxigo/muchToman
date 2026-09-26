@@ -1,0 +1,91 @@
+/* آینده (BudgetUi.kt). Sizes are the Compose dp/sp as px; colours by role, from app.css. */
+
+.mt-xs { margin-top: var(--xs); }
+.mt-s { margin-top: var(--s); }
+.mt-m { margin-top: var(--m); }
+.mt-l { margin-top: var(--l); }
+.mb-m { margin-bottom: var(--m); }
+
+/* SectionLabel: the band title, with the optical inset that keeps it inside a 22px corner. */
+.plan-section { font-size: 15px; font-weight: 800; color: var(--on-bg); padding: var(--xxl) var(--xs) var(--m); }
+.plan-section.first { padding-top: 0; }
+.plan-empty { color: var(--on-surface-variant); line-height: 26px; margin-bottom: var(--l); }
+.plan-dup { color: var(--error); font-size: 12px; padding: var(--s) 0; }
+
+/* One row of a band: its own corners by index, a hairline inset to where the text starts. */
+.plan-row {
+  position: relative; display: block; width: 100%; padding: var(--l); border: 0; text-align: start;
+  background: var(--surface-variant); color: var(--on-surface);
+}
+button.plan-row:active { background: color-mix(in srgb, var(--on-surface) 6%, var(--surface-variant)); }
+.plan-row.divided::after { content: ""; position: absolute; bottom: 0; inset-inline: var(--l) 0; border-top: 1px solid var(--outline-variant); }
+.plan-row > span { display: block; }
+.plan-add { display: flex; align-items: center; justify-content: center; gap: var(--s); min-height: 56px; padding-block: 0; color: var(--primary); font-weight: 700; }
+.plan-plus { font-size: 20px; font-weight: 800; line-height: 1; }
+
+.plan-head, .plan-row > .plan-head { display: flex; align-items: center; gap: var(--m); }
+.plan-head .grow > span, .link-row .grow > span, .link-card .grow > span, .total-choice .grow > span, .pay-row .grow > span { display: block; }
+.plan-disc { width: 36px; height: 36px; background: color-mix(in srgb, var(--mark) 18%, transparent); }
+.plan-name { font-weight: 700; color: inherit; }
+.plan-sub { font-size: 12px; color: var(--on-surface-variant); }
+.plan-hint { font-size: 12px; color: var(--on-surface-variant); padding: var(--xs) var(--s); flex: none; }
+
+.plan-row > .plan-figure-row { display: flex; align-items: flex-end; gap: var(--s); }
+.plan-fit { display: block; flex: 1; min-width: 0; container-type: inline-size; }
+.plan-figure {
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 800; color: var(--on-surface);
+  font-size: clamp(14px, calc(100cqi / var(--fit)), 20px); line-height: 1.4;
+}
+.plan-percent { flex: none; font-size: 16px; font-weight: 800; color: var(--tone); transition: color var(--medium) var(--enter); }
+.plan-bar { display: block; height: 8px; border-radius: 4px; background: var(--surface); overflow: hidden; }
+.plan-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--tone); transition: width var(--medium) var(--enter), background var(--medium) var(--enter); }
+.plan-note { font-size: 13px; line-height: 22px; color: var(--on-surface); }
+.plan-note.quiet { color: var(--on-surface-variant); }
+.plan-note.loud { font-weight: 700; color: var(--tone); }
+.plan-part { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); }
+
+/* NotifyBlockedCard */
+.notify-what { font-size: 13px; line-height: 22px; color: var(--on-surface-variant); margin-top: var(--xs); }
+.notify-ask { margin-top: var(--s); min-height: 48px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--cta-fill); color: var(--cta-ink); font-size: 13px; font-weight: 700; }
+
+/* ---- sheets ---- */
+.plan-sheet-note { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); padding-top: var(--s); padding-inline-start: var(--xs); }
+.plan-editing { padding-top: var(--l); }
+.plan-conflict { color: var(--error); font-size: 13px; padding-top: var(--m); }
+.plan-save { margin-top: var(--l); }
+.plan-lede { font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
+.plan-older { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); padding-top: var(--xs); }
+.plan-first-plan { line-height: 26px; color: var(--on-surface); margin: var(--l) 0; }
+.field-invalid .field > input { border-color: var(--error); }
+
+.total-choice {
+  --mark: var(--primary);
+  display: flex; align-items: center; gap: var(--m); width: 100%; min-height: 64px; padding: var(--s) var(--m);
+  border: 0; border-radius: var(--r-field); background: var(--surface-variant); color: var(--on-surface); text-align: start;
+  transition: background var(--fast) var(--enter), color var(--fast) var(--enter);
+}
+.total-choice.selected { --mark: var(--on-primary); background: var(--primary); color: var(--on-primary); }
+.total-sub { font-size: 12px; opacity: .75; }
+
+.pay-row { display: flex; align-items: center; gap: var(--s); min-height: 56px; padding: var(--xs) 0; cursor: pointer; }
+.pay-row input { flex: none; width: 18px; height: 18px; margin: 11px; }
+.plan-title { color: var(--on-surface); }
+.pay-amount { flex: none; font-size: 14px; font-weight: 700; color: var(--on-surface); }
+
+/* The radio rows and the payment's link card. */
+.link-row { display: flex; align-items: center; gap: var(--s); width: 100%; min-height: 56px; padding: var(--xs) 0; border: 0; background: none; color: var(--on-surface); text-align: start; }
+.link-row .radio { flex: none; width: 20px; height: 20px; margin: 10px; border-radius: 50%; border: 2px solid var(--on-surface-variant); display: grid; place-items: center; }
+.link-row[aria-checked="true"] .radio { border-color: var(--primary); }
+.link-row[aria-checked="true"] .radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+.link-card { display: flex; align-items: center; gap: var(--s); width: 100%; padding: var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); text-align: start; }
+.link-verb { flex: none; font-size: 13px; font-weight: 700; color: var(--primary); }
+
+/* WorthItCard */
+.worth-title { font-size: 18px; font-weight: 700; color: var(--on-surface); margin-top: var(--xs); }
+.worth-amount { font-size: 24px; font-weight: 800; color: var(--on-surface); margin-top: var(--xs); }
+.worth-ask { font-weight: 600; color: var(--on-surface); margin-top: var(--l); }
+.worth-answers { display: flex; margin-top: var(--s); }
+.worth-answers > button {
+  flex: 1; min-width: 0; min-height: 48px; margin: 0 var(--xs); padding: var(--m) 0; border: 0; border-radius: var(--r-pill);
+  background: var(--surface); color: var(--on-surface); font-weight: 600; text-align: center;
+}

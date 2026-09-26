@@ -17,6 +17,18 @@
       "port": 5173
     },
     {
+      "name": "sync",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "sync", "--", "--port", "8787"],
+      "port": 8787
+    },
+    {
+      "name": "pwa-live",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd pwa && npm run build && SYNC_PROXY=https://sync.muchtoman.com npx vite preview --port 4175 --strictPort"],
+      "port": 4175
+    },
+    {
       "name": "www",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

@@ -1,16 +1,15 @@
 /**
- * Quick paste: an amount, a direction, and a date out of one message she pasted herself.
+ * A message she pasted herself, read the way the phone reads one — Sms.kt's `parseBankSms`
+ * body path, less the sender gate: iOS cannot read an inbox, so the paste sheet asks which bank
+ * it was instead of trusting a number, and nothing here ever runs unattended.
  *
- * Deliberately much smaller than the Android parser, and that is the decision rather than a
- * shortcut. iOS cannot read an inbox — its Message automation takes contacts and phone numbers,
- * not the alphanumeric shortcodes every Iranian bank sends from — so nothing here ever runs
- * unattended. Pasting is a manual act she is already looking at, and anything this gets wrong
- * she corrects in the same screen before it is saved.
- *
- * Porting the full 567-line bank parser would double the hardest, most-corrected code in the
- * project and put two implementations under one golden corpus for ever. The cases these two DO
- * share are held to the same file: see `sharesWithCorpus` in the tests.
+ * Everything the phone takes out of a body is taken here too — the money, and the merchant,
+ * reference, channel, fee and account mask the rules, the transfer detector and the duplicate
+ * detector key on — and every field is held to the same golden corpus (`test/paste.test.ts`), so
+ * the two implementations cannot drift apart on anything they both read without a red test.
  */
+
+import type { Channel, Instrument, PrintedUnit } from './sms';
 
 const IN_WORDS = ['واریز', 'بستانکار', 'افزایش یافت', 'دریافت وجه', 'نشست'];
 const OUT_WORDS = [
@@ -31,7 +30,21 @@ export interface Pasted {
   direction: 'in' | 'out' | null;
   balanceRial: number | null;
   printedAt: string;
+  feeRial: number | null;
+  mask: string;
+  instrument: Instrument;
+  merchant: string;
+  refNo: string;
+  channel: Channel;
+  unitPrinted: PrintedUnit;
+  /** An amount and a balance, but no word for which way the money went. */
+  inferred: boolean;
 }
+
+const NOTHING: Pasted = {
+  amountRial: null, direction: null, balanceRial: null, printedAt: '', feeRial: null, mask: '',
+  instrument: 'unknown', merchant: '', refNo: '', channel: 'unknown', unitPrinted: 'none', inferred: false,
+};
 
 /** Persian and Arabic-Indic digits fold to ASCII; every separator is dropped, the dot included. */
 function digitsOf(s: string): string {
@@ -273,17 +286,170 @@ function rialOf(figure: { value: number; divisor: number | null }, fallback: num
   return Math.round(figure.value * (10 / (figure.divisor ?? fallback)));
 }
 
+/**
+ * Under this, a run of digits is not the amount of a transaction: «... تا ۱ میلیون تومان تخفیف»
+ * in a bank's advert is a «۱» with a unit close behind it. Banks print amounts in full, never in
+ * words, so a figure that needs «میلیون» to be money is prose.
+ */
+const MIN_MONEY_FIGURE = 1000;
+
+/**
+ * A رمز پویا asks her to approve a purchase; it does not report one. «رمز» as a word of its own,
+ * never the one inside «کارمزد» or «رمزارز».
+ */
+const OTP = /(?<!\p{L})رمز(?!\p{L})|رمز ?(?:پویا|دوم)/u;
+/** The same code worded with «کد» — a closed list, never «کد» alone, which is «کد پیگیری» too. */
+const OTP_CODE = /(?<!\p{L})کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا)/gu;
+
+const statedBalance = (text: string) =>
+  figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: BALANCE_VETO });
+
+/**
+ * Whether a body is a one-time code. A «کد» wording is let through when the message states a
+ * مانده: a debit that prints its authorisation code as «کد تایید» and was dropped would be gone
+ * for good, balance and all, while a code kept beside a balance costs one row she can hide.
+ */
+export function isOneTimeCode(body: string): boolean {
+  const text = normalise(body);
+  // search, not test: a global regex's test moves lastIndex, and matchAll below would start there.
+  return OTP.test(text) || (text.search(OTP_CODE) >= 0 && statedBalance(text) == null);
+}
+
+const GROUPED_FIGURE = /[0-9۰-۹٠-٩]{1,3}(?:[,،٬.٫][0-9۰-۹٠-٩]{3})+/;
+const UNIT_WORDS = ['ریال', 'ر.ی', 'تومان', 'تومن'];
+const carriesMoney = (text: string): boolean =>
+  [...BALANCE_WORDS, ...AMOUNT_WORDS, ...IN_WORDS, ...OUT_WORDS, ...UNIT_WORDS].some((w) => text.includes(w)) ||
+  GROUPED_FIGURE.test(text);
+
+const CODE_AFTER = /^[^0-9۰-۹٠-٩\n•]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\-])/;
+const DIGIT_RUN = /[0-9۰-۹٠-٩]+/g;
+
+/**
+ * What is kept of a pasted body, or null for none of it — Sms.kt `bodyToStore`. A one-time code
+ * is refused, a body that says nothing about money is refused, and a «کد» code set beside a
+ * stated مانده is kept for the money with only the code's own digits blanked. Nothing is refused
+ * that the ledger reads, so a body is never worth less stored than it was pasted.
+ */
+export function bodyToStore(body: string): string | null {
+  if (isOneTimeCode(body)) return null;
+  const text = normalise(body);
+  if (!carriesMoney(text)) return null;
+  // Found in the normalised text, blanked in the raw body by its place among the digit runs:
+  // normalising never adds, drops or reorders a digit, so the n-th run is the same run in both.
+  const runs = [...text.matchAll(DIGIT_RUN)];
+  const codes = new Set<number>();
+  for (const m of text.matchAll(OTP_CODE)) {
+    const from = m.index! + m[0].length;
+    const code = CODE_AFTER.exec(text.slice(from));
+    if (!code) continue;
+    const n = runs.findIndex((r) => r.index === from + code[0].length - code[1].length);
+    if (n >= 0) codes.add(n);
+  }
+  if (!codes.size) return body;
+  let n = -1;
+  return body.replace(DIGIT_RUN, (run) => {
+    n++;
+    return codes.has(n) && run === runs[n]?.[0] ? '•'.repeat(run.length) : run;
+  });
+}
+
+// ---- enrichment: nothing below feeds the money above ----------------------------------------
+
+const FEE_WORDS = ['کارمزد', 'هزینه'];
+const REF_WORDS = ['پیگیری', 'رهگیری', 'مرجع', 'شماره سند', 'شناسه پرداخت'];
+/** خاورمیانه prints its reference as "020/000016703" with no label at all. */
+const SLASHED_REF = /[0-9۰-۹٠-٩]{2,}\/[0-9۰-۹٠-٩]{4,}/;
+// «مرکز» is deliberately not here: its only use was اقتصاد نوین signing its own call centre.
+const MERCHANT_WORDS = ['فروشگاه', 'پذیرنده', 'به نام', 'بنام'];
+const WHITESPACE = /[\s\p{Z}]+/gu;
+
+const digitsIn = (s: string): number => [...s].filter(isDigit).length;
+
+/** Some banks mask a tail ("۱۲۳****"); Saman prints the number in full ("829-800-1092308-1"). */
+const MASKED = /[0-9۰-۹٠-٩]*\*{2,}[0-9۰-۹٠-٩]*/;
+const DASHED = /[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+/g;
+function accountIn(text: string): string {
+  const masked = MASKED.exec(text);
+  if (masked) return masked[0];
+  // A Jalali date written 1405-05-01 is digits and dashes too; an account number is longer.
+  for (const m of text.matchAll(DASHED)) if (digitsIn(m[0]) >= 10) return m[0];
+  return '';
+}
+
+function instrumentOf(mask: string): Instrument {
+  if (!mask) return 'unknown';
+  if (mask.includes('*')) return 'card';
+  // Sixteen digits is a card however it is punctuated; Iranian account numbers are shorter.
+  return digitsIn(mask) >= 16 ? 'card' : 'account';
+}
+
+/** Most specific first: «پایانه فروش» beats «خرید», «کارت به کارت» beats the «انتقال» beside it. */
+function channelOf(text: string): Channel {
+  if (boxMove(text) != null) return 'box';
+  if (text.includes('خودپرداز') || text.includes('atm')) return 'atm';
+  if (text.includes('پایانه فروش') || text.includes('پایانه')) return 'pos';
+  if (text.includes('کارت به کارت')) return 'card';
+  if (text.includes('ساتنا')) return 'satna';
+  if (text.includes('پایا')) return 'paya';
+  if (text.includes('قبض')) return 'bill';
+  if (text.includes('خرید')) return 'pos';
+  if (text.includes('انتقال')) return 'transfer';
+  // Last, because a fee named beside a purchase does not make the purchase a fee.
+  if (FEE_WORDS.some((w) => text.includes(w))) return 'fee';
+  return 'unknown';
+}
+
+/**
+ * A fee named inside another transaction's message. It must name its own unit or be too big to
+ * be a count: پاسارگاد's «کارمزد پیامک بانکی ۶ ماهه» is six months, not six Rial.
+ */
+function feeIn(text: string, fallback: number): number | null {
+  const fee = figureAfter(text, FEE_WORDS);
+  if (!fee || (fee.divisor == null && fee.value < 1000)) return null;
+  return rialOf(fee, fallback);
+}
+
+function refIn(text: string): string {
+  for (const word of REF_WORDS) {
+    const at = text.indexOf(word);
+    if (at < 0) continue;
+    for (const m of text.slice(at + word.length).matchAll(NUMBER)) {
+      if (m.index! > 24) break;
+      if (digitsIn(m[0]) >= 6) return m[0];
+    }
+  }
+  return SLASHED_REF.exec(text)?.[0] ?? '';
+}
+
+/** The shop or terminal, cut at a colon, a line break or a digit run (a phone number, a terminal code). */
+function merchantIn(text: string): string {
+  for (const word of MERCHANT_WORDS) {
+    const at = text.indexOf(word);
+    if (at < 0) continue;
+    const tail = text.slice(at + word.length).replace(/^[ :\-،]+/, '');
+    let name = '';
+    for (const c of tail) {
+      if (c === '\n' || c === ':' || c === '،' || isDigit(c)) break;
+      name += c;
+    }
+    name = name.trim();
+    if (name.length >= 2) return name.replace(WHITESPACE, ' ');
+  }
+  return '';
+}
+
 export function parsePasted(body: string): Pasted {
+  if (isOneTimeCode(body)) return NOTHING;
   const text = normalise(body);
   const fallback = fallbackDivisor(text);
 
-  const balance = figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: BALANCE_VETO });
+  const balance = statedBalance(text);
   const deposit = statesDirection(text, IN_WORDS);
   const withdrawal = statesDirection(text, OUT_WORDS);
   const inWords = deposit ? IN_WORDS : [];
   const outWords = withdrawal ? OUT_WORDS : [];
   const signed = signedAmount(text);
-  const amount =
+  const found =
     signed ??
     figureAfter(text, AMOUNT_WORDS, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, inWords, { stopAt: BALANCE_WORDS }) ??
@@ -293,6 +459,7 @@ export function parsePasted(body: string): Pasted {
     // the sentence as the only word that says which way the money went.
     figureBefore(text, inWords) ??
     figureBefore(text, outWords);
+  const amount = found && found.value >= MIN_MONEY_FIGURE ? found : null;
 
   // Both or neither means the message did not say which way the money went, and guessing is how
   // a deposit becomes a withdrawal.
@@ -305,10 +472,19 @@ export function parsePasted(body: string): Pasted {
     : withdrawal && !deposit ? 'out'
     : null;
 
+  const mask = accountIn(text);
   return {
     amountRial: amount ? rialOf(amount, fallback) : null,
     direction,
     balanceRial: balance ? rialOf(balance, fallback) : null,
     printedAt: printedStampIn(body),
+    feeRial: feeIn(text, fallback),
+    mask,
+    instrument: instrumentOf(mask),
+    merchant: merchantIn(text),
+    refNo: refIn(text),
+    channel: channelOf(text),
+    unitPrinted: amount?.divisor === 1 ? 'toman' : amount?.divisor === 10 ? 'rial' : 'none',
+    inferred: direction == null && balance != null && amount != null,
   };
 }

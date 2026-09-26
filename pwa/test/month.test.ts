@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { inJalaliMonth, jalaliMonthKey } from '../src/sync';
+import { jalaliMonthStart, tehranDay } from '../src/jalali';
+
+// The old companion's Intl-based helpers, now answered by jalali.ts: a month is its first day.
+const jalaliMonthKey = (at: number): number => jalaliMonthStart(tehranDay(at));
+const inJalaliMonth = (at: number, reference: number): boolean => jalaliMonthKey(at) === jalaliMonthKey(reference);
 
 /**
  * «این ماه» on the hero is a promise about the Jalali month, and Gregorian months are the

@@ -417,8 +417,8 @@ fun TimelineScreen(
 
             // Between the pill and the list, and only while something is actually waiting: this is
             // an offer to be told about a backlog, and on a ledger with none of one it would be the
-            // app asking for a permission it has no use for — which is the launch-time prompt this
-            // app deliberately does not do, moved down a screen.
+            // app asking for a permission it has no use for — the nag the first-run sheet refuses
+            // to be, moved down a screen.
             if (notifyBlocked && waiting > 0) {
                 Box(Modifier.padding(horizontal = Space.xl, vertical = Space.s)) {
                     NotifyBlockedCard(

@@ -348,7 +348,7 @@ punctuation is invisible in practice.
 app/      Android app (Kotlin + Compose) — the household's sensor
 worker/   Cloudflare Worker: public prices and wallet balances
 sync/     Cloudflare Worker: the household ledger, as ciphertext it cannot read
-pwa/      the iPhone companion, served by sync/ as its static assets
+pwa/      the same app in the browser, for iPhone users, served by sync/ as its static assets
 ```
 
 Two databases on the phone, and the split between them is the whole design:
@@ -567,11 +567,9 @@ incomplete refresh skips the point. Backup settings show the last successful exp
 an optional in-app reminder after 30 days. This date does not verify the exported file still exists.
 Ledger health shows retained coverage and the last successful ingestion and derivation.
 
-Browser storage is partitioned by server, household, encryption scope and member. Re-pairing
-keeps unsent records with their original session. The browser supports owner-only corrections,
-version-aware acknowledgements, bounded sync batches and indexed visible pages. The generated
-service worker precaches every emitted shell asset before activation. Browser regressions run
-against the production build:
+The browser keeps its own ledger the way the phone does — see «The PWA» below — and
+precaches every emitted shell asset in its service worker before activation. Browser regressions
+run against the production build:
 
 ```bash
 cd pwa
@@ -582,3 +580,52 @@ npm run test:browser
 ```
 
 Dependency advisory checking was intentionally skipped for this review.
+
+## The PWA
+
+`pwa/` is the Android app for iPhone users — not a companion. **Every feature ships on both, in
+the same change** (AGENTS.md). The one thing a browser cannot do is read the SMS inbox, so the
+دفتر takes a pasted bank message instead («پیامک», `pasteUi.tsx`); a `#paste=<text>` link opens
+that sheet prefilled. Beyond that the standing platform gaps are: no home-screen widget, no
+background work or notifications while the page is closed (budget and instalment notes fire while
+it is open, through the service worker), no TSETMC prices (geo-blocked, no CORS), and the app lock
+is a passkey (Face ID / Touch ID) rather than BiometricPrompt. An Android `.mtbak` cannot be
+restored in the browser — the browser writes the same encrypted container around its own payload.
+
+It is a port, file for file, so the Kotlin is the spec and the two read side by side:
+
+| Kotlin | PWA |
+|---|---|
+| `Jalali.kt`, `Format.kt` (+ Timeline.kt's date words) | `jalali.ts`, `format.ts` |
+| `Ledger.kt`/`Rules.kt`/`Links.kt`/`Goals.kt` tables, `Data.kt` prefs | `model.ts` (types), `state.ts` (in memory, written through to IndexedDB) |
+| `Sms.kt` (parser) · `Derived.kt` · `Rules.kt` · `Links.kt` · `Filing.kt` | `paste.ts`, `sms.ts` · `derived.ts` · `rules.ts` · `links.ts` · `filing.ts` |
+| AppVm's ledger actions | `ledger.ts` |
+| `Catalog.kt` · `Data.kt` (holdings, rates, history, wallets) | `catalog.ts` · `data.ts` |
+| `Reports.kt` · `Budget.kt` · `Goals.kt` · `Installments.kt` · AppVm's plan actions + `Notify.kt` | `reports.ts` · `budget.ts` · `goals.ts` · `installments.ts` · `plans.ts` |
+| `Sync.kt` · AppVm's family actions | `sync.ts` · `family.ts` (+ `crypto.ts`, `db.ts`) |
+| `Export.kt` | `backup.ts` |
+| `Theme.kt`, `Ui.kt` kit, `TabBar.kt`, `CategoryIcon.kt`, `AssetGlyph.kt`, logos | `app.css`, `ui.tsx`, `icons.tsx`, `categoryIcon.tsx`, `assetGlyph.tsx`, `logos.tsx` |
+| `Ui.kt` home/assets · `Timeline.kt` · `ManualTxnUi.kt` · `CategoriesUi.kt` · `BudgetUi.kt` · `Report.kt` · `Settings.kt` · `Family.kt` · `Lock.kt` · `Onboarding.kt` | `home.tsx` · `timeline.tsx` · `manualTxn.tsx` · `categoriesUi.tsx` · `budgetUi.tsx` · `report.tsx` · `settings.tsx` · `familyUi.tsx` · `lock.tsx` · `onboarding.tsx` |
+
+Preact renders it (`app.tsx` is AppScreens; `nav.ts` holds the tab, the page stack, the one sheet
+and the undo band, with the browser's back as the phone's back). Every table lives in memory and
+is written through to IndexedDB (`local_v3`/`prefs_v3`; the old companion's stores are migrated,
+never deleted), and the whole derive runs in memory on each change — milliseconds for a household.
+The browser is a full member of a household: it publishes and applies every record kind exactly as
+`Sync.kt` does, parsing Android's payloads with their omitted defaults (`encodeDefaults` is off).
+
+Working on it:
+
+```bash
+cd pwa && npm run dev             # http://localhost:5173 — /rates, /wallet-balance, /coin-icon proxied
+open http://localhost:5173/?demo=1   # Demo.kt's household, row for row (dev builds only)
+```
+
+In the dev build `window.mt` holds the app's own module instances for the console — after an HMR
+update a hand-typed `import('/src/state.ts')` can be a second, empty copy. The same build against
+a real household (`/v1` proxied to production; the page's CSP is `connect-src 'self'`):
+
+```bash
+cd pwa && npm run build && SYNC_PROXY=https://sync.muchtoman.com npx vite preview --port 4175
+```
+

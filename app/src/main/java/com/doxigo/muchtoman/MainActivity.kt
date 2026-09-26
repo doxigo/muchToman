@@ -1294,14 +1294,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }.onFailure { e ->
                 pendingRestore = null
                 android.util.Log.w("muchtoman", "backup open failed: ${(e as? BackupException)?.fault ?: e}")
-                val words = when ((e as? BackupException)?.fault) {
-                    BackupFault.NOT_A_BACKUP -> "این فایل پشتیبانِ چقدر تومن نیست."
-                    BackupFault.NEWER_FORMAT ->
-                        "این پشتیبان با نسخهٔ جدیدتر برنامه ساخته شده. اول برنامه رو به‌روز کن."
-                    BackupFault.WRONG_PASSPHRASE_OR_CORRUPT -> "رمز اشتباهه یا فایل خرابه."
-                    null -> "فایل خونده نشد. دوباره امتحان کن."
-                }
-                _backup.update { it.copy(working = false, failed = true, notice = words) }
+                _backup.update { it.copy(working = false, failed = true, notice = backupFaultFa(e)) }
             }
         }
     }
@@ -1327,8 +1320,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 android.util.Log.w("muchtoman", "backup staging failed: $e")
                 _backup.update {
                     it.copy(working = false, failed = true, notice =
-                        if ((e as? BackupException)?.fault == BackupFault.NEWER_FORMAT)
-                            "این پشتیبان با نسخهٔ جدیدتر برنامه ساخته شده. اول برنامه رو به‌روز کن."
+                        if ((e as? BackupException)?.fault == BackupFault.NEWER_FORMAT) backupFaultFa(e)
                         else "بازگردانی نشد. فایل رو بررسی کن و دوباره امتحان کن.")
                 }
             }
@@ -2701,7 +2693,7 @@ class MainActivity : FragmentActivity() {
         // A phone that granted READ_SMS before RECEIVE_SMS existed: she already said yes to the
         // messages conversation, this completes it so [SmsReceiver] can hear them land. Both
         // permissions share the SMS group, so the platform grants this without showing anything.
-        // Asking "at launch" is exactly what the settings screen's rule forbids — for a *new*
+        // Asking at launch, unexplained, is exactly what [OnboardingScreen] forbids — for a *new*
         // conversation; this guard makes it unreachable except mid-upgrade, and asked at most
         // once: denied is a state the guard cannot tell from never-asked, but the system stops
         // re-showing a denied dialog on its own. The result is deliberately ignored — a denial

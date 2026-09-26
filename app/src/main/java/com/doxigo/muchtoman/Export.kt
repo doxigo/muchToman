@@ -3,6 +3,8 @@ package com.doxigo.muchtoman
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.SecureRandom
@@ -99,6 +101,9 @@ enum class BackupFault {
 
     /** GCM refused it. The two causes are indistinguishable by design, and the words say both. */
     WRONG_PASSPHRASE_OR_CORRUPT,
+
+    /** Opened fine, and it is the browser's: its tables as JSON, not a database this phone reads. */
+    BROWSER_BACKUP,
 }
 
 class BackupException(val fault: BackupFault, message: String) : Exception(message)
@@ -177,15 +182,29 @@ fun openBackup(bytes: ByteArray, passphrase: String): OpenedBackup {
 
     // From here down every failure is one answer on purpose: GCM cannot tell a wrong key from a
     // flipped bit, and pretending otherwise would be inventing a diagnosis.
-    val payload = runCatching {
+    val json = runCatching {
         val key = deriveBackupKey(passphrase.toCharArray(), salt, header.kdf.iterations)
         val cipher = Cipher.getInstance(BACKUP_CIPHER_ALGO)
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
         cipher.updateAAD(headerBytes)
         val plain = cipher.doFinal(bytes, headerFrom + headerLen, bytes.size - headerFrom - headerLen)
-        BACKUP_JSON.decodeFromString<BackupPayload>(String(gunzip(plain), Charsets.UTF_8))
+        BACKUP_JSON.parseToJsonElement(String(gunzip(plain), Charsets.UTF_8)).jsonObject
     }.getOrElse { fail(BackupFault.WRONG_PASSPHRASE_OR_CORRUPT, "auth failed") }
+    // The one exception, and not a diagnosis: the passphrase was right, and the payload says
+    // outright that the browser wrote it (backup.ts `{ pwa: 1, prefs, tables }`).
+    if ("pwa" in json) fail(BackupFault.BROWSER_BACKUP, "browser payload")
+    val payload = runCatching { BACKUP_JSON.decodeFromJsonElement<BackupPayload>(json) }
+        .getOrElse { fail(BackupFault.WRONG_PASSPHRASE_OR_CORRUPT, "unreadable payload") }
     return OpenedBackup(header, payload)
+}
+
+/** Every refusal, in words — backup.ts backupFaultFa says the same, platform sentence mirrored. */
+fun backupFaultFa(e: Throwable): String = when ((e as? BackupException)?.fault) {
+    BackupFault.NOT_A_BACKUP -> "این فایل پشتیبانِ چقدر تومن نیست."
+    BackupFault.NEWER_FORMAT -> "این پشتیبان با نسخهٔ جدیدتر برنامه ساخته شده. اول برنامه رو به‌روز کن."
+    BackupFault.WRONG_PASSPHRASE_OR_CORRUPT -> "رمز اشتباهه یا فایل خرابه."
+    BackupFault.BROWSER_BACKUP -> "این پشتیبان مال نسخهٔ مرورگره و توی اپ اندروید باز نمی‌شه."
+    null -> "فایل خونده نشد. دوباره امتحان کن."
 }
 
 /** The staged half of a restore is this same JSON, written to disk for the next launch to apply. */

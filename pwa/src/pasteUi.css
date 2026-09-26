@@ -1,0 +1,12 @@
+/* The paste sheet: the preview of what was read, and the banks on one line. */
+.paste-text { margin-top: var(--l); }
+/* A bank message is five or six hard lines; the field shows one whole. */
+.paste-text .field > textarea { min-height: 168px; }
+.paste-preview { margin-top: var(--m); padding: var(--l); border-radius: var(--r-card); background: var(--surface-variant); }
+.paste-amount { font-size: 26px; font-weight: 900; line-height: 1.2; color: var(--on-surface); white-space: nowrap; }
+.paste-amount.gain { color: var(--tertiary); }
+.paste-amount .unit { font-size: .5em; font-weight: 700; opacity: .75; margin: 0; }
+.paste-amount + p { margin-top: var(--xs); }
+.paste-no-amount { font-weight: 700; }
+.paste-rows { margin-top: var(--s); }
+.bank-chip { display: inline-flex; align-items: center; gap: var(--s); padding-inline: var(--s) var(--l); flex: none; }

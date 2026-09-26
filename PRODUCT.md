@@ -18,7 +18,8 @@ are spelled out in words as a guard against misreading by a factor of ten.
 
 ## Platform
 
-android
+android, and the same app as a PWA for iPhone (`pwa/`) — every feature ships on both
+(AGENTS.md). The PWA reads pasted bank messages instead of the SMS inbox.
 
 Material 3, as Jetpack Compose renders it. minSdk 24. Two flavours (full / lite) × dev
 sandbox build type. One typeface: Modam variable (wght 200–900, wdth 70–100) — the only face
