@@ -2,7 +2,9 @@
 
 **English** · [فارسی](README.fa.md)
 
-An Android app that answers one question: *how much is all my money, in Toman?*
+An Android app that shows what all your money adds up to in Toman, and where it goes: a ledger
+filled from bank SMS, budgets, savings goals and installments, for one person or, if you choose,
+the whole family.
 
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
 say them ("4.7 billion Toman", not "4,666,251,136"). Built for a Persian-speaking parent, so
@@ -10,15 +12,16 @@ legibility beats density everywhere.
 
 Holds plain Toman, fiat (USD, EUR, GBP, NOK, TRY, AED, CAD), **any of the top 250
 cryptocurrencies**, 18k gold by the gram or the mesghal, silver by the gram at 999 and 925,
-Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), and Parsian coins in all fifteen sizes
-from 100 to 1500 sut. Everything is valued at **free-market** rates — the official ~42,000
-IRR peg is not used anywhere.
+Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), Parsian coins by the sut, and shares, ETFs,
+gold funds and bonds on the Tehran bourse and Farabourse. Everything is valued at **free-market**
+rates — the official ~42,000 IRR peg is not used anywhere.
 
 Cars, houses and villas, and land are held too, and are the only rows with no price behind them:
 nobody quotes *your* car, so you type what it is worth in Toman and that figure is the value.
 
-A Parsian coin is quoted per size rather than weighed as gold: the making charge is close to
-fixed per coin, so a 100-sut piece goes for about a quarter more than the gold in it.
+A Parsian coin is counted in sut and priced at the 1-gram coin's rate. The making charge is close
+to fixed per coin, so the smallest pieces sell for more than that: a 100-sut piece goes for about a
+quarter more than the gold in it.
 
 ## Screenshots
 

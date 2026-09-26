@@ -5,10 +5,10 @@ redesign brief asked for one pass). Assumptions are marked.
 
 ## What it is
 
-An Android app that answers one question: **how much is all my money, in Toman?** Persian UI,
+An Android app that shows **what all your money adds up to in Toman**, and where it goes. Persian UI,
 RTL, Persian digits, big type. Bank balances are read from SMS on the phone; everything else
 (fiat, gold, coins, crypto, stocks, property) is valued at free-market rates. A household
-ledger, budgets, savings goals, and two reports (دخل و خرج, دارایی) sit on top.
+ledger, budgets, savings goals, installments, and two reports (دخل و خرج, دارایی) sit on top.
 
 ## Who it is for
 
