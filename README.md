@@ -165,6 +165,13 @@ New releases show up as a line under your total the next time you open the app. 
 without opening it, add `https://github.com/doxigo/muchToman` to
 [Obtainium](https://github.com/ImranR98/Obtainium).
 
+**On an iPhone**, open <https://sync.muchtoman.com> in Safari and add it to the Home Screen
+(Share → Add to Home Screen). It is the same app in the browser — every screen and figure above —
+except that iOS lets no app read your SMS, so you paste a bank message into the ledger instead.
+Added to the Home Screen, its data is kept; in a plain Safari tab iOS may clear it after weeks
+unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
+Android.
+
 ## Where the prices come from
 
 Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian exchanges
@@ -190,9 +197,12 @@ Neither leaves the device or reaches the family sync — not the category, not t
 merchant, not the fact that either happened. They sit on separate channels, so you can silence the
 filing reminders and keep the budget alerts, or the other way round, in Android's own settings.
 
-The notification permission is asked for when the first budget is saved, or from Ledger once there are
-transactions waiting to be filed — never at launch. Denying it costs the alerts and nothing else:
-the Future tab shows the same figures either way, and the badge on Ledger counts the same backlog.
+The first time the app opens, one screen says what each permission is for and asks for them
+together: reading bank SMS and, on Android 13 and later, notifications. Refuse or skip it and it
+does not come back. Reading bank SMS can be switched on later in Settings, and Future and Ledger
+offer to turn notifications on whenever they have something to tell you. Denying notifications
+costs the alerts and nothing else: the Future tab shows the same figures either way, and the
+badge on Ledger counts the same backlog.
 
 Installment plans, and which transactions paid them, stay on the phone. They are never part of
 the family sync.
