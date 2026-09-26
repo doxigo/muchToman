@@ -179,10 +179,19 @@ Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian ex
 
 ## Privacy
 
-No account, no login, no analytics. Holdings, saved wallet links, and raw bank SMS live in the
+No account, no login, no analytics SDK. Holdings, saved wallet links, and raw bank SMS live in the
 app's own storage on the phone and are excluded from Android backup and device transfer. The
 way off a dying phone is the app's own backup: one file, encrypted with a passphrase you
 choose, holding everything — and readable by nobody without it, including the app.
+
+The app tells its author two things about itself, and nothing else. The first rates request of
+each day carries one header: the app's version and the store that installed it (Cafe Bazaar,
+Myket, or Android's package installer for an APK from GitHub). The web app sends its version and
+`pwa`. There is no identifier, so two phones on the same version from the same store send the same
+bytes, and the totals are public at [muchtoman.com/usage](https://muchtoman.com/usage). After a
+crash, the next launch shows the crash report and asks whether to send it: class names and code
+line numbers with no exception messages, plus the Android version and phone model. It is sent only
+if you say yes.
 
 Family sync is optional and end-to-end encrypted. SMS sharing starts off. When a person enables
 it, their phone shares only the parsed amount, direction, time, bank, merchant, and category. It

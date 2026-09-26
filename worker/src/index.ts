@@ -1351,9 +1351,211 @@ async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext)
   return (await ratesInFlight).clone();
 }
 
-/** The landing page's static files; see `assets` in wrangler.jsonc for why the code serves them. */
+// ───────────────────────── usage ─────────────────────────
+
+/**
+ * What the phones say about themselves, and all of it. The day's first rates request carries
+ * `X-MuchToman-Daily: <version> <installer>` (the PWA's installer is `pwa`, forwarded by the sync
+ * Worker's proxy), and a crash report is a POST she agreed to. Each is one data point in its own
+ * Analytics Engine dataset (`USAGE`, `CRASHES` in wrangler.jsonc). This Worker can only write them;
+ * /usage reads the daily one back over the SQL API with a read-only token, and the crashes are only
+ * ever read by hand (DEVELOPMENT.md § Usage and crash reports). A point is two tokens, not a phone:
+ * there is no id to fill.
+ *
+ * ponytail: anyone can send the header, and there is no id to dedupe on, by design. Per-IP limits
+ * would undercount Iranian carriers, whose CGNAT puts whole cities behind a few addresses. Past
+ * Analytics Engine's free writes a day it starts sampling; SUM(_sample_interval) keeps the totals
+ * honest, so nothing here changes until the bill does.
+ */
+function usageField(value: string | undefined): string {
+  return (value ?? '').replace(/[^0-9A-Za-z._+-]/g, '').slice(0, 64) || 'unknown';
+}
+
+export function countDaily(env: Env, header: string | null): void {
+  if (header == null || env.USAGE == null) return;
+  const [version, installer] = header.trim().split(/\s+/);
+  // Never allowed to cost the prices: a failed count is a log line.
+  try {
+    env.USAGE.writeDataPoint({ blobs: [usageField(version), usageField(installer)] });
+  } catch (error) {
+    console.error(JSON.stringify({ message: 'daily count failed', error: errorMessage(error) }));
+  }
+}
+
+// The app caps a report at 4,000 characters.
+const MAX_CRASH_REPORT_BYTES = 8 * 1024;
+const crashLimiter = new TokenBucket(10, 10 / (60 * 60 * 1000));
+
+const USAGE_DAYS = 90;
+const USAGE_SLOT = /<!--usage-->[\s\S]*?<!--\/usage-->/;
+
+/** Installer package → the name people know it by. Anything else is a downloaded APK. */
+const STORES: Record<string, string> = {
+  'com.farsitel.bazaar': 'کافه‌بازار',
+  'ir.mservice.market': 'مایکت',
+  'com.android.vending': 'گوگل‌پلی',
+  pwa: 'نسخهٔ PWA',
+};
+const DIRECT_INSTALL = 'گیت‌هاب و نصب مستقیم';
+const MAX_VERSION_ROWS = 10;
+
+type UsageRow = { day: string; version: string; source: string; devices: number };
+
+// Analytics Engine keeps three months, which is where USAGE_DAYS comes from. Timestamps are UTC,
+// the same day the phone counts in (utcDay in Diagnostics.kt).
+const USAGE_SQL = `SELECT toStartOfDay(timestamp) AS day, blob1 AS version, blob2 AS source,
+  SUM(_sample_interval) AS devices
+FROM muchtoman_daily
+WHERE timestamp > NOW() - INTERVAL '${USAGE_DAYS + 1}' DAY
+GROUP BY day, version, source
+FORMAT JSON`;
+
+/**
+ * The last 90 days of totals, cached at the edge for an hour: the page is public, and a refresh
+ * loop must not turn into a SQL API call per request. Null without the two read secrets, and the
+ * page keeps its "not available" line.
+ */
+async function usageRows(env: Env, ctx: ExecutionContext): Promise<UsageRow[] | null> {
+  if (!env.ANALYTICS_ACCOUNT_ID || !env.ANALYTICS_TOKEN) return null;
+  const cache = caches.default;
+  const key = new Request(`${PUBLIC_ORIGIN}/__cache/usage/v2`, { method: 'GET' });
+  const hit = await cache.match(key);
+  if (hit != null) return await hit.json<UsageRow[]>();
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.ANALYTICS_ACCOUNT_ID}/analytics_engine/sql`,
+    { method: 'POST', headers: { authorization: `Bearer ${env.ANALYTICS_TOKEN}` }, body: USAGE_SQL },
+  );
+  if (!res.ok) throw new Error(`analytics sql ${res.status}`);
+  // The day comes back as a DateTime, and the sum as a string (UInt64 does not fit a JSON number).
+  const { data } = await res.json<{ data: { day: string; version: string; source: string; devices: string | number }[] }>();
+  const rows = data.map((row) => ({
+    day: String(row.day).slice(0, 10),
+    version: row.version,
+    source: row.source,
+    devices: Number(row.devices) || 0,
+  }));
+  ctx.waitUntil(cache.put(key, Response.json(rows, { headers: { 'cache-control': 'public, max-age=3600' } }))
+    .catch((error: unknown) => {
+      console.error(JSON.stringify({ message: 'usage cache write failed', error: errorMessage(error) }));
+    }));
+  return rows;
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const faDay = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const dayFa = (day: string) => faDay.format(new Date(`${day}T00:00:00Z`));
+
+/** 1, 2, 5 × 10ⁿ: the gridline a reader can take in without doing arithmetic. */
+function niceCeil(n: number): number {
+  const p = 10 ** Math.floor(Math.log10(Math.max(n, 1)));
+  return [1, 2, 5, 10].map((m) => m * p).find((v) => v >= n)!;
+}
+
+function sumBy(rows: UsageRow[], key: (row: UsageRow) => string): [string, number][] {
+  const out = new Map<string, number>();
+  for (const row of rows) out.set(key(row), (out.get(key(row)) ?? 0) + row.devices);
+  return [...out].sort((a, b) => b[1] - a[1]);
+}
+
+function tableFa(caption: string, head: string, rows: [string, number][]): string {
+  return `<table><caption>${caption}</caption><thead><tr><th>${head}</th><th class="n">گوشی</th></tr></thead><tbody>` +
+    rows.map(([name, n]) => `<tr><td><bdi>${escapeHtml(name)}</bdi></td><td class="n">${faFigure(n)}</td></tr>`).join('') +
+    '</tbody></table>';
+}
+
+/**
+ * The numbers, as HTML for the page's slot. Up to yesterday only: today is still being counted, and
+ * a half-day bar at the end reads as everyone leaving.
+ */
+export function renderUsage(rows: UsageRow[], now = Date.now()): string {
+  if (!rows.some((row) => row.devices > 0)) {
+    return '<p class="empty">هنوز هیچ روزی شمرده نشده.</p>';
+  }
+  const days = Array.from({ length: USAGE_DAYS }, (_, i) =>
+    new Date(now - (USAGE_DAYS - i) * 86_400_000).toISOString().slice(0, 10));
+  const yesterday = days[days.length - 1];
+  const perDay = new Map(sumBy(rows, (row) => row.day));
+  const counts = days.map((day) => perDay.get(day) ?? 0);
+  const last = rows.filter((row) => row.day === yesterday);
+
+  const W = 900;
+  const H = 220;
+  const band = W / USAGE_DAYS;
+  // Floored at ten so the half-way gridline is always a whole number.
+  const top = niceCeil(Math.max(...counts, 10));
+  const bars = counts.map((n, i) => {
+    const x = W - (i + 1) * band + 1; // oldest on the right
+    const w = band - 2; // the 2px surface gap between neighbours
+    const h = (n / top) * H;
+    const r = Math.min(4, w / 2, h);
+    const y = H - h;
+    const bar = n > 0
+      ? `<path class="bar" d="M${x} ${H}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${H}Z"/>`
+      : '';
+    return `<g class="day"><title>${dayFa(days[i])} · ${faFigure(n)} گوشی</title>` +
+      `<rect class="hit" x="${x - 1}" y="0" width="${band}" height="${H}"/>${bar}</g>`;
+  }).join('');
+  const grid = [0, H / 2, H].map((y) =>
+    `<line class="grid" x1="0" x2="${W}" y1="${y}" y2="${y}" vector-effect="non-scaling-stroke"/>`).join('');
+
+  const versions = sumBy(last, (row) => row.version);
+  const rest = versions.slice(MAX_VERSION_ROWS).reduce((sum, [, n]) => sum + n, 0);
+
+  return `<section class="hero"><p class="label">گوشی‌هایی که دیروز برنامه رو باز کردن</p>` +
+    `<p class="figure">${faFigure(perDay.get(yesterday) ?? 0)}</p></section>` +
+    `<figure class="chart"><figcaption>گوشی‌های فعال هر روز، ${faDigits(String(USAGE_DAYS))} روز گذشته</figcaption>` +
+    `<div class="plot"><span class="tick" style="top:0">${faFigure(top)}</span>` +
+    `<span class="tick" style="top:50%">${faFigure(top / 2)}</span>` +
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="گوشی‌های فعال هر روز از ${dayFa(days[0])} تا ${dayFa(yesterday)}؛ بیشترین ${faFigure(Math.max(...counts))}. جدول روزبه‌روز پایین صفحه است.">` +
+    `${grid}${bars}</svg></div>` +
+    `<div class="axis"><span>${dayFa(days[0])}</span><span>${dayFa(yesterday)}</span></div></figure>` +
+    '<div class="tables">' +
+    tableFa('دیروز، به تفکیک فروشگاه', 'فروشگاه', sumBy(last, (row) => STORES[row.source] ?? DIRECT_INSTALL)) +
+    tableFa('دیروز، به تفکیک نسخه', 'نسخه', [
+      ...versions.slice(0, MAX_VERSION_ROWS),
+      ...(rest > 0 ? [['بقیه', rest] as [string, number]] : []),
+    ]) +
+    '</div>' +
+    `<details><summary>همهٔ عددها، روزبه‌روز</summary>` +
+    tableFa('گوشی‌های فعال هر روز', 'روز', days.map((day, i) => [dayFa(day), counts[i]] as [string, number]).reverse()) +
+    '</details>';
+}
+
+async function usagePage(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const page = await env.ASSETS.fetch(request);
+  if (!page.ok) return page;
+  let html = await page.text();
+  try {
+    const rows = await usageRows(env, ctx);
+    if (rows != null) html = html.replace(USAGE_SLOT, renderUsage(rows));
+  } catch (error) {
+    // The page's own "not available" line stays in the slot.
+    console.error(JSON.stringify({ message: 'usage query failed', error: errorMessage(error) }));
+  }
+  return new Response(html, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'public, max-age=300',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
+/**
+ * The landing page's static files (see `assets` in wrangler.jsonc for why the code serves them),
+ * and the usage datasets. All of those are optional so a Worker without them still serves prices;
+ * /usage then says it has nothing yet.
+ */
 interface Env {
   ASSETS: Fetcher;
+  USAGE?: AnalyticsEngineDataset;
+  CRASHES?: AnalyticsEngineDataset;
+  /** Read-only (Account Analytics: Read), for /usage's SQL query. Secrets, not vars. */
+  ANALYTICS_ACCOUNT_ID?: string;
+  ANALYTICS_TOKEN?: string;
 }
 
 export default {
@@ -1424,21 +1626,46 @@ export default {
       }
     }
 
+    if (url.pathname === '/crash') {
+      if (request.method !== 'POST') {
+        return textResponse('Method not allowed', 405, 'POST');
+      }
+      if (!crashLimiter.take(request.headers.get('cf-connecting-ip') ?? 'unknown', Date.now()).ok) {
+        return textResponse('Too many reports', 429);
+      }
+      try {
+        const report = (await readTextLimited(request.body, request.headers, MAX_CRASH_REPORT_BYTES)).trim();
+        if (report === '') return textResponse('Empty report', 400);
+        if (env.CRASHES == null) return textResponse('Report not stored', 503);
+        // The phone deletes its copy on a 2xx. writeDataPoint queues rather than confirms, so a
+        // 2xx means the runtime took it; a throw here is the only failure it reports.
+        env.CRASHES.writeDataPoint({ blobs: [report] });
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return textResponse('Report too large', 413);
+        console.error(JSON.stringify({ message: 'crash report failed', error: errorMessage(error) }));
+        return textResponse('Report not stored', 502);
+      }
+    }
+
     // The landing page everywhere except the API hostnames — rates. and workers.dev keep
     // answering with the usage line so the rates origin never turns into a website, and
     // `wrangler dev` on localhost gets the page like the apex does.
     if (url.pathname !== '/rates') {
       if (url.hostname !== 'rates.muchtoman.com' && !url.hostname.endsWith('.workers.dev')) {
+        if (url.pathname === '/usage') return await usagePage(request, env, ctx);
         return await landingPage(request, env);
       }
       return textResponse(
-        'muchtoman: GET /rates, GET /coin-icon, GET /download, or POST /wallet-balance\n',
+        'muchtoman: GET /rates, GET /coin-icon, GET /download, POST /wallet-balance, or POST /crash\n',
         404,
       );
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return textResponse('Method not allowed', 405, 'GET, HEAD');
     }
+    // Before the cache, so a 304 counts the same as a full body.
+    countDaily(env, request.headers.get('x-muchtoman-daily'));
 
     const cache = caches.default;
     const key = new Request(

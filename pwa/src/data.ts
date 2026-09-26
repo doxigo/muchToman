@@ -352,14 +352,35 @@ async function readLimited(res: Response, maxBytes: number): Promise<string> {
  * number worth showing, since a cached response is still old prices.
  */
 export async function fetchRates(now = Date.now()): Promise<Rates> {
+  const daily = dailyPing(now);
   const res = await fetch('/rates', {
-    headers: { Accept: 'application/json' }, cache: 'no-cache', signal: AbortSignal.timeout(20_000),
+    headers: { Accept: 'application/json', ...(daily ? { 'X-MuchToman-Daily': daily } : {}) },
+    cache: 'no-cache', signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const parsed = sanitizeRates(JSON.parse(await readLimited(res, MAX_RATES_RESPONSE_BYTES)), now);
   if (!Object.keys(parsed.toman).length) throw new Error('empty rates');
   if (parsed.updatedAt <= 0) throw new Error('invalid rates timestamp');
+  if (daily) setCountedDay(now);
   return parsed;
+}
+
+/**
+ * The day's one count, as on the phone (Diagnostics.kt): the first rates fetch of a UTC day names
+ * the version and `pwa` as where it came from, and nothing else. localStorage rather than a pref
+ * keeps it out of the backup: a restored browser is a browser in use today. Built pages only, so a
+ * dev server does not count itself.
+ */
+const utcDay = (now: number) => String(Math.floor(now / 86_400_000));
+export function dailyPing(now: number): string | null {
+  if (!import.meta.env.PROD) return null;
+  try {
+    if (globalThis.localStorage?.getItem('countedDay') === utcDay(now)) return null;
+  } catch { /* storage refused: count anyway, the Worker cannot tell twice from once */ }
+  return `${import.meta.env.VITE_VERSION || '1.0'} pwa`;
+}
+function setCountedDay(now: number): void {
+  try { globalThis.localStorage?.setItem('countedDay', utcDay(now)); } catch { /* next fetch counts again */ }
 }
 
 export class WalletFetchError extends Error {

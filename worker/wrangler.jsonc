@@ -30,7 +30,17 @@
   // which took the only working endpoint down with it the first time. It stays on: builds
   // already installed point at it, and it is the fallback if the custom domain ever fails
   // to come up. It is useless inside Iran either way, so keeping it costs nothing.
-  "workers_dev": true
+  "workers_dev": true,
   // No KV / R2 / D1 on purpose: the phone already keeps the last good rates,
   // so the edge has nothing worth persisting.
+  //
+  // Two write-only Analytics Engine datasets: the day's one count per phone, and the crash
+  // reports people chose to send (see "usage" in src/index.ts). This Worker can write them and
+  // never read them back. muchtoman.com/usage reads the first over the SQL API with two secrets,
+  // ANALYTICS_ACCOUNT_ID and ANALYTICS_TOKEN (Account Analytics: Read, nothing else); without
+  // them the page says it has nothing yet and everything else works as before.
+  "analytics_engine_datasets": [
+    { "binding": "USAGE", "dataset": "muchtoman_daily" },
+    { "binding": "CRASHES", "dataset": "muchtoman_crashes" }
+  ]
 }

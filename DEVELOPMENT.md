@@ -143,6 +143,42 @@ Bitcoin, Ethereum/ERC-20, native Solana, TRON/TRC-20, and EVM tokens on BSC, Arb
 Polygon, Optimism, and Avalanche. Bad addresses return a stable `invalid_address` code;
 upstream failures return `unavailable`, so the phone can keep the previous amount.
 
+### Usage and crash reports
+
+Everything the app reports about itself, which `Diagnostics.kt` holds on the phone:
+
+- **The daily count.** The first rates fetch of a UTC day that she causes (never the background
+  worker's) carries `X-MuchToman-Daily: <versionName> <installer package>`, in release builds
+  only. The PWA sends `<version> pwa` through the sync Worker's `/rates` proxy, which passes that
+  one header on. The Worker writes the two tokens to the `muchtoman_daily` Analytics Engine
+  dataset. There is no identifier, so a day's rows count devices only because each sends once.
+- **Crash reports.** An uncaught exception is written to `files/crash.txt` (class names and frames,
+  never messages) and offered in a sheet on the next launch. `POST /crash` stores what she agrees
+  to send in `muchtoman_crashes`. The PWA does not send crash reports: a browser error does not end
+  the app the way it does on Android, extensions and failed fetches throw their own, and the bundle
+  ships without source maps, so the reports would be noise.
+- **The public page.** `muchtoman.com/usage` reads `muchtoman_daily` over the SQL API and shows
+  totals per day, store and version, cached for an hour. It never reads the crash dataset.
+
+The Worker can only write the two datasets. Reading needs an API token with *Account Analytics:
+Read* and nothing else, set once as secrets so the page can use it:
+
+```bash
+cd worker
+npx wrangler secret put ANALYTICS_ACCOUNT_ID
+npx wrangler secret put ANALYTICS_TOKEN
+```
+
+The crash reports, newest first, and one of them turned back into names with that release's
+`mapping.txt` (see Releasing):
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/analytics_engine/sql" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data "SELECT timestamp, blob1 AS report FROM muchtoman_crashes ORDER BY timestamp DESC LIMIT 20 FORMAT JSONEachRow"
+retrace mapping.txt trace.txt
+```
+
 ### Sources
 
 Two independent chains, because they fail independently. `sources` in every response names
@@ -215,6 +251,10 @@ Worker reads it back out of the GitHub API, and the phone caps it at six lines o
 characters. A lightweight tag (`git tag v1.0.1`) has no message: the update card still appears
 and the sheet simply lists nothing. The English `## Changes` list under it is the commit
 subjects, for whoever is reading the diff rather than using the app.
+
+The card is only for APK installs. A copy Cafe Bazaar, Myket or Play installed never shows it
+(`installedByStore`): the store announces its own update once its review passes, and the card
+would otherwise send that person to the GitHub build days early.
 
 `versionName` comes from the tag, `versionCode` from arithmetic on it — `v1.2.3` → `1020300` —
 so each release installs over the last. It used to be the CI run number, which resets to 1 if
@@ -320,7 +360,8 @@ punctuation is invisible in practice.
 
 - Holdings and optional public-wallet links are a short JSON string in SharedPreferences (the
   ledger's two Room databases are described below), and everything is explicitly excluded from
-  Android backup and device transfer. No accounts and no analytics. The recovery path is the
+  Android backup and device transfer. No accounts and no analytics SDK (the daily count and crash
+  reports are under The Worker § Usage and crash reports). The recovery path is the
   app's own passphrase-encrypted backup file (`Export.kt`, the two rows in تنظیمات): AES-GCM
   over the durable database and the exported prefs, with the sync identity stripped so a leaked
   backup cannot impersonate the phone. Wallet tracking adds an opt-in call to

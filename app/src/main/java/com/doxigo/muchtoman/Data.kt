@@ -780,6 +780,14 @@ class Store(context: Context) {
         get() = prefs.getString("dismissedUpdate", "").orEmpty()
         set(v) { prefs.edit().putString("dismissedUpdate", v).apply() }
 
+    /**
+     * The UTC day this phone was last counted ([utcDay]). Not in the backup on purpose: a restored
+     * phone is a phone in use today, and should be counted today.
+     */
+    var countedDay: Long
+        get() = prefs.getLong("countedDay", -1L)
+        set(v) { prefs.edit().putLong("countedDay", v).apply() }
+
     var lastBackupAt: Long
         get() = prefs.getLong("lastBackupAt", 0L)
         set(v) { check(prefs.edit().putLong("lastBackupAt", v).commit()) }
@@ -1129,7 +1137,8 @@ fun mergeRates(fresh: Rates, cached: Rates): Rates = fresh.copy(
     latest = fresh.latest ?: cached.latest,
 )
 
-suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO) {
+/** [daily] is the day's one count ([dailyPing]); null on every other fetch. */
+suspend fun fetchRates(url: String, daily: String? = null): Result<Rates> = withContext(Dispatchers.IO) {
     runCatching {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
@@ -1139,6 +1148,7 @@ suspend fun fetchRates(url: String): Result<Rates> = withContext(Dispatchers.IO)
             // Fetches are ten minutes apart, so a kept-alive socket is only ever a stale
             // one — reusing it is where "unexpected end of stream" came from.
             setRequestProperty("Connection", "close")
+            if (daily != null) setRequestProperty("X-MuchToman-Daily", daily)
         }
         try {
             val code = conn.responseCode

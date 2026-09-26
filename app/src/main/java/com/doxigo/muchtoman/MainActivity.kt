@@ -102,8 +102,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             disabledBanks = store.disabledBanks,
             strangeSenders = store.strangeSenders,
             dismissedUpdate = store.dismissedUpdate,
+            fromStore = installedByStore(app),
             reportExcluded = store.reportExcluded,
             familyTotal = store.familyTotal,
+            crashReport = pendingCrash(app),
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -259,9 +261,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         if (_state.value.loading) return
         _state.update { it.copy(loading = true, error = null) }
+        // The day's count rides on the first fetch she causes, never the background worker's: a
+        // phone left in a drawer is installed, not in use. Release builds only, so testing the
+        // app does not inflate its own numbers.
+        val today = utcDay()
+        val daily = if (!BuildConfig.DEBUG && store.countedDay != today) dailyPing(getApplication()) else null
         viewModelScope.launch {
             var failure: String? = null
-            fetchRates(BuildConfig.RATES_URL).onSuccess { fetched ->
+            fetchRates(BuildConfig.RATES_URL, daily).onSuccess { fetched ->
+                if (daily != null) store.countedDay = today
                 // The merge reads the cached blob and the store write encodes ~80KB of JSON —
                 // that ran on Main and cost a frame after every fetch. The state update stays
                 // on the calling context; only the decode/merge/encode moves.
@@ -315,6 +323,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun dismissUpdate(version: String) {
         store.dismissedUpdate = version
         _state.update { it.copy(dismissedUpdate = version) }
+    }
+
+    /**
+     * She said send. The file goes only once the Worker has it: a failed send leaves it, and the
+     * sheet asks again next launch rather than losing a report she agreed to.
+     */
+    fun sendCrashReport() {
+        val report = _state.value.crashReport ?: return
+        _state.update { it.copy(crashReport = null) }
+        viewModelScope.launch {
+            postCrashReport(BuildConfig.RATES_URL, report)
+                .onSuccess { crashFile(getApplication()).delete() }
+                .onFailure { android.util.Log.w("muchtoman", "crash report not sent: $it") }
+        }
+    }
+
+    fun dropCrashReport() {
+        crashFile(getApplication()).delete()
+        _state.update { it.copy(crashReport = null) }
     }
 
     fun setHolding(key: String, typeId: String, amount: Double) {
@@ -2569,6 +2596,10 @@ data class UiState(
     val refreshingWallets: Set<String> = emptySet(),
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",
+    /** Bazaar, Myket or Play installed this copy ([installedByStore]), so the store announces updates. */
+    val fromStore: Boolean = false,
+    /** What the last crash left behind ([pendingCrash]), until she answers [CrashSheet]. */
+    val crashReport: String? = null,
     /** Category ids دخل و خرج leaves out — her reading preference, mirrored from [Store]. */
     val reportExcluded: Set<String> = emptySet(),
     val tse: TseSnapshot = TseSnapshot(),
@@ -2609,11 +2640,13 @@ data class UiState(
     /**
      * The release worth a line on the list: newer than this build, and not one she has already
      * waved off. Debug builds are left out because they carry a placeholder version name, so
-     * every locally-built install would claim to be out of date.
+     * every locally-built install would claim to be out of date. Store installs are left to the
+     * store ([installedByStore]).
      */
     val update: Release?
         get() = rates.latest?.takeIf {
             !BuildConfig.DEBUG &&
+                !fromStore &&
                 it.url.isNotBlank() &&
                 it.name != dismissedUpdate &&
                 isNewerVersion(it.name, BuildConfig.VERSION_NAME)

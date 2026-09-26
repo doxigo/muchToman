@@ -63,6 +63,7 @@
     <!-- Predictive back: navigation is BackHandler-based (androidx bridges it), and nothing
          overrides onBackPressed, so the system animation costs nothing to allow. -->
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"

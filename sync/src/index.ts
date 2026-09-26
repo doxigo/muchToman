@@ -846,7 +846,10 @@ export default {
       if (path === '/rates') {
         if (request.method !== 'GET') return textResponse('GET only\n', 405, 'GET');
         const origin = env.RATES_ORIGIN ?? DEFAULT_RATES_ORIGIN;
+        // The day's count (see "usage" in the rates Worker) is the one request header passed on.
+        const daily = request.headers.get('x-muchtoman-daily');
         const upstream = await fetch(`${origin}/rates`, {
+          headers: daily == null ? {} : { 'x-muchtoman-daily': daily },
           signal: AbortSignal.timeout(8_000),
         });
         return new Response(upstream.body, {

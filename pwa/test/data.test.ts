@@ -374,6 +374,30 @@ describe('the network boundary', () => {
     respond('nope', 502);
     await expect(fetchRates(1_000)).rejects.toThrow('HTTP 502');
   });
+  it('fetchRates counts the first fetch of a UTC day and only that one', async () => {
+    const stored = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => stored.set(k, v) });
+    vi.stubEnv('PROD', true);
+    vi.stubEnv('VITE_VERSION', '1.2.5');
+    try {
+      const daily = () => new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).get('x-muchtoman-daily');
+      const day = 20_000 * 86_400_000;
+      respond('nope', 502);
+      await expect(fetchRates(day)).rejects.toThrow('HTTP 502');
+      expect(daily()).toBe('1.2.5 pwa');
+      respond({ updatedAt: 1_000, toman: { usd: 100 } });
+      await fetchRates(day);
+      expect(daily()).toBe('1.2.5 pwa'); // the failed one did not count, so this one does
+      respond({ updatedAt: 1_000, toman: { usd: 100 } });
+      await fetchRates(day + 3_600_000);
+      expect(daily()).toBeNull();
+      respond({ updatedAt: 1_000, toman: { usd: 100 } });
+      await fetchRates(day + 86_400_000);
+      expect(daily()).toBe('1.2.5 pwa');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it('fetchRates refuses anything past two megabytes', async () => {
     respond(JSON.stringify({ updatedAt: 1, toman: { usd: 1 }, pad: 'x'.repeat(2 * 1024 * 1024) }));
     await expect(fetchRates(1)).rejects.toThrow('response too large');

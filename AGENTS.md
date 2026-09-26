@@ -8,7 +8,7 @@ non-negotiable). When this file and those disagree, they win — fix the drift h
 
 A Persian-UI Android app that answers «چقدر تومن دارم؟» — how much is all my money, in
 Toman — plus two Cloudflare Workers and a PWA that is the same app for iPhone users. The users are in Iran; privacy is
-the product: no accounts, no analytics, sync is ciphertext the server cannot read.
+the product: no accounts, no analytics SDK, sync is ciphertext the server cannot read.
 
 ## Layout
 
@@ -57,7 +57,9 @@ change needs both the Gradle and the pwa blocks run.
 - **Persian copy is the interface**: casual register, Persian digits, words carry warnings and
   colour only confirms. New user-facing strings follow `DESIGN.md` and live beside the pure
   text functions they belong to.
-- **No analytics, no accounts, no gamification** — `PRODUCT.md` non-negotiables.
+- **No analytics SDK, no identifiers, no accounts, no gamification** — `PRODUCT.md` non-negotiables.
+  One anonymous count a day and crash reports she agrees to send (`Diagnostics.kt`) are the whole
+  of what the app reports about itself; widening either is a product decision, not a drive-by.
 - **Secrets**: signing keys live in `keystore.properties` / CI secrets; never commit or echo them.
 
 ## Conventions

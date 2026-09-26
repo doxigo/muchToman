@@ -30,14 +30,8 @@
     },
     {
       "name": "www",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8788",
-        "-d",
-        "worker/public"
-      ],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "worker", "--", "--port", "8788", "--local-upstream", "muchtoman.com"],
       "port": 8788
     }
   ]

@@ -32,6 +32,14 @@ describe('rates proxies', () => {
     expect(new Headers(init.headers).get('content-type')).toBe('application/json');
   });
 
+  it('passes the day\'s count on to /rates and no other request header', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'));
+    await SELF.fetch('https://sync.test/rates', { headers: { 'x-muchtoman-daily': '1.2.5 pwa', cookie: 'a=b' } });
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://rates.muchtoman.com/rates');
+    expect([...new Headers(init.headers)]).toEqual([['x-muchtoman-daily', '1.2.5 pwa']]);
+  });
+
   it('refuses an oversized wallet body before asking upstream', async () => {
     const upstream = vi.spyOn(globalThis, 'fetch');
     const res = await SELF.fetch('https://sync.test/wallet-balance', {

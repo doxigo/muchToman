@@ -583,6 +583,10 @@ private fun AppScreens(
         return
     }
 
+    // Not a return: the sheet floats over whichever screen comes next. Below the lock, so a
+    // locked phone shows nothing of the app, the report included, until it is opened.
+    state.crashReport?.let { CrashSheet(it, onSend = vm::sendCrashReport, onDismiss = vm::dropCrashReport) }
+
     if (categoriesPage) {
         // Back steps to تنظیمات, the page it was opened from — same one-level rule as companion.
         BackHandler { categoriesPage = false }

@@ -28,6 +28,10 @@ with the required Persian coverage; tightness comes off the width axis, never tr
 ## Non-negotiables (from code and README)
 
 - No points, streaks, confetti, or comparison with others (FCA finding; deliberate).
+- No analytics SDK and no identifiers (2026-09-26). The app reports two things: one count a day
+  (version + installing store, on the day's first rates request) and a crash report only after
+  she says send. The totals are public at muchtoman.com/usage. Anything beyond that is a new
+  decision.
 - Missing rates are never zero; stale rates are named in words, not colour alone.
 - Gain is green — the convention every Iranian bank app shares.
 - Warnings are words first; colour only confirms.
