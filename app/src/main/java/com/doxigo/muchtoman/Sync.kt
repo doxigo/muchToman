@@ -112,6 +112,8 @@ data class SyncEntry(
     val categoryGlyph: String = "",
     val categoryEditorId: String = "",
     val categoryUpdatedAt: Long = 0L,
+    /** When the category's name and mark were last set — see [syncedCategory]. */
+    val categoryEditedAt: Long = 0L,
     /** Compatibility with records written before category ids were synchronized. */
     val category: String = "",
     val merchant: String = "",
@@ -196,6 +198,7 @@ private data class SyncCategoryPayload(
     val categoryKind: String,
     val categoryGlyph: String = "",
     val editedByMemberId: String,
+    val categoryEditedAt: Long = 0L,
 )
 
 /**
@@ -1001,6 +1004,7 @@ private suspend fun outgoingRecords(
                 categoryGlyph = category?.glyph.orEmpty(),
                 categoryEditorId = categoryDecision?.memberId.orEmpty().ifBlank { session.member },
                 categoryUpdatedAt = categoryDecision?.updatedAt ?: 0L,
+                categoryEditedAt = category?.editedAt ?: 0L,
                 merchant = txn.merchant,
             )
         )
@@ -1183,6 +1187,7 @@ private suspend fun outgoingRecords(
                 categoryKind = category.kind,
                 categoryGlyph = category.glyph,
                 editedByMemberId = editor,
+                categoryEditedAt = category.editedAt,
             )
         )
         val id = categoryRecordId(target)
@@ -1319,6 +1324,76 @@ internal fun safeSyncedAvatar(value: String): String = when {
 private fun safeSyncedGlyph(value: String): String =
     glyphNamed(value.filterNot(Char::isISOControl).trim())?.name.orEmpty()
 
+/** When her name and mark for this category were set; 0 for a shipped one nobody has edited. */
+private val Category.editedAt: Long get() = if (glyph.isBlank()) 0L else updatedAt
+
+/**
+ * The category row a synced record asks for, or null when this phone's row already says it.
+ *
+ * Categories have no record of their own: they ride on every transaction and category record that
+ * names one. Writing the row only when it was missing meant a mark picked after the first arrival,
+ * or on a shipped category every phone already has, never reached anyone else in the household.
+ *
+ * So a newer edit replaces the row, and "newer" is the editor's own stamp ([Category.editedAt]),
+ * never when the record went out: a phone that has not caught up yet still sends the old mark on
+ * its own rows, and the stamp is what makes that lose on both phones instead of flapping.
+ *
+ * A blank mark is never an edit. It is a shipped category nobody touched, or a sender from before
+ * marks were synced. A row with no mark of its own takes any mark offered, stamped or not, since
+ * this phone never edited it. The kind and the archived flag stay local.
+ */
+internal fun syncedCategory(
+    existing: Category?,
+    id: String,
+    name: String,
+    kind: String,
+    glyph: String,
+    editedAt: Long,
+    arrivedAt: Long,
+): Category? {
+    val stamp = editedAt.takeIf { it > 0L } ?: arrivedAt
+    if (existing == null) {
+        return Category(
+            id = id,
+            nameFa = name.ifBlank { "دسته‌بندی نشده" },
+            kind = kind,
+            sort = 500,
+            updatedAt = stamp,
+            glyph = glyph,
+        )
+    }
+    if (glyph.isBlank()) return null
+    if (existing.glyph.isNotBlank() && editedAt <= existing.updatedAt) return null
+    val next = existing.copy(nameFa = name.ifBlank { existing.nameFa }, glyph = glyph, updatedAt = stamp)
+    return next.takeIf { it.nameFa != existing.nameFa || it.glyph != existing.glyph }
+}
+
+private suspend fun putSyncedCategory(
+    durable: DurableDb,
+    id: String,
+    name: String,
+    kind: String,
+    glyph: String,
+    editedAt: Long,
+    arrivedAt: Long,
+    now: Long,
+): Boolean {
+    val row = syncedCategory(
+        durable.categories().get(id),
+        id,
+        safeSyncedText(name, 60),
+        kind.takeIf { it in setOf(CategoryKind.EXPENSE, CategoryKind.INCOME, CategoryKind.TRANSFER) }
+            ?: CategoryKind.EXPENSE,
+        safeSyncedGlyph(glyph),
+        // Clamped like every other stamp that rides inside a payload, or one skewed clock pins
+        // its mark on every phone for ever.
+        clampSyncStamp(editedAt.coerceAtLeast(0L), now),
+        arrivedAt,
+    ) ?: return false
+    durable.categories().putAll(listOf(row))
+    return true
+}
+
 /**
  * Whether an answer arriving from another phone replaces the one this phone already holds.
  *
@@ -1416,26 +1491,16 @@ private suspend fun applyTransaction(
 
     val categoryId = safeSyncedText(payload.categoryId, 80)
     if (categoryId.isNotBlank()) {
-        if (durable.categories().get(categoryId) == null) {
-            durable.categories().putAll(
-                listOf(
-                    Category(
-                        id = categoryId,
-                        nameFa = safeSyncedText(
-                            payload.categoryName.ifBlank { payload.category },
-                            60,
-                            "دسته‌بندی نشده",
-                        ),
-                        kind = payload.categoryKind.takeIf {
-                            it in setOf(CategoryKind.EXPENSE, CategoryKind.INCOME, CategoryKind.TRANSFER)
-                        } ?: CategoryKind.EXPENSE,
-                        sort = 500,
-                        updatedAt = record.updatedAt,
-                        glyph = safeSyncedGlyph(payload.categoryGlyph),
-                    )
-                )
-            )
-        }
+        putSyncedCategory(
+            durable,
+            categoryId,
+            payload.categoryName.ifBlank { payload.category },
+            payload.categoryKind,
+            payload.categoryGlyph,
+            payload.categoryEditedAt,
+            record.updatedAt,
+            now,
+        )
         val localRef = familyLocalRef(familyRef)
         val existingDecision = durable.decisions().forRef(localRef)
             .firstOrNull { it.kind == DecisionKind.CATEGORY }
@@ -1472,6 +1537,7 @@ private suspend fun applyCategory(
     session: SyncSession,
     record: WireRecord,
     payload: SyncCategoryPayload,
+    now: Long,
 ): Boolean {
     val targetOwner = ownerOfFamilyTxnId(payload.target) ?: return false
     val localRef = if (targetOwner == session.member) {
@@ -1481,26 +1547,20 @@ private suspend fun applyCategory(
     }
     val categoryId = safeSyncedText(payload.categoryId, 80)
     if (categoryId.isBlank()) return false
-    val categoryKind = payload.categoryKind.takeIf {
-        it in setOf(CategoryKind.EXPENSE, CategoryKind.INCOME, CategoryKind.TRANSFER)
-    } ?: CategoryKind.EXPENSE
-    if (durable.categories().get(categoryId) == null) {
-        durable.categories().putAll(
-            listOf(
-                Category(
-                    id = categoryId,
-                    nameFa = safeSyncedText(payload.categoryName, 60, "دسته‌بندی نشده"),
-                    kind = categoryKind,
-                    sort = 500,
-                    updatedAt = record.updatedAt,
-                    glyph = safeSyncedGlyph(payload.categoryGlyph),
-                )
-            )
-        )
-    }
+    // A new mark is news even when the filing it rides on is not.
+    val remarked = putSyncedCategory(
+        durable,
+        categoryId,
+        payload.categoryName,
+        payload.categoryKind,
+        payload.categoryGlyph,
+        payload.categoryEditedAt,
+        record.updatedAt,
+        now,
+    )
     val existing = durable.decisions().forRef(localRef).firstOrNull { it.kind == DecisionKind.CATEGORY }
     val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
-    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
+    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return remarked
     durable.decisions().put(
         TxnDecision(
             id = existing?.id ?: categoryRecordId(payload.target),
@@ -1847,7 +1907,7 @@ private suspend fun applyRecord(
         "member" -> runCatching { SYNC_JSON.decodeFromString<SyncMemberPayload>(plain) }
             .getOrNull()?.let { applyMember(durable, record, it) } ?: false
         "category" -> runCatching { SYNC_JSON.decodeFromString<SyncCategoryPayload>(plain) }
-            .getOrNull()?.let { applyCategory(durable, session, record, it) } ?: false
+            .getOrNull()?.let { applyCategory(durable, session, record, it, now) } ?: false
         "note" -> runCatching { SYNC_JSON.decodeFromString<SyncNotePayload>(plain) }
             .getOrNull()?.let { applyNote(durable, session, record, it) } ?: false
         "asset" -> runCatching { SYNC_JSON.decodeFromString<SyncAssetPayload>(plain) }

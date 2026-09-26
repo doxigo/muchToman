@@ -466,7 +466,9 @@ suspend fun seedBuiltins(durable: DurableDb, now: Long = System.currentTimeMilli
                 nameFa = edited?.nameFa ?: shipped.nameFa,
                 glyph = edited?.glyph.orEmpty(),
                 archived = shipped.archived || mine?.archived == true,
-                updatedAt = now,
+                // An edit keeps its own stamp: the household compares it (see [syncedCategory]),
+                // and a stamp renewed every launch would outrank a newer edit from another phone.
+                updatedAt = edited?.updatedAt ?: now,
             )
         })
         durable.rules().putAll(BUILTIN_RULES.map { it.copy(createdAt = now, updatedAt = now) })

@@ -42,6 +42,7 @@ data class Category(
     val builtin: Boolean = false,
     /** Never deleted, only archived: rows written last year still name it. */
     val archived: Boolean = false,
+    /** When the name or mark last changed — the stamp the household's phones compare. */
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0L,
     /**
      * The mark she picked, as a [CategoryGlyph] name. Blank on a shipped category, which is looked

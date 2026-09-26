@@ -161,6 +161,34 @@ class FamilySyncTest {
     }
 
     @Test
+    fun `a mark picked on one phone reaches the others, and an older one never takes it back`() {
+        fun arrive(existing: Category?, glyph: String, editedAt: Long, name: String = "باشگاه") =
+            syncedCategory(existing, "cat_gym", name, CategoryKind.EXPENSE, glyph, editedAt, arrivedAt = 900L)
+
+        // First sight: the row is made, stamped with the edit rather than the arrival.
+        val first = arrive(null, "BOOK", editedAt = 100L)!!
+        assertEquals("BOOK", first.glyph)
+        assertEquals(100L, first.updatedAt)
+
+        // The row already exists — the case that used to drop every later edit on the floor.
+        val remarked = arrive(first, "DUMBBELL", editedAt = 200L, name = "ورزش")!!
+        assertEquals("DUMBBELL", remarked.glyph)
+        assertEquals("ورزش", remarked.nameFa)
+        assertEquals(200L, remarked.updatedAt)
+
+        // A phone that has not caught up re-sends the old mark on its own rows: it loses.
+        assertNull(arrive(remarked, "BOOK", editedAt = 100L))
+        // Nothing changed, nothing written.
+        assertNull(arrive(remarked, "DUMBBELL", editedAt = 300L, name = "ورزش"))
+
+        // A shipped category this phone never edited takes a mark even from an unstamped sender,
+        // and a blank one — nobody edited it over there either — changes nothing.
+        val shipped = Category(id = "cat_fees", nameFa = "کارمزد", kind = CategoryKind.EXPENSE, updatedAt = 5_000L)
+        assertEquals("PERCENT", syncedCategory(shipped, shipped.id, "کارمزد", shipped.kind, "PERCENT", 0L, 900L)!!.glyph)
+        assertNull(syncedCategory(shipped, shipped.id, "کارمزد", shipped.kind, "", 0L, 900L))
+    }
+
+    @Test
     fun `legacy payload cannot claim another authenticated owner`() {
         assertEquals("member-a", resolvedTransactionOwner("legacy", "member-b", "member-a"))
         assertEquals("member-b", resolvedTransactionOwner("transaction", "member-b", "member-a"))

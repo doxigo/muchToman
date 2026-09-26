@@ -604,7 +604,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val durable = DurableDb.get(app)
             runCatching {
                 durable.categories().putAll(
-                    listOf(category.copy(archived = !category.archived, updatedAt = System.currentTimeMillis()))
+                    // No new stamp: it dates her name and mark, which the household compares, and
+                    // archiving is hers alone.
+                    listOf(category.copy(archived = !category.archived))
                 )
                 publishLedger(durable, DerivedDb.get(app))
             }.onFailure { android.util.Log.w("muchtoman", "toggleCategoryArchived failed: $it") }
