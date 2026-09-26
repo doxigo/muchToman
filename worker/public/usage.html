@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The landing page's policy, word for word: no scripts. The Worker writes the numbers in
+         between the two usage comments below before the page leaves the edge. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>آمار استفاده · چقدر تومن</title>
+    <meta name="description" content="هر روز چند گوشی چقدر تومن رو باز می‌کنن، از کدوم فروشگاه و با کدوم نسخه. همون عددهایی که سازنده‌ش می‌بینه." />
+    <link rel="canonical" href="https://muchtoman.com/usage" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="preload" href="/modam.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      /* The landing page's font and palette (index.html, from Theme.kt), trimmed to what is used. */
+      @font-face {
+        font-family: Modam;
+        src: url('/modam.woff2') format('woff2');
+        font-weight: 200 900;
+        font-stretch: 70% 100%;
+        font-display: swap;
+      }
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --ink: #131711;
+        --heading: #163300;
+        --muted: #59614f;
+        --surface: #f3f5ee;
+        --outline-variant: #dde2d2;
+        --mint: #1f7a40;
+        --r-card: 18px;
+        --s: 8px; --m: 12px; --l: 16px; --xl: 20px; --xxl: 32px; --huge: 48px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121511;
+          --ink: #f2f3ef;
+          --heading: #f2f3ef;
+          --muted: #a8aaa6;
+          --surface: #1c1f1a;
+          --outline-variant: #383b35;
+          --mint: #9fe870;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Modam, system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+        font-size: 17px;
+        line-height: 1.8;
+      }
+      .wrap {
+        max-width: 66rem;
+        margin: 0 auto;
+        padding-inline: calc(env(safe-area-inset-right) + var(--xl))
+                        calc(env(safe-area-inset-left) + var(--xl));
+      }
+      a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+      :focus-visible { outline: 2px solid var(--heading); outline-offset: 2px; border-radius: 4px; }
+      .top { padding-top: calc(env(safe-area-inset-top) + var(--xl)); }
+      .mark { display: inline-flex; align-items: center; gap: var(--m); font-weight: 800; text-decoration: none; }
+      .mark img { width: 28px; height: 28px; border-radius: 8px; display: block; }
+      main { padding-bottom: calc(env(safe-area-inset-bottom) + var(--huge)); }
+      h1 { margin: var(--xxl) 0 var(--m); font-size: clamp(2rem, 5vw, 3rem); line-height: 1.3; font-weight: 900; color: var(--heading); text-wrap: balance; }
+      .lede { margin: 0; max-width: 44rem; color: var(--muted); text-wrap: pretty; }
+      .muted { color: var(--muted); }
+
+      /* The one hero figure: yesterday, the last whole day. Proportional digits at this size. */
+      .hero { margin: var(--xxl) 0 0; }
+      .hero .label { margin: 0; color: var(--muted); }
+      .hero .figure { margin: 0; font-size: clamp(3rem, 9vw, 4.5rem); line-height: 1.2; font-weight: 800; font-stretch: 90%; color: var(--heading); }
+
+      /* Columns from one baseline, time running right to left like the page (Report.kt's bars).
+         No scripts, so each day's native <title> is its tooltip, over a full-height hit strip. */
+      .chart { margin: var(--xxl) 0 0; }
+      .chart figcaption { font-weight: 700; margin-bottom: var(--m); }
+      .plot { position: relative; height: 220px; margin-top: var(--xl); }
+      .plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+      .grid { stroke: var(--outline-variant); stroke-width: 1; }
+      .bar { fill: var(--mint); }
+      .hit { fill: transparent; }
+      .day:hover .bar { fill: var(--heading); }
+      .tick {
+        position: absolute; inset-inline-start: 0; transform: translateY(-100%);
+        font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.6;
+      }
+      .axis { display: flex; justify-content: space-between; margin-top: var(--s); font-size: .85rem; color: var(--muted); }
+
+      .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); align-items: start; gap: var(--xl); margin-top: var(--xxl); }
+      table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--r-card); overflow: hidden; }
+      caption { text-align: start; font-weight: 700; padding-bottom: var(--m); }
+      th, td { padding: var(--s) var(--l); text-align: start; border-top: 1px solid var(--outline-variant); }
+      thead th { border-top: 0; font-weight: 700; color: var(--muted); font-size: .9rem; }
+      .n { text-align: end; }
+      td.n { font-variant-numeric: tabular-nums; font-stretch: 90%; }
+      bdi { unicode-bidi: isolate; }
+      details { margin-top: var(--xxl); }
+      summary { cursor: pointer; font-weight: 700; }
+      details table { margin-top: var(--m); }
+      .note { margin-top: var(--xxl); font-size: .9rem; max-width: 44rem; text-wrap: pretty; }
+      .empty { margin-top: var(--xxl); color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header class="wrap top">
+      <a class="mark" href="/"><img src="/icon.svg" alt="" width="28" height="28" />چقدر تومن</a>
+    </header>
+    <main class="wrap">
+      <h1>چند نفر از چقدر تومن استفاده می‌کنن</h1>
+      <p class="lede">
+        هر گوشی روزی یک بار، همراه همون درخواستی که نرخ‌ها رو می‌گیره، شمارهٔ نسخه و فروشگاهی که
+        برنامه ازش نصب شده رو می‌فرسته. نه شناسه‌ای، نه اسمی، نه مبلغی، نه پیامکی. این صفحه همهٔ
+        چیزیه که سازنده‌ش هم می‌بینه.
+      </p>
+      <!--usage-->
+      <p class="empty">آمار الان در دسترس نیست. کمی بعد دوباره سر بزن.</p>
+      <!--/usage-->
+      <p class="note muted">
+        هر ستون یک روز به وقت گرینویچه و فقط گوشی‌هایی رو می‌شمره که اون روز برنامه رو باز کردن.
+        گوشی‌ای که برنامه روش نصبه ولی بازش نکرده شمرده نمی‌شه. کد شمارش و همین صفحه
+        <a href="https://github.com/doxigo/muchToman/blob/main/worker/src/index.ts">روی گیت‌هاب</a> هست.
+      </p>
+    </main>
+  </body>
+</html>

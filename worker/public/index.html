@@ -15,7 +15,7 @@
     <title>چقدر تومن · همه‌ی پولت، یک عدد</title>
     <meta
       name="description"
-      content="اپ اندرویدی که به یک سؤال جواب می‌ده: همهٔ پولم چقدر تومنه؟ موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو به نرخ آزاد. بدون حساب، بدون تبلیغ، متن‌باز."
+      content="همهٔ پولت چند تومنه و کجا می‌ره؟ موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو و سهام به نرخ آزاد، با دفتر و بودجه و قسط، برای خودت یا کل خانواده. اندروید، و PWA برای آیفون. بدون حساب، بدون تبلیغ، متن‌باز."
     />
     <link rel="canonical" href="https://muchtoman.com/" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
@@ -25,10 +25,12 @@
     <meta property="og:title" content="چقدر تومن · همه‌ی پولت، یک عدد" />
     <meta
       property="og:description"
-      content="موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو به نرخ آزاد. جمع همه یک عدد به تومن. بدون حساب، بدون تبلیغ، متن‌باز."
+      content="موجودی بانک از پیامک، طلا و سکه و ارز و کریپتو و سهام به نرخ آزاد. جمع همه یک عدد به تومن، با دفتر و بودجه و قسط. اندروید، و PWA برای آیفون. بدون حساب، بدون تبلیغ، متن‌باز."
     />
     <meta property="og:url" content="https://muchtoman.com/" />
     <meta property="og:image" content="https://muchtoman.com/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="675" />
     <meta name="twitter:card" content="summary_large_image" />
     <style>
       /*
@@ -67,15 +69,18 @@
         --btn-tonal: #eaede2;          /* a quiet pill on the white page */
         --outline-variant: #dde2d2;
         --mint: #1f7a40;               /* gain-green, readable on paper */
+        --pc: #dcf2c0;                 /* primaryContainer: the discs a glyph sits on */
+        --on-pc: #12290a;
+        --screen: #ffffff;             /* a capture's own ground, under the phone's clean status strip */
+        --lift: 0 40px 70px -26px rgba(12, 32, 0, .5), 0 12px 26px -10px rgba(12, 32, 0, .2);
 
-        --r-field: 14px;
-        --r-card: 18px;
         --r-group: 22px;
         --r-sheet: 28px;
         --r-hero: 34px;
         --r-pill: 999px;
 
         --xs: 4px; --s: 8px; --m: 12px; --l: 16px; --xl: 20px; --xxl: 32px; --huge: 48px;
+        --gap: clamp(4.5rem, 11vw, 7.5rem);   /* air before a section that sits on the paper */
 
         --enter: cubic-bezier(0.05, 0.7, 0.1, 1);
         --fast: 180ms;
@@ -91,6 +96,10 @@
           --btn-tonal: #22251f;
           --outline-variant: #383b35;
           --mint: #9fe870;
+          --pc: #2a3a1d;
+          --on-pc: #9fe870;
+          --screen: #121511;
+          --lift: 0 0 0 1px rgba(255, 255, 255, .07), 0 40px 70px -22px rgba(0, 0, 0, .75);
         }
       }
 
@@ -112,7 +121,7 @@
       }
 
       .wrap {
-        max-width: 66rem;
+        max-width: 72rem;
         margin: 0 auto;
         padding-inline: calc(env(safe-area-inset-right) + var(--xl))
                         calc(env(safe-area-inset-left) + var(--xl));
@@ -120,7 +129,10 @@
 
       a { color: inherit; }
       p a, li a { text-decoration-thickness: 1px; text-underline-offset: 4px; }
-      :focus-visible { outline: 2px solid var(--heading); outline-offset: 2px; border-radius: 4px; }
+      :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 4px; }
+      .figure { font-stretch: 90%; font-variant-numeric: tabular-nums; }
+      .muted { color: var(--muted); }
+      bdi { unicode-bidi: isolate; }
 
       /* ————— header: a wordmark and two doors. Nothing sticks, nothing follows. ————— */
       .top {
@@ -128,8 +140,9 @@
         align-items: center;
         gap: var(--l);
         padding-top: calc(env(safe-area-inset-top) + var(--xl));
+        padding-bottom: var(--xl);
       }
-      .mark { display: flex; align-items: center; gap: var(--m); font-weight: 800; font-size: 1.06rem; white-space: nowrap; }
+      .mark { display: flex; align-items: center; gap: var(--m); font-weight: 800; font-size: 1.06rem; white-space: nowrap; text-decoration: none; }
       .mark img { width: 28px; height: 28px; border-radius: 8px; display: block; }
       .top nav { margin-inline-start: auto; display: flex; align-items: center; gap: var(--s); }
       .top nav a { text-decoration: none; font-weight: 700; font-size: .94rem; }
@@ -140,10 +153,10 @@
       .stars { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: var(--s); font-size: .85rem; }
       .stars[hidden] { display: none; }
       .stars b { font-weight: 700; font-stretch: 90%; font-variant-numeric: tabular-nums; }
-      /* A phone header has no room for the word and the count both. The hero repeats the
-         گیت‌هاب pill a thumb's reach below, so here the count is the link. */
+      /* A phone header has no room for the word and the count both; once the count is in, it
+         is the link. Without one (or without :has) the word stays, so the link never goes blank. */
       @media (max-width: 430px) {
-        .gh-word { display: none; }
+        .top .ghost:has(.stars:not([hidden])) .gh-word { display: none; }
         .top .ghost .stars { margin-inline-start: 0; font-size: 1rem; }
       }
 
@@ -154,103 +167,337 @@
         justify-content: center;
         min-height: 52px;
         padding: .7rem 1.6rem;
+        border: 1px solid var(--outline-variant);
         border-radius: var(--r-pill);
         background: var(--btn-tonal);
         color: var(--ink);
         font-weight: 700;
         text-decoration: none;
+        white-space: nowrap;
         transition: transform var(--fast) var(--enter), background var(--fast) var(--enter);
       }
-      .pill:not(.primary) { border: 1px solid var(--outline-variant); }
       .pill:hover { background: var(--surface-variant); }
       .pill:active { transform: scale(.97); }
-      .pill.primary { background: var(--cta-fill); color: var(--cta-ink); font-weight: 800; }
+      .pill.primary { border-color: transparent; background: var(--cta-fill); color: var(--cta-ink); font-weight: 800; }
       .pill.primary:hover { background: #8edd5f; }
       .pill.small { min-height: 40px; padding: .3rem 1.1rem; font-size: .94rem; }
 
-      /* ————— hero ————— */
-      .hero {
+      /* ————— rooms: two slabs in the brand pair, the way the store images say it —————
+       * The answer up top, privacy near the end; everything between sits on the paper, so the
+       * two read as the page's loud moments rather than one card of a stack. In the dark both
+       * become the scheme's neutral room with a hairline, the green visiting only the heading —
+       * a forest slab on near-black reads as olive mud (DESIGN.md, the hero). */
+      .room {
+        --room-ink: var(--ink);
+        --room-heading: var(--heading);
+        --room-muted: var(--muted);
+        position: relative;
+        overflow: hidden;
         display: grid;
-        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: var(--huge);
+        padding: clamp(2rem, 5.5vw, 4rem) clamp(1.25rem, 5.5vw, 4rem) 0;
+        border-radius: var(--r-hero);
+        background: var(--room-bg);
+        color: var(--room-ink);
+      }
+      .room.bright {
+        --room-bg: var(--bright);
+        --room-ink: var(--forest);
+        --room-heading: var(--forest);
+        --room-muted: rgba(22, 51, 0, .8);
+      }
+      .room.forest {
+        --room-bg: var(--forest);
+        --room-ink: #dfeccf;
+        --room-heading: var(--bright);
+        --room-muted: #a9c295;
+      }
+      @media (prefers-color-scheme: dark) {
+        .room.bright, .room.forest {
+          --room-bg: var(--surface);
+          --room-ink: var(--ink);
+          --room-heading: var(--bright);
+          --room-muted: var(--muted);
+          border: 1px solid var(--outline-variant);
+        }
+      }
+      .room .pitch { padding-bottom: clamp(2rem, 5.5vw, 4rem); }
+      /* A room that holds no phone closes on its own padding. */
+      .room.text { display: block; margin-top: var(--gap); padding-bottom: clamp(2rem, 5.5vw, 4rem); }
+      .room.text .pitch { padding-bottom: 0; }
+
+      /* ————— bands: one claim beside one picture, straight on the paper ————— */
+      .band {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         align-items: center;
-        gap: var(--huge);
-        padding-top: clamp(2.5rem, 8vw, 5.5rem);
+        column-gap: var(--huge);
+        margin-top: var(--gap);
       }
-      h1 {
-        font-size: clamp(2.4rem, 6vw, 3.6rem);
-        font-weight: 900;
-        line-height: 1.25;
-        color: var(--heading);
-        margin: 0;
-        text-wrap: balance;
-      }
-      .lede {
-        font-size: 1.06rem;
-        max-width: 34rem;
-        margin: var(--l) 0 0;
-        text-wrap: pretty;
-      }
-      /* The whole thesis in one line: the number you can say against the number you cannot. */
-      .contrast {
-        margin: var(--xl) 0 0;
-        font-size: 1rem;
-      }
-      .contrast strong { font-weight: 800; color: var(--heading); }
-      .contrast .figure { white-space: nowrap; }
-      .muted { color: var(--muted); }
-      .figure { font-stretch: 90%; font-variant-numeric: tabular-nums; }
 
+      .pitch { align-self: center; }
+      h1, h2 { margin: 0; font-weight: 900; color: var(--room-heading, var(--heading)); text-wrap: balance; }
+      h1 { font-size: clamp(2.6rem, 7vw, 4.3rem); line-height: 1.25; }
+      h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.35; }
+      h3 { margin: 0; font-size: 1.06rem; font-weight: 800; line-height: 1.5; }
+      .pitch p { max-width: 34rem; margin: var(--l) 0 0; text-wrap: pretty; }
+      .aside { color: var(--room-muted, var(--muted)); font-size: .94rem; }
+      .pitch .aside { margin-top: var(--m); }
+      .pitch .lede { font-size: 1.1rem; }
+
+      /* Light-only: on the bright ground the loud pill turns forest, the quiet one an outline.
+         In the dark the room is neutral again and the pills are the page's own. */
+      @media (prefers-color-scheme: light) {
+        .room.bright .pill { background: transparent; border-color: rgba(22, 51, 0, .35); color: var(--forest); }
+        .room.bright .pill:hover { background: rgba(22, 51, 0, .08); }
+        .room.bright .pill.primary { border-color: transparent; background: var(--forest); color: var(--bright); }
+        .room.bright .pill.primary:hover { background: #214705; }
+      }
+
+      /* ————— hero ————— */
+      .hero .contrast { font-size: 1rem; margin-top: var(--xl); }
+      .hero .contrast strong { font-weight: 800; }
+      .hero .contrast .figure { white-space: nowrap; }
       .ctas { display: flex; flex-wrap: wrap; gap: var(--m); margin-top: var(--xxl); }
-      .fineprint { margin: var(--l) 0 0; font-size: .85rem; }
+      .hero .fineprint { font-size: .85rem; color: var(--room-muted); }
 
-      /* ————— the phone: an honest frame — surface, hairline, air. No gloss, no notch. ————— */
-      .phone { margin: 0; justify-self: center; width: min(320px, 84vw); }
-      .phone .shell {
-        display: block;
-        padding: 10px;
-        background: var(--surface);
-        border: 1px solid var(--outline-variant);
-        border-radius: 42px;
+      /* ————— the phone: the store images' frame —————
+       * Everything is measured off one width, --pw. --u is one pixel of the 1080-wide capture on
+       * the page, so a crop is written in the capture's own coordinates (measured from where
+       * tools/site/assets.mjs cut the webp's top) and lands on the same pixels at any size. */
+      .shot {
+        --pw: min(340px, 78vw);
+        --b: calc(var(--pw) * .0225);
+        --u: calc((var(--pw) - 2 * var(--b)) / 1080);
+        --bar: calc(130 * var(--u));
+        --cw: calc(var(--pw) * 1.12);
+        position: relative;
+        align-self: end;
+        justify-self: center;
+        width: var(--pw);
+        height: calc(var(--pw) * 1.5);   /* how much phone shows */
+        margin: 0;
       }
-      .phone img { display: block; width: 100%; height: auto; border-radius: 33px; }
-      .phone figcaption { margin-top: var(--m); text-align: center; font-size: .85rem; color: var(--muted); }
+      .hero .shot { --pw: min(360px, 80vw); }
+      /* On the paper there is no floor to stand on, so the phone fades out instead — flat, no
+         shadow for the mask to cut. In the hero it rises out of the room, which clips it. */
+      .phone {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        padding: var(--b);
+        background: #0b0d0a;
+        border-radius: calc(var(--pw) * .145);
+        -webkit-mask-image: linear-gradient(#000 55%, transparent 96%);
+        mask-image: linear-gradient(#000 55%, transparent 96%);
+      }
+      .room .phone {
+        inset: 0 0 auto 0;
+        overflow: visible;
+        -webkit-mask-image: none;
+        mask-image: none;
+        box-shadow: var(--lift);
+      }
+      .band .shot { align-self: center; }
+      .duo .shot { margin: 0 auto; height: calc(var(--pw) * 1.3); }   /* the installments capture runs short */
+      .screen {
+        position: relative;
+        overflow: hidden;
+        padding-top: var(--bar);
+        border-radius: calc(var(--pw) * .145 - var(--b));
+        background: var(--screen);
+      }
+      /* The captures' status bar says "no internet" under a VPN shield; this is a clean one. */
+      .screen::before {
+        content: "";
+        position: absolute;
+        top: calc(45 * var(--u));
+        left: 50%;
+        width: calc(46 * var(--u));
+        height: calc(46 * var(--u));
+        margin-left: calc(-23 * var(--u));
+        border-radius: 50%;
+        background: #050605;
+      }
+      .screen picture, .screen img { display: block; width: 100%; height: auto; }
+
+      /* ————— crops: a piece of a screen, on its own or lifted out of the phone it sits on ————— */
+      .crop {
+        position: relative;
+        overflow: hidden;
+        aspect-ratio: var(--w) / var(--h);
+        border-radius: calc(var(--r) / var(--w) * 100%) / calc(var(--r) / var(--h) * 100%);
+        box-shadow: var(--lift);
+      }
+      .crop img {
+        position: absolute;
+        left: 0;
+        top: 0;
+        max-width: none;
+        width: calc(1080 / var(--w) * 100%);
+        height: auto;   /* the width/height attributes are there for the box before load, not as a size */
+        margin-left: calc(var(--x) / var(--w) * -100%);   /* margins resolve against the width, */
+        margin-top: calc(var(--y) / var(--w) * -100%);    /* both of them, so x and y share a unit */
+      }
+      /* Over a phone: the same pixels, larger, centred on the spot they were lifted from. */
+      .shot .crop {
+        position: absolute;
+        left: 50%;
+        width: var(--cw);
+        margin-left: calc(var(--cw) / -2);
+        top: calc(var(--b) + var(--bar) + (var(--y) + var(--h) / 2) * var(--u) - var(--cw) * var(--h) / var(--w) / 2);
+      }
+
+      /* A heads-up bank SMS over the ledger — the moment the row it becomes lands. */
+      .notif {
+        position: absolute;
+        left: 50%;
+        top: calc(var(--pw) * .13);
+        width: var(--cw);
+        margin-left: calc(var(--cw) / -2);
+        padding: calc(var(--pw) * .036) calc(var(--pw) * .055) calc(var(--pw) * .04);
+        border-radius: calc(var(--pw) * .064);
+        background: #fafbf7;
+        color: #131711;
+        font-size: calc(var(--pw) * .045);
+        line-height: 1.55;
+        box-shadow: 0 0 0 1px rgba(19, 23, 17, .06), var(--lift);
+      }
+      .notif .head { display: flex; align-items: center; gap: .5em; font-size: .8em; font-weight: 500; color: #59614f; }
+      .notif .dot { display: grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 50%; background: #dcf2c0; }
+      .notif .dot svg { width: 1.1em; height: 1.1em; }
+      .notif .who { margin-top: .35em; font-size: 1.16em; font-weight: 800; }
+      .notif .body { font-weight: 500; }
+      .notif b { font-weight: 800; }
 
       /* The one authored moment: the first screen settles into place. Decelerate hard,
          nothing overshoots — `Motion.enter`. */
       @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
       .hero .pitch { animation: rise .55s var(--enter) backwards; }
-      .hero .phone { animation: rise .55s var(--enter) .1s backwards; }
+      .hero .shot { animation: rise .55s var(--enter) .1s backwards; }
 
-      /* ————— bands: one claim, one screen, air around both. ————— */
-      section.band {
+      /* ————— the future tab: two phones side by side, each with its card lifted out ————— */
+      .duo {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        align-items: center;
-        gap: var(--huge);
-        margin-top: clamp(4rem, 11vw, 7.5rem);
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+        gap: var(--huge) clamp(var(--xxl), 6vw, 5rem);
+        margin-top: var(--xxl);
       }
-      section.band.flip .pitch { grid-column: 2; grid-row: 1; }
-      section.band.flip .phone { grid-column: 1; grid-row: 1; }
-      h2 {
-        font-size: clamp(1.5rem, 3.2vw, 1.9rem);
-        font-weight: 900;
-        line-height: 1.35;
-        color: var(--heading);
-        margin: 0;
-        text-wrap: balance;
-      }
-      .pitch p { max-width: 32rem; margin: var(--l) 0 0; text-wrap: pretty; }
-      .pitch .aside { font-size: .9rem; margin-top: var(--m); }
+      .duo h3 { margin-top: var(--xxl); font-size: 1.35rem; font-weight: 900; color: var(--heading); }
+      .duo p { max-width: 32rem; margin: var(--s) 0 0; text-wrap: pretty; }
+      .plain > p { max-width: 42rem; margin: var(--m) 0 0; text-wrap: pretty; }
 
-      /* ————— quiet panels: the app's own band-of-rows, hairline-divided. ————— */
-      .quiet {
-        margin-top: clamp(4rem, 11vw, 7.5rem);
+      /* ————— PWA: three steps in a band, the app's own group of rows ————— */
+      .steps {
+        margin: 0;
+        padding: 0;
+        list-style: none;
         background: var(--surface);
-        border-radius: var(--r-sheet);
-        padding: clamp(var(--xl), 4vw, var(--huge));
+        border-radius: var(--r-group);
       }
-      .rows { margin: var(--xl) 0 0; padding: 0; list-style: none; }
-      .rows li { position: relative; display: flex; gap: var(--m); padding: var(--l) var(--xs); }
+      .steps li { display: flex; align-items: center; gap: var(--l); padding: var(--xl); }
+      .steps li + li { border-top: 1px solid var(--outline-variant); }
+      .steps .n {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: var(--pc);
+        color: var(--on-pc);
+        font-weight: 800;
+        font-stretch: 90%;
+      }
+      .steps p { margin: 0; }
+      .steps strong { font-weight: 800; }
+
+      /* ————— glyph discs: `primaryContainer`, the app's empty-state and door disc ————— */
+      .disc {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--pc);
+        color: var(--on-pc);
+      }
+      .disc svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* ————— privacy: the store's facts, one card each ————— */
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+        gap: var(--m);
+        margin-top: var(--xxl);
+      }
+      .fact {
+        display: flex;
+        gap: var(--l);
+        padding: var(--xl);
+        border-radius: var(--r-group);
+        background: rgba(255, 255, 255, .06);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+      }
+      .fact .disc { background: #2a3a1d; color: var(--bright); }
+      .fact h3 { color: #f2f3ef; }
+      .fact p { margin: var(--xs) 0 0; font-size: .94rem; color: var(--room-muted); text-wrap: pretty; }
+      @media (prefers-color-scheme: dark) {
+        .fact { background: var(--surface-variant); box-shadow: none; }
+        .fact h3 { color: var(--ink); }
+      }
+
+      /* ————— sections on the paper ————— */
+      .plain { margin-top: var(--gap); }
+
+      /* The banks, each on the white plate the app sets its logos on. */
+      .banks {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+        gap: var(--s);
+        margin: var(--xl) 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .banks li {
+        display: flex;
+        align-items: center;
+        gap: var(--m);
+        padding: var(--s);
+        padding-inline-end: var(--l);
+        border-radius: var(--r-pill);
+        background: var(--surface);
+        font-weight: 700;
+      }
+      .banks img {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        padding: 6px;
+        border: 1px solid var(--outline-variant);
+        border-radius: 50%;
+        background: #fff;
+      }
+      .notes { margin: var(--xl) 0 0; padding: 0; list-style: none; max-width: 46rem; }
+      .notes li { font-size: .94rem; color: var(--muted); text-wrap: pretty; }
+      .notes li + li { margin-top: var(--s); }
+      .notes strong { color: var(--ink); font-weight: 800; }
+
+      /* The smaller things, as tiles. */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+        gap: var(--m);
+        margin-top: var(--xl);
+      }
+      .tile { display: flex; gap: var(--l); padding: var(--xl); border-radius: var(--r-group); background: var(--surface); }
+      .tile p { margin: var(--xs) 0 0; font-size: .94rem; color: var(--muted); text-wrap: pretty; }
+
+      /* ————— rules: the app's band-of-rows, hairline-divided ————— */
+      .rows { margin: var(--l) 0 0; padding: 0; list-style: none; }
+      .rows li { display: flex; gap: var(--m); padding: var(--l) var(--xs); }
       .rows li + li { border-top: 1px solid var(--outline-variant); }
       .rows li::before {
         /* The freshness dot, standing for "this holds": colour confirms what the words say. */
@@ -262,41 +509,43 @@
         background: var(--mint);
         margin-top: .8em;
       }
-      .rows p { margin: 0; max-width: 42rem; text-wrap: pretty; }
-      .rows strong { font-weight: 800; }
-      .quiet.bare { background: none; padding-inline: 0; }
+      .rows p { margin: 0; max-width: 44rem; text-wrap: pretty; }
 
-      /* ————— install: two builds, side by side, each with its own door. ————— */
-      .builds { margin-top: var(--xl); display: grid; gap: var(--m); }
+      /* ————— install: three builds, each with its own door ————— */
+      .builds { display: grid; gap: var(--m); margin-top: var(--xl); }
       .build {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: var(--l);
-        background: var(--surface);
-        border-radius: var(--r-group);
         padding: var(--xl);
+        border-radius: var(--r-group);
+        background: var(--surface);
       }
       .build .grow { flex: 1 1 16rem; min-width: 0; }
-      .build .name { font-weight: 800; font-size: 1.06rem; }
-      .build p { margin: var(--xs) 0 0; font-size: .94rem; }
+      .build .for { font-size: .85rem; font-weight: 700; color: var(--muted); }
+      .build p { margin: var(--xs) 0 0; font-size: .94rem; color: var(--muted); }
       .aftermath { margin: var(--xl) var(--xs) 0; font-size: .9rem; max-width: 44rem; text-wrap: pretty; }
 
       /* ————— footer ————— */
       footer {
-        margin-top: clamp(4rem, 11vw, 7.5rem);
+        margin-top: var(--gap);
         border-top: 1px solid var(--outline-variant);
         padding: var(--xxl) 0 calc(env(safe-area-inset-bottom) + var(--huge));
       }
       footer .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--l); }
       footer .muted { font-size: .9rem; }
-      footer nav { margin-inline-start: auto; display: flex; gap: var(--xl); font-size: .9rem; }
+      footer nav { margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: var(--xl); font-size: .9rem; }
 
+      /* Two columns: the first holds the words (the right, in RTL); .flip moves the picture there. */
+      @media (min-width: 861px) {
+        .band.flip > :not(.pitch) { order: -1; }
+      }
       @media (max-width: 860px) {
-        .hero, section.band { grid-template-columns: minmax(0, 1fr); gap: var(--xxl); }
-        section.band.flip .pitch { grid-column: 1; grid-row: 1; }
-        section.band.flip .phone { grid-column: 1; grid-row: 2; }
-        .hero { padding-top: var(--xxl); }
+        .room, .band { grid-template-columns: minmax(0, 1fr); }
+        .room { border-radius: var(--r-sheet); }
+        .band { row-gap: var(--xxl); }
+        .room .pitch { padding-bottom: var(--xxl); }
         footer nav { margin-inline-start: 0; }
       }
 
@@ -307,253 +556,478 @@
   </head>
   <body>
     <header class="wrap top">
-      <span class="mark"><img src="/icon.svg" alt="" width="28" height="28" />چقدر تومن</span>
+      <a class="mark" href="/"><img src="/icon.svg" alt="" width="28" height="28" />چقدر تومن</a>
       <nav aria-label="پیوندها">
         <a class="ghost" href="https://github.com/doxigo/muchToman" aria-label="گیت‌هاب"><span class="gh-word">گیت‌هاب</span><span class="stars" hidden><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg><b id="stars"></b></span></a>
-        <a class="pill primary small" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود</a>
+        <a class="pill primary small" href="#install">نصب</a>
       </nav>
     </header>
 
-    <main>
-      <section class="wrap hero">
+    <main class="wrap">
+      <section class="room bright hero">
         <div class="pitch">
           <h1>چقدر تومن داری؟</h1>
           <p class="lede">
-            موجودی بانک‌ها از پیامک، طلا و سکه و دلار و کریپتو به نرخ آزاد، خونه و ماشین به
-            قیمتی که خودت می‌دونی. جمع همه‌ش یک عدد، به تومن، که با یک نگاه خونده می‌شه.
+            موجودی بانک‌ها از پیامک، طلا و سکه و دلار و کریپتو و سهام به نرخ آزاد، خونه و ماشین
+            به قیمتی که خودت می‌دونی. جمع همه‌ش یک عدد، به تومن، که با یک نگاه خونده می‌شه.
           </p>
           <p class="contrast">
             <strong>«۴٫۷ میلیارد تومان»</strong>
-            <span class="muted">نه <span class="figure">۴٬۶۶۶٬۲۵۱٬۱۳۶</span>.</span>
+            <span class="aside">نه <span class="figure">۴٬۶۶۶٬۲۵۱٬۱۳۶</span>.</span>
           </p>
           <div class="ctas">
-            <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود مستقیم (APK)</a>
-            <a class="pill" href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
+            <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود برای اندروید</a>
+            <a class="pill" href="#iphone">نسخهٔ PWA</a>
           </div>
-          <p class="fineprint muted">اندروید ۷ به بالا · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
+          <p class="fineprint">اندروید ۷ به بالا · آیفون با نسخهٔ <bdi>PWA</bdi> · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
         </div>
-        <figure class="phone">
-          <span class="shell">
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
+              <picture>
+                <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/home.webp" width="720" height="1513" fetchpriority="high"
+                  alt="صفحهٔ خانه: جمع دارایی‌ها روی کارت سبز، کوتاه و به حروف و با همهٔ رقم‌ها، کنار معادل دلاریش؛ زیرش درآمد و خرج این ماه"
+                />
+              </picture>
+            </div>
+          </div>
+          <div class="crop" style="--x: 53; --y: 174; --w: 974; --h: 867; --r: 89" aria-hidden="true">
             <picture>
               <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
-              <img
-                src="/img/home.webp"
-                alt="صفحهٔ خانه: جمع دارایی‌ها روی کارت سبز، به رقم و به حروف، با تغییر سی‌روزه"
-                width="720" height="1600" fetchpriority="high"
-              />
+              <img src="/img/home.webp" width="720" height="1513" alt="" />
             </picture>
-          </span>
+          </div>
         </figure>
       </section>
 
-      <div class="wrap">
-        <section class="band flip">
-          <div class="pitch">
-            <h2>پیامک بانک، خودش دفتر می‌شه</h2>
-            <p>
-              هر پیامک بانک یک سطر دفتره — خونده و پارس‌شده، همون‌جا روی گوشی. نه API
-              بانکی در کاره و نه متن پیامک به سروری می‌رسه. هر تراکنش خودش دسته می‌گیره؛
-              هر چی نگرفت، با یک مرور سریع جاش رو خودت مشخص می‌کنی.
-            </p>
-            <p class="aside muted">
-              بلوبانک، سامان، ملت، ملی، صادرات، پاسارگاد، رسالت، پارسیان و چندتای دیگه.
-            </p>
-            <p class="aside muted">
-              جست‌وجوی دفتر همه‌چی رو می‌شناسه: فروشنده، دسته، یادداشت، مبلغ، بانک، اسم
-              عضو، حتی شمارهٔ پیگیری. تراکنشی هم که نخوای، با دو ضربه حذف می‌شه.
-            </p>
-          </div>
-          <figure class="phone">
-            <span class="shell">
+      <section class="band">
+        <div class="pitch">
+          <h2>پیامک بانک، خودش دفتر می‌شه</h2>
+          <p>
+            هر پیامک بانک یک سطر دفتره. همون‌جا روی گوشی خونده می‌شه؛ نه API بانکی در کاره و
+            نه متن پیامک به سروری می‌رسه. هر تراکنش خودش دسته می‌گیره و هر چی نگرفت، با یک مرور
+            سریع جاش رو خودت مشخص می‌کنی.
+          </p>
+          <p class="aside">
+            رمز یک‌بارمصرف هیچ‌وقت ذخیره نمی‌شه، نه توی دفتر، نه توی پشتیبان. پولی هم که به
+            باکس‌های بلو می‌ره انتقال بین حساب‌های خودته، نه خرج.
+          </p>
+          <p class="aside">
+            جست‌وجوی دفتر فروشنده، دسته، یادداشت و مبلغ رو می‌شناسه؛ با رقم فارسی یا انگلیسی،
+            فرقی نمی‌کنه.
+          </p>
+        </div>
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
               <picture>
                 <source srcset="/img/ledger-dark.webp" media="(prefers-color-scheme: dark)" />
                 <img
-                  src="/img/ledger.webp" loading="lazy"
-                  alt="صفحهٔ دفتر: تراکنش‌های هر روز با دسته و مبلغ، و جمع روز کنار تاریخ"
-                  width="720" height="1600"
+                  src="/img/ledger.webp" width="720" height="1513" loading="lazy"
+                  alt="صفحهٔ دفتر، با پیامک برداشت بانک که همین الان رسیده: قبض برق و همراه اول و هایپراستار، هر کدوم با دسته و مبلغ، و جمع امروز کنار تاریخ"
                 />
               </picture>
-            </span>
-          </figure>
-        </section>
-
-        <section class="band">
-          <div class="pitch">
-            <h2>یک دفتر، همهٔ خانواده</h2>
-            <p>
-              با یک QR یک‌بارمصرف عضو می‌شن و هر کس خودش انتخاب می‌کنه چی به اشتراک گذاشته
-              بشه: تراکنش‌های پیامکی، دارایی‌ها، یا هیچ‌کدوم — حتی می‌تونه یک بانک خاص رو
-              کامل کنار بذاره. هر مورد مشترک به اسم صاحبشه و دسته‌بندیش رو هر عضوی می‌تونه
-              درست کنه.
-            </p>
-            <p class="aside muted">
-              عضو بدون اندروید؟ با همون لینک دعوت توی مرورگر به دفتر می‌پیونده.
-            </p>
+            </div>
           </div>
-          <figure class="phone">
-            <span class="shell">
-              <picture>
-                <source srcset="/img/family-dark.webp" media="(prefers-color-scheme: dark)" />
-                <img
-                  src="/img/family.webp" loading="lazy"
-                  alt="صفحهٔ خانواده: سهیل با نشان سرپرست، کلیدهای اشتراک پیامک و دارایی، بانک‌های کنارگذاشته، و مریم که به اشتراک می‌ذاره"
-                  width="720" height="1600"
-                />
-              </picture>
-            </span>
-          </figure>
-        </section>
-
-        <section class="band flip">
-          <div class="pitch">
-            <h2>دارایی خانواده، کنار دارایی خودت</h2>
-            <p>
-              هر عضوی که اشتراک دارایی رو روشن کنه، فهرستش با ارزش تومنی — همون‌طور که روی
-              گوشی خودش قیمت خورده — زیر دارایی‌های تو دیده می‌شه. فقط اسم و ارزش می‌ره؛
-              مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت. بانکِ کنارگذاشته هم نه تراکنشش می‌ره
-              نه موجودیش.
-            </p>
-            <p class="aside muted">
-              سرپرست خانواده رو هیچ عضوی نمی‌تونه حذف کنه؛ هر عضوی هم هر وقت بخواد با دو
-              ضربه خارج می‌شه.
-            </p>
+          <div class="notif" aria-hidden="true">
+            <div class="head">
+              <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#163300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"/></svg></span>
+              <span>پیامک · الان</span>
+            </div>
+            <div class="who">بانک</div>
+            <div class="body">برداشت <b class="figure">۲٬۴۳۲٬۰۰۰</b> ریال، قبض برق<br />مانده <span class="figure">۴۸٬۲۵۰٬۰۰۰</span> ریال</div>
           </div>
-          <figure class="phone">
-            <span class="shell">
+        </figure>
+      </section>
+
+      <section class="plain" id="banks" aria-labelledby="banks-h">
+        <h2 id="banks-h">بانک‌هایی که خونده می‌شن</h2>
+        <p class="muted">
+          پیامک فقط وقتی خونده می‌شه که از شمارهٔ خود بانک اومده باشه. ملاک فرستنده‌ست، نه
+          کلمه‌های متن پیام.
+        </p>
+        <ul class="banks">
+          <li><img src="/img/banks.svg#blu" alt="" width="40" height="40" loading="lazy" />بلوبانک</li>
+          <li><img src="/img/banks.svg#saman" alt="" width="40" height="40" loading="lazy" />سامان</li>
+          <li><img src="/img/banks.svg#mellat" alt="" width="40" height="40" loading="lazy" />ملت</li>
+          <li><img src="/img/banks.svg#melli" alt="" width="40" height="40" loading="lazy" />ملی</li>
+          <li><img src="/img/banks.svg#saderat" alt="" width="40" height="40" loading="lazy" />صادرات</li>
+          <li><img src="/img/banks.svg#tejarat" alt="" width="40" height="40" loading="lazy" />تجارت</li>
+          <li><img src="/img/banks.svg#sepah" alt="" width="40" height="40" loading="lazy" />سپه</li>
+          <li><img src="/img/banks.svg#keshavarzi" alt="" width="40" height="40" loading="lazy" />کشاورزی</li>
+          <li><img src="/img/banks.svg#pasargad" alt="" width="40" height="40" loading="lazy" />پاسارگاد</li>
+          <li><img src="/img/banks.svg#parsian" alt="" width="40" height="40" loading="lazy" />پارسیان</li>
+          <li><img src="/img/banks.svg#refah" alt="" width="40" height="40" loading="lazy" />رفاه</li>
+          <li><img src="/img/banks.svg#eghtesad-novin" alt="" width="40" height="40" loading="lazy" />اقتصاد نوین</li>
+          <li><img src="/img/banks.svg#khavarmianeh" alt="" width="40" height="40" loading="lazy" />خاورمیانه</li>
+          <li><img src="/img/banks.svg#resalat" alt="" width="40" height="40" loading="lazy" />رسالت</li>
+          <li><img src="/img/banks.svg#dey" alt="" width="40" height="40" loading="lazy" />دی</li>
+          <li><img src="/img/banks.svg#post-bank" alt="" width="40" height="40" loading="lazy" />پست‌بانک</li>
+          <li><img src="/img/banks.svg#maskan" alt="" width="40" height="40" loading="lazy" />مسکن</li>
+          <li><img src="/img/banks.svg#mehr-iran" alt="" width="40" height="40" loading="lazy" />مهر ایران</li>
+        </ul>
+        <ul class="notes">
+          <li>
+            <strong>بانکت توی فهرست نیست؟</strong> هر فرستنده‌ای که پیامکش مبلغ داره توی صفحهٔ
+            حساب‌های بانکی پیدا می‌شه و خودت می‌گی کدوم بانکه.
+          </li>
+          <li>
+            <strong>فقط پیامک، نه اعلان.</strong> اگه تراکنش‌ها رو به‌جای پیامک از اپ خود بانک
+            می‌گیری، پیامکی برای خوندن نیست؛ موجودی روی آخرین پیامک می‌مونه تا پیامک رو توی
+            تنظیمات همون بانک دوباره روشن کنی.
+          </li>
+          <li>
+            <strong>بانک آینده عمداً خونده نمی‌شه.</strong> پیامک‌هاش شکل اعلام موجودی دارن، ولی
+            نیستن.
+          </li>
+        </ul>
+      </section>
+
+      <section class="band flip">
+        <div class="pitch">
+          <h2>هر چی داری، به نرخ آزاد</h2>
+          <p>
+            طلای ۱۸ عیار به گرم و مثقال، نقره، سکه از امامی تا پارسیان به سوت، دلار و یورو و
+            درهم، ۲۵۰ کریپتوی اول بازار، و سهام و صندوق و اوراقِ بورس و فرابورس. خونه و ماشین و
+            زمین هم به قیمتی که خودت می‌گی. نرخ دولتی هیچ جای این اپ نیست.
+          </p>
+          <p class="aside">
+            آدرس عمومی کیف پولت رو بدی، موجودیش خودش به‌روز می‌شه؛ عبارت بازیابی و کلید خصوصی
+            هیچ‌وقت پرسیده نمی‌شه.
+          </p>
+          <p class="aside">آخرین نرخ خوب روی گوشی می‌مونه؛ اینترنت که رفت، عددت نمی‌ره.</p>
+        </div>
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
               <picture>
                 <source srcset="/img/family-assets-dark.webp" media="(prefers-color-scheme: dark)" />
                 <img
-                  src="/img/family-assets.webp" loading="lazy"
-                  alt="تب دارایی: زیر سکه و ارز و حساب‌های خودش، بخش دارایی مریم با طلا و دلار و بانک به ارزش روز"
-                  width="720" height="1600"
+                  src="/img/family-assets.webp" width="720" height="1488" loading="lazy"
+                  alt="صفحهٔ دارایی: سکهٔ امامی، دلار، پول نقد و حساب‌های بانکی به ارزش روز، و زیرشون دارایی مریم"
                 />
               </picture>
-            </span>
-          </figure>
-        </section>
-
-        <section class="band">
-          <div class="pitch">
-            <h2>هر چی داری، به نرخ آزاد</h2>
-            <p>
-              طلای ۱۸ عیار به گرم و مثقال، سکه از امامی تا پارسیانِ صد سوتی، دلار و یورو و
-              درهم، ۲۵۰ کریپتوی اول بازار، سهام بورس، و خونه و ماشین به قیمتی که خودت می‌گی.
-              نرخ دولتی هیچ جای این اپ نیست.
-            </p>
-            <p class="aside muted">آخرین نرخ خوب روی گوشی می‌مونه؛ اینترنت که رفت، عددت نمی‌ره.</p>
+            </div>
           </div>
-          <figure class="phone">
-            <span class="shell">
-              <picture>
-                <source srcset="/img/assets-dark.webp" media="(prefers-color-scheme: dark)" />
-                <img
-                  src="/img/assets.webp" loading="lazy"
-                  alt="صفحهٔ دارایی: جمع کل بالا، و ردیف‌های طلا و سکه با نرخ روز"
-                  width="720" height="1600"
-                />
-              </picture>
-            </span>
-          </figure>
-        </section>
-
-        <section class="band flip">
-          <div class="pitch">
-            <h2>بودجه و هدف، بدون بازی</h2>
-            <p>
-              تب آینده جای قول‌هایی‌ست که به خودت می‌دی: برای هر دسته سقف بذار — هفتگی،
-              ماهانه یا فصلی — و اپ می‌گه چقدر رفته، چقدر مونده و تا آخر ماه روزی چقدر جا
-              داری. خبری از امتیاز و زنجیره و مقایسه با بقیه نیست. فقط عددها.
-            </p>
-            <p class="aside muted">
-              هشدارها همون روی گوشی ساخته می‌شن و به هیچ سروری نمی‌رسن. نه سقف، نه دسته، نه
-              حتی این که هشداری در کار بوده.
-            </p>
+          <div class="crop" style="--x: 53; --y: 572; --w: 974; --h: 211; --r: 58" aria-hidden="true">
+            <picture>
+              <source srcset="/img/family-assets-dark.webp" media="(prefers-color-scheme: dark)" />
+              <img src="/img/family-assets.webp" width="720" height="1488" alt="" loading="lazy" />
+            </picture>
           </div>
-          <figure class="phone">
-            <span class="shell">
-              <picture>
-                <source srcset="/img/budget-dark.webp" media="(prefers-color-scheme: dark)" />
-                <img
-                  src="/img/budget.webp" loading="lazy"
-                  alt="صفحهٔ آینده: بودجهٔ رستوران و کافه در ۹۸ درصد، با جای باقی‌ماندهٔ روزانه"
-                  width="720" height="1600"
-                />
-              </picture>
-            </span>
-          </figure>
-        </section>
+        </figure>
+      </section>
 
-        <section class="band">
-          <div class="pitch">
-            <h2>آخر ماه، قصهٔ پولت یک صفحه‌ست</h2>
-            <p>
-              دخل و خرج هر ماه رو یک صفحه می‌کنه: چی اومد، چی رفت، چی موند — و زیرش،
-              ماه‌به‌ماه و دسته‌به‌دسته. هر ماهی رو ورق بزن و پنجره رو از یک هفته تا یک سال
-              باز کن. گزارش دارایی هم راهِ یک‌سالهٔ جمعت رو می‌کشه، با همون نرخ‌هایی که
-              خودت دیدی.
-            </p>
-            <p class="aside muted">
-              به هر خرج می‌تونی جواب بدی: «می‌ارزید؟» — آخر ماه، آره‌ها و نه‌ها همین‌جا
-              جمع‌ان.
-            </p>
-          </div>
-          <figure class="phone">
-            <span class="shell">
+      <section class="band">
+        <div class="pitch">
+          <h2>آخر ماه، قصهٔ پولت یک صفحه‌ست</h2>
+          <p>
+            گزارش دخل و خرج هر بازه‌ای رو می‌خونه، از یک هفته تا یک سال: چی اومد، چی رفت، چی
+            موند؛ و زیرش دسته‌به‌دسته و نفربه‌نفر. کنار هر عدد میانگین روزانه و هفتگیش هست تا
+            بازه‌های ناهم‌اندازه هم با هم مقایسه بشن.
+          </p>
+          <p class="aside">
+            هر بازهٔ تموم‌شده به دلار هم قیمت می‌خوره، با نرخ همون روزهایی که گذشت. ماهی که یک
+            بار خوندی، بعداً خودش رو دوباره قیمت نمی‌کنه.
+          </p>
+          <p class="aside">
+            به هر خرج می‌تونی جواب بدی «می‌ارزید؟» — آخر ماه، آره‌ها و نه‌ها همین‌جا جمع‌ان.
+            گزارش دارایی هم راه یک‌سالهٔ جمعت رو می‌کشه.
+          </p>
+        </div>
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
               <picture>
                 <source srcset="/img/report-dark.webp" media="(prefers-color-scheme: dark)" />
                 <img
-                  src="/img/report.webp" loading="lazy"
-                  alt="گزارش دخل و خرج مرداد: درآمد ۱۶۹ میلیون، خرج ۴۶، مانده ۱۲۳ میلیون، با نمودار ماه‌به‌ماه"
-                  width="720" height="1600"
+                  src="/img/report.webp" width="720" height="1513" loading="lazy"
+                  alt="گزارش دخل و خرج مهر: درآمد ۵۵٫۷ میلیون، خرج ۴۴٫۱ میلیون و مانده ۱۱٫۶ میلیون تومان، هر کدوم با معادل دلاریش"
                 />
               </picture>
-            </span>
-          </figure>
-        </section>
-
-        <section class="quiet" aria-labelledby="privacy-h">
-          <h2 id="privacy-h">مال خودت می‌مونه</h2>
-          <ul class="rows">
-            <li><p><strong>نه حساب، نه لاگین، نه آنالیتیکس.</strong> همه‌چیز توی حافظهٔ خود اپ روی گوشیه.</p></li>
-            <li><p><strong>دفتر خانوادگی سر‌تا‌سر رمز شده.</strong> سرور فقط متنِ رمزشده می‌بینه. نه مبلغ، نه اسم، نه فروشنده.</p></li>
-            <li><p><strong>اشتراک انتخابیه، نفر‌به‌نفر.</strong> هر عضو خودش می‌گه چی بره و هر وقت بخواد خودش خارج می‌شه. خاموش که کنی، فرستاده‌های قبلی هم از دفتر بقیه پاک می‌شن.</p></li>
-            <li><p><strong>پشتیبان یک فایل رمزداره.</strong> فقط با عبارتی که خودت انتخاب کردی باز می‌شه. حتی خود اپ هم بدونش نمی‌تونه.</p></li>
-          </ul>
-        </section>
-
-        <section class="quiet bare" aria-labelledby="rules-h">
-          <h2 id="rules-h">قانون‌هایی که عوض نمی‌شن</h2>
-          <ul class="rows">
-            <li><p>عددی که می‌بینی هیچ‌وقت از عدد واقعی بزرگ‌تر نیست. رو به پایین گرد می‌شه.</p></li>
-            <li><p>دارایی بی‌نرخ هیچ‌وقت صفر حساب نمی‌شه. کنار گذاشته می‌شه و به اسمش گفته می‌شه.</p></li>
-            <li><p>هشدارها اول با کلمه می‌آن. رنگ فقط تأییدشون می‌کنه.</p></li>
-          </ul>
-        </section>
-
-        <section aria-labelledby="install-h" style="margin-top: clamp(4rem, 11vw, 7.5rem);">
-          <h2 id="install-h">نصب</h2>
-          <div class="builds">
-            <div class="build">
-              <div class="grow">
-                <div class="name">چقدر تومن</div>
-                <p class="muted">نسخهٔ کامل: دفتر خانوادگی، دارایی مشترک، بودجه و هدف، همراهِ مرورگر.</p>
-              </div>
-              <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود مستقیم</a>
-            </div>
-            <div class="build">
-              <div class="grow">
-                <div class="name">چقدر تومن دارم</div>
-                <p class="muted">نسخهٔ سبک: فقط دارایی. چی داری و امروز چند می‌ارزه.</p>
-              </div>
-              <a class="pill" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-lite-latest.apk">دانلود مستقیم</a>
             </div>
           </div>
-          <p class="aftermath muted">
-            نسخهٔ تازه به‌صورت یک خط زیر جمع دارایی‌هات پیدا می‌شه. هر دو نسخه روی یک گوشی
-            کنار هم جا می‌شن.
+          <div class="crop" style="--x: 53; --y: 731; --w: 974; --h: 666; --r: 58" aria-hidden="true">
+            <picture>
+              <source srcset="/img/report-dark.webp" media="(prefers-color-scheme: dark)" />
+              <img src="/img/report.webp" width="720" height="1513" alt="" loading="lazy" />
+            </picture>
+          </div>
+        </figure>
+      </section>
+
+      <section class="plain" aria-labelledby="future-h">
+        <h2 id="future-h">برای آینده، بدون بازی</h2>
+        <p>
+          بودجه، هدف و قسط، همه کنار هم توی تب آینده. خبری از امتیاز و زنجیره و مقایسه با بقیه
+          نیست؛ فقط عددها.
+        </p>
+        <div class="duo">
+          <div>
+            <figure class="shot">
+            <div class="phone">
+              <div class="screen">
+                <picture>
+                  <source srcset="/img/budget-dark.webp" media="(prefers-color-scheme: dark)" />
+                  <img
+                    src="/img/budget.webp" width="720" height="1513" loading="lazy"
+                    alt="صفحهٔ آینده: بودجهٔ خواربار ۸٫۵ میلیون از ۲۵ میلیون، با جای باقی‌ماندهٔ روزانه تا آخر ماه، و بودجهٔ رستوران و کافه"
+                  />
+                </picture>
+              </div>
+            </div>
+            <div class="crop" style="--x: 53; --y: 289; --w: 974; --h: 503; --r: 58" aria-hidden="true">
+              <picture>
+                <source srcset="/img/budget-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img src="/img/budget.webp" width="720" height="1513" alt="" loading="lazy" />
+              </picture>
+            </div>
+          </figure>
+            <h3>بودجه و هدف</h3>
+            <p>
+              برای هر دسته سقف بذار — هفتگی، ماهانه یا فصلی — یا یک سقف برای کل خرج. اپ می‌گه
+              چقدر رفته، چقدر مونده و تا آخر ماه روزی چقدر جا داری. هدف پس‌انداز هم مهلت داره، و
+              اپ می‌گه ماهی چقدر باید کنار بذاری.
+            </p>
+            <p class="aside">
+              در ۸۰ و ۹۵ درصد و وقتی رد شد، گوشی خبر می‌ده؛ هر دوره فقط یک بار. یک بودجه رو می‌شه
+              با کل خانواده هم نگه داشت.
+            </p>
+          </div>
+          <div>
+            <figure class="shot">
+            <div class="phone">
+              <div class="screen">
+                <picture>
+                  <source srcset="/img/installments-dark.webp" media="(prefers-color-scheme: dark)" />
+                  <img
+                    src="/img/installments.webp" width="720" height="975" loading="lazy"
+                    alt="قسط‌ها: وام مسکن، ماهی ۴٫۴ میلیون، ۱۳٫۶ میلیون از ۱۰۶ میلیون پرداخت‌شده، ۳ از ۲۴ قسط، قسط بعدی ۷ مهر؛ و زیرش قسط گوشی"
+                  />
+                </picture>
+              </div>
+            </div>
+            <div class="crop" style="--x: 53; --y: 497; --w: 974; --h: 492; --r: 58" aria-hidden="true">
+              <picture>
+                <source srcset="/img/installments-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img src="/img/installments.webp" width="720" height="975" alt="" loading="lazy" />
+              </picture>
+            </div>
+          </figure>
+            <h3>قسط و وام، یک‌جا</h3>
+            <p>
+              ماهی چقدر، چندتا مونده، قسط بعدی کی. پرداخت‌ها دوباره تایپ نمی‌شن؛ تراکنشی رو که توی
+              «قسط و وام» بذاری، اپ می‌پرسه پرداخت کدوم قسط بوده، و قسطی هم نساخته باشی، همون‌جا با
+              همین پرداخت می‌سازیش.
+            </p>
+            <p class="aside">
+              عقب‌افتادگی رو فقط وقتی می‌گه که سررسیدی واقعاً گذشته باشه، و اگه بخوای چند روز قبل
+              از سررسید یادت می‌ندازه. قسط‌ها روی گوشی خودت می‌مونن و به دفتر خانوادگی نمی‌رن.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band flip">
+        <div class="pitch">
+          <h2>دسته‌ها، به سلیقهٔ خودت</h2>
+          <p>
+            بیش از سی دستهٔ آماده، از خواربار و قبض تا شیرینی و گوشت و مرغ، هر کدوم با نشان و
+            رنگ خودش. اسم و نشان هر کدوم رو عوض کن، اونی رو که لازم نداری پاک کن، و برای درآمد
+            یا خرج دستهٔ خودت رو بساز.
           </p>
-        </section>
-      </div>
+          <p class="aside">
+            «برای موارد مشابه هم همین دسته» رو که روشن کنی، تراکنش‌های شبیهش از این به بعد
+            خودشون همون‌جا می‌رن. هر تغییری هم در دسته‌ها به گوشی بقیهٔ خانواده می‌رسه.
+          </p>
+        </div>
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
+              <picture>
+                <source srcset="/img/categories-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/categories.webp" width="720" height="1124" loading="lazy"
+                  alt="انتخاب دسته: دسته‌ها با نشان و رنگ خودشون، از پس‌انداز و سفر تا گوشت و مرغ و آبمیوه بستنی، و خونهٔ «دستهٔ تازه»"
+                />
+              </picture>
+            </div>
+          </div>
+          <div class="crop" style="--x: 35; --y: 816; --w: 1010; --h: 298; --r: 64" aria-hidden="true">
+            <picture>
+              <source srcset="/img/categories-dark.webp" media="(prefers-color-scheme: dark)" />
+              <img src="/img/categories.webp" width="720" height="1124" alt="" loading="lazy" />
+            </picture>
+          </div>
+        </figure>
+      </section>
+
+      <section class="band">
+        <div class="pitch">
+          <h2>یک دفتر، همهٔ خانواده</h2>
+          <p>
+            با یک <bdi>QR</bdi> یک‌بارمصرف عضو می‌شن و هر کس خودش انتخاب می‌کنه چی به اشتراک
+            بذاره: تراکنش‌های پیامکی، دارایی‌ها، یا هیچ‌کدوم — حتی می‌تونه یک بانک خاص رو کامل
+            کنار بذاره. هر مورد مشترک به اسم صاحبشه؛ هر عضوی می‌تونه دسته‌ش رو درست کنه و براش
+            یادداشت بذاره.
+          </p>
+          <p class="aside">
+            از دارایی بقیه فقط اسم و ارزش تومنیش می‌رسه؛ مقدار، آدرس کیف پول و شماره حساب
+            هیچ‌وقت. سرپرست رو هیچ عضوی نمی‌تونه حذف کنه و هر عضوی هر وقت بخواد با دو ضربه
+            خارج می‌شه.
+          </p>
+        </div>
+        <figure class="shot">
+          <div class="phone">
+            <div class="screen">
+              <picture>
+                <source srcset="/img/family-dark.webp" media="(prefers-color-scheme: dark)" />
+                <img
+                  src="/img/family.webp" width="720" height="1513" loading="lazy"
+                  alt="صفحهٔ خانواده: سهیل با نشان سرپرست، کلیدهای اشتراک تراکنش‌های پیامکی و دارایی‌ها، بانک‌های کنارگذاشته، و مریم که به اشتراک می‌ذاره"
+                />
+              </picture>
+            </div>
+          </div>
+          <div class="crop" style="--x: 53; --y: 855; --w: 974; --h: 466; --r: 58" aria-hidden="true">
+            <picture>
+              <source srcset="/img/family-dark.webp" media="(prefers-color-scheme: dark)" />
+              <img src="/img/family.webp" width="720" height="1513" alt="" loading="lazy" />
+            </picture>
+          </div>
+        </figure>
+      </section>
+
+      <section class="band flip" id="iphone" aria-labelledby="iphone-h">
+        <div class="pitch">
+          <h2 id="iphone-h">آیفون داری؟<br />همین اپ، به‌شکل <bdi>PWA</bdi></h2>
+          <p>
+            نسخهٔ <bdi>PWA</bdi> همین اپه که از مرورگر روی صفحهٔ اصلی نصب می‌شه، با همهٔ صفحه‌ها و همهٔ عددها، و عضو کامل دفتر خانوادگی هم
+            می‌شه. فقط iOS به هیچ اپی اجازهٔ خوندن پیامک نمی‌ده؛ برای همین پیامک بانک رو خودت
+            توی دفتر می‌چسبونی.
+          </p>
+          <p class="aside">
+            روی صفحهٔ اصلی که باشه، داده‌هاش می‌مونه؛ توی یک زبانهٔ معمولی مرورگر
+            ممکنه iOS بعد از چند هفته پاکش کنه. مثل اندروید، از تنظیمات پشتیبان بگیر.
+          </p>
+          <div class="ctas">
+            <a class="pill primary" href="https://sync.muchtoman.com/">باز کردن نسخهٔ PWA</a>
+          </div>
+        </div>
+        <ol class="steps">
+          <li><span class="n">۱</span><p><bdi dir="ltr">sync.muchtoman.com</bdi> رو توی مرورگر باز کن.</p></li>
+          <li><span class="n">۲</span><p>دکمهٔ اشتراک‌گذاری رو بزن، بعد <strong><bdi dir="ltr">Add to Home Screen</bdi></strong>.</p></li>
+          <li><span class="n">۳</span><p>از صفحهٔ اصلی بازش کن. از این به بعد بدون اینترنت هم باز می‌شه.</p></li>
+        </ol>
+      </section>
+
+      <section class="room forest text" aria-labelledby="privacy-h">
+        <div class="pitch">
+          <h2 id="privacy-h">مال خودت می‌مونه</h2>
+        </div>
+        <div class="facts">
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"/><path d="M3 3l18 18"/></svg></span>
+            <div><h3>بدون ثبت‌نام، بدون ردیابی</h3><p>نه حساب، نه لاگین، نه ردیابی. همه‌چیز توی حافظهٔ خود اپ روی گوشیه؛ فقط روزی یک شمارش بی‌نام می‌ره (نسخه و فروشگاه، بدون شناسه)، گزارش خرابی هم فقط اگه خودت بخوای، و <a href="/usage">جمعشون برای همه بازه</a>.</p></div>
+          </div>
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></svg></span>
+            <div><h3>پیامک‌ها روی گوشیت می‌مونن</h3><p>متن پیامک به هیچ سروری فرستاده نمی‌شه، و رمز یک‌بارمصرف اصلاً ذخیره نمی‌شه.</p></div>
+          </div>
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.6v2.4"/></svg></span>
+            <div><h3>دفتر خانوادگی سرتاسر رمزشده</h3><p>سرور فقط متن رمزشده می‌بینه؛ نه مبلغ، نه اسم، نه فروشنده. اشتراک رو خاموش کنی، فرستاده‌های قبلی هم از دفتر بقیه پاک می‌شن.</p></div>
+          </div>
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l7.5 3v5.6c0 4.6-3.1 8.2-7.5 9.8-4.4-1.6-7.5-5.2-7.5-9.8V5.8z"/><path d="M8.6 12.2l2.4 2.4 4.4-4.6"/></svg></span>
+            <div><h3>پشتیبان با رمزی که فقط خودت داری</h3><p>یک فایل که روی گوشی تازه برمی‌گرده؛ بدون عبارتی که خودت انتخاب کردی، حتی خود اپ هم بازش نمی‌کنه.</p></div>
+          </div>
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21.2h4"/></svg></span>
+            <div><h3>اعلان‌ها همون روی گوشی ساخته می‌شن</h3><p>نه سقف بودجه، نه فروشنده، نه حتی این که اعلانی در کار بوده به جایی نمی‌ره. روی صفحهٔ قفل هم جزئیات تراکنش دیده نمی‌شه.</p></div>
+          </div>
+          <div class="fact">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 7.5L4 12l4.5 4.5"/><path d="M15.5 7.5L20 12l-4.5 4.5"/><path d="M13.5 5l-3 14"/></svg></span>
+            <div><h3>متن‌باز</h3><p>همهٔ کدش توی <a href="https://github.com/doxigo/muchToman">گیت‌هاب</a>ه؛ هر کسی می‌تونه ببینه دقیقاً چی کار می‌کنه.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="plain" aria-labelledby="more-h">
+        <h2 id="more-h">و چند تا چیز دیگه</h2>
+        <div class="tiles">
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg></span>
+            <div><h3>ویجت</h3><p>جمعت روی صفحهٔ اصلی گوشی، بدون باز کردن اپ.</p></div>
+          </div>
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a9 9 0 0 1-1-4V11a6 6 0 0 1 12 0v1"/><path d="M10.2 20.5A12 12 0 0 1 9 15v-4a3 3 0 0 1 6 0v4"/><path d="M12 11v4c0 2 .5 3.8 1.4 5.5"/><path d="M18 15.5a17 17 0 0 1-.6 3.5"/></svg></span>
+            <div><h3>قفل اپ</h3><p>با اثر انگشت یا رمز گوشی. پیش‌فرض خاموشه.</p></div>
+          </div>
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 18.5l5-5.5 4 3 7.5-8.5"/><path d="M15.5 7.5H20V12"/></svg></span>
+            <div><h3>یک سال تاریخچه</h3><p>جمع دارایی هر روز ثبت می‌شه، با تغییر ۱، ۳، ۶ و ۱۲ ماهه.</p></div>
+          </div>
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.1V4.9c0-.8.6-1.4 1.4-1.4h7.2l8.4 8.4a1.4 1.4 0 0 1 0 2l-7.2 7.2a1.4 1.4 0 0 1-2 0z"/><circle cx="8.2" cy="8.2" r="1.3"/></svg></span>
+            <div><h3>اسم‌های خودت</h3><p>«تتر شخصی» کنار «تتر مشترک»؛ اسم واقعی زیرش می‌مونه تا نرخش درست بخوره.</p></div>
+          </div>
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg></span>
+            <div><h3>سلامت دفتر</h3><p>دفتر از ماهی شروع می‌شه که خودت بگی، و تنظیمات می‌گه چقدر تاریخچه مونده و آخرین پیامک کی خونده شد.</p></div>
+          </div>
+          <div class="tile">
+            <span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></span>
+            <div><h3>روشن و تیره</h3><p>هر دو پوسته کامل‌ان و پیش‌فرض از تنظیم گوشی پیروی می‌کنن.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="plain" aria-labelledby="rules-h">
+        <h2 id="rules-h">قانون‌هایی که عوض نمی‌شن</h2>
+        <ul class="rows">
+          <li><p>عددی که می‌بینی هیچ‌وقت از عدد واقعی بزرگ‌تر نیست. رو به پایین گرد می‌شه.</p></li>
+          <li><p>دارایی بی‌نرخ هیچ‌وقت صفر حساب نمی‌شه. کنار گذاشته می‌شه و به اسمش گفته می‌شه، و هر نرخی رو هم می‌شه دستی عوض کرد.</p></li>
+          <li><p>هشدارها اول با کلمه می‌آن. رنگ فقط تأییدشون می‌کنه.</p></li>
+          <li><p>هر عددی رو می‌شه تا تراکنش‌هایی که ساختنش دنبال کرد.</p></li>
+        </ul>
+      </section>
+
+      <section class="plain" id="install" aria-labelledby="install-h">
+        <h2 id="install-h">نصب</h2>
+        <div class="builds">
+          <div class="build">
+            <div class="grow">
+              <div class="for">اندروید</div>
+              <h3>چقدر تومن</h3>
+              <p>نسخهٔ کامل: دفتر و بودجه و هدف و قسط، دفتر خانوادگی و دارایی مشترک.</p>
+            </div>
+            <a class="pill primary" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-latest.apk">دانلود مستقیم</a>
+          </div>
+          <div class="build">
+            <div class="grow">
+              <div class="for">اندروید</div>
+              <h3>چقدر تومن دارم</h3>
+              <p>نسخهٔ سبک: فقط دارایی. چی داری و امروز چند می‌ارزه.</p>
+            </div>
+            <a class="pill" href="https://github.com/doxigo/muchToman/releases/latest/download/muchtoman-lite-latest.apk">دانلود مستقیم</a>
+          </div>
+          <div class="build">
+            <div class="grow">
+              <div class="for">آیفون · <bdi>PWA</bdi></div>
+              <h3>چقدر تومن</h3>
+              <p>همون نسخهٔ کامل؛ فقط پیامک بانک رو خودت توی دفتر می‌چسبونی.</p>
+            </div>
+            <a class="pill" href="https://sync.muchtoman.com/">باز کردن</a>
+          </div>
+        </div>
+        <p class="aftermath muted">
+          اندروید ۷ به بالا. نسخهٔ تازه به‌صورت یک خط زیر جمع دارایی‌هات پیدا می‌شه، و هر دو
+          نسخهٔ اندروید روی یک گوشی کنار هم جا می‌شن.
+        </p>
+      </section>
     </main>
 
     <footer>
@@ -562,6 +1036,7 @@
         <nav aria-label="پانوشت">
           <a href="https://github.com/doxigo/muchToman">گیت‌هاب</a>
           <a href="https://github.com/doxigo/muchToman/issues">گزارش مشکل</a>
+          <a href="/usage">آمار استفاده</a>
           <a href="https://github.com/doxigo/muchToman/blob/main/LICENSE">مجوز MIT</a>
         </nav>
       </div>
