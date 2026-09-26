@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Delete
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -531,8 +532,10 @@ interface BalanceAnchorDao {
  * [sender], [addrKey], [body] and [at] are stored rather than only hashed, which is what makes
  * [srcHash] reversible: if a v2 of the hash is ever forced, a migration recomputes it from these
  * columns and rewrites every decision that points at it, in one transaction. A hash whose inputs
- * you did not keep is a trapdoor. The one exception is a row whose stamp [clampAt] had to move,
- * where the hash keeps the raw stamp the columns no longer hold — see [ingestBankSms].
+ * you did not keep is a trapdoor. There are two exceptions, both made in [ingestBankSms]: a row
+ * whose stamp [clampAt] had to move, where the hash keeps the raw stamp the columns no longer
+ * hold, and a row whose code [bodyToStore] blanked, where it keeps the raw body. A code is the
+ * one input that must not be kept, so those rows can never recompute their own hash.
  */
 @Entity(
     tableName = "sms_source",
@@ -544,7 +547,10 @@ data class SmsSource(
     val sender: String,
     /** [srcAddrKeyV1] of [sender] — the hash input, stored so the hash can be recomputed. */
     @ColumnInfo(name = "addr_key") val addrKey: String,
-    /** Verbatim. Never normalised on the way in; normalising is the parser's job, downstream. */
+    /**
+     * Verbatim, but for a code [bodyToStore] blanked. Never normalised on the way in; normalising
+     * is the parser's job, downstream.
+     */
     val body: String,
     /** `Telephony.Sms.DATE`, epoch milliseconds — [clampAt]-ed at ingest, see [ingestBankSms]. */
     val at: Long,
@@ -591,6 +597,17 @@ interface SmsSourceDao {
 
     @Query("DELETE FROM sms_source WHERE at < :before")
     suspend fun deleteBefore(before: Long): Int
+
+    /**
+     * By primary key, one statement per row — so no list is ever long enough to pass the 999
+     * bound variables API 24's SQLite allows a single `IN (…)`.
+     */
+    @Delete
+    suspend fun delete(rows: List<SmsSource>): Int
+
+    /** The body only: the hash stays the raw message's, as ingest wrote it — see [bodyToStore]. */
+    @Query("UPDATE sms_source SET body = :body WHERE src_hash = :srcHash")
+    suspend fun setBody(srcHash: String, body: String)
 
     /**
      * The backstop against a pathological inbox. `LIMIT -1 OFFSET n` is the only way to say
@@ -737,10 +754,15 @@ fun familyLocalRef(familyRef: String): String = "f:${sha256Hex(familyRef)}"
 /**
  * Copy every recognised message the inbox has that we do not already hold.
  *
- * The privacy gate is the point of the [bankOf] check, and it sits one layer earlier than the
- * parser's own: a body is stored **only** when the sender is a bank we read. No one-time code,
- * no advert, no message from her family ever reaches this table — and the manifest's
- * `allowBackup="false"` keeps what does off Google's servers.
+ * The privacy gate is two checks, and both sit one layer earlier than the parser's own. A body
+ * is stored **only** when the sender is a bank we read, so no message from her family or anyone
+ * else ever reaches this table; and then only as much of it as [bodyToStore] keeps, because a
+ * bank sends its one-time codes from the very number its transactions come from, so the first
+ * check lets them through. The second refuses nothing the ledger reads: a code the parser
+ * declines, a body with no money in it at all, the digits of a code beside a stated balance. A
+ * bank's advert that quotes money is still stored — telling it from a transaction is the
+ * parser's job, and a parser fix can only re-read what was kept. The manifest's
+ * `allowBackup="false"` keeps what is stored off Google's servers.
  *
  * Returns how many new rows were stored.
  */
@@ -791,15 +813,17 @@ internal suspend fun ingestBankSms(
     for (chunk in messages.chunked(500)) {
         val rows = chunk.mapNotNull { m ->
             if (bankOf(m.from, extra) == null) return@mapNotNull null
+            val body = bodyToStore(m.body) ?: return@mapNotNull null
             SmsSource(
-                // The hash keeps the raw stamp: identity must be whatever every future re-read
-                // of the same inbox row computes, and the clamp below moves with `now`. The one
-                // cost is that a clamped row's stored columns no longer recompute its own hash —
-                // accepted, because that stamp was never a real time to begin with.
+                // The hash keeps the raw stamp and the raw body: identity must be whatever every
+                // future re-read of the same inbox row computes, and the clamp below moves with
+                // `now`. The one cost is that a clamped or blanked row's stored columns no longer
+                // recompute its own hash — accepted, because that stamp was never a real time to
+                // begin with, and that code is exactly what must not be kept.
                 srcHash = srcHash(m.from, m.body, m.at),
                 sender = m.from,
                 addrKey = srcAddrKeyV1(m.from),
-                body = m.body,
+                body = body,
                 // The money is never wrong, only its day — see [clampAt].
                 at = clampAt(m.at, now),
                 ingestedAt = now,
@@ -881,6 +905,38 @@ suspend fun migrateAnchorsFromPrefs(accounts: List<BankAccount>, db: DurableDb, 
     }
 }
 
+private const val SOURCES_SWEPT = "sources_swept"
+
+/**
+ * Hold every stored body to what [bodyToStore] would keep of it today, as though it had arrived
+ * now: a one-time code or a body with no money in it is deleted, a code beside a stated balance
+ * has its digits blanked in place. Builds from before [ingestBankSms] asked kept them all.
+ *
+ * Nothing she sees moves. [bodyToStore] refuses nothing the ledger reads, so no transaction,
+ * balance or anchor was ever derived from a deleted row, and a blanked one derives exactly what it
+ * did. What goes is a code sitting in the table, and in every backup made of it from here on.
+ *
+ * Keyed to [PARSER_VERSION] rather than run once: what is kept is the parser's call, changing it
+ * bumps that version, and the archive is then swept again under the new reading. A backup restored
+ * from before any sweep carries no marker, so it is swept too.
+ *
+ * Returns when the oldest row it changed had been stored, or null when it changed none — which is
+ * how the caller tells whether a backup file made before now still holds one.
+ */
+suspend fun sweepSources(db: DurableDb): Long? {
+    val swept = PARSER_VERSION.toString()
+    if (db.meta().get(SOURCES_SWEPT) == swept) return null
+    return db.withTransaction {
+        val changed = db.smsSource().allOldestFirst()
+            .map { it to bodyToStore(it.body) }
+            .filter { (row, kept) -> kept != row.body }
+        db.smsSource().delete(changed.filter { it.second == null }.map { it.first })
+        for ((row, kept) in changed) if (kept != null) db.smsSource().setBody(row.srcHash, kept)
+        db.meta().put(DurableMeta(SOURCES_SWEPT, swept))
+        changed.minOfOrNull { it.first.ingestedAt }
+    }
+}
+
 /**
  * Reach back to the horizon again on the next ingest.
  *
@@ -923,9 +979,14 @@ val BACKUP_STRIPPED_META: List<String> = listOf(
  * whatever it misses is still in the phone's own WAL, not lost.
  *
  * The copy — never the live file — then has [BACKUP_STRIPPED_META] deleted from it.
+ *
+ * The live file is swept first ([sweepSources]), so no file made here can hold a one-time code
+ * even if the launch that should have swept has not got that far: a file, once saved, is out of
+ * reach.
  */
 suspend fun backupDurableDbBytes(context: Context, db: DurableDb): ByteArray =
     withContext(Dispatchers.IO) {
+        sweepSources(db)
         val sql = db.openHelper.writableDatabase
         for (attempt in 1..3) {
             var busy = 1

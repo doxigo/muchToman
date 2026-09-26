@@ -63,4 +63,20 @@ class ReviewRegressionTest {
         assertTrue(backupReminderDue(true, now, now + 30 * DAY_MS))
         assertFalse(backupReminderDue(true, now + DAY_MS, now))
     }
+
+    @Test fun `a backup holding swept codes is said, and asks for its replacement at once`() {
+        val stored = now - 10 * DAY_MS
+        // Nothing swept, nothing to say.
+        assertFalse(backupHoldsSweptCodes(null, now, restoredNow = true))
+        // A file made after the oldest code was stored holds it; one made before does not, and a
+        // phone that never made one has nothing to warn about.
+        assertTrue(backupHoldsSweptCodes(stored, stored + DAY_MS, restoredNow = false))
+        assertFalse(backupHoldsSweptCodes(stored, stored - DAY_MS, restoredNow = false))
+        assertFalse(backupHoldsSweptCodes(stored, 0L, restoredNow = false))
+        // The file this launch was restored from held whatever the sweep then found in it.
+        assertTrue(backupHoldsSweptCodes(stored, 0L, restoredNow = true))
+        // Due the same day, rather than thirty days on — but only where she asked for reminders.
+        assertTrue(backupReminderDue(true, now, now, holdsCodes = true))
+        assertFalse(backupReminderDue(false, now, now, holdsCodes = true))
+    }
 }

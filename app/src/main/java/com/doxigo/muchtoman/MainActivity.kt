@@ -70,6 +70,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var stockJob: Job? = null
     private val walletSemaphore = Semaphore(MAX_PARALLEL_WALLET_FETCHES)
 
+    // Above init, not down with the rest of backup and restore: the ledger pipeline init launches
+    // raises [BackupUi.holdsCodes] from another thread, and may get there before the constructor
+    // has reached a field declared further down.
+    private val _backup = MutableStateFlow(BackupUi(
+        lastExportAt = store.lastBackupAt,
+        reminderEnabled = store.backupReminderEnabled,
+        holdsCodes = store.backupHoldsCodes,
+    ))
+
+    /** Its own flow, not [UiState]: only the settings rows and the home reminder read it. */
+    val backup: StateFlow<BackupUi> = _backup.asStateFlow()
+
     private val _state = MutableStateFlow(
         UiState(
             holdings = store.holdings,
@@ -649,6 +661,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * [sweepSources], and the warning it leaves when a backup file she has holds what it took.
+     * Called by the launch and by an export alike, so whichever sweeps first raises it.
+     */
+    private suspend fun sweep(durable: DurableDb) {
+        if (backupHoldsSweptCodes(sweepSources(durable), store.lastBackupAt, restoredAtLaunch)) {
+            store.backupHoldsCodes = true
+            _backup.update { it.copy(holdsCodes = true) }
+        }
+    }
+
+    /**
      * ingest → derive, and then a check that the two ways of reaching a balance agree.
      *
      * Ingest starts at the first of the current Jalali month and grows forward from there. It
@@ -665,6 +688,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val derived = DerivedDb.get(app)
 
         migrateAnchorsFromPrefs(store.bankAccounts, durable, System.currentTimeMillis())
+        // Here rather than inside ingest, so it runs without READ_SMS too: the codes an older
+        // build stored are in the table whether or not she still grants the permission.
+        sweep(durable)
         seedBuiltins(durable)
         loadSession(durable)?.let { refreshFamily(it) }
         val added = ingestBankSms(app, durable, extra)
@@ -1184,14 +1210,6 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     // ——— Backup and restore: the recovery path for a phone that no longer exists ———
 
-    private val _backup = MutableStateFlow(BackupUi(
-        lastExportAt = store.lastBackupAt,
-        reminderEnabled = store.backupReminderEnabled,
-    ))
-
-    /** Its own flow, not [UiState]: only the two settings rows read it. */
-    val backup: StateFlow<BackupUi> = _backup.asStateFlow()
-
     /** The decrypted backup between «رمز درسته» and the armed confirm. Never touches disk. */
     private var pendingRestore: BackupPayload? = null
 
@@ -1208,6 +1226,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             runCatching {
                 val durable = DurableDb.get(app)
                 val payload = ledgerGate.withLock {
+                    // Before the copy, and through the same door as the launch: an export made
+                    // before the launch got as far as sweeping must still leave her warned.
+                    sweep(durable)
                     BackupPayload(
                         prefs = exportablePrefs(app),
                         durableDbB64 = Base64.encode(backupDurableDbBytes(app, durable)),
@@ -1226,11 +1247,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 (stream ?: error("no stream for $uri")).use { it.write(sealed) }
                 val exportedAt = System.currentTimeMillis()
                 store.lastBackupAt = exportedAt
+                store.backupHoldsCodes = false
                 exportedAt
             }.onSuccess { exportedAt ->
                 _backup.update {
-                    it.copy(working = false, lastExportAt = exportedAt,
-                        notice = "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
+                    it.copy(working = false, lastExportAt = exportedAt, holdsCodes = false,
+                        // The warning goes as this file lands, so the one step of it this file
+                        // cannot take for her is said now, while she is here to take it.
+                        notice = if (it.holdsCodes) "پشتیبان ساخته شد. اگه فایل پشتیبان قبلی هنوز هست، پاکش کن."
+                        else "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
                 }
             }.onFailure { e ->
                 android.util.Log.w("muchtoman", "backup export failed: $e")
@@ -2627,6 +2652,8 @@ data class BackupUi(
     val readyWords: String = "",
     /** Staged. Nothing changes until the app is closed and opened, and the line says so. */
     val restartNeeded: Boolean = false,
+    /** A file she already has holds one-time codes — see [backupHoldsSweptCodes]. */
+    val holdsCodes: Boolean = false,
 )
 
 /** A backup is a few MB; a "backup" that will not fit in memory is an attack or a mistake. */

@@ -337,8 +337,21 @@ fun snapshotDay(
     )
 }
 
-fun backupReminderDue(enabled: Boolean, lastExportAt: Long, now: Long): Boolean =
-    enabled && (lastExportAt <= 0L || now - lastExportAt >= 30 * DAY_MS)
+/**
+ * Due after thirty days, or at once when the file she has holds one-time codes: the only thing
+ * that fixes that file is a new one to replace it, which is what this line asks for anyway.
+ */
+fun backupReminderDue(enabled: Boolean, lastExportAt: Long, now: Long, holdsCodes: Boolean = false): Boolean =
+    enabled && (holdsCodes || lastExportAt <= 0L || now - lastExportAt >= 30 * DAY_MS)
+
+/**
+ * Whether a backup file she already has holds what [sweepSources] has just deleted or blanked
+ * here — one-time codes, and bank messages with no money in them: one made on this phone after the
+ * oldest of them was stored, or the file this very launch was restored from. The file itself is out of reach — her passphrase is never kept and
+ * neither is the grant to where she saved it — so all the app can do is say so.
+ */
+fun backupHoldsSweptCodes(oldestSweptAt: Long?, lastBackupAt: Long, restoredNow: Boolean): Boolean =
+    oldestSweptAt != null && (restoredNow || lastBackupAt >= oldestSweptAt)
 
 fun refreshedSnapshotHoldings(
     current: List<Holding>,
@@ -764,6 +777,15 @@ class Store(context: Context) {
     var backupReminderEnabled: Boolean
         get() = prefs.getBoolean("backupReminderEnabled", false)
         set(v) { prefs.edit().putBoolean("backupReminderEnabled", v).apply() }
+
+    /**
+     * A backup file she has holds one-time codes — see [backupHoldsSweptCodes]. Cleared by her next
+     * backup. Per phone and off [EXPORTED_PREFS], like [lastBackupAt]: the backup made while it is
+     * set is itself clean, and would otherwise bring the warning back on the phone it restores.
+     */
+    var backupHoldsCodes: Boolean
+        get() = prefs.getBoolean("backupHoldsCodes", false)
+        set(v) { prefs.edit().putBoolean("backupHoldsCodes", v).apply() }
 
     /** Who the app greets. Empty means greet nobody. */
     var name: String

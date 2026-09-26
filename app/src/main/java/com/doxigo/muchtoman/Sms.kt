@@ -74,9 +74,9 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // for a balance — which is not what its notifications arrive from. Pasargad settles it: its
     // published service line is 1000900 and the header its messages actually carry is
     // "B.Pasargad". Guessing here would not merely fail to match, it would be unsafe: ingest
-    // stores the body of every message from a matched sender before anything parses it, so a
-    // shortcode that also carries رمز پویا would put one-time passwords in the table that the
-    // privacy note in [ingestBankSms] promises never holds them.
+    // keeps whatever a matched sender says about money, and [bodyToStore] can only refuse a code
+    // that also names money — a purchase code — by its wording, so one worded some way it has
+    // never seen would reach the table that the privacy note in [ingestBankSms] says holds none.
     //
     // Listed anyway, because a named bank is what [guessBank] needs: her own message says
     // «بانک سینا» in its body, the sheet offers to add the number it came from, and her tap is
@@ -243,6 +243,97 @@ private val AMOUNT_WORDS = listOf("مبلغ", "مقدار")
  * «دوم» counts too, because [normalise] strips the ZWNJ that «رمز‌پویا» is often written with.
  */
 private val OTP = Regex("(?<!\\p{L})رمز(?!\\p{L})|رمز ?(?:پویا|دوم)")
+
+/**
+ * The same code worded with «کد»: «کد تایید», «کد یکبار مصرف», «کد فعالسازی», «کد ورود», «کد پویا».
+ *
+ * A closed list, never «کد» alone, because a transaction is full of codes that are not one:
+ * «کد پیگیری», «کد رهگیری», «کد پایانه». And unlike «رمز» it only counts in a message that states
+ * no balance — see [isOneTimeCode] for why.
+ */
+private val OTP_CODE = Regex("(?<!\\p{L})کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا)")
+
+/**
+ * Whether a body is a one-time code — the one test for it. [ingestBankSms] refuses to store what
+ * this matches and [parseBankSms] declines it, and sharing it is what makes the refusal free: a
+ * body ingest drops is one the ledger would never have read.
+ *
+ * A «کد» wording is let through when the message states a مانده. The two mistakes are not the
+ * same size: a debit that prints its bank's authorisation code as «کد تایید» and was dropped here
+ * is gone for good, balance and all, while a code that states a balance and is kept costs one
+ * spend she can hide — and the next مانده puts the account right regardless.
+ */
+internal fun isOneTimeCode(body: String): Boolean {
+    val text = normalise(body)
+    return OTP.containsMatchIn(text) || (OTP_CODE.containsMatchIn(text) && statedBalance(text) == null)
+}
+
+/**
+ * What ingest keeps of a body from a bank we read, or null for none of it.
+ *
+ * Every rule holds the same line — nothing is refused that the ledger reads — and each is the
+ * reason a code worded some way this file has never seen still stays out:
+ * - A one-time code is refused, by [isOneTimeCode], the test [parseBankSms] declines on.
+ * - A body that says nothing about money is refused, however it is worded: no word [parseBankSms]
+ *   reads a balance, an amount or a direction by, no unit, no figure grouped the way banks print
+ *   money. A login code, an activation code, a welcome, a security notice all land here. The
+ *   parser cannot read money out of such a body, and no fix to it could without inventing some.
+ * - A «کد» code set beside a stated مانده is kept for the money, and only the money: the code's
+ *   own digits are blanked and everything else stays verbatim.
+ *
+ * Changing what this keeps changes what the ledger can ever read, so it bumps [PARSER_VERSION]
+ * like any parser change — which is also what makes [sweepSources] apply it to what is stored.
+ */
+internal fun bodyToStore(body: String): String? {
+    if (isOneTimeCode(body)) return null
+    val text = normalise(body)
+    if (!carriesMoney(text)) return null
+    return blankCodes(body, text)
+}
+
+/** A figure grouped in threes, the dot included — wider than the grouping [SIGNED] asks for, on purpose. */
+private val GROUPED_FIGURE = Regex("[0-9۰-۹٠-٩]{1,3}(?:[,،٬.٫][0-9۰-۹٠-٩]{3})+")
+
+private val UNIT_WORDS = listOf("ریال", "ر.ی", "تومان", "تومن")
+
+/**
+ * Whether a body says anything money could be read from. Built from the parser's own word lists,
+ * so a word the parser learns is one this keeps, and wider than the parser everywhere else.
+ */
+private fun carriesMoney(text: String): Boolean =
+    (BALANCE_WORDS + AMOUNT_WORDS + IN_WORDS + OUT_WORDS + UNIT_WORDS).any { it in text } ||
+        GROUPED_FIGURE.containsMatchIn(text)
+
+/**
+ * The code a «کد» wording introduces: four to ten digits a few characters after it on the same
+ * line, glued to no separator — which keeps a grouped amount, a date, a clock time or an account
+ * number from ever being taken for one. It never looks past a code already blanked, so blanking
+ * twice changes nothing.
+ */
+private val CODE_AFTER = Regex("^[^0-9۰-۹٠-٩\\n•]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\\-])")
+private val DIGIT_RUN = Regex("[0-9۰-۹٠-٩]+")
+
+/**
+ * [body] with the code each «کد» wording in [text] introduces blanked, digit for digit.
+ *
+ * Found in the normalised text and blanked in the raw body by its place among the digit runs:
+ * normalising never adds, drops or reorders a digit, so the n-th run is the same run in both —
+ * and one whose digits disagree anyway is left alone rather than guessed at.
+ */
+private fun blankCodes(body: String, text: String): String {
+    val runs = DIGIT_RUN.findAll(text).toList()
+    val codes = OTP_CODE.findAll(text).mapNotNull { m ->
+        val from = m.range.last + 1
+        val code = CODE_AFTER.find(text.substring(from))?.groups?.get(1) ?: return@mapNotNull null
+        runs.indexOfFirst { it.range.first == from + code.range.first }.takeIf { it >= 0 }
+    }.toSet()
+    if (codes.isEmpty()) return body
+    var n = -1
+    return DIGIT_RUN.replace(body) { run ->
+        n++
+        if (n in codes && run.value == runs.getOrNull(n)?.value) "•".repeat(run.value.length) else run.value
+    }
+}
 
 /**
  * What a bank owes on, not what it holds. "مانده بدهی" and "مانده تسهیلات" are a loan balance,
@@ -438,6 +529,15 @@ private fun figureAfter(
 }
 
 /**
+ * The مانده a message states, which [parseBankSms] anchors the account on.
+ *
+ * Zero is allowed here and nowhere else: an emptied account really does have a balance of
+ * nought, and refusing to read it would leave the old figure standing for ever.
+ */
+private fun statedBalance(text: String): Figure? =
+    figureAfter(text, BALANCE_WORDS, allowZero = true, veto = BALANCE_VETO)
+
+/**
  * The last money figure *before* any of [labels], never crossing a line break.
  *
  * Most banks name the amount and then say what became of it — "واریز مبلغ ۵۰۰٬۰۰۰" — which is
@@ -502,13 +602,10 @@ fun parseBankSms(
     val bank = bankOf(sender, extra) ?: return null
 
     val text = normalise(body)
-    if (OTP.containsMatchIn(text)) return null
+    if (isOneTimeCode(body)) return null
     val fallback = fallbackDivisor(text)
 
-    // Zero is allowed here and nowhere else: an emptied account really does have a balance of
-    // nought, and refusing to read it would leave the old figure standing for ever.
-    val balance = figureAfter(text, BALANCE_WORDS, allowZero = true, veto = BALANCE_VETO)
-        ?.let { it.value / (it.divisor ?: fallback) }
+    val balance = statedBalance(text)?.let { it.value / (it.divisor ?: fallback) }
 
     // Direction decides the sign, so a message that states no direction states no delta —
     // guessing one is how a deposit becomes a withdrawal.

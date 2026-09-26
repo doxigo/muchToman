@@ -1007,6 +1007,19 @@ class MoneyTest {
     }
 
     @Test
+    fun `a code worded with «کد» is one too, but not a reference, and not beside a balance`() {
+        assertNull(sms("کد تایید خرید: 482139\nمبلغ 1,250,000 ریال\nپذیرنده: فروشگاه اینترنتی"))
+        assertNull(sms("کد یک‌بار مصرف شما 771204\nخرید به مبلغ 450,000 ریال"))
+        // A transaction is full of codes that are not one-time: this is a reference, and money.
+        assertEquals(-125_000.0, sms("خرید مبلغ 1,250,000 ریال\nکد پیگیری 123456")!!.delta!!, 0.01)
+        // A debit that prints its authorisation code is still a debit when it states what the
+        // account holds: dropping it at ingest would lose the balance for good.
+        val debit = sms("خرید مبلغ 1,250,000 ریال\nکد تایید 482139\nمانده 8,000,000 ریال")!!
+        assertEquals(-125_000.0, debit.delta!!, 0.01)
+        assertEquals(800_000.0, debit.balance!!, 0.01)
+    }
+
+    @Test
     fun `a stated balance wins over accumulating, so a missed message self-corrects`() {
         var accounts = listOf<BankAccount>()
         accounts = applyBankSms(accounts, sms("واریز 1,000,000 ریال\nمانده 5,000,000 ریال", at = 1)!!)

@@ -955,7 +955,11 @@ private fun AppScreens(
                 )
             }
 
-            if (backupReminderDue(backupState.reminderEnabled, backupState.lastExportAt, System.currentTimeMillis())) {
+            if (backupReminderDue(
+                    backupState.reminderEnabled, backupState.lastExportAt, System.currentTimeMillis(),
+                    holdsCodes = backupState.holdsCodes,
+                )
+            ) {
                 item(key = "backup-reminder") {
                     TextButton(onClick = { settings = true }, modifier = Modifier.padding(edge).fillMaxWidth()) {
                         Text("وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.",

@@ -126,18 +126,97 @@ class PersistenceTest {
     @Test
     fun `empty initial scan preserves a boundary for later arrivals without importing history`() = runBlocking {
         DurableDb.builder(context, "ingest.db").build().use { db ->
-            val inbox = mutableListOf(RawSms("09999920000", "old", now - 1))
+            // Bodies that name money, because ingest keeps nothing else.
+            val inbox = mutableListOf(RawSms("09999920000", "old: واریز 1,000,000 ریال", now - 1))
             suspend fun scan(at: Long) = ingestBankSms(db, emptyMap(), at) { since ->
                 inbox.filter { it.at >= since }.sortedBy { it.at }
             }
             assertEquals(0, scan(now))
-            inbox += RawSms("09999920000", "new", now + 10)
+            inbox += RawSms("09999920000", "new: واریز 2,000,000 ریال", now + 10)
             assertEquals(1, scan(now + 20))
-            assertEquals(listOf("new"), db.smsSource().allOldestFirst().map { it.body })
+            assertEquals(listOf("new: واریز 2,000,000 ریال"), db.smsSource().allOldestFirst().map { it.body })
             assertEquals(0, scan(now + 30))
-            inbox += RawSms("09999920000", "same timestamp", now + 10)
+            inbox += RawSms("09999920000", "same timestamp: واریز 3,000,000 ریال", now + 10)
             assertEquals(1, scan(now + 40))
             assertEquals(2, db.smsSource().count())
+        }
+    }
+
+    @Test
+    fun `a one-time code from a bank's own number is never stored, while its transactions are`() = runBlocking {
+        DurableDb.builder(context, "ingest-otp.db").build().use { db ->
+            // Saman sends both from the one number: the code she types to approve a purchase, and
+            // the debit that arrives once she has. The sender cannot tell them apart; the body can.
+            val code = RawSms("0999 992 0000", "بانک سامان\nرمز پویا: 48213967\nخرید مبلغ 1,250,000 ریال", now + 1)
+            val debit = RawSms("0999 992 0000", "بانک سامان\nخرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال", now + 2)
+            assertEquals(1, ingestBankSms(db, emptyMap(), now) { listOf(code, debit) })
+            assertEquals(listOf(debit.body), db.smsSource().allOldestFirst().map { it.body })
+        }
+    }
+
+    @Test
+    fun `the codes an older build stored are swept, and nothing the ledger reads goes with them`() = runBlocking {
+        DurableDb.builder(context, "sweep-otp.db").build().use { db ->
+            fun stored(body: String, at: Long) = SmsSource(
+                srcHash = srcHash("0999 992 0000", body, at), sender = "0999 992 0000",
+                addrKey = srcAddrKeyV1("0999 992 0000"), body = body, at = at, ingestedAt = at,
+            )
+            val code = stored("رمز پویا: 48213967\nخرید مبلغ 1,250,000 ریال", now)
+            val debit = stored("خرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال", now + 1)
+            // The «رمز» inside «کارمزد» is not a code, and a fee is money she paid.
+            val fee = stored("کارمزد مبلغ 5,000 ریال", now + 2)
+            val worded = stored("کد تایید خرید: 482139\nمبلغ 450,000 ریال", now + 3)
+            val login = stored("شناسه ورود موقت شما: 4821", now + 4)
+            val authorised = stored("خرید مبلغ 1,250,000 ریال\nکد تایید 482139\nمانده 8,000,000 ریال", now + 5)
+            db.smsSource().insertAll(listOf(code, debit, fee, worded, login, authorised))
+            // Deleting them is free because the parser never read them: nothing was derived.
+            for (gone in listOf(code, worded, login)) assertTrue(parseToRows(gone, emptyMap(), now).isEmpty())
+            val before = parseToRows(authorised, emptyMap(), now)
+            // What it answers is how old the oldest row it changed was, so a backup made since is
+            // known to hold one — and once swept under this reading, there is nothing to answer.
+            assertEquals(now, sweepSources(db))
+            val left = db.smsSource().allOldestFirst()
+            assertEquals(
+                listOf(debit.body, fee.body, "خرید مبلغ 1,250,000 ریال\nکد تایید ••••••\nمانده 8,000,000 ریال"),
+                left.map { it.body },
+            )
+            // Blanked in place: the same message, deriving the same transaction.
+            assertEquals(before, parseToRows(left.last(), emptyMap(), now))
+            assertNull(sweepSources(db))
+        }
+    }
+
+    @Test
+    fun `what ingest keeps of a code beside a balance is still the message a re-read finds`() = runBlocking {
+        DurableDb.builder(context, "ingest-blank.db").build().use { db ->
+            val inbox = listOf(RawSms(
+                "0999 992 0000", "خرید مبلغ 1,250,000 ریال\nکد تایید 482139\nمانده 8,000,000 ریال", now + 1,
+            ))
+            assertEquals(1, ingestBankSms(db, emptyMap(), now) { inbox })
+            val row = db.smsSource().allOldestFirst().single()
+            assertEquals("خرید مبلغ 1,250,000 ریال\nکد تایید ••••••\nمانده 8,000,000 ریال", row.body)
+            // Keyed by the message as it arrived, so reading the same inbox row again — a rewind,
+            // a second scan — lands on this row instead of storing it a second time.
+            assertEquals(srcHash(inbox[0].from, inbox[0].body, inbox[0].at), row.srcHash)
+            assertEquals(0, ingestBankSms(db, emptyMap(), now + 2) { inbox })
+        }
+    }
+
+    @Test
+    fun `a backup file never holds a one-time code, even one no launch has swept yet`() = runBlocking {
+        DurableDb.builder(context, "backup-otp.db").build().use { db ->
+            // A file, once saved, is out of this app's reach for good: it keeps no grant to where
+            // she put it and never knows her passphrase. So the copy is made clean or not at all.
+            val body = "رمز پویا: 48213967\nخرید مبلغ 1,250,000 ریال"
+            db.smsSource().insertAll(listOf(SmsSource(
+                srcHash = srcHash("0999 992 0000", body, now), sender = "0999 992 0000",
+                addrKey = srcAddrKeyV1("0999 992 0000"), body = body, at = now, ingestedAt = now,
+            )))
+            val copy = context.getDatabasePath("backup-otp-copy.db")
+                .apply { writeBytes(backupDurableDbBytes(context, db)) }
+            DurableDb.builder(context, copy.path).build().use { restored ->
+                assertEquals(0, restored.smsSource().count())
+            }
         }
     }
 

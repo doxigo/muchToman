@@ -64,7 +64,10 @@ import kotlinx.coroutines.sync.withLock
 // amount, and the sign is its direction. خاورمیانه transfers had been stored at the card's last
 // four digits as a spend, and its interest, fees and PAYA deposits with no amount at all. The
 // same holds for پاسارگاد and رسالت, which print the amount the same way.
-const val PARSER_VERSION = 10
+// 11: a code worded «کد تایید», «کد یکبار مصرف» and the like is a one-time code too, unless the
+// message states a مانده. Any one already stored was being read as a spend exactly as a رمز پویا
+// was before 9; the rebuild drops it, and [sweepSources], keyed to this number, deletes it.
+const val PARSER_VERSION = 11
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

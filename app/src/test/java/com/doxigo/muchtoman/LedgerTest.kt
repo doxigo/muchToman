@@ -2,6 +2,8 @@ package com.doxigo.muchtoman
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -131,6 +133,50 @@ class LedgerTest {
         assertTrue(!clockRunsAhead(last - 365 * DAY_MS, last))
         // An empty archive has nothing to protect.
         assertTrue(!clockRunsAhead(last, null))
+    }
+
+    @Test
+    fun `a body with no money in it is not kept, however its code is worded`() {
+        // Wordings no list in Sms.kt knows. What they share is that they name no money at all — no
+        // balance, amount or direction, no unit, no figure grouped like money — and that is what
+        // refuses them, so the wording nobody has seen yet is refused too.
+        assertNull(bodyToStore("شناسه ورود موقت شما: 4821"))
+        assertNull(bodyToStore("Your OTP is 482139. Do not share it."))
+        assertNull(bodyToStore("به همراه بانک خوش آمدید"))
+        // Anything that does name money is kept exactly as it came.
+        val debit = "بانک سامان\nخرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال"
+        assertEquals(debit, bodyToStore(debit))
+    }
+
+    @Test
+    fun `a code beside a stated balance is kept for the money, with only its digits blanked`() {
+        val raw = "خرید مبلغ 1,250,000 ریال\nکد تایید 482139\nمانده 8,000,000 ریال"
+        val kept = bodyToStore(raw)!!
+        assertEquals("خرید مبلغ 1,250,000 ریال\nکد تایید ••••••\nمانده 8,000,000 ریال", kept)
+        // The ledger reads the same thing off what was kept as off what arrived.
+        assertEquals(parseBankSms("0999 992 0000", raw, 1L), parseBankSms("0999 992 0000", kept, 1L))
+        // A second sweep changes nothing more.
+        assertEquals(kept, bodyToStore(kept))
+        // Found through the ZWNJ and in Persian digits, and blanked in the body as it arrived.
+        assertEquals(
+            "مانده ۸٬۰۰۰٬۰۰۰ ریال\nکد‌تایید: ••••••",
+            bodyToStore("مانده ۸٬۰۰۰٬۰۰۰ ریال\nکد‌تایید: ۴۸۲۱۳۹"),
+        )
+    }
+
+    @Test
+    fun `ingest keeps every real message the parser reads, and the ledger reads the same off it`() {
+        // The one line every rule in bodyToStore holds, checked against real bank text: a message
+        // refused at ingest is gone for good, so nothing the parser reads may ever be.
+        var read = 0
+        for (s in CorpusFixtures.sources()) {
+            val parsed = parseBankSms(s.sender, s.body, s.at) ?: continue
+            val kept = bodyToStore(s.body)
+            assertNotNull(s.body, kept)
+            assertEquals(s.body, parsed, parseBankSms(s.sender, kept!!, s.at))
+            read++
+        }
+        assertTrue("the corpus did not load", read > 0)
     }
 
     @Test

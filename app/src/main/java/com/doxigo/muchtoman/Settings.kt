@@ -965,6 +965,18 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(bottom = Space.m),
         )
+        // Words only, no alarm colour: the file is sealed with her passphrase. What is left is a
+        // step the app cannot take for her, because the file is out of its reach.
+        if (backup.holdsCodes) {
+            Text(
+                "فایل پشتیبان قبلی پیامک‌هایی از بانک رو داره که برنامه دیگه نگه نمی‌داره، " +
+                    "مثل رمزهای یک‌بار مصرف. یه پشتیبان تازه بساز و فایل قبلی رو پاک کن.",
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = Space.m, start = Space.xs, end = Space.xs),
+            )
+        }
         DoorRow(
             title = "پشتیبان‌گیری از همه‌چیز",
             subtitle = "پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات، توی یک فایل رمزدار",
