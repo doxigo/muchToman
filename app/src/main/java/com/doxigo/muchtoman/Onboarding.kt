@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -97,13 +100,21 @@ fun OnboardingScreen(onSmsGranted: (Boolean) -> Unit, onDone: () -> Unit) {
             verticalArrangement = Arrangement.Center,
         ) {
             Spacer(Modifier.height(Space.xxl))
+            // The launcher icon itself, in its own two colours (which a flavour restates), so the
+            // first screen wears the mark she just tapped. 50dp of 72 is the launcher's ratio:
+            // the glyph spans 49.6 of the 72 a round mask leaves visible.
             Box(
                 Modifier
                     .size(72.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    .background(colorResource(R.color.ic_launcher_background), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("۱۰۰", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Icon(
+                    painterResource(R.drawable.ic_toman),
+                    contentDescription = null,
+                    tint = colorResource(R.color.ic_launcher_glyph),
+                    modifier = Modifier.size(50.dp),
+                )
             }
             Spacer(Modifier.height(Space.xl))
 
