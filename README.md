@@ -210,3 +210,5 @@ See [DEVELOPMENT.md](DEVELOPMENT.md).
 
 Category marks are [Lucide](https://lucide.dev)'s drawings (ISC), inked with the app's own pen.
 The licence ships inside the APK.
+
+The typeface is [Modam](https://fontiran.com/fonts/modam), from Fontiran.
