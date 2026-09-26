@@ -59,6 +59,148 @@
         "channel": "atm",
         "unitPrinted": "none"
       }
+    },
+    {
+      "id": "khavarmianeh-transfer-in-card-digits",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "انتقال از اینترنت بانک از کارت 9295",
+        "+6,000,000",
+        "020/**********",
+        "مانده **********",
+        "07/01",
+        "16:59"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. Money arriving from another card, yet «انتقال» read it as a spend and the card's last four digits as the amount: the ledger showed a 929 Toman withdrawal. The signed line is the amount and its sign is the direction, whatever the words say.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "in",
+        "amountRial": 6000000
+      }
+    },
+    {
+      "id": "khavarmianeh-transfer-out-card-digits",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "انتقال از اینترنت بانک به",
+        "کارت 9525",
+        "-5,699,000",
+        "0**/********5",
+        "مانده **********",
+        "07/01",
+        "19:27"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. The direction came out right and the amount was the destination card's last four digits, a 952 Toman spend.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "out",
+        "amountRial": 5699000
+      }
+    },
+    {
+      "id": "khavarmianeh-card-purchase-short-tail",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "خرید با کارت 0224",
+        "-10,000,000",
+        "0**/********5",
+        "مانده **********",
+        "07/01",
+        "16:13"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. The first figure after «خرید» is the card tail 0224, under the floor for money, so the amount was left unknown.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "out",
+        "amountRial": 10000000
+      }
+    },
+    {
+      "id": "khavarmianeh-paya-deposit-word-last",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "0**/********5",
+        "+7,000,000",
+        "07/01",
+        "13:06",
+        "مانده **********",
+        "واریز پایا"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. «واریز پایا» is the last line, with no figure after it or beside it, so the amount was unknown.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "in",
+        "amountRial": 7000000
+      }
+    },
+    {
+      "id": "khavarmianeh-fund-interest-no-word",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "0**/5",
+        "+2,436,576",
+        "07/01",
+        "11:29",
+        "مانده **********",
+        "1***/**/***/**** سود صندوق"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. «سود صندوق» names no direction at all; the sign is the only thing that does.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "in",
+        "amountRial": 2436576
+      }
+    },
+    {
+      "id": "khavarmianeh-cancelled-payment-returns",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "0**/5",
+        "+89,580,000",
+        "12:14",
+        "مانده **********",
+        "1***/**/***/**** پرداخت علی",
+        "الحساب ابطال"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. «پرداخت» is a spend word, but this is a cancelled payment coming back, and only the sign says so.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "in",
+        "amountRial": 89580000
+      }
+    },
+    {
+      "id": "khavarmianeh-sms-fee-year",
+      "sender": "+9820004861",
+      "at": 1,
+      "body": [
+        "بانک خاورمیانه",
+        "0**/********5",
+        "-660,000",
+        "07/01",
+        "15:09",
+        "مانده **********",
+        "کارمزد اطلاع رسانی پیامکی",
+        "شش ماهه دوم سال 04"
+      ],
+      "why": "Real message from issue #46; the stars are the reporter's redaction. The only figure after «کارمزد» is the year, 04, so the fee itself went unread.",
+      "expect": {
+        "bank": "KHAVARMIANEH",
+        "direction": "out",
+        "amountRial": 660000
+      }
     }
   ]
 }

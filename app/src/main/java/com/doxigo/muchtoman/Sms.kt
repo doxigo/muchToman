@@ -293,6 +293,21 @@ private const val MIN_MONEY_FIGURE = 1000.0
 private val NUMBER = Regex("[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]")
 
 /**
+ * The amount with the bank's own sign glued to it, at the start of a line: خاورمیانه, پاسارگاد
+ * and رسالت print "+6,000,000" or "-30,000,000" like that. The sign is the direction and
+ * outranks the words. خاورمیانه heads a transfer in «انتقال از اینترنت بانک از کارت 9295», and
+ * reading «انتقال» as a spend took the card's last four digits as the amount. It also names
+ * nothing at all on «سود صندوق», so the words left the amount unknown.
+ *
+ * Thousands separators are required, which keeps a "+98…" phone number on a line of its own
+ * from reading as a deposit. A figure without them falls through to the words, as before.
+ */
+private val SIGNED = Regex(
+    "^\\s*([+-])([0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+)(?![0-9۰-۹٠-٩])",
+    RegexOption.MULTILINE,
+)
+
+/**
  * A money figure out of a body, with the unit printed next to it.
  *
  * Every separator is dropped, the dot included. Bank SMS quote whole Rial and never a fraction
@@ -501,8 +516,10 @@ fun parseBankSms(
     val withdrawal = statesDirection(text, OUT_WORDS)
     val inWords = IN_WORDS.takeIf { deposit } ?: emptyList()
     val outWords = OUT_WORDS.takeIf { withdrawal } ?: emptyList()
+    val signed = SIGNED.find(text)
     val amount = (
-        figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
+        signed?.let { Figure(moneyOf(it.groupValues[2])!!, unitAfter(text, it.range.last + 1)) }
+            ?: figureAfter(text, AMOUNT_WORDS, stopAt = BALANCE_WORDS)
             ?: figureAfter(text, inWords, stopAt = BALANCE_WORDS)
             ?: figureAfter(text, outWords, stopAt = BALANCE_WORDS)
             // Nothing after the direction word, so the figure it refers to is the one in front of
@@ -514,6 +531,7 @@ fun parseBankSms(
     val moved = amount?.let { it.value / (it.divisor ?: fallback) }
     val delta = when {
         moved == null -> null
+        signed != null -> if (signed.groupValues[1] == "+") moved else -moved
         deposit && !withdrawal -> moved
         withdrawal && !deposit -> -moved
         else -> null // both or neither: the message does not say which way the money went

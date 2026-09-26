@@ -580,7 +580,7 @@ class MoneyTest {
         assertEquals(Bank.PASARGAD, bankOf(" b.pasargad "))   // case and spacing forgiven
         assertNull(bankOf("Pasargad"))                        // a different header entirely
         // Real message, shape and all: a dotted account number, a bare minus figure with no
-        // direction word, a date with underscores, and a مانده that names no unit.
+        // direction word but its own sign, a date with underscores, and a مانده that names no unit.
         val body = """
             276.800.504939.1
             -30,000,000
@@ -590,8 +590,9 @@ class MoneyTest {
         val m = parseBankSms("B.Pasargad", body, 1L)!!
         assertEquals(Bank.PASARGAD, m.bank)
         assertEquals(3_391_606.7, m.balance!!, 0.01)   // no unit anywhere reads as Rial
-        assertNull(m.delta)     // no direction word states no delta; the مانده is the truth
+        assertEquals(-3_000_000.0, m.delta!!, 0.01)   // the sign is the direction
         assertTrue(!m.inferred)
+        // The مانده still wins over the delta: the balance is what the bank stated.
         val accounts = applyBankSms(emptyList(), m)
         assertTrue(accounts.single().trusted)
         assertEquals(3_391_606.7, bankTotal(accounts, emptySet()), 0.01)
@@ -876,10 +877,9 @@ class MoneyTest {
     }
 
     @Test
-    fun `resalat states a balance and no direction at all`() {
-        // رسالت writes no واریز and no برداشت — just a signed amount on its own line. So there
-        // is no delta to be had, and the مانده is the whole message. That is the safe half:
-        // a stated balance replaces what we hold outright and never needs a sign.
+    fun `resalat's sign is the only direction it states`() {
+        // رسالت writes no واریز and no برداشت — just a signed amount on its own line. The sign
+        // is the direction; the مانده still replaces what we hold outright.
         val body = """
             10.7488478.1
             -1,000,000,000
@@ -889,8 +889,7 @@ class MoneyTest {
         val m = parseBankSms("ResalatBank", body, 1L)!!
         assertEquals(Bank.RESALAT, m.bank)
         assertEquals(280_781.3, m.balance!!, 0.01)   // 2,807,813 ریال — no unit printed
-        assertNull(m.delta)
-        // The message named no amount either, so nothing was read at low confidence.
+        assertEquals(-100_000_000.0, m.delta!!, 0.01)   // 1,000,000,000 ریال, out
         assertTrue(!m.inferred)
         val accounts = applyBankSms(emptyList(), m)
         assertEquals(280_781.3, bankTotal(accounts, emptySet()), 0.01)

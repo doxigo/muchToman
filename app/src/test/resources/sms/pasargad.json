@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "id": "pasargad-bare-figure-no-direction",
+      "id": "pasargad-bare-signed-figure",
       "sender": "B.Pasargad",
       "at": 1,
       "body": [
@@ -11,11 +11,11 @@
         "05/08_13:37",
         "مانده: 33,916,067"
       ],
-      "why": "Real message, shape and all: a dotted account number, a bare minus figure with no direction word, a date with an underscore in it, and a مانده that names no unit. No direction word means no delta is stated at all — the مانده is the truth, and it is trusted outright.",
+      "why": "Real message, shape and all: a dotted account number, the amount on its own line with only a minus sign to give it a direction, a date with an underscore in it, and a مانده that names no unit. The sign is the direction; the مانده is still the balance.",
       "expect": {
         "bank": "PASARGAD",
-        "direction": null,
-        "amountRial": null,
+        "direction": "out",
+        "amountRial": 30000000,
         "balanceRial": 33916067,
         "feeRial": null,
         "mask": "",

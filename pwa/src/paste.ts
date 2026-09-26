@@ -56,6 +56,14 @@ function normalise(s: string): string {
 
 const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]/g;
 
+/**
+ * The amount with the bank's own sign glued to it, at the start of a line — "+6,000,000" from
+ * خاورمیانه, "-30,000,000" from پاسارگاد and رسالت. The sign is the direction and outranks the
+ * words: «انتقال از اینترنت بانک از کارت 9295» is money arriving. Thousands separators are
+ * required so a "+98…" phone number on its own line is not a deposit.
+ */
+const SIGNED = /^\s*([+-])([0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+)(?![0-9۰-۹٠-٩])/m;
+
 const PRINTED_AT =
   /(?<![0-9۰-۹٠-٩.\/\-_])[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?(?![0-9۰-۹٠-٩])/;
 
@@ -242,7 +250,9 @@ export function parsePasted(body: string): Pasted {
   const withdrawal = statesDirection(text, OUT_WORDS);
   const inWords = deposit ? IN_WORDS : [];
   const outWords = withdrawal ? OUT_WORDS : [];
+  const signed = SIGNED.exec(text);
   const amount =
+    (signed && { value: Number(digitsOf(signed[2])), divisor: unitAfter(text, signed.index + signed[0].length) }) ??
     figureAfter(text, AMOUNT_WORDS, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, inWords, { stopAt: BALANCE_WORDS }) ??
     figureAfter(text, outWords, { stopAt: BALANCE_WORDS }) ??
@@ -254,7 +264,12 @@ export function parsePasted(body: string): Pasted {
 
   // Both or neither means the message did not say which way the money went, and guessing is how
   // a deposit becomes a withdrawal.
-  const direction = amount == null ? null : deposit && !withdrawal ? 'in' : withdrawal && !deposit ? 'out' : null;
+  const direction =
+    amount == null ? null
+    : signed ? (signed[1] === '+' ? 'in' : 'out')
+    : deposit && !withdrawal ? 'in'
+    : withdrawal && !deposit ? 'out'
+    : null;
 
   return {
     amountRial: amount ? rialOf(amount, fallback) : null,

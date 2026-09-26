@@ -60,7 +60,11 @@ import kotlinx.coroutines.sync.withLock
 // 9: a رمز پویا is no longer a spend. It names a مبلغ and «خرید» from the bank's own number, and
 // every one already stored sits in the deck as a purchase that either never happened or is
 // counted twice beside the real debit. Only reading them again drops those rows.
-const val PARSER_VERSION = 9
+// 10: a figure alone on its line with the bank's own sign — خاورمیانه's "+6,000,000" — is the
+// amount, and the sign is its direction. خاورمیانه transfers had been stored at the card's last
+// four digits as a spend, and its interest, fees and PAYA deposits with no amount at all. The
+// same holds for پاسارگاد and رسالت, which print the amount the same way.
+const val PARSER_VERSION = 10
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
