@@ -34,7 +34,7 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // variant senderKey can fold, so it is listed on its own.
     REFAH("بانک رفاه", listOf("100031", "100032", "Refah Bank", "RefahBank")),
     PASARGAD("بانک پاسارگاد", listOf("B.Pasargad")),
-    EGHTESAD_NOVIN("بانک اقتصاد نوین", listOf("ENBank")),
+    EGHTESAD_NOVIN("بانک اقتصاد نوین", listOf("ENBank", "+98500015", "+98200050")),
     KHAVARMIANEH(
         "بانک خاورمیانه",
         listOf("20004861", "+9820004861", "+989820004860"),
@@ -47,17 +47,25 @@ enum class Bank(val fa: String, val numbers: List<String>) {
         listOf("+98 9870 0719", "98700719", "+98 983 000 9419", "BankSaderat"),
     ),
     RESALAT("بانک رسالت", listOf("ResalatBank")),
-    PARSIAN("بانک پارسیان", listOf("PARSIANBANK")),
+    PARSIAN("بانک پارسیان", listOf("PARSIANBANK", "+98300054", "+98300055", "+9850001099")),
     // Saman, Mellat and Melli each also send from the four digits their own cards start with —
     // 6219, 6104, 6037. Four digits is shorter than any mobile line, so each matches itself.
     MELLAT("بانک ملت", listOf("Bank Mellat", "6104")),
     // Melli's other line is a ten-digit number out of the same 98300094… block Saderat's is in,
     // one digit apart from it — so it is listed whole, and senderKey folds the +98…/98…/0…
     // forms of it onto one key without either bank reaching the other's.
-    MELLI("بانک ملی ایران", listOf("6037", "09830009417")),
+    MELLI("بانک ملی ایران", listOf("6037", "09830009417", "+98700717")),
     // Dey sends from a lettered header. Listed with and without the space for the reason
     // Refah's is: "Day Bank" and "DayBank" are one sender to a human and two keys to senderKey.
-    DEY("بانک دی", listOf("Day Bank", "DayBank")),
+    DEY("بانک دی", listOf("Day Bank", "DayBank", "+982000266", "+982000766")),
+    TEJARAT("بانک تجارت", listOf("TejaratBank")),
+    SEPAH("بانک سپه", listOf("SEPAH BANK")),
+    KESHAVARZI("بانک کشاورزی", listOf("KESHAVARZI")),
+    POST_BANK("پست بانک", listOf("POSTBANK", "+9850004940")),
+    MASKAN("بانک مسکن", listOf("Bank Maskan")),
+    // Before ایران زمین on purpose: a Mehr Iran body contains «ایران» too, and [guessBank]
+    // takes the first keyword that matches, so «قرض‌الحسنه» has to be asked before «ایران».
+    MEHR_IRAN("بانک قرض‌الحسنه مهر ایران", listOf("B.QMEHRIRAN", "+989810008528")),
 
     // ── Known by name only ──────────────────────────────────────────────────────────────────
     //
@@ -71,22 +79,14 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // privacy note in [ingestBankSms] promises never holds them.
     //
     // Listed anyway, because a named bank is what [guessBank] needs: her own message says
-    // «بانک تجارت» in its body, the sheet offers to add the number it came from, and her tap is
+    // «بانک سینا» in its body, the sheet offers to add the number it came from, and her tap is
     // what teaches this phone the real one. Nothing is read from these until she does that.
-    TEJARAT("بانک تجارت", emptyList()),
-    SEPAH("بانک سپه", emptyList()),
     AYANDEH("بانک آینده", emptyList()),
-    KESHAVARZI("بانک کشاورزی", emptyList()),
     SHAHR("بانک شهر", emptyList()),
     SINA("بانک سینا", emptyList()),
-    POST_BANK("پست بانک", emptyList()),
-    MASKAN("بانک مسکن", emptyList()),
     GARDESHGARI("بانک گردشگری", emptyList()),
     SARMAYEH("بانک سرمایه", emptyList()),
     KARAFARIN("بانک کارآفرین", emptyList()),
-    // Before ایران زمین on purpose: a Mehr Iran body contains «ایران» too, and [guessBank]
-    // takes the first keyword that matches, so «قرض‌الحسنه» has to be asked before «ایران».
-    MEHR_IRAN("بانک قرض‌الحسنه مهر ایران", emptyList()),
     TOSEE_TAAVON("بانک توسعه تعاون", emptyList()),
     IRAN_ZAMIN("بانک ایران زمین", emptyList()),
     SANAT_MADAN("بانک صنعت و معدن", emptyList()),

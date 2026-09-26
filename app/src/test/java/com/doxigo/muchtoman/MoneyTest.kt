@@ -509,15 +509,15 @@ class MoneyTest {
         assertEquals(Bank.BLU, guessBank("بلو\nموجودی: 1,007,033,963 ریال"))
         // A bank listed by name with no numbers of its own is suggestible too, and that is the
         // whole point of listing it: her tap on the suggestion is the only route by which a
-        // تجارت sending number can ever become known to this phone. The cost is that a promotion
+        // سینا sending number can ever become known to this phone. The cost is that a promotion
         // naming a bank and quoting a big enough figure now earns one suggestion, dismissed once.
-        assertEquals(Bank.TEJARAT, guessBank("بانک تجارت\nخرید اینترنتی\nمانده 5,000,000"))
+        assertEquals(Bank.SINA, guessBank("بانک سینا\nخرید اینترنتی\nمانده 5,000,000"))
         // An operator's مانده is data, not money; a bank nowhere in the list suggests nothing;
         // a small figure is not a balance; chatter is chatter.
         assertTrue(!looksLikeBankSms("مانده اینترنت شما: 2,500,000 کیلوبایت"))
         assertNull(guessBank("جشنواره بانک ملل! مانده 5,000,000"))
-        // مسکن joined the name-only list, so what used to be the "nowhere in the list"
-        // example is now suggestible like تجارت above.
+        // مسکن joined the enum, so what used to be the "nowhere in the list" example is now
+        // suggestible like سینا above.
         assertEquals(Bank.MASKAN, guessBank("جشنواره بانک مسکن! مانده 5,000,000"))
         // آینده is in the enum but still on IGNORED_BANKS, which wins: being listed by name makes
         // a bank suggestible, and the ignore list is the separate, deliberate veto over that.
@@ -1182,7 +1182,9 @@ class MoneyTest {
         // for, not the unnameable one this drops.
         val stored = listOf(
             BankAccount("MELLAT", balance = -916_104_000_000.0, updatedAt = 9, anchored = true),
-            BankAccount("TEJARAT", balance = 53_012_000_000_000.0, updatedAt = 8, anchored = true),
+            // تجارت has since joined too, so سینا, still known by name only, stands in for the
+            // rows that stay dropped.
+            BankAccount("SINA", balance = 53_012_000_000_000.0, updatedAt = 8, anchored = true),
             BankAccount("OTHER", balance = 47_815_000.0, updatedAt = 7, anchored = true),
             BankAccount("SAMAN", balance = 46_072_530.9, updatedAt = 6, anchored = true),
             BankAccount("KHAVARMIANEH", balance = 300_000_000.0, updatedAt = 5, anchored = true),

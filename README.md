@@ -106,14 +106,20 @@ or header, never words in the body.
 | Saman Bank | `0999 992 0000`, `+989820000`, `9820000`, `6219` |
 | Refah Bank | `100031`, `100032`, `Refah Bank`, `RefahBank` |
 | Pasargad Bank | `B.Pasargad` |
-| Eghtesad Novin Bank | `ENBank` |
+| Eghtesad Novin Bank | `ENBank`, `+98500015`, `+98200050` |
 | Middle East Bank | `20004861`, `+9820004861`, `+989820004860` |
 | Bank Saderat | `+98 9870 0719`, `98700719`, `+98 983 000 9419`, `BankSaderat` |
 | Resalat Bank | `ResalatBank` |
-| Parsian Bank | `PARSIANBANK` |
+| Parsian Bank | `PARSIANBANK`, `+98300054`, `+98300055`, `+9850001099` |
 | Bank Mellat | `Bank Mellat`, `6104` |
-| Bank Melli Iran | `6037`, `09830009417` |
-| Day Bank | `Day Bank`, `DayBank` |
+| Bank Melli Iran | `6037`, `09830009417`, `+98700717` |
+| Day Bank | `Day Bank`, `DayBank`, `+982000266`, `+982000766` |
+| Tejarat Bank | `TejaratBank` |
+| Bank Sepah | `SEPAH BANK` |
+| Bank Keshavarzi | `KESHAVARZI` |
+| Post Bank of Iran | `POSTBANK`, `+9850004940` |
+| Bank Maskan | `Bank Maskan` |
+| Mehr Iran Bank | `B.QMEHRIRAN`, `+989810008528` |
 
 **Deliberately not read:** Ayandeh Bank. Its messages are shaped like balance updates but are not.
 
