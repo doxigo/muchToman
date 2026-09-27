@@ -576,6 +576,10 @@ interface SmsSourceDao {
     @Query("SELECT * FROM sms_source ORDER BY at ASC")
     suspend fun allOldestFirst(): List<SmsSource>
 
+    /** One sender's rows from [since] on, oldest first — the balance fold's read of notifications. */
+    @Query("SELECT * FROM sms_source WHERE sender = :sender AND at >= :since ORDER BY at ASC")
+    suspend fun fromSince(sender: String, since: Long): List<SmsSource>
+
     @Query("SELECT COUNT(*) FROM sms_source")
     suspend fun count(): Int
 
@@ -811,24 +815,7 @@ internal suspend fun ingestBankSms(
     // boundary row is read twice and the primary key absorbs it; strictly-after lost the second
     // of two same-millisecond rows straddling a chunk cut for ever.
     for (chunk in messages.chunked(500)) {
-        val rows = chunk.mapNotNull { m ->
-            if (bankOf(m.from, extra) == null) return@mapNotNull null
-            val body = bodyToStore(m.body) ?: return@mapNotNull null
-            SmsSource(
-                // The hash keeps the raw stamp and the raw body: identity must be whatever every
-                // future re-read of the same inbox row computes, and the clamp below moves with
-                // `now`. The one cost is that a clamped or blanked row's stored columns no longer
-                // recompute its own hash — accepted, because that stamp was never a real time to
-                // begin with, and that code is exactly what must not be kept.
-                srcHash = srcHash(m.from, m.body, m.at),
-                sender = m.from,
-                addrKey = srcAddrKeyV1(m.from),
-                body = body,
-                // The money is never wrong, only its day — see [clampAt].
-                at = clampAt(m.at, now),
-                ingestedAt = now,
-            )
-        }
+        val rows = chunk.mapNotNull { sourceRow(it, extra, now) }
         // Never past now, or past what a broken clock may claim: one inbox row stamped in 2030
         // by a restored backup or a skewed carrier clock would otherwise park the watermark
         // there and freeze ingest for ever.
@@ -845,6 +832,44 @@ internal suspend fun ingestBankSms(
         }
     }
     return stored
+}
+
+/**
+ * Store what a bank's own app said, beside its messages — see [BankNotificationListener].
+ *
+ * The same two-check gate as [ingestBankSms], through the same [sourceRow]: a notification from an
+ * app that is not a bank's never reaches the table, and a code in one is blanked like a code in a
+ * message. No watermark, because nothing can be re-read: a notification exists once, when it is
+ * posted. The primary key is what makes hearing the same one twice free.
+ */
+suspend fun ingestNotifications(
+    db: DurableDb,
+    notes: List<RawSms>,
+    extra: Map<String, Bank>,
+    now: Long = System.currentTimeMillis(),
+): Int {
+    val rows = notes.mapNotNull { sourceRow(it, extra, now) }
+    if (rows.isEmpty()) return 0
+    return db.smsSource().insertAll(rows).count { it != -1L }
+}
+
+private fun sourceRow(m: RawSms, extra: Map<String, Bank>, now: Long): SmsSource? {
+    if (bankOf(m.from, extra) == null) return null
+    val body = bodyToStore(m.body) ?: return null
+    return SmsSource(
+        // The hash keeps the raw stamp and the raw body: identity must be whatever every future
+        // re-read of the same inbox row computes, and the clamp below moves with `now`. The one
+        // cost is that a clamped or blanked row's stored columns no longer recompute its own hash
+        // — accepted, because that stamp was never a real time to begin with, and that code is
+        // exactly what must not be kept.
+        srcHash = srcHash(m.from, m.body, m.at),
+        sender = m.from,
+        addrKey = srcAddrKeyV1(m.from),
+        body = body,
+        // The money is never wrong, only its day — see [clampAt].
+        at = clampAt(m.at, now),
+        ingestedAt = now,
+    )
 }
 
 private val RANDOM by lazy { java.security.SecureRandom() }

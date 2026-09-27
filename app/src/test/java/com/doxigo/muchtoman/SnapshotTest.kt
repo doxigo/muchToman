@@ -140,4 +140,14 @@ class SnapshotTest {
         val list = listHoldings(holdings, false, listOf(anchored("SAMAN", 300.0)), emptySet())
         assertEquals(holdings, list)
     }
+
+    @Test
+    fun `with only blu's notifications read, only blu's balance counts`() {
+        // No SMS permission at all: Saman's figure is frozen at its last message, Blu's is live.
+        val accounts = listOf(anchored("SAMAN", 300.0), anchored("BLU", 50.0))
+        val list = listHoldings(listOf(Holding("usd", 1.0)), false, accounts, emptySet(), notified = true)
+        assertEquals(50.0, list.first { it.typeId == BANK_ID }.amount, 0.0)
+        // Neither read: no bank row, as before.
+        assertEquals(1, listHoldings(listOf(Holding("usd", 1.0)), false, accounts, emptySet()).size)
+    }
 }

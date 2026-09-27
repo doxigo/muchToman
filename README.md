@@ -116,7 +116,7 @@ or header, never words in the body.
 
 | Bank | Sends from |
 | --- | --- |
-| Blu Bank | `0999 998 7641`, `90000258`, `+9890000258`, `98300087641` |
+| Blu Bank | `0999 998 7641`, `90000258`, `+9890000258`, `98300087641`, `com.samanpr.blu` (app notifications) |
 | Saman Bank | `0999 992 0000`, `+989820000`, `9820000`, `6219` |
 | Refah Bank | `100031`, `100032`, `Refah Bank`, `RefahBank` |
 | Pasargad Bank | `B.Pasargad` |
@@ -138,10 +138,14 @@ or header, never words in the body.
 **Blu boxes** are your own money set aside inside Blu, so moving money into or out of a box is
 filed as a transfer between accounts, never as income or spending.
 
-**SMS only, not push notifications.** Some banks (Blu among them) let you take transaction
-alerts as notifications from their own app instead of as SMS. There is no message to read in
-that case, so the balance quietly stops at the last real SMS rather than reporting anything
-wrong. Turn SMS alerts back on in that bank's own settings.
+**Blu's app notifications, too.** Blu lets you take transaction alerts as notifications from its
+own app instead of as SMS. If you do, turn on «خواندن اعلان‌های بلو بانک» under Settings →
+پیامک‌های بانک and allow notification access on the Android page it opens (bank SMS reading can
+stay off). Android warns that the app can read every notification; it looks only at Blu's and
+never reads the rest. A notification you dismissed before allowing it can't be read. On Android 13
+and later, an APK installed from a file may show that switch greyed out as a restricted setting:
+open Android Settings → Apps → muchToman, use the ⋮ menu to allow restricted settings, and try
+again. Other banks' app notifications are not read.
 
 <img src="docs/screenshots/banks.png" width="280">
 

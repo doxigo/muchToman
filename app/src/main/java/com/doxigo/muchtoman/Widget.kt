@@ -301,7 +301,10 @@ private fun readModel(context: Context, now: Long): WidgetModel {
     val rates = store.cachedRates
     val history = store.history
     val total = computeTotals(
-        listHoldings(store.holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks),
+        listHoldings(
+            store.holdings, store.smsEnabled, store.bankAccounts, store.disabledBanks,
+            canReadNotifications(context),
+        ),
         effectiveRates(rates, store.overrides, store.cachedStocks),
     ).toman
 

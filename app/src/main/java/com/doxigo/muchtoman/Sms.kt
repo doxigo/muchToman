@@ -26,7 +26,11 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // A bank sends from more than one number: a mobile line and a shortcode, and Refah uses two
     // shortcodes. A shortcode is shorter than ten digits and so simply matches itself, and no
     // ten-digit mobile ending in the same run can collide with it.
-    BLU("بلو بانک", listOf("0999 998 7641", "90000258", "+9890000258", "98300087641")),
+    //
+    // Blu's app is a sender too: she can take its alerts as notifications instead of SMS, and
+    // [BankNotificationListener] stores each one under the package name. A package is a lettered
+    // header to senderKey, so it matches exactly like "B.Pasargad" does.
+    BLU("بلو بانک", listOf("0999 998 7641", "90000258", "+9890000258", "98300087641", BLU_APP)),
     SAMAN("بانک سامان", listOf("0999 992 0000", "+989820000", "9820000", "6219")),
     // Refah and Pasargad also send from lettered headers, not numbers at all. senderKey
     // keeps those as their own name, so listing one works exactly like listing a shortcode.

@@ -100,6 +100,33 @@
         "unitPrinted": "rial",
         "inferred": false
       }
+    },
+    {
+      "id": "blu-app-notification-parid",
+      "sender": "com.samanpr.blu",
+      "at": 5,
+      "body": [
+        "بلو",
+        "برداشت پول",
+        "سیدسهیل عزیز، 1,000,000 ریال از حساب شما پرید.",
+        "موجودی: 325,804,109 ریال",
+        "۱۵:۲۴",
+        "۱۴۰۵.۰۷.۰۵"
+      ],
+      "why": "Real notification from Blu's own app, read off a Pixel with the bank's alerts switched from SMS to push. Its title is «بلو» and its text is every other line of the SMS, word for word, so title and text joined by a newline are the message; the sender is the app's package, which is how the notification listener stores it.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "out",
+        "amountRial": 1000000,
+        "balanceRial": 325804109,
+        "feeRial": null,
+        "mask": "",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "۱۴۰۵.۰۷.۰۵ ۱۵:۲۴",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
     }
   ]
 }

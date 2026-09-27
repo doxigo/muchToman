@@ -443,6 +443,17 @@ broadcast). The app's own `publishLedger` covers the foreground case, and it is 
 any path may publish a ledger, precisely so that `announceBudgets` cannot be forgotten by one of
 the eight callers that change one.
 
+**Blu's app notifications are the one exception to "the inbox is the single reader".** A
+notification exists once, when it is posted, so `BankNotificationListener` stores it itself
+(`ingestNotifications`, same gate as the inbox) under the sender `com.samanpr.blu`, derives, and
+then wakes the same worker `SmsReceiver` does. The balance fold (`runScan`) reads those rows back
+next to the inbox. Title and text joined by a newline are Blu's SMS body exactly (corpus case
+`blu-app-notification-parid`). It answers to Android's notification-access switch alone, not to
+the SMS one: with SMS off, `countedBankAccounts` keeps only Blu's balance in the total, and the fold
+has its own `notifyScannedTo` so neither source moves the other's watermark. To test it, grant
+access (`adb shell cmd notification allow_listener com.doxigo.muchtoman/.BankNotificationListener`)
+with a Blu notification still in the shade; the listener takes it on connect.
+
 `announceBudgets` is shared by the worker and the app and is idempotent. Notifications use the goal
 id as the tag with one fixed id, so one budget is one live note that gets replaced rather than
 stacked, and a genuine race between the worker and the app posts one note instead of two.

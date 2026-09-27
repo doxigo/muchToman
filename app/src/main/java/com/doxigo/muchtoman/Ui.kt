@@ -834,7 +834,7 @@ private fun AppScreens(
               bottomInset = pad.calculateBottomPadding(),
               // Only where there is something to be quiet about, exactly as on آینده: a ledger that
               // fills itself is the only one that can have a transaction land while she is away.
-              notifyBlocked = state.smsEnabled && !canNote,
+              notifyBlocked = state.readsBanks && !canNote,
               onReview = { deck = true },
               onAskNotify = askNotify,
               onOpen = { transactionRef = it.txn.ref },
@@ -936,7 +936,7 @@ private fun AppScreens(
               current = state.totals.toman,
               composition = composition,
               cash = cash,
-              smsEnabled = state.smsEnabled,
+              smsEnabled = state.readsBanks,
               mode = reportMode,
               onMode = { reportMode = it },
               onWindow = { day, span -> reportMonth = day; reportSpan = span },
@@ -1121,7 +1121,7 @@ private fun AppScreens(
                 } else {
                     item(key = "flow") {
                         Box(Modifier.padding(edge).padding(top = Space.xl)) {
-                            QuietStart(state.smsEnabled)
+                            QuietStart(state.readsBanks)
                         }
                     }
                 }

@@ -129,6 +129,21 @@
             </intent-filter>
         </receiver>
 
+        <!--
+            Blu's alerts, for someone who takes them as its app's notifications instead of SMS —
+            see BankNotifications.kt. Granted by her on Android's own page, never by a dialog;
+            BIND_NOTIFICATION_LISTENER_SERVICE so only the system can bind it.
+        -->
+        <service
+            android:name=".BankNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".TotalWidget"
             android:exported="false">

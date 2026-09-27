@@ -99,6 +99,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             rateHistory = store.rateHistory,
             onboarded = store.onboarded,
             smsEnabled = store.smsEnabled,
+            notified = canReadNotifications(app),
             bankAccounts = store.bankAccounts,
             disabledBanks = store.disabledBanks,
             strangeSenders = store.strangeSenders,
@@ -667,15 +668,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      */
     fun scanSms() {
         val app = getApplication<Application>()
-        if (!store.smsEnabled) return
+        // Notification access is only ever changed on Android's own page, so it is asked again on
+        // every return. Blu's balance joins or leaves the total with it: a step, as the SMS switch
+        // is, never a spend.
+        val notified = canReadNotifications(app)
+        if (notified != _state.value.notified) {
+            val before = _state.value.totals
+            _state.update { it.copy(notified = notified) }
+            recordSnapshot(countedBefore = before)
+        }
         // She can take the permission away in Android's own settings, and then these balances
         // are frozen at whatever they last read while her real accounts move on. Switching the
         // feature off is what keeps them out of the total — they stay listed, and turning it
         // back on re-reads everything since.
-        if (!canReadSms(app)) {
-            setSmsEnabled(false)
-            return
-        }
+        if (store.smsEnabled && !canReadSms(app)) setSmsEnabled(false)
+        if (!store.smsEnabled && !notified) return
         // One at a time. Two used to start on every cold open — init{} launches one and the
         // lifecycle observer replays ON_START into refreshIfStale() a moment later — and both
         // walked the whole inbox for one of them to be thrown away at the end.
@@ -1813,6 +1820,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 bankAccounts = store.bankAccounts,
                 disabledBanks = store.disabledBanks,
                 familyExcluded = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+                notified = snapshot.notified,
             )
         } else null
         try {
@@ -2378,7 +2386,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val extra = extraLookup(store.extraBankNumbers)
 
         val rebuilding = store.smsFoldNeedsRefresh
-        val messages = readSmsInbox(app, if (rebuilding) 0L else store.smsScannedTo)
+        val sms = store.smsEnabled && canReadSms(app)
+        val inbox = if (sms) readSmsInbox(app, if (rebuilding) 0L else store.smsScannedTo) else emptyList()
+        // Blu's notifications are messages too: [BankNotificationListener] keeps them in the
+        // ledger's table, and this is the one place they are read back as an inbox. Their own
+        // watermark, so SMS switched off while they go on being read does not come back to find
+        // its watermark moved past every message that arrived in between.
+        // ponytail: a notification the listener only takes on reconnect, stamped before one already
+        // folded, is behind the watermark and skipped. Every Blu alert states its موجودی, so the
+        // next one sets the balance right.
+        val notes = runCatching {
+            DurableDb.get(app).smsSource()
+                .fromSince(BLU_APP, if (rebuilding) 0L else store.notifyScannedTo)
+                .map { RawSms(it.sender, it.body, it.at) }
+        }.getOrDefault(emptyList())
+        val messages = (inbox + notes).sortedBy { it.at }
         if (messages.isEmpty()) return
 
         // Re-keyed through senderKey on the way in: the key function has changed once
@@ -2428,7 +2450,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             fresh += key
         }
 
-        if (!store.smsEnabled || !canReadSms(app)) return
+        if (!(store.smsEnabled && canReadSms(app)) && !canReadNotifications(app)) return
 
         if (rebuilding) accounts = rebuildBankAccounts(accounts, reparsed)
         store.bankAccounts = accounts
@@ -2448,8 +2470,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // not worth re-reading on every launch. Never past now, though: one inbox row
         // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
         // put the watermark there and silently freeze every balance for ever after.
-        store.smsScannedTo = minOf(messages.maxOf { it.at }, System.currentTimeMillis())
-        store.smsFoldNeedsRefresh = false
+        val now = System.currentTimeMillis()
+        if (inbox.isNotEmpty()) store.smsScannedTo = minOf(inbox.maxOf { it.at }, now)
+        if (notes.isNotEmpty()) store.notifyScannedTo = minOf(notes.maxOf { it.at }, now)
+        // Only once the inbox itself has been read again: a rebuild of Blu's notifications alone
+        // leaves every other bank still to be rebuilt the day SMS is switched back on.
+        if (sms) store.smsFoldNeedsRefresh = false
         _state.update { it.copy(bankAccounts = accounts) }
         recordSnapshot()
     }
@@ -2466,6 +2492,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         store.bankAccounts = emptyList()
         store.seenSms = emptySet()
         store.smsScannedTo = 0L
+        store.notifyScannedTo = 0L
         store.strangeSenders = emptyList()
         _state.update { it.copy(bankAccounts = emptyList(), strangeSenders = emptyList()) }
     }
@@ -2488,7 +2515,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
                 .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
             runLedger()
-            restartScan { store.smsScannedTo = 0L }
+            restartScan {
+                store.smsScannedTo = 0L
+                store.notifyScannedTo = 0L
+            }
         }
     }
 
@@ -2519,7 +2549,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             prepare()
             // Straight into the scan rather than back through scanSms(), which would only
             // find this very coroutine holding the slot and decline.
-            if (store.smsEnabled && canReadSms(app)) runScan(app)
+            if (store.smsEnabled && canReadSms(app) || canReadNotifications(app)) runScan(app)
         }
     }
 
@@ -2721,6 +2751,8 @@ data class UiState(
     /** False only on a phone that has never been past the first-run sheet. See [Store.onboarded]. */
     val onboarded: Boolean = true,
     val smsEnabled: Boolean = false,
+    /** Whether Blu's app notifications are read — Android's switch, asked again on every foreground. */
+    val notified: Boolean = false,
     val bankAccounts: List<BankAccount> = emptyList(),
     val disabledBanks: Set<String> = emptySet(),
     val strangeSenders: List<StrangeSender> = emptyList(),
@@ -2802,8 +2834,11 @@ data class UiState(
 
     /** See [com.doxigo.muchtoman.listHoldings] — shared with the widget and the daily worker. */
     val listHoldings: List<Holding> by lazy {
-        listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks)
+        listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks, notified)
     }
+
+    /** Anything reads her banks — their SMS, or Blu's notifications. */
+    val readsBanks: Boolean get() = smsEnabled || notified
 
     /** Reads both of the above, so as a get() it paid for both of them again every time. */
     val totals: Totals by lazy { computeTotals(listHoldings, effective) }

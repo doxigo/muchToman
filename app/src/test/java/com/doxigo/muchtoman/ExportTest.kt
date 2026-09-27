@@ -257,6 +257,9 @@ class ExportTest {
                 // ledgerStartsOn rides because it is hers: a restored phone that forgot where
                 // she started clean would bring back every month she had put behind her.
                 "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans",
+                // Rides with seenSms and smsScannedTo for the same reason they ride together: the
+                // restored balances were folded up to exactly these marks.
+                "notifyScannedTo",
             ),
             EXPORTED_PREFS,
         )

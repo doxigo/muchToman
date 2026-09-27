@@ -197,6 +197,18 @@ fun recordDay(history: Map<Long, Double>, epochDay: Long, total: Double): Map<Lo
 }
 
 /**
+ * The balances something still reads: every bank's while bank SMS is on, only Blu's while only its
+ * app's notifications are, none while neither is. A balance nothing reads any more is frozen at its
+ * last message, and a frozen figure must not sit in her total as if it were today's.
+ */
+fun countedBankAccounts(accounts: List<BankAccount>, smsEnabled: Boolean, notified: Boolean): List<BankAccount> =
+    when {
+        smsEnabled -> accounts
+        notified -> accounts.filter { it.bank == Bank.BLU.name }
+        else -> emptyList()
+    }
+
+/**
  * What the list actually shows: her own holdings, plus — once there is anything to show —
  * one row standing for every bank account, dropped in right after her cash so the تومان
  * section reads cash first, then bank. It is not persisted with the holdings: its amount
@@ -210,9 +222,12 @@ fun listHoldings(
     smsEnabled: Boolean,
     bankAccounts: List<BankAccount>,
     disabledBanks: Set<String>,
+    /** Whether Blu's app notifications are read — see [countedBankAccounts]. */
+    notified: Boolean = false,
 ): List<Holding> {
-    if (!smsEnabled || bankAccounts.isEmpty()) return holdings
-    val bank = Holding(BANK_ID, bankTotal(bankAccounts, disabledBanks))
+    val counted = countedBankAccounts(bankAccounts, smsEnabled, notified)
+    if (counted.isEmpty()) return holdings
+    val bank = Holding(BANK_ID, bankTotal(counted, disabledBanks))
     val cash = holdings.indexOfFirst { it.typeId == TOMAN_ID }
     return if (cash < 0) listOf(bank) + holdings
     else holdings.take(cash + 1) + bank + holdings.drop(cash + 1)
@@ -234,13 +249,13 @@ fun assetShareItems(
     bankAccounts: List<BankAccount>,
     disabledBanks: Set<String>,
     familyExcluded: Set<String>,
+    notified: Boolean = false,
 ): List<AssetShareItem> {
     val own = holdings.filterNot { it.excluded }.mapNotNull { h ->
         val rate = rates[h.typeId] ?: return@mapNotNull null
         AssetShareItem(h.nameOr(resolveType(h.typeId, coins, stocks).fa), h.amount * rate)
     }
-    if (!smsEnabled) return safeAssetShareItems(own)
-    val banks = bankAccounts
+    val banks = countedBankAccounts(bankAccounts, smsEnabled, notified)
         .filter { it.anchored && it.bank !in disabledBanks && it.bank !in familyExcluded }
         .map { AssetShareItem(bankNameOf(it.bank), it.balance) }
     return safeAssetShareItems(own + banks)
@@ -988,6 +1003,11 @@ class Store(context: Context) {
         get() = prefs.getLong("smsScannedTo", 0L)
         set(v) { prefs.edit().putLong("smsScannedTo", v).apply() }
 
+    /** [smsScannedTo] for Blu's app notifications — its own, so neither source skips the other's. */
+    var notifyScannedTo: Long
+        get() = prefs.getLong("notifyScannedTo", 0L)
+        set(v) { prefs.edit().putLong("notifyScannedTo", v).apply() }
+
     /**
      * Category ids she has told دخل و خرج to leave out. A way of reading the report and not a
      * fact about the ledger, which is why it lives here beside [budgetMarks] rather than in
@@ -1053,7 +1073,7 @@ val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans",
+    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans", "notifyScannedTo",
 )
 
 /**

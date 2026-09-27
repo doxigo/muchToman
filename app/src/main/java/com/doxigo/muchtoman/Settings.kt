@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.Manifest
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -164,7 +165,9 @@ fun SettingsScreen(
             name = name,
             themeMode = themeMode,
             lockEnabled = lockEnabled,
-            smsOn = smsEnabled && granted,
+            // Asked afresh whenever the index comes back: Android's page is the only place that
+            // changes notification access, and returning from it through پیامک‌های بانک lands here.
+            smsOn = smsEnabled && granted || canReadNotifications(context),
             family = family,
             scroll = indexScroll,
             onCompanion = onCompanion,
@@ -723,11 +726,15 @@ private fun SmsPage(
     // and a warning still standing after she has just fixed it reads as the fix having failed.
     // The same arrangement, for the same reason, as `canNote` on the home screen.
     var unrestricted by remember { mutableStateOf(backgroundUnrestricted(context)) }
+    // Re-read on return for the same reason: notification access is only ever granted on
+    // Android's own page, which the Blu card below leaves for.
+    var listening by remember { mutableStateOf(canReadNotifications(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) {
                 unrestricted = backgroundUnrestricted(context)
+                listening = canReadNotifications(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -800,37 +807,65 @@ private fun SmsPage(
             PillButton("اجازه بده بیدار بمونه", { askBackgroundExemption(context) }, fontSize = 15.sp)
         }
 
-        // The one way this can be set up wrong and still look like it is working. A bank
-        // whose alerts arrive as its own app's notifications sends no message at all, so
-        // there is nothing to read and nothing to report — the balance simply stops where
-        // the last real پیامک left it, which reads as the app being wrong rather than as a
-        // setting being off. First clause at full strength: it is the sentence that has to
-        // survive being skimmed.
+        // Blu can send its alerts as its app's notifications instead of SMS, and then there is no
+        // message to read: the balance stops where the last real پیامک left it, which reads as the
+        // app being wrong. This card is the way out, and the text under it is the how, because the
+        // switch it flips is Android's and every step of it happens outside the app. Not behind the
+        // SMS switch: someone whose only bank is Blu has no reason to grant her messages for it.
+        SectionLabel("اعلان بانک")
+        SettingCard(
+            title = "خواندن اعلان‌های بلو بانک",
+            subtitle = "برای وقتی که بلو تراکنش‌ها رو به جای پیامک با اعلان می‌فرسته.",
+            // Either way it is Android's page: access is granted and taken back only there.
+            checked = listening,
+            onChange = { openNotificationAccess(context) },
+            badge = { BankLogo(Bank.BLU.name, size = 44.dp) },
+        )
         Text(
             buildAnnotatedString {
-                withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
-                    append("فقط پیامک‌های بانکی خونده می‌شن، نه اعلان‌های اپ بانک. ")
+                if (listening) {
+                    append(
+                        "اعلان‌های بلو از همین حالا، همون لحظه که برسن، خونده می‌شن. اعلانی " +
+                            "که قبلاً پاکش کردی دیگه خوندنی نیست.",
+                    )
+                    return@buildAnnotatedString
                 }
                 append(
-                    "بعضی بانک‌ها مثل بلو بانک به جای پیامک اعلان می‌فرستن. این‌جوری " +
-                        "چیزی برای خوندن نیست و موجودی به‌روز نمی‌شه. از تنظیمات اپ بانک، " +
-                        "پیامک تراکنش رو روشن کن.",
+                    "روشنش که کنی، صفحهٔ «دسترسی به اعلان» اندروید باز می‌شه؛ اون‌جا چقدر " +
+                        "تومن رو روشن کن. اندروید می‌گه این برنامه همهٔ اعلان‌ها رو می‌بینه، " +
+                        "ولی فقط اعلان‌های اپ بلو خونده می‌شن و بقیه دست‌نخورده رد می‌شن. " +
+                        "برای این لازم نیست پیامک‌ها رو روشن کنی.",
                 )
+                // Android 13 greys the switch out for an app installed from a file rather than
+                // a store, says «تنظیم محدودشده», and gives no hint of the way round, which is
+                // in the app's own info page.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                        append("\nاگه کلیدش خاکستری بود: ")
+                    }
+                    append(
+                        "تنظیمات اندروید ← برنامه‌ها ← چقدر تومن، از منوی سه‌نقطهٔ بالا " +
+                            "تنظیمات محدودشده رو آزاد کن و دوباره امتحان کن.",
+                    )
+                }
             },
             fontSize = 13.sp,
             lineHeight = 20.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = Space.xl, start = Space.xs, end = Space.xs),
+            modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
         )
-
-        if (smsEnabled && granted) {
+        if (smsEnabled && granted || listening) {
             // One switch per bank actually seen, not per bank we know how to read: a list
-            // of fifteen banks she has no account at is a list nobody reads.
-            val banks = bankAccounts.map { it.bank }.distinct()
+            // of fifteen banks she has no account at is a list nobody reads. And only the banks
+            // something still reads — with SMS off, a bank last heard from by پیامک is frozen and
+            // out of the total, so a switch for it would be a switch for nothing.
+            val shown = countedBankAccounts(bankAccounts, smsEnabled && granted, listening)
+            val banks = shown.map { it.bank }.distinct()
             SectionLabel("بانک‌ها")
             if (banks.isEmpty()) {
                 Text(
-                    "هنوز پیامک بانکی نرسیده. اولین پیامک که بیاد، بانک اینجا نشون داده می‌شه.",
+                    "هنوز تراکنش بانکی نرسیده. اولین پیامک یا اعلان بانک که بیاد، بانک اینجا " +
+                        "نشون داده می‌شه.",
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -840,7 +875,7 @@ private fun SmsPage(
                 // One band, as on the asset list: these are N of the same thing, and N
                 // separate cards made each bank look like its own section.
                 banks.forEachIndexed { i, bank ->
-                    val accounts = bankAccounts.filter { it.bank == bank }
+                    val accounts = shown.filter { it.bank == bank }
                     SettingCard(
                         title = accounts.first().bankFa,
                         subtitle = "${faCompact(accounts.sumOf { it.balance })} تومان" +
@@ -855,7 +890,9 @@ private fun SmsPage(
                     )
                 }
             }
+        }
 
+        if (smsEnabled && granted) {
             // One tap, no confirm: it re-reads, it does not destroy — the subtitle says
             // exactly what it keeps, and the transient «در حال بازخوانی…» upstairs is the
             // receipt that the tap did something. See [AppVm.rescanInbox].

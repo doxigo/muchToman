@@ -203,6 +203,28 @@ class PersistenceTest {
     }
 
     @Test
+    fun `a blu notification is stored once as a blu message and reads as the sms it stands for`() = runBlocking {
+        DurableDb.builder(context, "ingest-notification.db").build().use { db ->
+            // Off the Pixel: Blu's title, and its text as the app posts it.
+            val text = "برداشت پول\nسیدسهیل عزیز، 1,000,000 ریال از حساب شما پرید.\n" +
+                "موجودی: 325,804,109 ریال\n۱۵:۲۴\n۱۴۰۵.۰۷.۰۵"
+            val note = bankNotification(BLU_APP, "بلو", text, now + 1)!!
+            assertEquals(1, ingestNotifications(db, listOf(note), emptyMap(), now))
+            // Heard again on a reconnect, from the shade: the primary key drops it.
+            assertEquals(0, ingestNotifications(db, listOf(note), emptyMap(), now + 2))
+            // The gate is the one the inbox has: an app that is not a bank's stores nothing.
+            val stranger = RawSms("com.example.chat", "۱,۰۰۰,۰۰۰ ریال از حساب شما پرید.", now + 3)
+            assertEquals(0, ingestNotifications(db, listOf(stranger), emptyMap(), now))
+
+            val txn = parseToRows(db.smsSource().fromSince(BLU_APP, now).single(), emptyMap(), now).single()
+            assertEquals("BLU", txn.bank)
+            assertEquals(-1_000_000L, txn.signedRial)
+            assertEquals(325_804_109L, txn.balanceRial)
+            assertNull(bankNotification(BLU_APP, "بلو", " ", now))
+        }
+    }
+
+    @Test
     fun `a backup file never holds a one-time code, even one no launch has swept yet`() = runBlocking {
         DurableDb.builder(context, "backup-otp.db").build().use { db ->
             // A file, once saved, is out of this app's reach for good: it keeps no grant to where

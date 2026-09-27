@@ -74,6 +74,7 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
                 listHoldings(
                     refreshedSnapshotHoldings(store.holdings, refreshedWallets),
                     store.smsEnabled, store.bankAccounts, store.disabledBanks,
+                    canReadNotifications(applicationContext),
                 ),
                 effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
                 store.cachedRates.updatedAt,
@@ -171,7 +172,8 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         val budgets = goals.any { it.kind == GoalKind.CAP }
         // An installment only has something to say while its reminder is on.
         val reminders = store.installmentReminder >= 0 && goals.any { it.kind == GoalKind.INSTALLMENT }
-        val announce = (budgets || reminders || store.smsEnabled) && canNotify(app)
+        val announce = (budgets || reminders || store.smsEnabled || canReadNotifications(app)) &&
+            canNotify(app)
         val session = loadSession(durable)
         if (!announce && session == null) return Result.success()
 
@@ -314,22 +316,27 @@ class SmsReceiver : BroadcastReceiver() {
                         .any { bankOf(it?.originatingAddress.orEmpty(), extra) != null }
                 }.getOrDefault(false)
                 if (!fromBank) return@launch
-                WorkManager.getInstance(context).enqueueUniqueWork(
-                    LEDGER_WATCH_NOW_WORK,
-                    // APPEND_OR_REPLACE, never REPLACE: a purchase and its balance line arrive as two
-                    // messages seconds apart, and REPLACE would cancel a run already past its marks but
-                    // not yet past its notify — an alert written down as said and never posted. Appending
-                    // runs again after, and a run with nothing new says nothing.
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
-                    OneTimeWorkRequestBuilder<LedgerWatchWorker>()
-                        .setInitialDelay(LEDGER_WATCH_NOW_DELAY_SECONDS, TimeUnit.SECONDS)
-                        .build(),
-                )
+                watchLedgerSoon(context)
             } finally {
                 pending.finish()
             }
         }
     }
+}
+
+/** Run [LedgerWatchWorker] in a few seconds — for [SmsReceiver] and [BankNotificationListener]. */
+fun watchLedgerSoon(context: Context) {
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        LEDGER_WATCH_NOW_WORK,
+        // APPEND_OR_REPLACE, never REPLACE: a purchase and its balance line arrive as two
+        // messages seconds apart, and REPLACE would cancel a run already past its marks but
+        // not yet past its notify — an alert written down as said and never posted. Appending
+        // runs again after, and a run with nothing new says nothing.
+        ExistingWorkPolicy.APPEND_OR_REPLACE,
+        OneTimeWorkRequestBuilder<LedgerWatchWorker>()
+            .setInitialDelay(LEDGER_WATCH_NOW_DELAY_SECONDS, TimeUnit.SECONDS)
+            .build(),
+    )
 }
 
 /**
