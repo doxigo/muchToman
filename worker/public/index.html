@@ -7,10 +7,10 @@
     <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <!-- No scripts anywhere on this page, and the policy says so. Styles are the one inline
-         <style> below; images and the font come from this origin and nowhere else. -->
+         <style> below; images, the video and the font come from this origin and nowhere else. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
     />
     <title>چقدر تومن · همه‌ی پولت، یک عدد</title>
     <meta
@@ -261,6 +261,18 @@
       .hero .contrast .figure { white-space: nowrap; }
       .ctas { display: flex; flex-wrap: wrap; gap: var(--m); margin-top: var(--xxl); }
       .hero .fineprint { font-size: .85rem; color: var(--room-muted); }
+      /* The video ad's loop cut (tools/ad: make.sh hero), a card in the room. It closes on the
+         room's padding, like a room with no phone in it. */
+      .reel {
+        align-self: center;
+        justify-self: center;
+        width: min(432px, 100%);
+        height: auto;
+        margin-bottom: clamp(2rem, 5.5vw, 4rem);
+        border-radius: var(--r-sheet);
+        background: var(--bright);   /* the ground its first frame opens on */
+        box-shadow: var(--lift);
+      }
 
       /* ————— the phone: the store images' frame —————
        * Everything is measured off one width, --pw. --u is one pixel of the 1080-wide capture on
@@ -279,9 +291,8 @@
         height: calc(var(--pw) * 1.5);   /* how much phone shows */
         margin: 0;
       }
-      .hero .shot { --pw: min(360px, 80vw); }
-      /* On the paper there is no floor to stand on, so the phone fades out instead — flat, no
-         shadow for the mask to cut. In the hero it rises out of the room, which clips it. */
+      /* There is no floor to stand on, so the phone fades out instead — flat, no shadow for
+         the mask to cut. */
       .phone {
         position: absolute;
         inset: 0;
@@ -291,13 +302,6 @@
         border-radius: calc(var(--pw) * .145);
         -webkit-mask-image: linear-gradient(#000 55%, transparent 96%);
         mask-image: linear-gradient(#000 55%, transparent 96%);
-      }
-      .room .phone {
-        inset: 0 0 auto 0;
-        overflow: visible;
-        -webkit-mask-image: none;
-        mask-image: none;
-        box-shadow: var(--lift);
       }
       .band .shot { align-self: center; }
       .duo .shot { margin: 0 auto; height: calc(var(--pw) * 1.3); }   /* the installments capture runs short */
@@ -375,7 +379,7 @@
          nothing overshoots — `Motion.enter`. */
       @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
       .hero .pitch { animation: rise .55s var(--enter) backwards; }
-      .hero .shot { animation: rise .55s var(--enter) .1s backwards; }
+      .hero .reel { animation: rise .55s var(--enter) .1s backwards; }
 
       /* ————— the future tab: two phones side by side, each with its card lifted out ————— */
       .duo {
@@ -582,25 +586,15 @@
           </div>
           <p class="fineprint">اندروید ۷ به بالا · آیفون با نسخهٔ <bdi>PWA</bdi> · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
         </div>
-        <figure class="shot">
-          <div class="phone">
-            <div class="screen">
-              <picture>
-                <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
-                <img
-                  src="/img/home.webp" width="720" height="1513" fetchpriority="high"
-                  alt="صفحهٔ خانه: جمع دارایی‌ها روی کارت سبز، کوتاه و به حروف و با همهٔ رقم‌ها، کنار معادل دلاریش؛ زیرش درآمد و خرج این ماه"
-                />
-              </picture>
-            </div>
-          </div>
-          <div class="crop" style="--x: 53; --y: 174; --w: 974; --h: 867; --r: 89" aria-hidden="true">
-            <picture>
-              <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
-              <img src="/img/home.webp" width="720" height="1513" alt="" />
-            </picture>
-          </div>
-        </figure>
+        <!-- No source matches a reduced-motion visitor, so the poster is all they get: the page
+             has no script to pause a video with. -->
+        <video
+          class="reel" autoplay muted loop playsinline poster="/hero.webp" width="864" height="1080"
+          aria-label="ویدیوی کوتاه: بانک و طلا و دلار و کریپتو یک عدد می‌شن، پیامک بانک خودش سطر دفتر می‌شه، بعد بودجه و قسط و گزارش و دفتر خانوادگی، و نصب نسخهٔ PWA روی آیفون"
+        >
+          <source src="/hero-av1.mp4" type='video/mp4; codecs="av01.0.05M.08"' media="(prefers-reduced-motion: no-preference)" />
+          <source src="/hero.mp4" type='video/mp4; codecs="avc1.640028"' media="(prefers-reduced-motion: no-preference)" />
+        </video>
       </section>
 
       <section class="band">

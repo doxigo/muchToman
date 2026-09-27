@@ -994,7 +994,7 @@ function faFigure(n: number): string {
  */
 async function landingPage(request: Request, env: Env): Promise<Response> {
   const page = await env.ASSETS.fetch(request);
-  if (!(page.headers.get('content-type') ?? '').includes('text/html')) return page;
+  if (!(page.headers.get('content-type') ?? '').includes('text/html')) return await byteRange(request, page);
   const stars = await fetchStars();
   if (stars == null) return page;
   const out = new HTMLRewriter()
@@ -1007,6 +1007,33 @@ async function landingPage(request: Request, env: Env): Promise<Response> {
   headers.delete('etag');
   headers.delete('last-modified');
   return new Response(out.body, { status: out.status, headers });
+}
+
+/**
+ * One byte range of a static asset. The assets binding answers every Range request with the
+ * whole file, and Safari will not play a video from a server that does: it opens with
+ * `bytes=0-1` and gives up on the 200. Only the single-range forms players send are honoured;
+ * anything else gets the whole file, which RFC 9110 allows. The page's files are a few MB at
+ * most, so slicing a buffered copy is fine.
+ */
+async function byteRange(request: Request, res: Response): Promise<Response> {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '');
+  const ifRange = request.headers.get('if-range');
+  if (request.method !== 'GET' || res.status !== 200 || m == null || (m[1] === '' && m[2] === '') ||
+    (ifRange != null && ifRange !== res.headers.get('etag'))) return res;
+  const body = await res.arrayBuffer();
+  const size = body.byteLength;
+  const start = m[1] === '' ? Math.max(0, size - Number(m[2])) : Number(m[1]);   // bytes=-N: the last N
+  const end = m[1] === '' || m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  const headers = new Headers(res.headers);
+  if (start >= size || start > end) {
+    headers.set('content-range', `bytes */${size}`);
+    headers.delete('content-length');
+    return new Response(null, { status: 416, headers });
+  }
+  headers.set('content-range', `bytes ${start}-${end}/${size}`);
+  headers.set('content-length', String(end - start + 1));
+  return new Response(body.slice(start, end + 1), { status: 206, headers });
 }
 
 async function fetchStars(): Promise<number | null> {

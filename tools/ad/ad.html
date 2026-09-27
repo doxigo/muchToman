@@ -366,7 +366,12 @@ const settle = spring(9), press = spring(13);
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const PRE = 0.5;              // pre-roll: frame 0 opens mid-motion, the headline already landing
-const DURATION = 20.5;
+// ?loop is the landing page's hero: silent, no end card (the page's real buttons sit beside it), and
+// the last scene wipes back to the empty ground the timeline starts on, so it loops without a cut.
+// Its frame 0 is that ground, the timeline's own 0 rather than PRE.
+const LOOP = /loop/.test(location.search);
+const START = LOOP ? 0 : PRE;
+const DURATION = LOOP ? 17 : 20.5;
 const T = (t) => t + PRE;
 let GLYPH_D = '';             // icon.svg's mark, read at load
 
@@ -516,7 +521,7 @@ function build() {
   gsap.set('#steps', { width: stW[0] });
 
   // the clock drives everything procedural (the chips' idle float) so a seek lands on the same frame every time
-  tl.to(clock, { t: DURATION + PRE, duration: DURATION + PRE, ease: 'none', onUpdate: tick }, 0);
+  tl.to(clock, { t: DURATION + START, duration: DURATION + START, ease: 'none', onUpdate: tick }, 0);
 
   // ── 1 · hook: the question lands, and the places money hides float out from behind it
   tl.fromTo(h1, { yPercent: 165, rotation: 7 }, { yPercent: 0, rotation: 0, duration: 1, ease: 'enter', stagger: .08 }, T(-.5));
@@ -660,7 +665,9 @@ function build() {
 
   // ── 6 · the brand fills the frame
   const ipC = ip(590, 1278);
+  if (LOOP) gsap.set('#endGround', { background: 'var(--bright)' });   // …or, in the hero, the ground frame 0 opens on
   tl.fromTo('#endGround', { clipPath: `circle(0px at ${ipC.x}px ${ipC.y}px)` }, { clipPath: `circle(1200px at ${ipC.x}px ${ipC.y}px)`, duration: .62, ease: 'cam' }, T(C.toEnd));
+  if (LOOP) { gsap.set('#s5', { autoAlpha: 0 }); return; }
   tl.fromTo('#glyph', { scale: .84 }, { scale: 1, duration: 1.1, ease: settle, immediateRender: false }, T(C.logo - .02));
   tl.fromTo('#gStroke', { drawSVG: '0%' }, { drawSVG: '100%', duration: .85, ease: 'power2.inOut' }, T(C.logo - .02));
   tl.fromTo('#gFill', { opacity: 0 }, { opacity: 1, duration: .38, ease: 'none', immediateRender: false }, T(C.logo + .5));
@@ -683,10 +690,10 @@ function placeTaps() {
   const at = (t, fn) => { tl.seek(T(t), true); return fn(); };
   const centre = (el, fx = .5, fy = .5) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width * fx, y: r.top + r.height * fy }; };
   const wallTaps = C.words.map((b, k) => ({ t: b, ...at(b + .12, () => centre(tiles[CONFIG.focus[k]].el, .5, .55)) }));
-  const ends = C.ctaTaps.map((b, k) => ({ t: b, ...at(b, () => centre($(k ? '#cta2' : '#cta'), .64, .6)) }));
+  const ends = LOOP ? [] : C.ctaTaps.map((b, k) => ({ t: b, ...at(b, () => centre($(k ? '#cta2' : '#cta'), .64, .6)) }));
   tl.seek(0, true);
   gesture(wallTaps);
-  gesture(ends);
+  if (!LOOP) gesture(ends);
   // leaving the wall: the family screen opens into the iPhone scene
   const f = wallTaps[3], R = Math.max(...[[0, 0], [1080, 0], [0, 1350], [1080, 1350]].map(([x, y]) => Math.hypot(x - f.x, y - f.y))) + 80;
   tl.fromTo('#ipGround', { clipPath: `circle(0px at ${f.x}px ${f.y}px)` }, { clipPath: `circle(${R}px at ${f.x}px ${f.y}px)`, duration: .62, ease: 'cam' }, T(C.toIphone));
@@ -709,7 +716,7 @@ function tick() {
 
 window.DURATION = DURATION;
 window.CUES = { ...C, duration: DURATION, strips, stripDur, chipX: chips.map((c) => c.x / 540 - 1) };
-window.seek = (t) => { tl.seek(T(t), false); };
+window.seek = (t) => { tl.seek(t + START, false); };
 window.ready = (async () => {
   // XHR, not fetch: fetch refuses file:// even where --allow-file-access-from-files lets XHR in
   const svg = await new Promise((ok, no) => { const x = new XMLHttpRequest(); x.onload = () => ok(x.responseText); x.onerror = no; x.open('GET', '../../worker/public/icon.svg'); x.send(); });
@@ -721,8 +728,8 @@ window.ready = (async () => {
   await Promise.all($$('img').map((i) => i.decode().catch(() => {})));
   build();
   placeTaps();
-  tl.seek(T(0), false);
-  if (!/render/.test(location.search)) { tl.play(); tl.eventCallback('onComplete', () => tl.seek(T(0)).play()); }
+  tl.seek(START, false);
+  if (!/render/.test(location.search)) { tl.play(); tl.eventCallback('onComplete', () => tl.seek(START).play()); }
   return true;
 })();
 </script>
