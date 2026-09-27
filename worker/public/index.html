@@ -6,11 +6,13 @@
     <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
-    <!-- No scripts anywhere on this page, and the policy says so. Styles are the one inline
-         <style> below; images, the video and the font come from this origin and nowhere else. -->
+    <!-- One script on this page, the three lines that start the film, and the policy allows that
+         text by its hash and nothing else: change a character of it and the hash here changes with
+         it, or it stops running. Styles are the one inline <style> below; images, the videos and
+         the font come from this origin and nowhere else. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'sha256-Ua4zypZrsTjekDW1NuX35f/A5kOcN+txminqxxCgtoE='; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'"
     />
     <title>چقدر تومن · همه‌ی پولت، یک عدد</title>
     <meta
@@ -149,7 +151,7 @@
       .top .ghost { display: inline-flex; align-items: center; padding: .35rem .8rem; border-radius: var(--r-pill); color: var(--muted); white-space: nowrap; }
       .top .ghost:hover { color: var(--ink); }
       /* The star count, written in by the Worker on the way out — the page itself runs no
-         scripts. Hidden until it holds a real number: an unearned zero is worse than nothing. */
+         script for it. Hidden until it holds a real number: an unearned zero is worse than nothing. */
       .stars { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: var(--s); font-size: .85rem; }
       .stars[hidden] { display: none; }
       .stars b { font-weight: 700; font-stretch: 90%; font-variant-numeric: tabular-nums; }
@@ -264,15 +266,62 @@
       /* The video ad's loop cut (tools/ad: make.sh hero), a card in the room. It closes on the
          room's padding, like a room with no phone in it. */
       .reel {
+        position: relative;
         align-self: center;
         justify-self: center;
         width: min(432px, 100%);
-        height: auto;
         margin-bottom: clamp(2rem, 5.5vw, 4rem);
+        padding: 0;
+        overflow: hidden;
+        border: 0;
         border-radius: var(--r-sheet);
         background: var(--bright);   /* the ground its first frame opens on */
+        color: inherit;
+        font: inherit;
         box-shadow: var(--lift);
+        cursor: pointer;
       }
+      .reel video { display: block; width: 100%; height: auto; }
+      /* What the press does, said where the pointer is. A touch screen has no hover to ask with,
+         so there it stays, down at the foot of the card and out of the picture's way. */
+      .reel .play {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        display: inline-flex;
+        align-items: center;
+        gap: var(--s);
+        padding: .7rem 1.3rem;
+        border-radius: var(--r-pill);
+        background: var(--forest);
+        color: var(--bright);
+        font-weight: 800;
+        white-space: nowrap;
+        box-shadow: var(--lift);
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(.94);
+        transition: opacity var(--fast) var(--enter), transform var(--fast) var(--enter);
+      }
+      .reel:hover .play, .reel:focus-visible .play { opacity: 1; transform: translate(-50%, -50%); }
+      @media (hover: none) {
+        .reel .play { top: auto; bottom: var(--l); opacity: 1; transform: translateX(-50%); }
+      }
+
+      /* The 16:9 cut, with its sound, over the page: Esc, «بستن» or a press outside it closes it. */
+      #film:popover-open {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: var(--m);
+        width: min(92vw, 72rem);
+        padding: 0;
+        overflow: visible;
+        border: 0;
+        background: transparent;
+      }
+      #film::backdrop { background: rgba(8, 12, 6, .82); }
+      #film video { order: 1; display: block; width: 100%; height: auto; border-radius: var(--r-group); background: var(--forest); }
+      #film .pill { border-color: transparent; }
 
       /* ————— the phone: the store images' frame —————
        * Everything is measured off one width, --pw. --u is one pixel of the 1080-wide capture on
@@ -380,18 +429,6 @@
       @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
       .hero .pitch { animation: rise .55s var(--enter) backwards; }
       .hero .reel { animation: rise .55s var(--enter) .1s backwards; }
-
-      /* The 16:9 cut, with its sound (tools/ad: make.sh wide). Nothing plays and nothing loads
-         until she presses play; the poster is its opening frame. */
-      .film video {
-        display: block;
-        width: 100%;
-        height: auto;
-        margin-top: var(--xl);
-        border-radius: var(--r-hero);
-        background: var(--forest);
-        box-shadow: var(--lift);
-      }
 
       /* ————— the future tab: two phones side by side, each with its card lifted out ————— */
       .duo {
@@ -598,26 +635,39 @@
           </div>
           <p class="fineprint">اندروید ۷ به بالا · آیفون با نسخهٔ <bdi>PWA</bdi> · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
         </div>
-        <!-- No source matches a reduced-motion visitor, so the poster is all they get: the page
-             has no script to pause a video with. -->
-        <video
-          class="reel" autoplay muted loop playsinline poster="/hero.webp" width="864" height="1080"
-          aria-label="ویدیوی کوتاه: بانک و طلا و دلار و کریپتو یک عدد می‌شن، پیامک بانک خودش سطر دفتر می‌شه، بعد بودجه و قسط و گزارش و دفتر خانوادگی، و نصب نسخهٔ PWA روی آیفون"
-        >
-          <source src="/hero-av1.mp4" type='video/mp4; codecs="av01.0.05M.08"' media="(prefers-reduced-motion: no-preference)" />
-          <source src="/hero.mp4" type='video/mp4; codecs="avc1.640028"' media="(prefers-reduced-motion: no-preference)" />
-        </video>
+        <!-- One video, two cuts. The loop plays silently in the hero (no source matches a
+             reduced-motion visitor, so the poster is all they get); pressing it opens the 16:9 cut
+             with its sound (tools/ad: make.sh wide) over the page and starts it in the same tap. -->
+        <button class="reel" type="button" popovertarget="film" aria-label="پخش ویدیوی نیم‌دقیقه‌ای، با صدا">
+          <video autoplay muted loop playsinline poster="/hero.webp" width="864" height="1080" aria-hidden="true">
+            <source src="/hero-av1.mp4" type='video/mp4; codecs="av01.0.05M.08"' media="(prefers-reduced-motion: no-preference)" />
+            <source src="/hero.mp4" type='video/mp4; codecs="avc1.640028"' media="(prefers-reduced-motion: no-preference)" />
+          </video>
+          <span class="play" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" /></svg>
+            با صدا ببین
+          </span>
+        </button>
       </section>
 
-      <section class="plain film" aria-labelledby="film-h">
-        <h2 id="film-h">چقدر تومن، در نیم دقیقه</h2>
+      <div id="film" popover>
+        <!-- Not playsinline: on a phone the play goes full screen, where a 16:9 film belongs. -->
         <video
-          controls preload="none" playsinline poster="/film.webp" width="1280" height="720"
+          controls preload="none" poster="/film.webp" width="1280" height="720"
           aria-label="ویدیوی نیم‌دقیقه‌ای با صدا: همهٔ دارایی‌ها یک عدد به تومن، پیامک بانک که خودش دفتر می‌شه، طلب و بدهی، گزارش‌ها و دفتر خانوادگی"
         >
           <source src="/film.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"' />
         </video>
-      </section>
+        <button class="pill small" type="button" popovertarget="film" popovertargetaction="hide">بستن</button>
+      </div>
+      <!-- The page's one script, allowed by its hash in the policy above and by nothing else: the
+           tap that opens the film also starts it, and closing it stops it. Without it the film
+           still opens, and its own play button does the rest. -->
+      <script>
+        const film = document.getElementById('film'), cut = film.querySelector('video');
+        document.querySelector('.reel').addEventListener('click', () => cut.play().catch(() => {}));
+        film.addEventListener('toggle', (e) => { if (e.newState === 'closed') cut.pause(); });
+      </script>
 
       <section class="band">
         <div class="pitch">
