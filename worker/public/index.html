@@ -381,6 +381,18 @@
       .hero .pitch { animation: rise .55s var(--enter) backwards; }
       .hero .reel { animation: rise .55s var(--enter) .1s backwards; }
 
+      /* The 16:9 cut, with its sound (tools/ad: make.sh wide). Nothing plays and nothing loads
+         until she presses play; the poster is its opening frame. */
+      .film video {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin-top: var(--xl);
+        border-radius: var(--r-hero);
+        background: var(--forest);
+        box-shadow: var(--lift);
+      }
+
       /* ————— the future tab: two phones side by side, each with its card lifted out ————— */
       .duo {
         display: grid;
@@ -594,6 +606,16 @@
         >
           <source src="/hero-av1.mp4" type='video/mp4; codecs="av01.0.05M.08"' media="(prefers-reduced-motion: no-preference)" />
           <source src="/hero.mp4" type='video/mp4; codecs="avc1.640028"' media="(prefers-reduced-motion: no-preference)" />
+        </video>
+      </section>
+
+      <section class="plain film" aria-labelledby="film-h">
+        <h2 id="film-h">چقدر تومن، در نیم دقیقه</h2>
+        <video
+          controls preload="none" playsinline poster="/film.webp" width="1280" height="720"
+          aria-label="ویدیوی نیم‌دقیقه‌ای با صدا: همهٔ دارایی‌ها یک عدد به تومن، پیامک بانک که خودش دفتر می‌شه، طلب و بدهی، گزارش‌ها و دفتر خانوادگی"
+        >
+          <source src="/film.mp4" type='video/mp4; codecs="avc1.640028, mp4a.40.2"' />
         </video>
       </section>
 

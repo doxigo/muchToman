@@ -315,12 +315,15 @@ CHORDS = {  # pad voicings (add9), bass root, arpeggio notes
     'G': ([43, 50, 55, 59, 62, 69], 31, [67, 71, 74, 79]),
     'A': ([45, 52, 57, 61, 64, 71], 33, [69, 73, 76, 81]),
 }
-PROG = ['D', 'Bm', 'G', 'A', 'D', 'Bm', 'G', 'A', 'D', 'D', 'D']
+BRAND = cues.get('brand', 16.0)                  # the brand's hit: the last riser, the snare roll and the lead hook lead to it
+PROG = [['D', 'Bm', 'G', 'A'][b % 4] for b in range(int(BRAND // 2))]
+PROG[-2:] = ['G', 'A']                           # arrive through G–A, then D under the end card
+PROG += ['D'] * 3
 ARP = [0, 1, 2, 1, 3, 1, 2, 1, 0, 1, 2, 1, 3, 2, 1, 2]
 bar = lambda t: PROG[min(int(t // 2), len(PROG) - 1)]
 
-BREAK = (11.5, 16.0)       # the iPhone section: no kick, the filter breathes
-END = 18.0                 # final hit; the pad rings out after it
+BREAK = tuple(cues.get('break', (11.5, 16.0)))   # calm bars, no kick, the filter breathes: ad.html's iPhone scene, wide.html's loans
+END = cues.get('end', 18.0)                      # final hit; the pad rings out after it
 kicks = [b * BEAT for b in range(int(DUR / BEAT)) if 2.0 <= b * BEAT < END and not (BREAK[0] <= b * BEAT < BREAK[1])] + [END]
 _idx = np.zeros(N)
 for _kt in kicks:
@@ -422,8 +425,8 @@ for tw in cues['words']:
     place(stabs, fft_filter(ch * e, lp=5200, hp=300), tw)
 place(music, stabs, 0, .2, send=.3)
 lead = np.zeros((2, N))
-for t0, m, ln in [(16.0, 78, .5), (16.5, 81, .5), (17.0, 86, .75), (17.75, 88, .25), (18.0, 86, 1.6)]:
-    place(lead, pluck(mtof(m), ln + .5, 1.2, detune=9), t0)
+for dt, m, ln in [(0, 78, .5), (.5, 81, .5), (1.0, 86, .75), (1.75, 88, .25), (2.0, 86, 1.6)]:
+    place(lead, pluck(mtof(m), ln + .5, 1.2, detune=9), BRAND + dt)
 place(music, lead, 0, .3, send=.35)
 
 # drums
@@ -437,7 +440,7 @@ for b in range(int(DUR / BEAT)):
         place(music, CL, t0, .34, send=.2)
     if 2.0 <= t0 < END:
         place(music, HH, t0 + BEAT / 2, .16 if not in_break else .07, pan=.25)
-        if 8.5 <= t0 < 11.5 or 16.0 <= t0 < END:
+        if cues['wall'] <= t0 < cues['wall'] + 3 or BRAND <= t0 < END:
             place(music, SH, t0 + BEAT / 4, .1, pan=-.3)
             place(music, SH, t0 + 3 * BEAT / 4, .07, pan=-.3)
         if b % 4 == 3 and not in_break:
@@ -446,7 +449,7 @@ place(music, K, END, 1.0)
 # a snare roll that tightens into the brand
 for k in range(40):
     p = k / 40
-    t0 = 15.0 + (1 - (1 - p) ** 1.6) * 1.0
+    t0 = BRAND - 1.0 + (1 - (1 - p) ** 1.6) * 1.0
     place(music, SN, t0, .05 + .22 * p ** 2, pan=.1 * np.sin(k), send=.15)
 
 music += bass * DUCK * .55
@@ -457,9 +460,9 @@ place(music, swell(.5), 2.0 - .5, .3)
 place(music, impact(), 2.0, .55, send=.25)
 place(music, riser(.5, 600, 7000), cues['wall'] - .5, .18)
 place(music, impact(2.0), cues['wall'], .42, send=.25)
-place(music, riser(1.6), 16.0 - 1.6, .26, send=.2)
-place(music, swell(.45), 16.0 - .45, .32)
-place(music, impact(3.0), 16.0, .62, send=.3)
+place(music, riser(1.6), BRAND - 1.6, .26, send=.2)
+place(music, swell(.45), BRAND - .45, .32)
+place(music, impact(3.0), BRAND, .62, send=.3)
 place(music, impact(2.5), END, .5, send=.3)
 place(music, hat(True), END, .18, send=.3)
 # the intro: the beat is already there, muffled, until the drop opens it at 2s
@@ -512,17 +515,36 @@ place(sfx, whoosh(1.0, 250, 1800, 500, q=.9, peak=.35), C['wall'] - .05, .4)
 for tw, x in zip(C['words'], C['pan']['wall']):
     place(sfx, tap(), tw, .38, pan=x * .6)
     place(sfx, whoosh(.25, 900, 4000, q=1.6, peak=.6), tw - .12, .08)
-# into the iPhone scene
-place(sfx, whoosh(.7, 400, 3200, 900, q=1.0, peak=.45), C['toIphone'], .3)
-place(sfx, whoosh(.6, 250, 1200, q=1.0, peak=.7), C['ipIn'], .18)
-for tm in (C['shareTap'], C['addTap'], C['confirmTap'], C['iconTap']):
-    place(sfx, tap(), tm, .36)
-place(sfx, whoosh(.35, 500, 2400, q=1.3, peak=.6), C['sheetUp'], .16)
-place(sfx, whoosh(.35, 500, 2400, q=1.3, peak=.6), C['dialogUp'], .16)
-place(sfx, whoosh(.3, 3500, 800, q=1.2, peak=.3), C['swipe'], .2)
-place(sfx, pop(mtof(81)), C['iconPop'] + .05, .3, send=.3)
-place(sfx, chime([86, 90, 93, 98], gap=.05, dur=.9), C['iconPop'] + .08, .14, send=.4)
-place(sfx, whoosh(.55, 600, 5000, q=1.0, peak=.7), C['appOpen'], .24)
+# into the iPhone scene (ad.html)
+if 'toIphone' in C:
+    place(sfx, whoosh(.7, 400, 3200, 900, q=1.0, peak=.45), C['toIphone'], .3)
+    place(sfx, whoosh(.6, 250, 1200, q=1.0, peak=.7), C['ipIn'], .18)
+    for tm in (C['shareTap'], C['addTap'], C['confirmTap'], C['iconTap']):
+        place(sfx, tap(), tm, .36)
+    place(sfx, whoosh(.35, 500, 2400, q=1.3, peak=.6), C['sheetUp'], .16)
+    place(sfx, whoosh(.35, 500, 2400, q=1.3, peak=.6), C['dialogUp'], .16)
+    place(sfx, whoosh(.3, 3500, 800, q=1.2, peak=.3), C['swipe'], .2)
+    place(sfx, pop(mtof(81)), C['iconPop'] + .05, .3, send=.3)
+    place(sfx, chime([86, 90, 93, 98], gap=.05, dur=.9), C['iconPop'] + .08, .14, send=.4)
+    place(sfx, whoosh(.55, 600, 5000, q=1.0, peak=.7), C['appOpen'], .24)
+# loans (wide.html): the page changes, the people who owe you lift out, a tap opens one of them
+if 'personTap' in C:
+    place(sfx, tap() * .5, C['loans'], .1)
+    place(sfx, whoosh(.5, 400, 2400, q=1.1, peak=.6), C['lift'] - .05, .22)
+    place(sfx, pop(mtof(78)), C['lift'] + .1, .2, pan=C['pan']['person'] * .5, send=.3)
+    place(sfx, tap(), C['personTap'], .4, pan=C['pan']['person'] * .5)
+    place(sfx, whoosh(.45, 2600, 600, q=1.3, peak=.4), C['personTap'] + .1, .18)
+# family (wide.html): into it off the wall's last tap, the phone rising, two lifts, the line rolling, the lock
+if 'toFamily' in C:
+    place(sfx, whoosh(.7, 400, 3200, 900, q=1.0, peak=.45), C['toFamily'], .3)
+    place(sfx, whoosh(.6, 250, 1200, q=1.0, peak=.7), C['famIn'], .18)
+    for tm in (C['famLift'], C['famLift2']):
+        place(sfx, whoosh(.5, 400, 2400, q=1.1, peak=.6), tm - .05, .2)
+        place(sfx, pop(mtof(78)), tm + .1, .18, pan=-.3, send=.3)
+    place(sfx, tap() * .5, C['famSwap'], .1)
+    place(sfx, whoosh(.5, 2200, 700, q=1.2, peak=.5), C['famScroll'], .14)
+    place(sfx, whoosh(.3, 900, 4000, q=1.6, peak=.6), C['subRoll'] - .05, .1)
+    place(sfx, chime([81, 86], gap=.07, dur=1.0), C['lock'] + .05, .16, pan=.2, send=.35)
 # the brand: a whoosh in, a sparkle while the mark draws, pops for the buttons, chimes for the taps
 place(sfx, whoosh(.6, 300, 3000, q=.9, peak=.75), C['toEnd'], .3)
 for k, m in enumerate([74, 78, 81, 86, 90, 93]):
@@ -530,7 +552,7 @@ for k, m in enumerate([74, 78, 81, 86, 90, 93]):
 for tm in C['ctas']:
     place(sfx, pop(mtof(69)), tm + .04, .14, send=.2)
 place(sfx, pop(mtof(81)), C['chip'] + .04, .1, send=.2)
-for k, tm in enumerate(C['ctaTaps']):
+for k, tm in enumerate(C.get('ctaTaps', [])):
     place(sfx, tap(), tm, .4, pan=C['pan']['ends'][k] * .5)
     place(sfx, chime([81, 86] if k == 0 else [86, 90], gap=.06, dur=1.2), tm + .03, .2, send=.35)
 

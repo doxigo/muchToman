@@ -5,9 +5,10 @@
 //   node tools/ad/render.mjs --out out/silent.mp4 [--fps 30] [--blur 4] [--from 0 --to 20.5]
 //   node tools/ad/render.mjs --stills 0,2.5,6.9      (crisp JPEGs into out/, for checking a frame)
 // --loop renders ad.html?loop, the landing page's silent hero cut, instead (no cues.json: it has no sound).
+// --page wide.html renders the 16:9 cut (the viewport is the page's #stage) and writes its cue sheet as cues-wide.json.
 import { chromium } from '../../pwa/node_modules/playwright/index.mjs';
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
@@ -15,17 +16,22 @@ const arg = (name, fallback) => { const i = argv.indexOf(`--${name}`); return i 
 const fps = Number(arg('fps', 30));
 const blur = Number(arg('blur', 4));
 const loop = argv.includes('--loop');
+const pageName = arg('page', 'ad.html');
+const tag = pageName === 'ad.html' ? '' : pageName.replace(/\.html$/, '');
 const out = fileURLToPath(new URL('out/', import.meta.url));
 mkdirSync(out, { recursive: true });
 
 // file:// pages may not load a file:// font, or fetch icon.svg, without the last flag
 const browser = await chromium.launch({ args: ['--force-color-profile=srgb', '--font-render-hinting=none', '--allow-file-access-from-files'] });
-const page = await browser.newPage({ viewport: { width: 1080, height: 1350 }, deviceScaleFactor: 1 });
+// The viewport is the page's #stage, read from its CSS: loaded at another size and resized, Chromium's
+// captures can drop a later layer (a tap over the lifted card in wide.html went missing).
+const [, width, height] = readFileSync(new URL(pageName, import.meta.url), 'utf8').match(/#stage \{[^}]*?width: (\d+)px; height: (\d+)px/).map(Number);
+const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.error('[ad.html]', e.message));
-await page.goto(new URL(loop ? 'ad.html?render&loop' : 'ad.html?render', import.meta.url).href);
+await page.goto(new URL(`${pageName}?render${loop ? '&loop' : ''}`, import.meta.url).href);
 await page.evaluate(() => window.ready);
 const duration = await page.evaluate(() => window.DURATION);
-if (!loop) writeFileSync(out + 'cues.json', JSON.stringify(await page.evaluate(() => window.CUES), null, 1));
+if (!loop) writeFileSync(out + `cues${tag && '-' + tag}.json`, JSON.stringify(await page.evaluate(() => window.CUES), null, 1));
 const cdp = await page.context().newCDPSession(page);
 const shot = async (t, quality = 95) => {
   await page.evaluate((t) => window.seek(t), t);
@@ -33,7 +39,7 @@ const shot = async (t, quality = 95) => {
 };
 
 if (arg('stills')) {
-  for (const t of arg('stills').split(',').map(Number)) writeFileSync(`${out}${loop ? 'loop' : 'still'}-${t.toFixed(2)}.jpg`, await shot(t, 92));
+  for (const t of arg('stills').split(',').map(Number)) writeFileSync(`${out}${loop ? 'loop' : tag || 'still'}-${t.toFixed(2)}.jpg`, await shot(t, 92));
 } else {
   const from = Number(arg('from', 0));
   const to = Math.min(Number(arg('to', duration)), duration);

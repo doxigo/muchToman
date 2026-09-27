@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>چقدر تومن · ad 16:9</title>
+<style>
+  @font-face { font-family: Modam; src: url(../../worker/public/modam.woff2) format('woff2'); font-weight: 200 900; font-stretch: 70% 100%; font-display: block; }
+  :root {
+    --forest: #163300; --bright: #9FE870; --ink: #131711; --muted: #59614F;
+    --fstrong: #DFECCF; --fmuted: #A9C295; --lift: 0 34px 60px -24px rgba(12,32,0,.5), 0 10px 22px -10px rgba(12,32,0,.22);
+    --ios: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--bright);
+    font-family: Modam, sans-serif; color: var(--forest); letter-spacing: 0; -webkit-font-smoothing: antialiased; }
+  .L { position: absolute; inset: 0; }
+  .fig { font-feature-settings: 'tnum' 1; }
+
+  /* headlines: words rise out of their own masks — Persian joins forbid splitting letters */
+  .hl { position: absolute; left: 0; right: 0; text-align: center; font-weight: 900; line-height: 1.16;
+    --fs: 100; font-stretch: calc(var(--fs) * 1%); color: var(--hc, var(--forest)); }
+  .hl .ln { display: block; white-space: nowrap; }
+  .w { display: inline-block; overflow: hidden; vertical-align: top; padding: .16em .08em .34em; margin: -.16em -.08em -.34em; }
+  .wi { display: inline-block; transform-origin: 50% 100%; }
+  .acc { display: inline-block; padding: 0 .3em .05em; border-radius: 999px; background: var(--accBg); color: var(--accInk); }
+  .R { left: 950px; right: 50px; }   /* the words' column beside the phone (RTL: the right) */
+  .dot { display: inline-block; width: .22em; height: .22em; border-radius: 50%; background: currentColor; vertical-align: middle; margin: 0 .45em; opacity: .7; }
+
+  /* 1 · hook */
+  #h1 { top: 330px; font-size: 176px; --accBg: var(--forest); --accInk: var(--bright); }
+  .chip { position: absolute; left: 0; top: 0; }
+  .chip .cf { position: absolute; }
+  .chip .ci { display: flex; align-items: center; gap: 18px; height: 94px; padding-inline: 14px 34px; border-radius: 999px;
+    background: #fff; box-shadow: var(--lift); white-space: nowrap; font-weight: 800; font-size: 35px; color: var(--ink);
+    transform: translate(50%, -50%); }
+  .disc { flex: none; display: grid; place-items: center; width: 66px; height: 66px; border-radius: 50%; }
+  .disc.plate { background: #fff; box-shadow: inset 0 0 0 2px #DDE2D2; }
+  .disc img { width: 40px; height: 40px; display: block; }
+  .disc svg { width: 36px; height: 36px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .disc .sym { font: 700 38px/1 Inter, 'Helvetica Neue', sans-serif; color: #fff; }
+
+  /* 2 · answer */
+  #h2b, #h2a { top: 70px; font-size: 96px; }
+  #h2b { --accBg: var(--forest); --accInk: var(--bright); }
+  #h2a { --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #raw { position: absolute; left: 0; right: 0; top: 405px; text-align: center; direction: ltr; font-size: 124px; font-weight: 300;
+    --fs: 72; font-stretch: calc(var(--fs) * 1%); line-height: 150px; height: 150px; white-space: nowrap; }
+  .dc { display: inline-block; height: 150px; overflow: hidden; vertical-align: top; }
+  .ds { display: block; }
+  .ds b { display: block; height: 150px; font-weight: inherit; }
+  .sep { display: inline-block; vertical-align: top; }
+  #rawUnit { position: absolute; left: 0; right: 0; top: 568px; text-align: center; font-size: 46px; font-weight: 700; opacity: .75; }
+  #afterClip { clip-path: inset(0px 0px 0px 1920px); }
+  #forest { background: var(--forest); }
+  #sub2 { top: 985px; font-size: 40px; font-weight: 600; --hc: var(--fstrong); }
+  #beam { position: absolute; top: 0; left: -5px; width: 10px; height: 1080px; background: #fff;
+    box-shadow: 0 0 22px 6px rgba(255,255,255,.75), 0 0 80px 26px rgba(159,232,112,.55); opacity: 0; }
+  #beamTrail { position: absolute; top: 0; left: 0; width: 260px; height: 1080px; opacity: 0;
+    background: linear-gradient(to right, rgba(159,232,112,.32), rgba(159,232,112,0)); }
+
+  /* the Android phone: the landing page's frame, laid out in capture pixels (1080 = the screen) */
+  #rigWrap { position: absolute; left: 0; top: 0; width: 1130.89px; height: 2450.89px; transform-origin: 0 0; }
+  #rigShadow { position: absolute; inset: 0; border-radius: 163.98px; box-shadow: 0 90px 160px -50px rgba(0,0,0,.75), 0 30px 60px -20px rgba(0,0,0,.35); opacity: 0; }
+  #rig { position: absolute; inset: 0; will-change: transform; clip-path: inset(332.445px 81.445px 1257.445px 81.445px round 86px); }
+  .bezel { position: absolute; inset: 0; border-radius: 163.98px; background: #0b0d0a; box-shadow: inset 0 0 0 5px rgba(255,255,255,.1); }
+  .scr { position: absolute; width: 1080px; height: 2400px; overflow: hidden; background: #fff; }
+  .scr.dark { background: #121511; }
+  #rig .scr { left: 25.445px; top: 25.445px; border-radius: 138.54px; }
+  .punch { position: absolute; top: 45px; left: 517px; width: 46px; height: 46px; border-radius: 50%; background: #050605; z-index: 3; }
+  .page { position: absolute; left: 0; top: 130px; width: 1080px; height: 2270px; overflow: hidden; }
+  .page img, .cut img { position: absolute; left: 0; top: -130px; width: 1080px; height: 2400px; display: block; }
+  .cut { position: absolute; left: 0; width: 1080px; overflow: hidden; background: #fff; }
+  #lA { top: 0; height: 502px; }
+  #lR { top: 502px; height: 183px; } #lR img { top: -632px; }
+  #lB { top: 685px; height: 1585px; } #lB img { top: -815px; }
+  #lRflash { position: absolute; inset: 0; background: var(--bright); opacity: 0; mix-blend-mode: multiply; }
+
+  /* 3 · sms */
+  #h3, #h4 { top: 330px; font-size: 104px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #sub3, #sub4 { top: 615px; font-size: 46px; font-weight: 500; --hc: var(--fstrong); line-height: 1.5; }
+  #notif { position: absolute; left: 135px; top: 170px; width: 790px; border-radius: 52px; background: #FAFBF7; overflow: hidden;
+    box-shadow: 0 44px 80px -26px rgba(0,0,0,.6), 0 14px 30px -12px rgba(0,0,0,.35); }
+  #nContent { padding: 32px 50px 38px; color: #131711; font-size: 36px; line-height: 1.6; }
+  .nHead { display: flex; align-items: center; gap: .5em; font-size: .78em; font-weight: 500; color: var(--muted); }
+  .nDot { display: grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 50%; background: #DCF2C0; }
+  .nDot svg { width: 1.1em; height: 1.1em; }
+  .nWho { margin-top: .3em; font-size: 1.16em; font-weight: 800; }
+  .nBody { font-weight: 500; }
+  .nBody b { font-weight: 800; }
+  .mk { position: relative; isolation: isolate; white-space: nowrap; }
+  .mk i { position: absolute; inset: .1em -.18em .02em; border-radius: .32em; background: var(--bright); z-index: -1; transform-origin: 100% 50%; transform: scaleX(0); }
+  #nRow { position: absolute; inset: 0; opacity: 0; overflow: hidden; background: #fff; }
+  #nRow img { position: absolute; left: 0; width: 100%; }
+
+  /* 4 · loans, 6 · family: a card of the page lifted out of it, larger */
+  .lift { position: absolute; overflow: hidden; visibility: hidden; }
+  .lift img { position: absolute; display: block; }
+
+  /* 5 · the wall of screens */
+  #bright2 { background: var(--bright); clip-path: circle(0px at 540px 1050px); }
+  #wallCam { perspective: 2600px; perspective-origin: 960px 540px; visibility: hidden; }
+  #wall { position: absolute; left: 0; top: 0; transform-style: preserve-3d; }
+  .col { position: absolute; top: 0; width: 360px; transform-style: preserve-3d; }
+  .tile { position: absolute; left: 0; width: 360px; height: 800px; border-radius: 46.18px; overflow: hidden;
+    box-shadow: 0 50px 80px -34px rgba(12,32,0,.6), 0 14px 26px -12px rgba(12,32,0,.25); }
+  .tile .scr { left: 0; top: 0; transform: scale(.333333); transform-origin: 0 0; }
+  .tile .dim { position: absolute; inset: 0; background: var(--bright); opacity: 0; }
+  .pill { position: absolute; left: 960px; border-radius: 999px; overflow: hidden; visibility: hidden; }
+  #pill { top: 70px; height: 136px; background: var(--forest); box-shadow: 0 30px 60px -24px rgba(12,32,0,.55); }
+  .pw { position: absolute; left: 0; right: 0; top: 0; height: 136px; line-height: 128px; text-align: center; white-space: nowrap;
+    font-size: 82px; font-weight: 900; color: var(--bright); --fs: 100; font-stretch: calc(var(--fs) * 1%); }
+
+
+  /* 6 · family: one family's ledger, on white, the phone rising into the words' company */
+  #famGround { background: #fff; clip-path: circle(0px at 960px 540px); }
+  #hF { top: 330px; font-size: 104px; --accBg: var(--forest); --accInk: var(--bright); }
+  #subFa, #subFb { top: 615px; font-size: 46px; font-weight: 500; line-height: 1.5; --hc: var(--ink); }
+  #famWrap { position: absolute; left: 0; top: 0; width: 1130.89px; height: 2450.89px; transform-origin: 0 0; }
+  #famWrap .famShadow { position: absolute; inset: 0; border-radius: 163.98px; box-shadow: 0 80px 150px -40px rgba(12,32,0,.45), 0 24px 50px -16px rgba(12,32,0,.3); }
+  #famWrap .bezel { border-radius: 163.98px; }
+  #famWrap .scr { left: 25.445px; top: 25.445px; border-radius: 138.54px; }
+  #lock { position: absolute; left: 1410px; top: 800px; display: flex; align-items: center; gap: 18px; height: 92px; padding-inline: 14px 36px;
+    border-radius: 999px; background: #F3F5EE; white-space: nowrap; font-size: 38px; font-weight: 600; color: var(--ink); }
+  #lock .disc { width: 64px; height: 64px; background: #DCF2C0; }
+  #lock svg { stroke: var(--forest); }
+
+  /* 7 · end card: no buttons or address — it plays on the store page, above the install button */
+  #endGround { background: var(--forest); clip-path: circle(0px at 540px 675px); }
+  #glyph { position: absolute; left: 810px; top: 110px; width: 300px; height: 300px; overflow: visible; }
+  #wordmark { top: 430px; font-size: 150px; --hc: #F2F3EF; }
+  #tag { top: 624px; font-size: 72px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #chip5 { position: absolute; left: 960px; top: 770px; height: 80px; padding: 0 40px; border-radius: 999px; white-space: nowrap;
+    box-shadow: inset 0 0 0 2px rgba(169,194,149,.38); color: var(--fstrong); font-size: 38px; font-weight: 600; line-height: 76px; }
+  #fine { position: absolute; left: 0; right: 0; top: 890px; text-align: center; font-size: 36px; font-weight: 500; color: var(--fmuted); }
+
+  /* touches: the Android "show taps" dot, and its ripple */
+  .touch { position: absolute; left: 0; top: 0; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%;
+    background: rgba(255,255,255,.42); box-shadow: inset 0 0 0 4px #fff, 0 0 0 2px rgba(22,51,0,.28), 0 14px 34px rgba(0,0,0,.3); opacity: 0; }
+  .ripple { position: absolute; left: 0; top: 0; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%;
+    box-shadow: inset 0 0 0 5px rgba(255,255,255,.9), 0 0 0 2px rgba(22,51,0,.18); opacity: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="s1" class="L"><div id="chips" class="L"></div><div id="h1" class="hl"></div></div>
+  <div id="s2b" class="L"><div id="h2b" class="hl"></div><div id="raw" class="fig"></div><div id="rawUnit"></div></div>
+  <div id="afterClip" class="L">
+    <div id="forest" class="L"></div>
+    <div id="h2a" class="hl"></div>
+    <div id="rigWrap">
+      <div id="rigShadow"></div>
+      <div id="rig">
+        <div class="bezel"></div>
+        <div class="scr">
+          <i class="punch"></i>
+          <div id="pgHome" class="page"><img src="../../docs/screenshots/home.png"></div>
+          <div id="pgLedger" class="page">
+            <div id="lA" class="cut"><img src="../../docs/screenshots/ledger.png"></div>
+            <div id="lB" class="cut"><img src="../../docs/screenshots/ledger.png"></div>
+            <div id="lR" class="cut"><img src="../../docs/screenshots/ledger.png"><i id="lRflash"></i></div>
+          </div>
+          <div id="pgLoans" class="page"><img src="../../docs/screenshots/loans.png"></div>
+          <div id="pgPerson" class="page"><img src="../../docs/screenshots/loan-person.png"></div>
+        </div>
+      </div>
+    </div>
+    <div id="sub2" class="hl"></div>
+  </div>
+  <div id="beamTrail"></div><div id="beam"></div>
+  <div id="s3" class="L">
+    <div id="h3" class="hl R"></div><div id="sub3" class="hl R"></div>
+    <div id="notif">
+      <div id="nContent">
+        <div class="nHead"><span class="nDot"><svg viewBox="0 0 24 24" fill="none" stroke="#163300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"/></svg></span><span id="nMeta"></span></div>
+        <div class="nWho" id="nWho"></div>
+        <div class="nBody" id="nBody"></div>
+      </div>
+      <div id="nRow"><img src="../../docs/screenshots/ledger.png"></div>
+    </div>
+  </div>
+  <div id="s4" class="L"><div id="h4" class="hl R"></div><div id="sub4" class="hl R"></div><div id="lift" class="lift"><img src="../../docs/screenshots/loans.png"></div></div>
+  <div id="bright2" class="L"></div>
+  <div id="wallCam" class="L"><div id="wall"></div></div>
+  <div id="pill" class="pill"></div>
+
+  <div id="famGround" class="L"></div>
+  <div id="sF" class="L" style="visibility:hidden">
+    <div id="hF" class="hl R"></div><div id="subFa" class="hl R"></div><div id="subFb" class="hl R"></div>
+    <div id="lock"><span class="disc"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.6v2.4"/></svg></span><span id="lockT"></span></div>
+    <div id="famWrap">
+      <div class="famShadow"></div>
+      <div class="bezel"></div>
+      <div class="scr">
+        <i class="punch"></i>
+        <div id="pgFam" class="page"><img src="../../docs/screenshots/family.png"></div>
+        <div id="pgFamAssets" class="page"><img src="../../docs/screenshots/family-assets.png"></div>
+      </div>
+    </div>
+    <div id="liftF1" class="lift"><img src="../../docs/screenshots/family.png"></div>
+    <div id="liftF2" class="lift"><img src="../../docs/screenshots/family-assets.png"></div>
+  </div>
+
+
+  <div id="endGround" class="L"></div>
+  <div id="s5" class="L">
+    <svg id="glyph"><path id="gFill" fill="#9FE870" fill-rule="evenodd" opacity="0"/><path id="gStroke" fill="none" stroke="#9FE870" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div id="wordmark" class="hl"></div>
+    <div id="chip5"></div>
+    <div id="tag" class="hl"></div>
+    <div id="fine"></div>
+  </div>
+  <div id="r2" class="ripple"></div><div id="t2" class="touch"></div>
+  <div id="r1" class="ripple"></div><div id="t1" class="touch"></div>
+</div>
+
+<script src="node_modules/gsap/dist/gsap.min.js"></script>
+<script src="node_modules/gsap/dist/CustomEase.min.js"></script>
+<script src="node_modules/gsap/dist/DrawSVGPlugin.min.js"></script>
+<script>
+// The 16:9 cut for Aparat, which Cafe Bazaar shows as a 16:9 tile on the app's page: ad.html's story laid out
+// wide (the phone on the left, the words beside it, the landing page's own arrangement), with loans where the
+// iPhone scene was — the store's audience is on Android — a scene of its own for the family ledger, and an end
+// card without buttons or an address, since it plays above the store's own install button. Built from ad.html
+// by hand; the two share their motion.
+// ———————————————————————————————— CONFIG: every word and asset the ad shows ————————————————————————————————
+// Copy is the landing page's (worker/public/index.html) and the store slides'; figures are the app's own
+// sample-data captures (docs/screenshots; pwa-*.png are the PWA's ?demo=1 household, from capture-pwa.mjs).
+// *word* sets the accent pill, \n breaks a line.
+const CONFIG = {
+  hook: 'چقدر *تومن*\nداری؟',
+  chips: [ // label, kind, key, centre x, centre y, scale
+    ['بلوبانک', 'bank', 'blu', 400, 170, 1.0],
+    ['طلای ۱۸ عیار', 'glyph', 'INGOT', 1500, 190, 1.0],
+    ['تتر', 'crypto', 'USDT', 960, 150, .86],
+    ['سکه امامی', 'glyph', 'COIN', 250, 460, .9],
+    ['سامان', 'bank', 'saman', 1700, 470, .84],
+    ['دلار', 'glyph', 'DOLLAR', 400, 740, 1.0],
+    ['بیت‌کوین', 'crypto', 'BTC', 1560, 760, 1.0],
+    ['سهام بورس', 'glyph', 'CHART', 960, 950, .96],
+    ['ماشین', 'glyph', 'WHEEL', 640, 930, .9],
+    ['خونه', 'glyph', 'HOUSE', 1300, 935, .9],
+    ['ملت', 'bank', 'mellat', 190, 960, .84],
+  ],
+  answer: 'همه‌ی پولت، *یک عدد*',
+  raw: '۳٬۰۵۴٬۱۰۰٬۲۲۱', rawUnit: 'تومان',               // home.png's hero: ۳٫۰۵۴ میلیارد = ۳٬۰۵۴٬۱۰۰٬۲۲۱
+  answerSub: 'به نرخ آزاد، نه نرخ دولتی',
+  sms: 'پیامک بانک،\nخودش *دفتر* می‌شه',
+  smsSub: 'همون‌جا روی گوشی خونده می‌شه\nو به هیچ سروری نمی‌رسه',
+  notif: { meta: 'پیامک • الان', who: 'بانک',
+    body: 'برداشت <b class="mk">۲٬۴۳۲٬۰۰۰ ریال<i></i></b>، <span class="mk">قبض برق<i></i></span><br>مانده ۴۸٬۲۵۰٬۰۰۰ ریال' },
+  loans: 'طلب و بدهی،\n*کنار جمعت*',                               // the landing page's loans band
+  loansSub: 'دو سکه، دو سکه می‌مونه\nو ارزش امروزش به تومن کنارش میاد',
+  words: ['بودجه', 'قسط', 'گزارش', 'خانواده'],                        // the last opens the family scene
+  family: 'یک دفتر،\n*همهٔ خانواده*',                               // the landing page's family band…
+  familyA: 'هر کس خودش انتخاب می‌کنه\nچی به اشتراک بذاره',
+  familyB: 'از دارایی بقیه فقط اسم\nو ارزش تومنیش می‌رسه',
+  lock: 'سرور فقط متن رمزشده می‌بینه',                               // …and its privacy card
+  focus: ['budget-dark', 'installments', 'report-dark', 'family'],
+  brand: 'چقدر تومن',
+  tag: 'همه‌ی پولت، *یک عدد*',                                      // the page's title
+  chip: ['متن‌باز', 'بدون حساب', 'بدون تبلیغ'],
+  fine: 'اندروید ۷ به بالا <i class="dot"></i> آیفون با نسخهٔ <bdi>PWA</bdi>',
+  wall: [ // every capture once; loan-person is where the phone's screen lands
+    ['report', 'assets-dark', 'categories', 'loan-link-dark'],
+    ['installment-link-dark', 'budget', 'family-assets-dark', 'banks'],
+    ['home-dark', 'installments', 'loans-dark', 'categories-dark'],
+    ['assets', 'loan-person', 'report-dark', 'home'],
+    ['family-assets', 'budget-dark', 'family', 'installments-dark'],
+    ['banks-dark', 'family-dark', 'ledger-dark', 'loans'],
+    ['ledger', 'loan-person-dark', 'installment-link', 'loan-link'],
+  ],
+};
+
+// Cue sheet, in seconds. The picture is timed from it and the soundtrack (tools/sound.py) reads the same
+// table, so every hit lands on its frame. The music is 120 bpm: a beat every 0.5s, a bar every 2s.
+const C = {
+  chipsOut: .05, chipGap: .035, pinch: 1.56, h1Out: 1.64, converge: 1.7,
+  drop: 2.0, h2In: 2.22, scan: 3.0, scanDur: 1.0, sub2In: 3.62,
+  h2Out: 4.66, zoom: 4.75, zoomDur: .85, h3In: 5.4, tabSwap: 5.8,
+  notif: 6.0, marks: [6.5, 6.7], notifTap: 7.0, morph: 7.05, land: 7.65,
+  h3Out: 8.0, loans: 8.15, h4In: 8.3, lift: 9.3, sub4In: 9.45, personTap: 10.5, h4Out: 11.55,
+  wall: 12.0, words: [12.5, 13.0, 13.5, 14.0],
+  toFamily: 15.75, famIn: 15.85, hFIn: 16.1, famLift: 17.0, subFIn: 17.15, famSwap: 18.4, famScroll: 19.0, famLift2: 19.6, subRoll: 19.6, lock: 20.55,
+  toEnd: 21.75, logo: 22.0, wordmark: 22.55, tag: 22.85, chip: 23.15, url: 23.35,
+  ctas: [22.85],            // sound.py pops each: the 4:5's buttons, here the tagline
+  break: [8.0, 12.0],       // the music's calm bars (the 4:5's are the iPhone scene): no kick, the filter breathes
+  brand: 22.0, end: 24.0,   // the brand's hit and the last one (the 4:5's are 16 and 18)
+};
+
+// ———————————————————————————————— motion vocabulary: the app's own (Theme.kt Motion) ————————————————————————————————
+gsap.registerPlugin(CustomEase, DrawSVGPlugin);
+CustomEase.create('enter', 'M0,0 C0.05,0.7 0.1,1 1,1');   // Motion.enter
+CustomEase.create('exit', 'M0,0 C0.3,0 0.8,0.15 1,1');    // Motion.exit
+CustomEase.create('cam', 'M0,0 C0.7,0 0.16,1 1,1');       // camera moves: ease in, land soft
+CustomEase.create('move', 'M0,0 C0.45,0 0.1,1 1,1');
+// Motion.settle / Motion.press: critically damped springs — nothing overshoots.
+const spring = (W) => { const n = 1 - (1 + W) * Math.exp(-W); return (p) => (1 - (1 + W * p) * Math.exp(-W * p)) / n; };
+const settle = spring(9), press = spring(13);
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const PRE = 0.5;              // pre-roll: frame 0 opens mid-motion, the headline already landing
+const DURATION = 26.5;
+const T = (t) => t + PRE;
+let GLYPH_D = '';             // icon.svg's mark, read at load
+
+// ———————————————————————————————— build ————————————————————————————————
+function words(el, text) {
+  el.innerHTML = text.split('\n').map((line) => '<span class="ln">' + line.match(/\*[^*]+\*|[^\s*]+/g).map((tok) => {
+    const acc = tok.startsWith('*');
+    return `<span class="w"><span class="wi">${acc ? `<span class="acc">${tok.slice(1, -1)}</span>` : tok}</span></span>`;
+  }).join(' ') + '</span>').join('');
+  return $$('.wi', el);
+}
+
+const GLYPHS = { // the app's pen: 24 grid, round caps (CategoryIcon / AssetGlyph drawings)
+  INGOT: ['#A07A12', '<path d="M8.58 8.22h6.86l3.17 7.56H5.41z"/><path d="M10.42 12h3.16"/>'],
+  COIN: ['#A9761F', '<circle cx="12" cy="12" r="7.84"/><circle cx="12" cy="12" r="4.84"/>'],
+  DOLLAR: ['#2F8544', '<path d="M12 2.6v18.8"/><path d="M16.6 5.9H9.8a3.3 3.3 0 0 0 0 6.6h4.4a3.3 3.3 0 0 1 0 6.6H6.9"/>'],
+  CHART: ['#A33FBE', '<path d="M16 7h6v6"/><path d="M22 7l-8.5 8.5-5-5L2 17"/>'],
+  HOUSE: ['#6E7526', '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'],
+  WHEEL: ['#348030', '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'],
+};
+const CRYPTO = { BTC: ['#F7931A', '₿', -14], USDT: ['#26A17B', '₮', 0] };
+const tint = (hex, a) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
+
+const chips = CONFIG.chips.map(([label, kind, key, x, y, s], i) => {
+  let disc;
+  if (kind === 'bank') disc = `<span class="disc plate"><img src="../../worker/public/img/banks.svg#${key}"></span>`;
+  else if (kind === 'crypto') { const [c, sym, rot] = CRYPTO[key]; disc = `<span class="disc" style="background:${c}"><span class="sym" style="transform:rotate(${rot}deg)">${sym}</span></span>`; }
+  else { const [hue, d] = GLYPHS[key]; disc = `<span class="disc" style="background:${tint(hue, .16)}"><svg viewBox="0 0 24 24" style="stroke:${hue}">${d}</svg></span>`; }
+  const el = document.createElement('div');
+  el.className = 'chip';
+  el.innerHTML = `<div class="cf"><div class="ci">${disc}<span>${label}</span></div></div>`;
+  $('#chips').appendChild(el);
+  return { el, cf: $('.cf', el), x, y, s, i };
+});
+
+const h1 = words($('#h1'), CONFIG.hook);
+const h2b = words($('#h2b'), CONFIG.answer);
+const h2a = words($('#h2a'), CONFIG.answer);
+const sub2 = words($('#sub2'), CONFIG.answerSub);
+const h3 = words($('#h3'), CONFIG.sms);
+const sub3 = words($('#sub3'), CONFIG.smsSub);
+const h4 = words($('#h4'), CONFIG.loans);
+const sub4 = words($('#sub4'), CONFIG.loansSub);
+const hF = words($('#hF'), CONFIG.family);
+const subFa = words($('#subFa'), CONFIG.familyA);
+const subFb = words($('#subFb'), CONFIG.familyB);
+$('#lockT').textContent = CONFIG.lock;
+const wm = words($('#wordmark'), CONFIG.brand);
+const tag = words($('#tag'), CONFIG.tag);
+$('#rawUnit').textContent = CONFIG.rawUnit;
+$('#nMeta').textContent = CONFIG.notif.meta;
+$('#nWho').textContent = CONFIG.notif.who;
+$('#nBody').innerHTML = CONFIG.notif.body;
+$('#chip5').innerHTML = CONFIG.chip.join('<i class="dot"></i>');
+$('#fine').innerHTML = CONFIG.fine;
+$('#pill').innerHTML = CONFIG.words.map((w) => `<div class="pw">${w}</div>`).join('');
+
+// the odometer: one rolling strip per digit, separators stand still
+const FA = '۰۱۲۳۴۵۶۷۸۹';
+const strips = [];
+$('#raw').innerHTML = [...CONFIG.raw].map((ch) => {
+  const d = FA.indexOf(ch);
+  if (d < 0) return `<span class="sep">${ch}</span>`;
+  const n = 1 + Math.floor(strips.length / 3);
+  strips.push(n * 10 + d);
+  return `<span class="dc"><span class="ds">${Array.from({ length: n * 10 + d + 1 }, (_, k) => `<b>${FA[k % 10]}</b>`).join('')}</span></span>`;
+}).join('');
+const stripDur = strips.map((_, i) => .56 + i * .036);
+
+// the wall
+const TW = 360, TH = 800, GAP = 40;
+const tiles = {};
+CONFIG.wall.forEach((col, c) => {
+  const ce = document.createElement('div');
+  ce.className = 'col';
+  ce.style.left = c * (TW + GAP) + 'px';
+  col.forEach((name, r) => {
+    const t = document.createElement('div');
+    t.className = 'tile';
+    t.style.top = r * (TH + GAP) + 'px';
+    t.innerHTML = `<div class="scr${name.endsWith('-dark') ? ' dark' : ''}"><i class="punch"></i><div class="page"><img src="../../docs/screenshots/${name}.png"></div></div><i class="dim"></i>`;
+    ce.appendChild(t);
+    tiles[name] = { el: t, c, r, col: ce };
+  });
+  $('#wall').appendChild(ce);
+});
+const cols = $$('#wall .col');
+
+// ———————————————————————————————— geometry (capture pixels → stage) ————————————————————————————————
+const PH = { w: 1130.89, h: 2450.89, b: 25.445, r: 163.98 };
+const CARD = { x: 53, y: 174, w: 974, h: 867, r: 89 };            // home.png's hero card, below the 130px status strip
+const RIG_A = { s: .8 }; RIG_A.x = 960 - RIG_A.s * (PH.b + CARD.x + CARD.w / 2); RIG_A.y = 225 - RIG_A.s * (PH.b + 130 + CARD.y);   // the card, centred under the headline
+const RIG_B = { x: 190, y: 110, s: 680 / PH.w };                                  // the phone, 680px wide, left of the words
+const ROW = { y: 502, h: 183 };                                                   // ledger.png: the «قبض برق» row, below the strip
+const rowRect = { x: RIG_B.x + RIG_B.s * PH.b, y: RIG_B.y + RIG_B.s * (PH.b + 130 + ROW.y), w: 1080 * RIG_B.s, h: ROW.h * RIG_B.s };
+const screenC = { x: RIG_B.x + RIG_B.s * (PH.b + 540), y: RIG_B.y + RIG_B.s * (PH.b + 1200) };
+const L = tiles['loan-person'], LC = { x: L.c * (TW + GAP) + TW / 2, y: L.r * (TH + GAP) + TH / 2 };
+const clipCard = `inset(${PH.b + 130 + CARD.y + 3}px ${PH.w - PH.b - CARD.x - CARD.w + 3}px ${PH.h - PH.b - 130 - CARD.y - CARD.h + 3}px ${PH.b + CARD.x + 3}px round ${CARD.r - 3}px)`;
+const clipFull = `inset(0px 0px 0px 0px round ${PH.r}px)`;
+// cards lifted out of a page, in page pixels (below the 130px strip); both phones stand at RIG_B
+const OWED = { x: 53, y: 737, w: 974, h: 621, r: 58 };             // loans.png: «بهت بدهکارن», the landing page's callout
+const SHARE = { x: 53, y: 855, w: 974, h: 466, r: 58 };            // family.png: the two sharing switches, the landing page's callout
+const THEIRS = { x: 53, y: 1500, w: 974, h: 486, r: 58, scroll: 580 };   // family-assets.png: «دارایی مریم», once a drag brings it up (not the nav bar)
+const LIFT = 1.22;                                                                // how much larger it comes up: past the phone's edges
+const NOSHADOW = 'rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px';
+const ON_FOREST = 'rgba(0, 0, 0, 0.55) 0px 44px 80px -26px, rgba(0, 0, 0, 0.3) 0px 14px 30px -12px';
+const ON_WHITE = 'rgba(12, 32, 0, 0.42) 0px 44px 80px -26px, rgba(12, 32, 0, 0.2) 0px 14px 30px -12px';
+const phoneC = { x: RIG_B.x + RIG_B.s * (PH.b + 540), y: RIG_B.y + RIG_B.s * (PH.b + 1100) };
+
+// ———————————————————————————————— timeline ————————————————————————————————
+const tl = gsap.timeline({ paused: true });
+const clock = { t: 0 };
+
+// A touch: appears just before its first tap, glides between taps, presses on each (Motion.press),
+// leaves a ripple, and lifts away after the last unless the caller carries on with it.
+function gesture(points, { el = '#t1', rip = '#r1', s = 1, leave = true } = {}) {
+  const p0 = points[0];
+  tl.fromTo(el, { x: p0.x + 40 * s, y: p0.y + 66 * s, scale: 1.3 * s, opacity: 0 }, { x: p0.x, y: p0.y, scale: s, opacity: 1, duration: .22, ease: settle, immediateRender: false }, T(p0.t - .24));
+  points.forEach((p, i) => {
+    if (i) {
+      const g = Math.min(.3, p.t - points[i - 1].t - .16);
+      tl.to(el, { x: p.x, y: p.y, duration: g, ease: 'move' }, T(p.t - g - .02));
+    }
+    tl.to(el, { scale: .8 * s, duration: .1, ease: press }, T(p.t));
+    tl.to(el, { scale: s, duration: .22, ease: settle }, T(p.t + .1));
+    tl.fromTo(rip, { x: p.x, y: p.y, scale: .7 * s, opacity: .9 }, { scale: 2.3 * s, opacity: 0, duration: .48, ease: 'power2.out', immediateRender: false }, T(p.t + .07));
+  });
+  if (leave) tl.to(el, { opacity: 0, scale: 1.15 * s, duration: .28, ease: 'power1.out' }, T(points[points.length - 1].t + .24));
+}
+
+// a card of the page comes up out of it, larger and casting a shadow; at scale 1 it sits on its own pixels
+function liftUp(el, t, shadow, scale = LIFT) {
+  tl.set(el, { visibility: 'visible' }, T(t));
+  tl.fromTo(el, { scale: 1, boxShadow: NOSHADOW }, { scale, boxShadow: shadow, duration: .7, ease: settle, immediateRender: false }, T(t));
+}
+
+function build() {
+  const g = $('#glyph');
+  $('#gFill').setAttribute('d', GLYPH_D);
+  $('#gStroke').setAttribute('d', GLYPH_D);
+  const bb = $('#gFill').getBBox(), pad = .6;
+  g.setAttribute('viewBox', `${bb.x - pad} ${bb.y - pad} ${bb.width + 2 * pad} ${bb.height + 2 * pad}`);
+  $('#gStroke').setAttribute('stroke-width', (bb.width + 2 * pad) / 300 * 3.6);
+
+  gsap.set(chips.map((c) => c.el), { x: 960, y: 540, scale: .3, autoAlpha: 0 });
+  gsap.set('#rigWrap', { x: RIG_A.x, y: RIG_A.y, scale: RIG_A.s });
+  gsap.set(['#pgLedger', '#lR', '#pgLoans', '#pgPerson'], { autoAlpha: 0 });
+  [['#lift', OWED], ['#liftF1', SHARE], ['#liftF2', THEIRS]].forEach(([el, R]) => {   // each over its own pixels in the phone
+    gsap.set(el, { left: RIG_B.x + RIG_B.s * (PH.b + R.x), top: RIG_B.y + RIG_B.s * (PH.b + 130 + R.y - (R.scroll || 0)), width: R.w * RIG_B.s, height: R.h * RIG_B.s,
+      borderRadius: R.r * RIG_B.s, boxShadow: NOSHADOW });
+    gsap.set($('img', $(el)), { left: -R.x * RIG_B.s, top: -(130 + R.y) * RIG_B.s, width: 1080 * RIG_B.s });
+  });
+  gsap.set('#pgFamAssets', { autoAlpha: 0 });
+  gsap.set('#famWrap', { x: RIG_B.x, y: 1300, scale: RIG_B.s });
+  gsap.set(['#lock', '#chip5'], { xPercent: -50 });
+  gsap.set('#lock', { autoAlpha: 0 });
+  gsap.set('#lB', { y: -ROW.h });
+  gsap.set(['#notif', '#chip5', '#fine'], { autoAlpha: 0 });
+  gsap.set('#wall', { transformOrigin: `${LC.x}px ${LC.y}px` });
+  gsap.set('#pill', { xPercent: -50 });
+  const measure = (els, extra) => els.map((p) => { p.style.position = 'static'; p.style.display = 'inline-flex'; const w = p.offsetWidth + extra; p.removeAttribute('style'); return w; });
+  const pws = $$('#pill .pw'), widths = measure(pws, 104);
+  gsap.set(pws, { yPercent: 102 });
+  gsap.set('#pill', { width: widths[0] });
+
+  // the clock drives everything procedural (the chips' idle float) so a seek lands on the same frame every time
+  tl.to(clock, { t: DURATION + PRE, duration: DURATION + PRE, ease: 'none', onUpdate: tick }, 0);
+
+  // ── 1 · hook: the question lands, and the places money hides float out from behind it
+  tl.fromTo(h1, { yPercent: 165, rotation: 7 }, { yPercent: 0, rotation: 0, duration: 1, ease: 'enter', stagger: .08 }, T(-.5));
+  tl.fromTo('#h1', { '--fs': 72 }, { '--fs': 100, duration: 1.3, ease: settle }, T(-.5));
+  tl.fromTo('#h1', { scale: 1 }, { scale: 1.035, duration: 2.45, ease: 'none' }, T(-.5));
+  chips.forEach((c) => tl.fromTo(c.el, { x: 960, y: 540, scale: .3, autoAlpha: 0 },
+    { x: c.x, y: c.y, scale: c.s, autoAlpha: 1, duration: 1, ease: settle, immediateRender: false }, T(C.chipsOut + c.i * C.chipGap)));
+  // two fingers pinch it all together — and it pours into one figure
+  const byDist = [...chips].sort((a, b) => Math.hypot(b.x - 960, b.y - 540) - Math.hypot(a.x - 960, a.y - 540));
+  byDist.forEach((c, k) => tl.to(c.el, { x: 960, y: 540, scale: c.s * .2, autoAlpha: 0, duration: .46, ease: 'power3.in' }, T(C.converge + k * .022)));
+  tl.to(h1, { yPercent: -165, duration: .36, ease: 'exit', stagger: .035 }, T(C.h1Out));
+  [['#t1', 620, 1000, 860, 620], ['#t2', 1340, 150, 1060, 470]].forEach(([el, x0, y0, x1, y1]) => {
+    tl.fromTo(el, { x: x0 + 30, y: y0 + 50, scale: 1.3, opacity: 0 }, { x: x0, y: y0, scale: 1, opacity: 1, duration: .16, ease: settle, immediateRender: false }, T(C.pinch));
+    tl.to(el, { x: x1, y: y1, scale: .86, duration: .44, ease: 'power2.in' }, T(C.converge));
+    tl.to(el, { opacity: 0, scale: 1.2, duration: .22, ease: 'power1.out' }, T(C.converge + .44));
+  });
+
+  // ── 2 · the answer: a wall of digits, then the app's card
+  tl.fromTo('#raw', { autoAlpha: 0, scale: .88 }, { autoAlpha: 1, scale: 1, duration: .6, ease: settle }, T(C.drop));
+  $$('#raw .ds').forEach((s, i) => tl.fromTo(s, { y: 0 }, { y: -strips[i] * 150, duration: stripDur[i], ease: 'power3.out' }, T(C.drop)));
+  tl.fromTo('#rawUnit', { autoAlpha: 0, y: 16 }, { autoAlpha: .75, y: 0, duration: .5, ease: settle }, T(2.4));
+  [h2b, h2a].forEach((h) => tl.fromTo(h, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .07 }, T(C.h2In)));
+  tl.fromTo(['#h2b', '#h2a'], { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h2In));
+  tl.fromTo('#afterClip', { clipPath: 'inset(0px 0px 0px 1920px)' }, { clipPath: 'inset(0px 0px 0px 0px)', duration: C.scanDur, ease: 'power1.inOut' }, T(C.scan));
+  tl.fromTo(['#beam', '#beamTrail'], { x: 1920 }, { x: 0, duration: C.scanDur, ease: 'power1.inOut' }, T(C.scan));
+  tl.fromTo(['#beam', '#beamTrail'], { opacity: 0 }, { opacity: 1, duration: .12 }, T(C.scan - .02));
+  tl.to(['#beam', '#beamTrail'], { opacity: 0, duration: .18 }, T(C.scan + C.scanDur - .08));
+  tl.set('#s2b', { autoAlpha: 0 }, T(C.scan + 1.1));
+  tl.fromTo(sub2, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .05 }, T(C.sub2In));
+
+  // the camera pulls out of the card and finds the phone around it
+  tl.to(h2a, { yPercent: -165, duration: .38, ease: 'exit', stagger: .04 }, T(C.h2Out + .06));
+  tl.to(sub2, { yPercent: -165, duration: .32, ease: 'exit', stagger: .02 }, T(C.h2Out - .02));
+  tl.fromTo('#rigWrap', { x: RIG_A.x, y: RIG_A.y, scale: RIG_A.s }, { x: RIG_B.x, y: RIG_B.y, scale: RIG_B.s, duration: C.zoomDur, ease: 'cam', immediateRender: false }, T(C.zoom));
+  tl.fromTo('#rig', { clipPath: clipCard }, { clipPath: clipFull, duration: C.zoomDur, ease: 'cam', immediateRender: false }, T(C.zoom));
+  tl.fromTo('#rigShadow', { opacity: 0 }, { opacity: 1, duration: .6, ease: 'none' }, T(C.zoom + .25));
+
+  // ── 3 · a bank SMS arrives; a tap on it, and it becomes a row of the ledger
+  tl.fromTo(h3, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.h3In));
+  tl.fromTo('#h3', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h3In));
+  tl.fromTo(sub3, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .025 }, T(C.h3In + .26));
+  tl.fromTo('#pgHome', { autoAlpha: 1 }, { autoAlpha: 0, duration: .14, ease: 'none', immediateRender: false }, T(C.tabSwap + .06));
+  tl.fromTo('#pgLedger', { autoAlpha: 0, scale: .94 }, { autoAlpha: 1, scale: 1, duration: .42, ease: settle, immediateRender: false }, T(C.tabSwap + .14));
+  tl.fromTo('#notif', { autoAlpha: 0, y: -64, scale: .94 }, { autoAlpha: 1, y: 0, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.notif));
+  $$('#notif .mk i').forEach((m, i) => tl.fromTo(m, { scaleX: 0 }, { scaleX: 1, duration: .36, ease: 'enter' }, T(C.marks[i])));
+  tl.to('#notif', { scale: .98, duration: .1, ease: press }, T(C.notifTap));
+  tl.to('#notif', { left: rowRect.x, top: rowRect.y, width: rowRect.w, height: rowRect.h, borderRadius: 0, scale: 1,
+    boxShadow: 'rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px', duration: .6, ease: 'move', onUpdate: rowFit }, T(C.morph + .05));
+  tl.to('#nContent', { autoAlpha: 0, duration: .14, ease: 'none' }, T(C.morph + .05));
+  tl.fromTo('#nRow', { opacity: 0 }, { opacity: 1, duration: .3, ease: 'none' }, T(C.morph + .15));
+  tl.fromTo('#lB', { y: -ROW.h }, { y: 0, duration: .55, ease: settle, immediateRender: false }, T(C.morph + .15));
+  tl.set('#lR', { autoAlpha: 1 }, T(C.land));
+  tl.set('#notif', { autoAlpha: 0 }, T(C.land));
+  tl.fromTo('#lRflash', { opacity: .5 }, { opacity: 0, duration: .7, ease: 'power1.out', immediateRender: false }, T(C.land));
+  gesture([{ t: C.notifTap, x: 610, y: 337 }]);
+
+  // ── 4 · loans: the ledger gives way to who owes whom; the people who owe you lift out, and a tap opens one
+  tl.to(h3, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h3Out));
+  tl.to(sub3, { yPercent: -165, duration: .3, ease: 'exit', stagger: .01 }, T(C.h3Out));
+  tl.fromTo('#pgLedger', { autoAlpha: 1 }, { autoAlpha: 0, duration: .14, ease: 'none', immediateRender: false }, T(C.loans + .06));
+  tl.fromTo('#pgLoans', { autoAlpha: 0, scale: .94 }, { autoAlpha: 1, scale: 1, duration: .42, ease: settle, immediateRender: false }, T(C.loans + .14));
+  tl.fromTo(h4, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.h4In));
+  tl.fromTo('#h4', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h4In));
+  liftUp('#lift', C.lift, ON_FOREST);
+  tl.fromTo(sub4, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .025 }, T(C.sub4In));
+  tl.to('#lift', { scale: LIFT * .98, duration: .1, ease: press }, T(C.personTap));
+  tl.to('#lift', { autoAlpha: 0, scale: LIFT * 1.04, duration: .22, ease: 'exit' }, T(C.personTap + .1));
+  tl.fromTo('#pgLoans', { autoAlpha: 1 }, { autoAlpha: 0, duration: .14, ease: 'none', immediateRender: false }, T(C.personTap + .12));
+  tl.fromTo('#pgPerson', { autoAlpha: 0, scale: .94 }, { autoAlpha: 1, scale: 1, duration: .42, ease: settle, immediateRender: false }, T(C.personTap + .18));
+  tl.to(h4, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h4Out));
+  tl.to(sub4, { yPercent: -165, duration: .3, ease: 'exit', stagger: .01 }, T(C.h4Out));
+
+  // ── 5 · the phone steps back into a wall of every screen the app has
+  tl.to(['#rig .bezel', '#rigShadow'], { opacity: 0, duration: .2, ease: 'none' }, T(C.wall - .26));
+  tl.set('#rigWrap', { autoAlpha: 0 }, T(C.wall));
+  tl.set('#wallCam', { visibility: 'visible' }, T(C.wall));
+  const S0 = (1080 * RIG_B.s) / TW;
+  tl.fromTo('#wall', { x: screenC.x - LC.x, y: screenC.y - LC.y, scale: S0, rotationX: 0, rotationZ: 0 },
+    { x: 860 - LC.x, y: 470 - LC.y, scale: .8, rotationX: 30, rotationZ: -13, duration: 1.05, ease: 'cam', immediateRender: false }, T(C.wall));
+  Object.values(tiles).filter((t) => t !== L).forEach((t) => {
+    const d = Math.hypot(t.c - L.c, t.r - L.r);
+    tl.fromTo(t.el, { autoAlpha: 0, z: -600 }, { autoAlpha: 1, z: 0, duration: .6, ease: settle }, T(C.wall + .05 + d * .05));
+  });
+  tl.fromTo('#bright2', { clipPath: `circle(0px at ${screenC.x}px ${screenC.y}px)` }, { clipPath: `circle(2000px at ${screenC.x}px ${screenC.y}px)`, duration: .75, ease: 'power2.inOut' }, T(C.wall + .05));
+  cols.forEach((c, i) => tl.fromTo(c, { y: 0 }, { y: (i % 2 ? 1 : -1) * 110, duration: 3.5, ease: 'none', immediateRender: false }, T(C.wall)));
+
+  // one word at a time; a tap on its screen pulls it forward
+  const beats = C.words;
+  tl.set('#pill', { visibility: 'visible' }, T(beats[0] - .1));
+  tl.fromTo('#pill', { scale: .8, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: .5, ease: settle, immediateRender: false }, T(beats[0] - .1));
+  const others = Object.values(tiles).filter((t) => t !== tiles[CONFIG.focus[0]]).map((t) => $('.dim', t.el));
+  tl.to(others, { opacity: .42, duration: .4, ease: 'none' }, T(beats[0]));
+  beats.forEach((b, k) => {
+    const f = tiles[CONFIG.focus[k]];
+    tl.fromTo(pws[k], { yPercent: 102 }, { yPercent: 0, duration: .42, ease: k ? 'power3.inOut' : 'enter', immediateRender: false }, T(k ? b - .06 : b));
+    tl.fromTo(pws[k], { '--fs': 74 }, { '--fs': 100, duration: .7, ease: settle, immediateRender: false }, T(b));
+    if (k) {
+      tl.to(pws[k - 1], { yPercent: -102, duration: .42, ease: 'power3.inOut' }, T(b - .06));
+      tl.to('#pill', { width: widths[k], duration: .5, ease: settle }, T(b));
+      const p = tiles[CONFIG.focus[k - 1]];
+      tl.to(p.el, { z: 0, scale: 1, duration: .45, ease: settle }, T(b));
+      tl.to($('.dim', p.el), { opacity: .42, duration: .3, ease: 'none' }, T(b));
+    }
+    tl.fromTo(f.el, { z: 0, scale: 1 }, { z: 230, scale: 1.1, duration: .55, ease: settle, immediateRender: false }, T(b + .04));
+    tl.to($('.dim', f.el), { opacity: 0, duration: .25, ease: 'none' }, T(b + .04));
+  });
+
+  // ── 6 · family: the wall's last tap opens onto one family's ledger (the wipe is in placeTaps)
+  tl.set('#sF', { visibility: 'visible' }, T(C.toFamily));
+  tl.set(['#wallCam', '#pill'], { visibility: 'hidden' }, T(C.toFamily + .62));
+  tl.fromTo('#famWrap', { y: 1300 }, { y: RIG_B.y, duration: .75, ease: settle, immediateRender: false }, T(C.famIn));
+  tl.fromTo(hF, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.hFIn));
+  tl.fromTo('#hF', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.hFIn));
+  // each member picks what to share: the two switches come up
+  liftUp('#liftF1', C.famLift, ON_WHITE);
+  tl.fromTo(subFa, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .025 }, T(C.subFIn));
+  tl.to('#liftF1', { scale: 1, boxShadow: NOSHADOW, duration: .4, ease: settle }, T(C.famSwap - .45));
+  tl.set('#liftF1', { visibility: 'hidden' }, T(C.famSwap));
+  // …and what arrives of someone else's: Maryam's holdings, by name and value
+  tl.fromTo('#pgFam', { autoAlpha: 1 }, { autoAlpha: 0, duration: .14, ease: 'none', immediateRender: false }, T(C.famSwap + .06));
+  tl.fromTo('#pgFamAssets', { autoAlpha: 0, scale: .94 }, { autoAlpha: 1, scale: 1, duration: .42, ease: settle, immediateRender: false }, T(C.famSwap + .14));
+  // a finger drags the page up to them: the Android dot, the page following it one to one
+  const d0 = { x: 610, y: 930 }, d1 = { x: 610, y: 930 - THEIRS.scroll * RIG_B.s };
+  tl.fromTo('#t1', { x: d0.x + 40, y: d0.y + 66, scale: 1.3, opacity: 0 }, { x: d0.x, y: d0.y, scale: 1, opacity: 1, duration: .22, ease: settle, immediateRender: false }, T(C.famScroll - .24));
+  tl.to('#t1', { y: d1.y, duration: .5, ease: 'power2.inOut' }, T(C.famScroll));
+  tl.to('#pgFamAssets img', { y: -THEIRS.scroll, duration: .5, ease: 'power2.inOut' }, T(C.famScroll));
+  tl.to('#t1', { opacity: 0, scale: 1.15, duration: .22, ease: 'power1.out' }, T(C.famScroll + .5));
+  liftUp('#liftF2', C.famLift2, ON_WHITE, 1.16);   // a little less: it sits near the frame's foot
+  tl.to(subFa, { yPercent: -165, duration: .5, ease: 'power3.inOut', stagger: .02 }, T(C.subRoll));   // one roll: out and in together
+  tl.fromTo(subFb, { yPercent: 165 }, { yPercent: 0, duration: .5, ease: 'power3.inOut', stagger: .02 }, T(C.subRoll));
+  tl.fromTo('#lock', { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: .6, ease: settle, immediateRender: false }, T(C.lock));
+
+  // ── 7 · the brand fills the frame
+  tl.fromTo('#endGround', { clipPath: `circle(0px at ${phoneC.x}px ${phoneC.y}px)` }, { clipPath: `circle(2100px at ${phoneC.x}px ${phoneC.y}px)`, duration: .62, ease: 'cam' }, T(C.toEnd));
+  tl.fromTo('#glyph', { scale: .84 }, { scale: 1, duration: 1.1, ease: settle, immediateRender: false }, T(C.logo - .02));
+  tl.fromTo('#gStroke', { drawSVG: '0%' }, { drawSVG: '100%', duration: .85, ease: 'power2.inOut' }, T(C.logo - .02));
+  tl.fromTo('#gFill', { opacity: 0 }, { opacity: 1, duration: .38, ease: 'none', immediateRender: false }, T(C.logo + .5));
+  tl.to('#gStroke', { opacity: 0, duration: .3, ease: 'none' }, T(C.logo + .74));
+  tl.fromTo(wm, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .08 }, T(C.wordmark));
+  tl.fromTo('#wordmark', { '--fs': 78 }, { '--fs': 100, duration: 1.1, ease: settle }, T(C.wordmark));
+  tl.fromTo('#s5', { scale: 1 }, { scale: 1.02, duration: DURATION - C.logo + PRE, ease: 'none', immediateRender: false }, T(C.logo));
+  tl.fromTo('#chip5', { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: .6, ease: settle, immediateRender: false }, T(C.chip));
+  tl.fromTo(tag, { yPercent: 165 }, { yPercent: 0, duration: .8, ease: 'enter', stagger: .06 }, T(C.tag));
+  tl.fromTo('#tag', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.tag));
+  tl.fromTo('#fine', { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: .6, ease: settle, immediateRender: false }, T(C.url));
+}
+
+// taps that need measured geometry (the lifted card, the wall's projection) go in after a seek
+function placeTaps() {
+  const at = (t, fn) => { tl.seek(T(t), true); return fn(); };
+  const centre = (el, fx = .5, fy = .5) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width * fx, y: r.top + r.height * fy }; };
+  const person = { t: C.personTap, ...at(C.personTap, () => centre($('#lift'), .7, .17)) };   // مهدی's row
+  const wallTaps = C.words.map((b, k) => ({ t: b, ...at(b + .12, () => centre(tiles[CONFIG.focus[k]].el, .5, .55)) }));
+  tl.seek(0, true);
+  gesture([person]);
+  gesture(wallTaps);
+  // leaving the wall: the family screen opens into the family scene
+  const f = wallTaps[3], R = Math.max(...[[0, 0], [1920, 0], [0, 1080], [1920, 1080]].map(([x, y]) => Math.hypot(x - f.x, y - f.y))) + 80;
+  tl.fromTo('#famGround', { clipPath: `circle(0px at ${f.x}px ${f.y}px)` }, { clipPath: `circle(${R}px at ${f.x}px ${f.y}px)`, duration: .62, ease: 'cam' }, T(C.toFamily));
+  window.CUES.pan = { person: person.x / 960 - 1, wall: wallTaps.map((p) => p.x / 960 - 1) };
+}
+
+// the row inside the shrinking notification stays centred on «قبض برق», whatever the box's shape
+function rowFit() {
+  const n = $('#notif');
+  $('#nRow img').style.top = n.offsetHeight / 2 - (130 + ROW.y + ROW.h / 2) * n.offsetWidth / 1080 + 'px';
+}
+
+function tick() {
+  const t = clock.t - PRE;
+  for (const c of chips) {
+    const a = 11 * c.s, ph = c.i * 1.7;
+    c.cf.style.transform = `translate(${a * Math.sin(t * 1.25 + ph)}px, ${a * Math.cos(t * 1.05 + ph * 1.3)}px) rotate(${2.4 * Math.sin(t * .9 + ph)}deg)`;
+  }
+}
+
+window.DURATION = DURATION;
+window.CUES = { ...C, duration: DURATION, strips, stripDur, chipX: chips.map((c) => c.x / 960 - 1) };
+window.seek = (t) => { tl.seek(T(t), false); };
+window.ready = (async () => {
+  // XHR, not fetch: fetch refuses file:// even where --allow-file-access-from-files lets XHR in
+  const svg = await new Promise((ok, no) => { const x = new XMLHttpRequest(); x.onload = () => ok(x.responseText); x.onerror = no; x.open('GET', '../../worker/public/icon.svg'); x.send(); });
+  GLYPH_D = svg.match(/ d="([^"]+)"/)[1];
+  await document.fonts.load('900 100px Modam');
+  await document.fonts.load('300 100px Modam');
+  await document.fonts.load('700 36px Inter');
+  await document.fonts.ready;
+  await Promise.all($$('img').map((i) => i.decode().catch(() => {})));
+  build();
+  placeTaps();
+  tl.seek(T(0), false);
+  if (!/render/.test(location.search)) { tl.play(); tl.eventCallback('onComplete', () => tl.seek(T(0)).play()); }
+  return true;
+})();
+</script>
+</body>
+</html>

@@ -14,6 +14,8 @@
 # committed; retake them with `node tools/ad/capture-pwa.mjs`. Preview in a browser: serve the repo
 # root (`python3 -m http.server`) and open /tools/ad/ad.html.
 # Usage: tools/ad/make.sh [out.mp4]      (default tools/ad/out/muchtoman-ad-4x5.mp4, not committed)
+#        tools/ad/make.sh wide [out.mp4] (the 16:9 cut from wide.html, 1920×1080, for Aparat / Cafe Bazaar,
+#                                          and its 720p copy as the landing page's film, into worker/public/)
 #        tools/ad/make.sh hero          (the landing page's hero video, into worker/public/)
 set -e
 cd "$(dirname "$0")"
@@ -31,12 +33,25 @@ if [ "${1-}" = hero ]; then
   ls -l $P/hero*
   exit
 fi
-OUT=${1:-out/muchtoman-ad-4x5.mp4}
-node render.mjs --out out/silent.mp4
-python3 sound.py out/cues.json out/soundtrack.wav
+P=ad.html S= OUT=${1:-out/muchtoman-ad-4x5.mp4}
+if [ "${1-}" = wide ]; then P=wide.html S=-wide OUT=${2:-out/muchtoman-ad-16x9.mp4}; fi
+node render.mjs --page $P --out out/silent$S.mp4
+python3 sound.py out/cues$S.json out/soundtrack$S.wav
 LN=I=-14:TP=-1.5:LRA=11
-M=$(ffmpeg -hide_banner -i out/soundtrack.wav -af loudnorm=$LN:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p' |
+M=$(ffmpeg -hide_banner -i out/soundtrack$S.wav -af loudnorm=$LN:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p' |
   python3 -c "import json,sys; m=json.load(sys.stdin); print(f\"measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:offset={m['target_offset']}\")")
-ffmpeg -v error -y -i out/silent.mp4 -i out/soundtrack.wav -filter_complex "[1:a]loudnorm=$LN:${M}:linear=true,aresample=48000[a]" \
+ffmpeg -v error -y -i out/silent$S.mp4 -i out/soundtrack$S.wav -filter_complex "[1:a]loudnorm=$LN:${M}:linear=true,aresample=48000[a]" \
   -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 256k -movflags +faststart "$OUT"
 echo "$OUT"
+if [ "$S" = -wide ]; then
+  # The wide cut is also the landing page's click-to-play film, with its sound: 720p H.264 (it is
+  # preload="none", so its bytes cost nothing until she presses play) and its opening frame as the
+  # poster. Named film, not ad: blockers hide anything served as /ad*.
+  P=../../worker/public
+  ffmpeg -v error -y -i "$OUT" -vf scale=1280:720:flags=lanczos -pix_fmt yuv420p -color_range tv -colorspace bt709 \
+    -color_primaries bt709 -color_trc bt709 -c:v libx264 -preset veryslow -tune animation -crf 24 -profile:v high \
+    -level 4.0 -c:a aac -b:a 128k -movflags +faststart $P/film.mp4
+  ffmpeg -v error -y -ss 1.4 -i "$OUT" -frames:v 1 -vf scale=1280:720:flags=lanczos out/film-poster.png
+  magick out/film-poster.png -quality 80 $P/film.webp
+  ls -l $P/film.*
+fi
