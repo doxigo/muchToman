@@ -124,8 +124,6 @@ or header, never words in the body.
 | Bank Maskan | `Bank Maskan` |
 | Mehr Iran Bank | `B.QMEHRIRAN`, `+989810008528` |
 
-**Deliberately not read:** Ayandeh Bank. Its messages are shaped like balance updates but are not.
-
 **Blu boxes** are your own money set aside inside Blu, so moving money into or out of a box is
 filed as a transfer between accounts, never as income or spending.
 
