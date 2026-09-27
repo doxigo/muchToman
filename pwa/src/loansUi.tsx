@@ -401,9 +401,9 @@ function UnitAmount({ units, unit, onUnit, text, onText, error }: {
   );
 }
 
-type Opening = 'NONE' | 'OWED' | 'OWE';
-const OPENINGS: Opening[] = ['NONE', 'OWED', 'OWE'];
-const OPENING_FA: Record<Opening, string> = { NONE: 'نه', OWED: 'بهم بدهکاره', OWE: 'بهش بدهکارم' };
+type Opening = 'OWED' | 'OWE';
+const OPENINGS: Opening[] = ['OWED', 'OWE'];
+const OPENING_FA: Record<Opening, string> = { OWED: 'بهم بدهکاره', OWE: 'بهش بدهکارم' };
 
 type PromiseChoice = 'NONE' | 'WEEK' | 'MONTH' | 'QUARTER';
 const PROMISES: PromiseChoice[] = ['NONE', 'WEEK', 'MONTH', 'QUARTER'];
@@ -412,8 +412,8 @@ const promiseDay = (choice: PromiseChoice, today: number): number | null =>
   choice === 'WEEK' ? today + 7 : choice === 'MONTH' ? jalaliMonthsAfter(today, 1) : choice === 'QUARTER' ? jalaliMonthsAfter(today, 3) : null;
 
 /**
- * 'loanAccount' {id?}: a new account — a name, what was already owed before the app, and a date if he
- * gave one — or the same person's name and date, and delete. A new one opens straight onto its page.
+ * 'loanAccount' {id?}: a new account — a name, what is owed (nothing owed is only an empty row under
+ * «تسویه شده»), and a date if he gave one — or the same person's name and date, and delete. A new one opens straight onto its page.
  */
 function PersonSheet({ id }: { id?: string }) {
   useData();
@@ -422,14 +422,14 @@ function PersonSheet({ id }: { id?: string }) {
   useGone(id != null && editing == null, close);
   const [today] = useState(tehranToday);
   const [name, setName] = useState(editing?.name ?? '');
-  const [opening, setOpening] = useState<Opening>('NONE');
+  const [opening, setOpening] = useState<Opening>('OWED');
   const [unit, setUnit] = useState('');
   const [text, setText] = useState('');
   const [promise, setPromise] = useState<number | null>(editing?.promise ?? null);
   if (id != null && editing == null) return null;
 
-  const carried = opening === 'NONE' ? null : parseMove(unit, text);
-  const ready = name.trim() !== '' && (opening === 'NONE' || carried != null);
+  const carried = editing ? null : parseMove(unit, text);
+  const ready = name.trim() !== '' && (editing != null || carried != null);
   const title = editing ? 'ویرایش حساب' : 'حساب تازه';
   const picked = PROMISES.find((c) => promiseDay(c, today) === promise) ?? 'CUSTOM';
 
@@ -457,9 +457,9 @@ function PersonSheet({ id }: { id?: string }) {
       </div>
       {!editing && (
         <>
-          <SheetLabel>از قبل چیزی مونده؟</SheetLabel>
+          <SheetLabel>کی بدهکاره؟</SheetLabel>
           <SegmentedChoice options={OPENINGS} selected={opening} label={(o) => OPENING_FA[o]} onSelect={setOpening} fontSize={14} />
-          {opening !== 'NONE' && <UnitAmount units={unitChoices([])} unit={unit} onUnit={setUnit} text={text} onText={setText} error={null} />}
+          <UnitAmount units={unitChoices([])} unit={unit} onUnit={setUnit} text={text} onText={setText} error={null} />
         </>
       )}
       <SheetLabel>قرار پس دادن</SheetLabel>

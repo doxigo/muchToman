@@ -752,9 +752,9 @@ private fun AmountField(unit: String, text: String, onText: (String) -> Unit, ty
 private fun unitAmount(text: String): Double? = parseAmount(text)?.takeIf { it > 0.0 && it.isFinite() }
 
 /**
- * Add or edit a person. Adding also asks what was already owed — the loan from before the app,
- * which is the first thing most people have to write down — and never moves a holding for it: that
- * money left the drawer long before the app was counting.
+ * Add or edit a person. Adding also asks what is owed — an account with nothing on it is only an
+ * empty row under «تسویه شده» — and never moves a holding for it: that money most often left the
+ * drawer long before the app was counting.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -772,14 +772,14 @@ internal fun LoanPersonSheet(
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var name by rememberSaveable { mutableStateOf(person?.name.orEmpty()) }
     var promise by rememberSaveable { mutableStateOf(person?.promise) }
-    // 0 nothing, 1 he owes her, 2 she owes him.
-    var opening by rememberSaveable { mutableIntStateOf(0) }
+    // 1 he owes her, 2 she owes him.
+    var opening by rememberSaveable { mutableIntStateOf(1) }
     var unit by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
     val rial = if (unit.isBlank()) tomanFieldToRial(amountText) else null
     val units = remember(holdings) { loanUnits(null, holdings, null, type) }
     val amount = if (unit.isBlank()) null else unitAmount(amountText)
-    val openingOk = opening == 0 || rial != null || amount != null
+    val openingOk = person != null || rial != null || amount != null
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -808,20 +808,18 @@ internal fun LoanPersonSheet(
             )
 
             if (person == null) {
-                SheetLabel("از قبل چیزی مونده؟")
+                SheetLabel("کی بدهکاره؟")
                 SegmentedChoice(
-                    options = listOf(0, 1, 2),
+                    options = listOf(1, 2),
                     selected = opening,
-                    label = { listOf("نه", "بهم بدهکاره", "بهش بدهکارم")[it] },
+                    label = { if (it == 1) "بهم بدهکاره" else "بهش بدهکارم" },
                     onSelect = { opening = it },
                     fontSize = 13.sp,
                 )
-                if (opening != 0) {
-                    Spacer(Modifier.height(Space.m))
-                    UnitChips(units, unit, type) { unit = it; amountText = "" }
-                    Spacer(Modifier.height(Space.m))
-                    AmountField(unit, amountText, { amountText = it }, type, null)
-                }
+                Spacer(Modifier.height(Space.m))
+                UnitChips(units, unit, type) { unit = it; amountText = "" }
+                Spacer(Modifier.height(Space.m))
+                AmountField(unit, amountText, { amountText = it }, type, null)
             }
 
             SheetLabel("قرار پس دادن")
@@ -830,7 +828,7 @@ internal fun LoanPersonSheet(
             Spacer(Modifier.height(Space.xl))
             CommitButton("ذخیره", enabled = name.isNotBlank() && openingOk) {
                 val carried = when {
-                    person != null || opening == 0 -> null
+                    person != null -> null
                     unit.isBlank() -> rial?.let { LoanMove(id = "", personId = "", rial = if (opening == 1) it else -it, day = today) }
                     else -> amount?.let { LoanMove(id = "", personId = "", typeId = unit, amount = if (opening == 1) it else -it, day = today) }
                 }
@@ -1149,8 +1147,8 @@ internal fun LoanLinkRow(entry: LedgerEntry, view: LoanView?, type: (String) -> 
 }
 
 /**
- * The three sheets, wherever they were asked for. Adding a person lands on that person's page —
- * the next thing she does is say what they owe — and deleting one leaves an undo, since a person
+ * The three sheets, wherever they were asked for. Adding a person lands on that person's page,
+ * and deleting one leaves an undo, since a person
  * carries every move she wrote down about them.
  */
 @Composable
