@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>چقدر تومن · ad 4:5</title>
+<style>
+  @font-face { font-family: Modam; src: url(../../worker/public/modam.woff2) format('woff2'); font-weight: 200 900; font-stretch: 70% 100%; font-display: block; }
+  :root {
+    --forest: #163300; --bright: #9FE870; --ink: #131711; --muted: #59614F;
+    --fstrong: #DFECCF; --fmuted: #A9C295; --lift: 0 34px 60px -24px rgba(12,32,0,.5), 0 10px 22px -10px rgba(12,32,0,.22);
+    --ios: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; overflow: hidden; background: #000; }
+  #stage { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: var(--bright);
+    font-family: Modam, sans-serif; color: var(--forest); letter-spacing: 0; -webkit-font-smoothing: antialiased; }
+  .L { position: absolute; inset: 0; }
+  .fig { font-feature-settings: 'tnum' 1; }
+
+  /* headlines: words rise out of their own masks — Persian joins forbid splitting letters */
+  .hl { position: absolute; left: 0; right: 0; text-align: center; font-weight: 900; line-height: 1.16;
+    --fs: 100; font-stretch: calc(var(--fs) * 1%); color: var(--hc, var(--forest)); }
+  .hl .ln { display: block; white-space: nowrap; }
+  .w { display: inline-block; overflow: hidden; vertical-align: top; padding: .16em .08em .34em; margin: -.16em -.08em -.34em; }
+  .wi { display: inline-block; transform-origin: 50% 100%; }
+  .acc { display: inline-block; padding: 0 .3em .05em; border-radius: 999px; background: var(--accBg); color: var(--accInk); }
+  .dot { display: inline-block; width: .22em; height: .22em; border-radius: 50%; background: currentColor; vertical-align: middle; margin: 0 .45em; opacity: .7; }
+
+  /* 1 · hook */
+  #h1 { top: 402px; font-size: 176px; --accBg: var(--forest); --accInk: var(--bright); }
+  .chip { position: absolute; left: 0; top: 0; }
+  .chip .cf { position: absolute; }
+  .chip .ci { display: flex; align-items: center; gap: 18px; height: 94px; padding-inline: 14px 34px; border-radius: 999px;
+    background: #fff; box-shadow: var(--lift); white-space: nowrap; font-weight: 800; font-size: 35px; color: var(--ink);
+    transform: translate(50%, -50%); }
+  .disc { flex: none; display: grid; place-items: center; width: 66px; height: 66px; border-radius: 50%; }
+  .disc.plate { background: #fff; box-shadow: inset 0 0 0 2px #DDE2D2; }
+  .disc img { width: 40px; height: 40px; display: block; }
+  .disc svg { width: 36px; height: 36px; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .disc .sym { font: 700 38px/1 Inter, 'Helvetica Neue', sans-serif; color: #fff; }
+
+  /* 2 · answer */
+  #h2b, #h2a { top: 104px; font-size: 96px; }
+  #h2b { --accBg: var(--forest); --accInk: var(--bright); }
+  #h2a { --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #raw { position: absolute; left: 0; right: 0; top: 565px; text-align: center; direction: ltr; font-size: 124px; font-weight: 300;
+    --fs: 72; font-stretch: calc(var(--fs) * 1%); line-height: 150px; height: 150px; white-space: nowrap; }
+  .dc { display: inline-block; height: 150px; overflow: hidden; vertical-align: top; }
+  .ds { display: block; }
+  .ds b { display: block; height: 150px; font-weight: inherit; }
+  .sep { display: inline-block; vertical-align: top; }
+  #rawUnit { position: absolute; left: 0; right: 0; top: 728px; text-align: center; font-size: 46px; font-weight: 700; opacity: .75; }
+  #afterClip { clip-path: inset(0px 0px 0px 1080px); }
+  #forest { background: var(--forest); }
+  #sub2 { top: 1196px; font-size: 40px; font-weight: 600; --hc: var(--fstrong); }
+  #beam { position: absolute; top: 0; left: -5px; width: 10px; height: 1350px; background: #fff;
+    box-shadow: 0 0 22px 6px rgba(255,255,255,.75), 0 0 80px 26px rgba(159,232,112,.55); opacity: 0; }
+  #beamTrail { position: absolute; top: 0; left: 0; width: 260px; height: 1350px; opacity: 0;
+    background: linear-gradient(to right, rgba(159,232,112,.32), rgba(159,232,112,0)); }
+
+  /* the Android phone: the landing page's frame, laid out in capture pixels (1080 = the screen) */
+  #rigWrap { position: absolute; left: 0; top: 0; width: 1130.89px; height: 2450.89px; transform-origin: 0 0; }
+  #rigShadow { position: absolute; inset: 0; border-radius: 163.98px; box-shadow: 0 90px 160px -50px rgba(0,0,0,.75), 0 30px 60px -20px rgba(0,0,0,.35); opacity: 0; }
+  #rig { position: absolute; inset: 0; will-change: transform; clip-path: inset(332.445px 81.445px 1257.445px 81.445px round 86px); }
+  .bezel { position: absolute; inset: 0; border-radius: 163.98px; background: #0b0d0a; box-shadow: inset 0 0 0 5px rgba(255,255,255,.1); }
+  .scr { position: absolute; width: 1080px; height: 2400px; overflow: hidden; background: #fff; }
+  .scr.dark { background: #121511; }
+  #rig .scr { left: 25.445px; top: 25.445px; border-radius: 138.54px; }
+  .punch { position: absolute; top: 45px; left: 517px; width: 46px; height: 46px; border-radius: 50%; background: #050605; z-index: 3; }
+  .page { position: absolute; left: 0; top: 130px; width: 1080px; height: 2270px; overflow: hidden; }
+  .page img, .cut img { position: absolute; left: 0; top: -130px; width: 1080px; height: 2400px; display: block; }
+  .cut { position: absolute; left: 0; width: 1080px; overflow: hidden; background: #fff; }
+  #lA { top: 0; height: 502px; }
+  #lR { top: 502px; height: 183px; } #lR img { top: -632px; }
+  #lB { top: 685px; height: 1585px; } #lB img { top: -815px; }
+  #lRflash { position: absolute; inset: 0; background: var(--bright); opacity: 0; mix-blend-mode: multiply; }
+
+  /* 3 · sms */
+  #h3 { top: 64px; font-size: 90px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #sub3 { top: 296px; font-size: 38px; font-weight: 500; --hc: var(--fstrong); line-height: 1.5; }
+  #notif { position: absolute; left: 190px; top: 452px; width: 700px; border-radius: 46px; background: #FAFBF7; overflow: hidden;
+    box-shadow: 0 44px 80px -26px rgba(0,0,0,.6), 0 14px 30px -12px rgba(0,0,0,.35); }
+  #nContent { padding: 28px 44px 34px; color: #131711; font-size: 32px; line-height: 1.6; }
+  .nHead { display: flex; align-items: center; gap: .5em; font-size: .78em; font-weight: 500; color: var(--muted); }
+  .nDot { display: grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 50%; background: #DCF2C0; }
+  .nDot svg { width: 1.1em; height: 1.1em; }
+  .nWho { margin-top: .3em; font-size: 1.16em; font-weight: 800; }
+  .nBody { font-weight: 500; }
+  .nBody b { font-weight: 800; }
+  .mk { position: relative; isolation: isolate; white-space: nowrap; }
+  .mk i { position: absolute; inset: .1em -.18em .02em; border-radius: .32em; background: var(--bright); z-index: -1; transform-origin: 100% 50%; transform: scaleX(0); }
+  #nRow { position: absolute; inset: 0; opacity: 0; overflow: hidden; background: #fff; }
+  #nRow img { position: absolute; left: 0; width: 100%; }
+
+  /* 4 · the wall of screens */
+  #bright2 { background: var(--bright); clip-path: circle(0px at 540px 1050px); }
+  #wallCam { perspective: 2600px; perspective-origin: 540px 640px; visibility: hidden; }
+  #wall { position: absolute; left: 0; top: 0; transform-style: preserve-3d; }
+  .col { position: absolute; top: 0; width: 360px; transform-style: preserve-3d; }
+  .tile { position: absolute; left: 0; width: 360px; height: 800px; border-radius: 46.18px; overflow: hidden;
+    box-shadow: 0 50px 80px -34px rgba(12,32,0,.6), 0 14px 26px -12px rgba(12,32,0,.25); }
+  .tile .scr { left: 0; top: 0; transform: scale(.333333); transform-origin: 0 0; }
+  .tile .dim { position: absolute; inset: 0; background: var(--bright); opacity: 0; }
+  .pill { position: absolute; left: 540px; border-radius: 999px; overflow: hidden; visibility: hidden; }
+  #pill { top: 104px; height: 136px; background: var(--forest); box-shadow: 0 30px 60px -24px rgba(12,32,0,.55); }
+  .pw { position: absolute; left: 0; right: 0; top: 0; height: 136px; line-height: 128px; text-align: center; white-space: nowrap;
+    font-size: 82px; font-weight: 900; color: var(--bright); --fs: 100; font-stretch: calc(var(--fs) * 1%); }
+
+  /* 5 · iPhone: the same app as a PWA, installed from the browser */
+  #ipGround { background: #fff; clip-path: circle(0px at 540px 675px); }
+  #h6 { top: 46px; font-size: 80px; --accBg: var(--forest); --accInk: var(--bright); }
+  #steps { top: 262px; height: 78px; background: #F3F5EE; }
+  .st { position: absolute; left: 0; right: 0; top: 0; height: 78px; display: flex; align-items: center; justify-content: center; gap: 16px;
+    white-space: nowrap; font-size: 32px; font-weight: 600; color: var(--ink); }
+  .st .n { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: #DCF2C0; color: #12290A;
+    font-weight: 800; font-stretch: 90%; flex: none; }
+  .st bdi { font-family: var(--ios); font-weight: 600; font-size: .92em; }
+  #ipWrap { position: absolute; left: 0; top: 0; width: 1263px; height: 2640px; transform-origin: 0 0; }
+  .ipShadow { position: absolute; inset: 0; border-radius: 207px; box-shadow: 0 80px 150px -40px rgba(12,32,0,.45), 0 24px 50px -16px rgba(12,32,0,.3); }
+  .ipBody { position: absolute; inset: 0; border-radius: 207px; background: #0A0A0A; box-shadow: inset 0 0 0 10px #B9B5AC, inset 0 0 0 13px #D8D4CB; }
+  .ipScreen { position: absolute; left: 42px; top: 42px; width: 1179px; height: 2556px; border-radius: 165px; overflow: hidden; background: #fff;
+    direction: ltr; font-family: var(--ios); color: #000; }
+  .island { position: absolute; left: 400.5px; top: 33px; width: 378px; height: 111px; border-radius: 56px; background: #000; z-index: 9; }
+  .homebar { position: absolute; left: 379.5px; bottom: 24px; width: 420px; height: 15px; border-radius: 8px; background: #111; z-index: 9; }
+  #ipSafari { overflow: hidden; background: #fff; }
+  .ipPage { position: absolute; left: 0; top: 177px; width: 1179px; overflow: hidden; }
+  .ipPage img { display: block; width: 1179px; }
+  .toolbar { position: absolute; left: 0; top: 2226px; width: 1179px; height: 330px; background: rgba(247,247,247,.97); box-shadow: 0 -1px 0 #D6D6D6; }
+  .url { position: absolute; left: 45px; right: 45px; top: 22px; height: 132px; border-radius: 38px; background: #E6E6E9;
+    display: flex; align-items: center; justify-content: center; gap: 16px; font-size: 45px; color: #111; }
+  .url svg { width: 34px; height: 34px; fill: none; stroke: #6B6B70; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .tbi { position: absolute; top: 172px; width: 72px; height: 72px; margin-left: -36px; fill: none; stroke: #007AFF; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  #ipSheet, #ipDialog { position: absolute; left: 0; width: 1179px; background: #F2F2F7; border-radius: 39px 39px 0 0; }
+  #ipSheet { top: 760px; height: 1796px; transform: translateY(1800px); box-shadow: 0 -20px 60px rgba(0,0,0,.18); }
+  .shHead { position: absolute; left: 48px; right: 48px; top: 48px; height: 150px; }
+  .shHead img { position: absolute; left: 0; top: 0; width: 138px; height: 138px; border-radius: 31px; }
+  .shT { position: absolute; left: 170px; top: 6px; font: 800 52px/1.3 Modam, sans-serif; direction: rtl; }
+  .shU { position: absolute; left: 170px; top: 84px; font-size: 40px; color: #8E8E93; }
+  .shX { position: absolute; right: 0; top: 18px; width: 90px; height: 90px; border-radius: 50%; background: #E3E3E8; }
+  .shX::before, .shX::after { content: ''; position: absolute; left: 30px; top: 43px; width: 30px; height: 5px; border-radius: 3px; background: #7C7C82; transform: rotate(45deg); }
+  .shX::after { transform: rotate(-45deg); }
+  .acts { position: absolute; left: 48px; right: 48px; top: 300px; border-radius: 30px; background: #fff; overflow: hidden; }
+  .act { position: relative; height: 156px; display: flex; align-items: center; padding: 0 48px; font-size: 51px; }
+  .act + .act { box-shadow: 0 -2px 0 0 #E4E4E8; }
+  .act svg { position: absolute; right: 44px; top: 45px; width: 66px; height: 66px; fill: none; stroke: #111; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .act i { position: absolute; inset: 0; background: #D1D1D6; opacity: 0; }
+  .act span { position: relative; }
+  #ipDialog { top: 120px; height: 2436px; transform: translateY(2500px); box-shadow: 0 -20px 60px rgba(0,0,0,.2); }
+  .dNav { position: absolute; left: 48px; right: 48px; top: 40px; height: 90px; font-size: 51px; }
+  .dNav .c { position: absolute; left: 0; top: 14px; color: #007AFF; }
+  .dNav .t { position: absolute; left: 0; right: 0; top: 14px; text-align: center; font-weight: 600; }
+  .dNav .a { position: absolute; right: 0; top: 14px; color: #007AFF; font-weight: 600; }
+  .dCard { position: absolute; left: 48px; right: 48px; top: 200px; height: 300px; border-radius: 30px; background: #fff; }
+  .dCard img { position: absolute; left: 44px; top: 60px; width: 180px; height: 180px; border-radius: 41px; box-shadow: 0 0 0 2px #EEE; }
+  .dName { position: absolute; left: 270px; right: 44px; top: 66px; height: 90px; font: 700 50px/90px Modam, sans-serif; direction: rtl; text-align: left; box-shadow: 0 2px 0 #E4E4E8; }
+  .dUrl { position: absolute; left: 270px; top: 186px; font-size: 40px; color: #8E8E93; }
+  .dNote { position: absolute; left: 96px; right: 96px; top: 540px; font-size: 38px; line-height: 1.4; color: #6D6D72; }
+  #ipHome { position: absolute; inset: 0; opacity: 0; background: linear-gradient(165deg, #12290A 0%, #2E5A0E 48%, #7FC24F 100%); }
+  .hic { position: absolute; width: 180px; height: 180px; border-radius: 41px; background: rgba(255,255,255,.2); box-shadow: inset 0 0 0 2px rgba(255,255,255,.28); }
+  #myIcon { position: absolute; left: 84px; top: 860px; width: 180px; }
+  #myIcon img { display: block; width: 180px; height: 180px; border-radius: 41px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  #myIcon span { display: block; margin: 16px -40px 0; text-align: center; font: 700 36px/1.2 Modam, sans-serif; color: #fff; white-space: nowrap; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  .dock { position: absolute; left: 36px; top: 2240px; width: 1107px; height: 280px; border-radius: 96px; background: rgba(255,255,255,.2); }
+  #ipApp { position: absolute; inset: 0; background: #fff; clip-path: inset(860px 915px 1516px 84px round 41px); visibility: hidden; }
+  #ipApp .ipPage { top: 177px; }
+  #ipAppIcon { position: absolute; left: 84px; top: 860px; width: 180px; height: 180px; border-radius: 41px; }
+
+  /* 6 · end card */
+  #endGround { background: var(--forest); clip-path: circle(0px at 540px 675px); }
+  #glyph { position: absolute; left: 405px; top: 156px; width: 270px; height: 270px; overflow: visible; }
+  #wordmark { top: 452px; font-size: 124px; --hc: #F2F3EF; }
+  #chip5 { position: absolute; left: 540px; top: 656px; height: 70px; padding: 0 34px; border-radius: 999px; white-space: nowrap;
+    box-shadow: inset 0 0 0 2px rgba(169,194,149,.38); color: var(--fstrong); font-size: 33px; font-weight: 600; line-height: 66px; }
+  .cta { position: absolute; left: 540px; height: 118px; padding: 0 70px; border-radius: 999px; font-size: 46px; font-weight: 800;
+    line-height: 112px; white-space: nowrap; }
+  #cta { top: 772px; background: var(--bright); color: var(--forest); }
+  #cta2 { top: 914px; color: var(--bright); box-shadow: inset 0 0 0 3px var(--bright); }
+  #url { position: absolute; left: 0; right: 0; top: 1078px; text-align: center; direction: ltr; font-size: 50px; font-weight: 800;
+    --fs: 92; font-stretch: calc(var(--fs) * 1%); color: var(--bright); }
+  #fine { position: absolute; left: 0; right: 0; top: 1160px; text-align: center; font-size: 32px; font-weight: 500; color: var(--fmuted); }
+
+  /* touches: the Android "show taps" dot, and its ripple */
+  .touch { position: absolute; left: 0; top: 0; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%;
+    background: rgba(255,255,255,.42); box-shadow: inset 0 0 0 4px #fff, 0 0 0 2px rgba(22,51,0,.28), 0 14px 34px rgba(0,0,0,.3); opacity: 0; }
+  .ripple { position: absolute; left: 0; top: 0; width: 108px; height: 108px; margin: -54px 0 0 -54px; border-radius: 50%;
+    box-shadow: inset 0 0 0 5px rgba(255,255,255,.9), 0 0 0 2px rgba(22,51,0,.18); opacity: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="s1" class="L"><div id="chips" class="L"></div><div id="h1" class="hl"></div></div>
+  <div id="s2b" class="L"><div id="h2b" class="hl"></div><div id="raw" class="fig"></div><div id="rawUnit"></div></div>
+  <div id="afterClip" class="L">
+    <div id="forest" class="L"></div>
+    <div id="h2a" class="hl"></div>
+    <div id="rigWrap">
+      <div id="rigShadow"></div>
+      <div id="rig">
+        <div class="bezel"></div>
+        <div class="scr">
+          <i class="punch"></i>
+          <div id="pgHome" class="page"><img src="../../docs/screenshots/home.png"></div>
+          <div id="pgLedger" class="page">
+            <div id="lA" class="cut"><img src="../../docs/screenshots/ledger.png"></div>
+            <div id="lB" class="cut"><img src="../../docs/screenshots/ledger.png"></div>
+            <div id="lR" class="cut"><img src="../../docs/screenshots/ledger.png"><i id="lRflash"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="sub2" class="hl"></div>
+  </div>
+  <div id="beamTrail"></div><div id="beam"></div>
+  <div id="s3" class="L">
+    <div id="h3" class="hl"></div><div id="sub3" class="hl"></div>
+    <div id="notif">
+      <div id="nContent">
+        <div class="nHead"><span class="nDot"><svg viewBox="0 0 24 24" fill="none" stroke="#163300" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"/></svg></span><span id="nMeta"></span></div>
+        <div class="nWho" id="nWho"></div>
+        <div class="nBody" id="nBody"></div>
+      </div>
+      <div id="nRow"><img src="../../docs/screenshots/ledger.png"></div>
+    </div>
+  </div>
+  <div id="bright2" class="L"></div>
+  <div id="wallCam" class="L"><div id="wall"></div></div>
+  <div id="pill" class="pill"></div>
+
+  <div id="ipGround" class="L"></div>
+  <div id="s6" class="L" style="visibility:hidden">
+    <div id="h6" class="hl"></div>
+    <div id="steps" class="pill"></div>
+    <div id="ipWrap">
+      <div class="ipShadow"></div>
+      <div class="ipBody"></div>
+      <div class="ipScreen">
+        <div id="ipSafari" class="L">
+          <div class="ipPage" style="height:2049px"><img src="../../docs/screenshots/pwa-ledger-safari.png"></div>
+          <div class="toolbar">
+            <div class="url"><svg viewBox="0 0 24 24"><path d="M7 11V7.5a5 5 0 0 1 10 0V11"/><rect x="5" y="11" width="14" height="10" rx="2"/></svg>sync.muchtoman.com</div>
+            <svg class="tbi" style="left:117.9px" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+            <svg class="tbi" style="left:353.7px;stroke:#C7C7CC" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <svg class="tbi" style="left:589.5px" viewBox="0 0 24 24"><path d="M8.5 9.5H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1.5"/><path d="M12 14V3"/><path d="M8.5 6.5L12 3l3.5 3.5"/></svg>
+            <svg class="tbi" style="left:825.3px" viewBox="0 0 24 24"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2z"/><path d="M22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/></svg>
+            <svg class="tbi" style="left:1061.1px" viewBox="0 0 24 24"><rect x="7" y="8" width="13" height="13" rx="1.5"/><path d="M4 16V5.5A1.5 1.5 0 0 1 5.5 4H16"/></svg>
+          </div>
+        </div>
+        <div id="ipSheet">
+          <div class="shHead"><img src="../../pwa/public/apple-touch-icon.png"><div class="shT">چقدر تومن</div><div class="shU">sync.muchtoman.com</div><i class="shX"></i></div>
+          <div class="acts">
+            <div class="act"><i></i><span>Copy</span><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></svg></div>
+            <div class="act"><i></i><span>Add to Reading List</span><svg viewBox="0 0 24 24"><circle cx="6" cy="15" r="3"/><circle cx="18" cy="15" r="3"/><path d="M9 15h6M3 15l2.5-7M21 15l-2.5-7"/></svg></div>
+            <div class="act"><i></i><span>Add Bookmark</span><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/></svg></div>
+            <div class="act" id="actHome"><i></i><span>Add to Home Screen</span><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg></div>
+            <div class="act"><i></i><span>Find on Page</span><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg></div>
+          </div>
+        </div>
+        <div id="ipDialog">
+          <div class="dNav"><span class="c">Cancel</span><span class="t">Add to Home Screen</span><span class="a" id="dAdd">Add</span></div>
+          <div class="dCard"><img src="../../pwa/public/apple-touch-icon.png"><div class="dName">چقدر تومن</div><div class="dUrl">https://sync.muchtoman.com/</div></div>
+          <div class="dNote">An icon will be added to your Home Screen so you can quickly access this website.</div>
+        </div>
+        <div id="ipHome">
+          <i class="hic" style="left:84px;top:260px"></i><i class="hic" style="left:361px;top:260px"></i><i class="hic" style="left:638px;top:260px"></i><i class="hic" style="left:915px;top:260px"></i>
+          <i class="hic" style="left:84px;top:560px"></i><i class="hic" style="left:361px;top:560px"></i><i class="hic" style="left:638px;top:560px"></i><i class="hic" style="left:915px;top:560px"></i>
+          <div id="myIcon"><img src="../../pwa/public/apple-touch-icon.png"><span>چقدر تومن</span></div>
+          <div class="dock"><i class="hic" style="left:48px;top:50px"></i><i class="hic" style="left:325px;top:50px"></i><i class="hic" style="left:602px;top:50px"></i><i class="hic" style="left:879px;top:50px"></i></div>
+        </div>
+        <div id="ipApp"><div class="ipPage" style="height:2379px"><img src="../../docs/screenshots/pwa-report.png"></div><img id="ipAppIcon" src="../../pwa/public/apple-touch-icon.png"></div>
+        <i class="island"></i><i class="homebar" id="homebar"></i>
+      </div>
+    </div>
+  </div>
+
+  <div id="endGround" class="L"></div>
+  <div id="s5" class="L">
+    <svg id="glyph"><path id="gFill" fill="#9FE870" fill-rule="evenodd" opacity="0"/><path id="gStroke" fill="none" stroke="#9FE870" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div id="wordmark" class="hl"></div>
+    <div id="chip5"></div>
+    <div id="cta" class="cta"></div>
+    <div id="cta2" class="cta"></div>
+    <div id="url"></div>
+    <div id="fine"></div>
+  </div>
+  <div id="r2" class="ripple"></div><div id="t2" class="touch"></div>
+  <div id="r1" class="ripple"></div><div id="t1" class="touch"></div>
+</div>
+
+<script src="node_modules/gsap/dist/gsap.min.js"></script>
+<script src="node_modules/gsap/dist/CustomEase.min.js"></script>
+<script src="node_modules/gsap/dist/DrawSVGPlugin.min.js"></script>
+<script>
+// ———————————————————————————————— CONFIG: every word and asset the ad shows ————————————————————————————————
+// Copy is the landing page's (worker/public/index.html) and the store slides'; figures are the app's own
+// sample-data captures (docs/screenshots; pwa-*.png are the PWA's ?demo=1 household, from capture-pwa.mjs).
+// *word* sets the accent pill, \n breaks a line.
+const CONFIG = {
+  hook: 'چقدر *تومن*\nداری؟',
+  chips: [ // label, kind, key, centre x, centre y, scale
+    ['بلوبانک', 'bank', 'blu', 270, 150, 1.0],
+    ['طلای ۱۸ عیار', 'glyph', 'INGOT', 790, 200, 1.0],
+    ['تتر', 'crypto', 'USDT', 540, 318, .86],
+    ['سکه امامی', 'glyph', 'COIN', 150, 790, .9],
+    ['سامان', 'bank', 'saman', 935, 800, .84],
+    ['دلار', 'glyph', 'DOLLAR', 250, 950, 1.0],
+    ['بیت‌کوین', 'crypto', 'BTC', 820, 975, 1.0],
+    ['سهام بورس', 'glyph', 'CHART', 520, 1092, .96],
+    ['ماشین', 'glyph', 'WHEEL', 200, 1215, .9],
+    ['خونه', 'glyph', 'HOUSE', 860, 1200, .9],
+    ['ملت', 'bank', 'mellat', 560, 1290, .84],
+  ],
+  answer: 'همه‌ی پولت، *یک عدد*',
+  raw: '۳٬۰۵۴٬۱۰۰٬۲۲۱', rawUnit: 'تومان',               // home.png's hero: ۳٫۰۵۴ میلیارد = ۳٬۰۵۴٬۱۰۰٬۲۲۱
+  answerSub: 'به نرخ آزاد، نه نرخ دولتی',
+  sms: 'پیامک بانک،\nخودش *دفتر* می‌شه',
+  smsSub: 'همون‌جا روی گوشی خونده می‌شه و به هیچ سروری نمی‌رسه',
+  notif: { meta: 'پیامک • الان', who: 'بانک',
+    body: 'برداشت <b class="mk">۲٬۴۳۲٬۰۰۰ ریال<i></i></b>، <span class="mk">قبض برق<i></i></span><br>مانده ۴۸٬۲۵۰٬۰۰۰ ریال' },
+  words: ['بودجه', 'قسط', 'گزارش', 'یک دفتر، همهٔ خانواده'],
+  focus: ['budget-dark', 'installments', 'report-dark', 'family'],
+  iphone: 'آیفون داری؟\nهمین اپ، به‌شکل *PWA*',
+  steps: [ // the landing page's three steps
+    '<bdi dir="ltr">sync.muchtoman.com</bdi> رو توی مرورگر باز کن',
+    'دکمهٔ اشتراک‌گذاری، بعد <bdi dir="ltr">Add to Home Screen</bdi>',
+    'از صفحهٔ اصلی بازش کن',
+  ],
+  brand: 'چقدر تومن',
+  chip: ['متن‌باز', 'بدون حساب', 'بدون تبلیغ'],
+  cta: 'دانلود برای اندروید',
+  cta2: 'نسخهٔ <bdi>PWA</bdi> برای آیفون',
+  url: 'muchtoman.com',
+  fine: 'اندروید ۷ به بالا <i class="dot"></i> آیفون از مرورگر',
+  wall: [
+    ['installment-link-dark', 'budget', 'family-assets-dark', 'report'],
+    ['home-dark', 'installments', 'banks', 'categories-dark'],
+    ['assets', 'ledger', 'report-dark', 'home'],
+    ['categories', 'budget-dark', 'family', 'installments-dark'],
+    ['banks-dark', 'family-dark', 'ledger-dark', 'assets-dark'],
+  ],
+};
+
+// Cue sheet, in seconds. The picture is timed from it and the soundtrack (tools/sound.py) reads the same
+// table, so every hit lands on its frame. The music is 120 bpm: a beat every 0.5s, a bar every 2s.
+const C = {
+  chipsOut: .05, chipGap: .035, pinch: 1.56, h1Out: 1.64, converge: 1.7,
+  drop: 2.0, h2In: 2.22, scan: 3.0, scanDur: 1.0, sub2In: 3.62,
+  h2Out: 4.66, zoom: 4.75, zoomDur: .85, h3In: 5.4, tabSwap: 5.8,
+  notif: 6.0, marks: [6.5, 6.7], notifTap: 7.0, morph: 7.05, land: 7.65,
+  h3Out: 8.0, wall: 8.5, words: [9.0, 9.5, 10.0, 10.5],
+  toIphone: 11.45, h6In: 11.72, ipIn: 11.8, stepAt: [11.95, 12.56, 13.94],
+  shareTap: 12.6, sheetUp: 12.66, addTap: 13.15, dialogUp: 13.22, confirmTap: 13.62, swipe: 13.74, home: 13.8,
+  iconPop: 14.0, iconTap: 14.45, appOpen: 14.5,
+  toEnd: 15.75, logo: 16.0, wordmark: 16.55, chip: 16.85, ctas: [17.05, 17.2], url: 17.4, ctaTaps: [18.0, 18.5],
+};
+
+// ———————————————————————————————— motion vocabulary: the app's own (Theme.kt Motion) ————————————————————————————————
+gsap.registerPlugin(CustomEase, DrawSVGPlugin);
+CustomEase.create('enter', 'M0,0 C0.05,0.7 0.1,1 1,1');   // Motion.enter
+CustomEase.create('exit', 'M0,0 C0.3,0 0.8,0.15 1,1');    // Motion.exit
+CustomEase.create('cam', 'M0,0 C0.7,0 0.16,1 1,1');       // camera moves: ease in, land soft
+CustomEase.create('move', 'M0,0 C0.45,0 0.1,1 1,1');
+// Motion.settle / Motion.press: critically damped springs — nothing overshoots.
+const spring = (W) => { const n = 1 - (1 + W) * Math.exp(-W); return (p) => (1 - (1 + W * p) * Math.exp(-W * p)) / n; };
+const settle = spring(9), press = spring(13);
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const PRE = 0.5;              // pre-roll: frame 0 opens mid-motion, the headline already landing
+const DURATION = 20.5;
+const T = (t) => t + PRE;
+let GLYPH_D = '';             // icon.svg's mark, read at load
+
+// ———————————————————————————————— build ————————————————————————————————
+function words(el, text) {
+  el.innerHTML = text.split('\n').map((line) => '<span class="ln">' + line.match(/\*[^*]+\*|[^\s*]+/g).map((tok) => {
+    const acc = tok.startsWith('*');
+    return `<span class="w"><span class="wi">${acc ? `<span class="acc">${tok.slice(1, -1)}</span>` : tok}</span></span>`;
+  }).join(' ') + '</span>').join('');
+  return $$('.wi', el);
+}
+
+const GLYPHS = { // the app's pen: 24 grid, round caps (CategoryIcon / AssetGlyph drawings)
+  INGOT: ['#A07A12', '<path d="M8.58 8.22h6.86l3.17 7.56H5.41z"/><path d="M10.42 12h3.16"/>'],
+  COIN: ['#A9761F', '<circle cx="12" cy="12" r="7.84"/><circle cx="12" cy="12" r="4.84"/>'],
+  DOLLAR: ['#2F8544', '<path d="M12 2.6v18.8"/><path d="M16.6 5.9H9.8a3.3 3.3 0 0 0 0 6.6h4.4a3.3 3.3 0 0 1 0 6.6H6.9"/>'],
+  CHART: ['#A33FBE', '<path d="M16 7h6v6"/><path d="M22 7l-8.5 8.5-5-5L2 17"/>'],
+  HOUSE: ['#6E7526', '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'],
+  WHEEL: ['#348030', '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'],
+};
+const CRYPTO = { BTC: ['#F7931A', '₿', -14], USDT: ['#26A17B', '₮', 0] };
+const tint = (hex, a) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
+
+const chips = CONFIG.chips.map(([label, kind, key, x, y, s], i) => {
+  let disc;
+  if (kind === 'bank') disc = `<span class="disc plate"><img src="../../worker/public/img/banks.svg#${key}"></span>`;
+  else if (kind === 'crypto') { const [c, sym, rot] = CRYPTO[key]; disc = `<span class="disc" style="background:${c}"><span class="sym" style="transform:rotate(${rot}deg)">${sym}</span></span>`; }
+  else { const [hue, d] = GLYPHS[key]; disc = `<span class="disc" style="background:${tint(hue, .16)}"><svg viewBox="0 0 24 24" style="stroke:${hue}">${d}</svg></span>`; }
+  const el = document.createElement('div');
+  el.className = 'chip';
+  el.innerHTML = `<div class="cf"><div class="ci">${disc}<span>${label}</span></div></div>`;
+  $('#chips').appendChild(el);
+  return { el, cf: $('.cf', el), x, y, s, i };
+});
+
+const h1 = words($('#h1'), CONFIG.hook);
+const h2b = words($('#h2b'), CONFIG.answer);
+const h2a = words($('#h2a'), CONFIG.answer);
+const sub2 = words($('#sub2'), CONFIG.answerSub);
+const h3 = words($('#h3'), CONFIG.sms);
+const sub3 = words($('#sub3'), CONFIG.smsSub);
+const h6 = words($('#h6'), CONFIG.iphone);
+const wm = words($('#wordmark'), CONFIG.brand);
+$('#rawUnit').textContent = CONFIG.rawUnit;
+$('#nMeta').textContent = CONFIG.notif.meta;
+$('#nWho').textContent = CONFIG.notif.who;
+$('#nBody').innerHTML = CONFIG.notif.body;
+$('#chip5').innerHTML = CONFIG.chip.join('<i class="dot"></i>');
+$('#cta').textContent = CONFIG.cta;
+$('#cta2').innerHTML = CONFIG.cta2;
+$('#url').textContent = CONFIG.url;
+$('#fine').innerHTML = CONFIG.fine;
+$('#pill').innerHTML = CONFIG.words.map((w) => `<div class="pw">${w}</div>`).join('');
+$('#steps').innerHTML = CONFIG.steps.map((s, i) => `<div class="st"><span class="n">${'۱۲۳'[i]}</span><span>${s}</span></div>`).join('');
+
+// the odometer: one rolling strip per digit, separators stand still
+const FA = '۰۱۲۳۴۵۶۷۸۹';
+const strips = [];
+$('#raw').innerHTML = [...CONFIG.raw].map((ch) => {
+  const d = FA.indexOf(ch);
+  if (d < 0) return `<span class="sep">${ch}</span>`;
+  const n = 1 + Math.floor(strips.length / 3);
+  strips.push(n * 10 + d);
+  return `<span class="dc"><span class="ds">${Array.from({ length: n * 10 + d + 1 }, (_, k) => `<b>${FA[k % 10]}</b>`).join('')}</span></span>`;
+}).join('');
+const stripDur = strips.map((_, i) => .56 + i * .036);
+
+// the wall
+const TW = 360, TH = 800, GAP = 40;
+const tiles = {};
+CONFIG.wall.forEach((col, c) => {
+  const ce = document.createElement('div');
+  ce.className = 'col';
+  ce.style.left = c * (TW + GAP) + 'px';
+  col.forEach((name, r) => {
+    const t = document.createElement('div');
+    t.className = 'tile';
+    t.style.top = r * (TH + GAP) + 'px';
+    t.innerHTML = `<div class="scr${name.endsWith('-dark') ? ' dark' : ''}"><i class="punch"></i><div class="page"><img src="../../docs/screenshots/${name}.png"></div></div><i class="dim"></i>`;
+    ce.appendChild(t);
+    tiles[name] = { el: t, c, r, col: ce };
+  });
+  $('#wall').appendChild(ce);
+});
+const cols = $$('#wall .col');
+
+// ———————————————————————————————— geometry (capture pixels → stage) ————————————————————————————————
+const PH = { w: 1130.89, h: 2450.89, b: 25.445, r: 163.98 };
+const CARD = { x: 53, y: 174, w: 974, h: 867, r: 89 };            // home.png's hero card, below the 130px status strip
+const RIG_A = { x: 53 - (PH.b + CARD.x), y: 290 - (PH.b + 130 + CARD.y), s: 1 };   // the card at 1:1, filling the frame
+const RIG_B = { x: 240, y: 400, s: 600 / PH.w };                                  // the phone, 600px wide
+const ROW = { y: 502, h: 183 };                                                   // ledger.png: the «قبض برق» row, below the strip
+const rowRect = { x: RIG_B.x + RIG_B.s * PH.b, y: RIG_B.y + RIG_B.s * (PH.b + 130 + ROW.y), w: 1080 * RIG_B.s, h: ROW.h * RIG_B.s };
+const screenC = { x: RIG_B.x + RIG_B.s * (PH.b + 540), y: RIG_B.y + RIG_B.s * (PH.b + 1200) };
+const L = tiles.ledger, LC = { x: L.c * (TW + GAP) + TW / 2, y: L.r * (TH + GAP) + TH / 2 };
+const clipCard = `inset(${PH.b + 130 + CARD.y + 3}px ${PH.w - PH.b - CARD.x - CARD.w + 3}px ${PH.h - PH.b - 130 - CARD.y - CARD.h + 3}px ${PH.b + CARD.x + 3}px round ${CARD.r - 3}px)`;
+const clipFull = `inset(0px 0px 0px 0px round ${PH.r}px)`;
+// the iPhone (15/16 class: 393pt @3x), frame 42px, 950px tall on the stage
+const IP = { w: 1263, h: 2640, b: 42 };
+const IP_S = 950 / IP.h, IP_X = 540 - IP.w * IP_S / 2, IP_Y = 372;
+const ip = (x, y) => ({ x: IP_X + IP_S * (IP.b + x), y: IP_Y + IP_S * (IP.b + y) });   // iPhone screen px → stage
+const ICON = { x: 84, y: 860, s: 180 };
+
+// ———————————————————————————————— timeline ————————————————————————————————
+const tl = gsap.timeline({ paused: true });
+const clock = { t: 0 };
+
+// A touch: appears just before its first tap, glides between taps, presses on each (Motion.press),
+// leaves a ripple, and lifts away after the last unless the caller carries on with it.
+function gesture(points, { el = '#t1', rip = '#r1', s = 1, leave = true } = {}) {
+  const p0 = points[0];
+  tl.fromTo(el, { x: p0.x + 40 * s, y: p0.y + 66 * s, scale: 1.3 * s, opacity: 0 }, { x: p0.x, y: p0.y, scale: s, opacity: 1, duration: .22, ease: settle, immediateRender: false }, T(p0.t - .24));
+  points.forEach((p, i) => {
+    if (i) {
+      const g = Math.min(.3, p.t - points[i - 1].t - .16);
+      tl.to(el, { x: p.x, y: p.y, duration: g, ease: 'move' }, T(p.t - g - .02));
+    }
+    tl.to(el, { scale: .8 * s, duration: .1, ease: press }, T(p.t));
+    tl.to(el, { scale: s, duration: .22, ease: settle }, T(p.t + .1));
+    tl.fromTo(rip, { x: p.x, y: p.y, scale: .7 * s, opacity: .9 }, { scale: 2.3 * s, opacity: 0, duration: .48, ease: 'power2.out', immediateRender: false }, T(p.t + .07));
+  });
+  if (leave) tl.to(el, { opacity: 0, scale: 1.15 * s, duration: .28, ease: 'power1.out' }, T(points[points.length - 1].t + .24));
+}
+
+function build() {
+  const g = $('#glyph');
+  $('#gFill').setAttribute('d', GLYPH_D);
+  $('#gStroke').setAttribute('d', GLYPH_D);
+  const bb = $('#gFill').getBBox(), pad = .6;
+  g.setAttribute('viewBox', `${bb.x - pad} ${bb.y - pad} ${bb.width + 2 * pad} ${bb.height + 2 * pad}`);
+  $('#gStroke').setAttribute('stroke-width', (bb.width + 2 * pad) / 270 * 3.6);
+
+  gsap.set(chips.map((c) => c.el), { x: 540, y: 640, scale: .3, autoAlpha: 0 });
+  gsap.set('#rigWrap', { x: RIG_A.x, y: RIG_A.y, scale: RIG_A.s });
+  gsap.set(['#pgLedger', '#lR'], { autoAlpha: 0 });
+  gsap.set('#lB', { y: -ROW.h });
+  gsap.set(['#notif', '#chip5', '#cta', '#cta2', '#url', '#fine'], { autoAlpha: 0 });
+  gsap.set('#wall', { transformOrigin: `${LC.x}px ${LC.y}px` });
+  gsap.set(['#pill', '#steps', '#chip5', '#cta', '#cta2'], { xPercent: -50 });
+  gsap.set('#ipWrap', { x: IP_X, y: 1420, scale: IP_S });
+  const measure = (els, extra) => els.map((p) => { p.style.position = 'static'; p.style.display = 'inline-flex'; const w = p.offsetWidth + extra; p.removeAttribute('style'); return w; });
+  const pws = $$('#pill .pw'), widths = measure(pws, 104);
+  const sts = $$('#steps .st'), stW = measure(sts, 56);
+  gsap.set(pws, { yPercent: 102 });
+  gsap.set(sts, { yPercent: 102 });
+  gsap.set('#pill', { width: widths[0] });
+  gsap.set('#steps', { width: stW[0] });
+
+  // the clock drives everything procedural (the chips' idle float) so a seek lands on the same frame every time
+  tl.to(clock, { t: DURATION + PRE, duration: DURATION + PRE, ease: 'none', onUpdate: tick }, 0);
+
+  // ── 1 · hook: the question lands, and the places money hides float out from behind it
+  tl.fromTo(h1, { yPercent: 165, rotation: 7 }, { yPercent: 0, rotation: 0, duration: 1, ease: 'enter', stagger: .08 }, T(-.5));
+  tl.fromTo('#h1', { '--fs': 72 }, { '--fs': 100, duration: 1.3, ease: settle }, T(-.5));
+  tl.fromTo('#h1', { scale: 1 }, { scale: 1.035, duration: 2.45, ease: 'none' }, T(-.5));
+  chips.forEach((c) => tl.fromTo(c.el, { x: 540, y: 640, scale: .3, autoAlpha: 0 },
+    { x: c.x, y: c.y, scale: c.s, autoAlpha: 1, duration: 1, ease: settle, immediateRender: false }, T(C.chipsOut + c.i * C.chipGap)));
+  // two fingers pinch it all together — and it pours into one figure
+  const byDist = [...chips].sort((a, b) => Math.hypot(b.x - 540, b.y - 640) - Math.hypot(a.x - 540, a.y - 640));
+  byDist.forEach((c, k) => tl.to(c.el, { x: 540, y: 640, scale: c.s * .2, autoAlpha: 0, duration: .46, ease: 'power3.in' }, T(C.converge + k * .022)));
+  tl.to(h1, { yPercent: -165, duration: .36, ease: 'exit', stagger: .035 }, T(C.h1Out));
+  [['#t1', 250, 1070, 470, 700], ['#t2', 840, 250, 610, 585]].forEach(([el, x0, y0, x1, y1]) => {
+    tl.fromTo(el, { x: x0 + 30, y: y0 + 50, scale: 1.3, opacity: 0 }, { x: x0, y: y0, scale: 1, opacity: 1, duration: .16, ease: settle, immediateRender: false }, T(C.pinch));
+    tl.to(el, { x: x1, y: y1, scale: .86, duration: .44, ease: 'power2.in' }, T(C.converge));
+    tl.to(el, { opacity: 0, scale: 1.2, duration: .22, ease: 'power1.out' }, T(C.converge + .44));
+  });
+
+  // ── 2 · the answer: a wall of digits, then the app's card
+  tl.fromTo('#raw', { autoAlpha: 0, scale: .88 }, { autoAlpha: 1, scale: 1, duration: .6, ease: settle }, T(C.drop));
+  $$('#raw .ds').forEach((s, i) => tl.fromTo(s, { y: 0 }, { y: -strips[i] * 150, duration: stripDur[i], ease: 'power3.out' }, T(C.drop)));
+  tl.fromTo('#rawUnit', { autoAlpha: 0, y: 16 }, { autoAlpha: .75, y: 0, duration: .5, ease: settle }, T(2.4));
+  [h2b, h2a].forEach((h) => tl.fromTo(h, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .07 }, T(C.h2In)));
+  tl.fromTo(['#h2b', '#h2a'], { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h2In));
+  tl.fromTo('#afterClip', { clipPath: 'inset(0px 0px 0px 1080px)' }, { clipPath: 'inset(0px 0px 0px 0px)', duration: C.scanDur, ease: 'power1.inOut' }, T(C.scan));
+  tl.fromTo(['#beam', '#beamTrail'], { x: 1080 }, { x: 0, duration: C.scanDur, ease: 'power1.inOut' }, T(C.scan));
+  tl.fromTo(['#beam', '#beamTrail'], { opacity: 0 }, { opacity: 1, duration: .12 }, T(C.scan - .02));
+  tl.to(['#beam', '#beamTrail'], { opacity: 0, duration: .18 }, T(C.scan + C.scanDur - .08));
+  tl.set('#s2b', { autoAlpha: 0 }, T(C.scan + 1.1));
+  tl.fromTo(sub2, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .05 }, T(C.sub2In));
+
+  // the camera pulls out of the card and finds the phone around it
+  tl.to(h2a, { yPercent: -165, duration: .38, ease: 'exit', stagger: .04 }, T(C.h2Out + .06));
+  tl.to(sub2, { yPercent: -165, duration: .32, ease: 'exit', stagger: .02 }, T(C.h2Out - .02));
+  tl.fromTo('#rigWrap', { x: RIG_A.x, y: RIG_A.y, scale: RIG_A.s }, { x: RIG_B.x, y: RIG_B.y, scale: RIG_B.s, duration: C.zoomDur, ease: 'cam', immediateRender: false }, T(C.zoom));
+  tl.fromTo('#rig', { clipPath: clipCard }, { clipPath: clipFull, duration: C.zoomDur, ease: 'cam', immediateRender: false }, T(C.zoom));
+  tl.fromTo('#rigShadow', { opacity: 0 }, { opacity: 1, duration: .6, ease: 'none' }, T(C.zoom + .25));
+
+  // ── 3 · a bank SMS arrives; a tap on it, and it becomes a row of the ledger
+  tl.fromTo(h3, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.h3In));
+  tl.fromTo('#h3', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h3In));
+  tl.fromTo(sub3, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .025 }, T(C.h3In + .26));
+  tl.fromTo('#pgHome', { autoAlpha: 1 }, { autoAlpha: 0, duration: .14, ease: 'none', immediateRender: false }, T(C.tabSwap + .06));
+  tl.fromTo('#pgLedger', { autoAlpha: 0, scale: .94 }, { autoAlpha: 1, scale: 1, duration: .42, ease: settle, immediateRender: false }, T(C.tabSwap + .14));
+  tl.fromTo('#notif', { autoAlpha: 0, y: -64, scale: .94 }, { autoAlpha: 1, y: 0, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.notif));
+  $$('#notif .mk i').forEach((m, i) => tl.fromTo(m, { scaleX: 0 }, { scaleX: 1, duration: .36, ease: 'enter' }, T(C.marks[i])));
+  tl.to('#notif', { scale: .98, duration: .1, ease: press }, T(C.notifTap));
+  tl.to('#notif', { left: rowRect.x, top: rowRect.y, width: rowRect.w, height: rowRect.h, borderRadius: 0, scale: 1,
+    boxShadow: 'rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px', duration: .6, ease: 'move', onUpdate: rowFit }, T(C.morph + .05));
+  tl.to('#nContent', { autoAlpha: 0, duration: .14, ease: 'none' }, T(C.morph + .05));
+  tl.fromTo('#nRow', { opacity: 0 }, { opacity: 1, duration: .3, ease: 'none' }, T(C.morph + .15));
+  tl.fromTo('#lB', { y: -ROW.h }, { y: 0, duration: .55, ease: settle, immediateRender: false }, T(C.morph + .15));
+  tl.set('#lR', { autoAlpha: 1 }, T(C.land));
+  tl.set('#notif', { autoAlpha: 0 }, T(C.land));
+  tl.fromTo('#lRflash', { opacity: .5 }, { opacity: 0, duration: .7, ease: 'power1.out', immediateRender: false }, T(C.land));
+  gesture([{ t: C.notifTap, x: 610, y: 600 }]);
+
+  // ── 4 · the phone steps back into a wall of every screen the app has
+  tl.to(h3, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h3Out));
+  tl.to(sub3, { yPercent: -165, duration: .3, ease: 'exit', stagger: .01 }, T(C.h3Out));
+  tl.to(['#rig .bezel', '#rigShadow'], { opacity: 0, duration: .2, ease: 'none' }, T(C.wall - .26));
+  tl.set('#rigWrap', { autoAlpha: 0 }, T(C.wall));
+  tl.set('#wallCam', { visibility: 'visible' }, T(C.wall));
+  const S0 = (1080 * RIG_B.s) / TW;
+  tl.fromTo('#wall', { x: screenC.x - LC.x, y: screenC.y - LC.y, scale: S0, rotationX: 0, rotationZ: 0 },
+    { x: 430 - LC.x, y: 520 - LC.y, scale: .8, rotationX: 30, rotationZ: -13, duration: 1.05, ease: 'cam', immediateRender: false }, T(C.wall));
+  Object.values(tiles).filter((t) => t !== L).forEach((t) => {
+    const d = Math.hypot(t.c - L.c, t.r - L.r);
+    tl.fromTo(t.el, { autoAlpha: 0, z: -600 }, { autoAlpha: 1, z: 0, duration: .6, ease: settle }, T(C.wall + .05 + d * .05));
+  });
+  tl.fromTo('#bright2', { clipPath: `circle(0px at ${screenC.x}px ${screenC.y}px)` }, { clipPath: `circle(1500px at ${screenC.x}px ${screenC.y}px)`, duration: .75, ease: 'power2.inOut' }, T(C.wall + .05));
+  cols.forEach((c, i) => tl.fromTo(c, { y: 0 }, { y: (i % 2 ? 1 : -1) * 110, duration: 3.5, ease: 'none', immediateRender: false }, T(C.wall)));
+
+  // one word at a time; a tap on its screen pulls it forward
+  const beats = C.words;
+  tl.set('#pill', { visibility: 'visible' }, T(beats[0] - .1));
+  tl.fromTo('#pill', { scale: .8, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: .5, ease: settle, immediateRender: false }, T(beats[0] - .1));
+  const others = Object.values(tiles).filter((t) => t !== tiles[CONFIG.focus[0]]).map((t) => $('.dim', t.el));
+  tl.to(others, { opacity: .42, duration: .4, ease: 'none' }, T(beats[0]));
+  beats.forEach((b, k) => {
+    const f = tiles[CONFIG.focus[k]];
+    tl.fromTo(pws[k], { yPercent: 102 }, { yPercent: 0, duration: .42, ease: k ? 'power3.inOut' : 'enter', immediateRender: false }, T(k ? b - .06 : b));
+    tl.fromTo(pws[k], { '--fs': 74 }, { '--fs': 100, duration: .7, ease: settle, immediateRender: false }, T(b));
+    if (k) {
+      tl.to(pws[k - 1], { yPercent: -102, duration: .42, ease: 'power3.inOut' }, T(b - .06));
+      tl.to('#pill', { width: widths[k], duration: .5, ease: settle }, T(b));
+      const p = tiles[CONFIG.focus[k - 1]];
+      tl.to(p.el, { z: 0, scale: 1, duration: .45, ease: settle }, T(b));
+      tl.to($('.dim', p.el), { opacity: .42, duration: .3, ease: 'none' }, T(b));
+    }
+    tl.fromTo(f.el, { z: 0, scale: 1 }, { z: 230, scale: 1.1, duration: .55, ease: settle, immediateRender: false }, T(b + .04));
+    tl.to($('.dim', f.el), { opacity: 0, duration: .25, ease: 'none' }, T(b + .04));
+  });
+
+  // ── 5 · iPhone: the same app, installed from the browser in three steps
+  tl.set('#s6', { visibility: 'visible' }, T(C.toIphone));
+  tl.set(['#wallCam', '#pill'], { visibility: 'hidden' }, T(C.toIphone + .62));
+  tl.fromTo(h6, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.h6In));
+  tl.fromTo('#h6', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h6In));
+  tl.fromTo('#ipWrap', { y: 1420 }, { y: IP_Y, duration: .75, ease: settle, immediateRender: false }, T(C.ipIn));
+  tl.set('#steps', { visibility: 'visible' }, T(C.stepAt[0] - .05));
+  tl.fromTo('#steps', { scale: .85, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: .45, ease: settle, immediateRender: false }, T(C.stepAt[0] - .05));
+  C.stepAt.forEach((b, k) => {
+    tl.fromTo(sts[k], { yPercent: 102 }, { yPercent: 0, duration: .42, ease: k ? 'power3.inOut' : 'enter', immediateRender: false }, T(k ? b - .06 : b));
+    if (k) {
+      tl.to(sts[k - 1], { yPercent: -102, duration: .42, ease: 'power3.inOut' }, T(b - .06));
+      tl.to('#steps', { width: stW[k], duration: .45, ease: settle }, T(b));
+    }
+  });
+  tl.fromTo('#ipSheet', { y: 1800 }, { y: 0, duration: .42, ease: settle, immediateRender: false }, T(C.sheetUp));
+  tl.fromTo('#actHome i', { opacity: 0 }, { opacity: 1, duration: .06, ease: 'none', immediateRender: false }, T(C.addTap));
+  tl.to('#actHome i', { opacity: 0, duration: .3, ease: 'none' }, T(C.addTap + .2));
+  tl.fromTo('#ipDialog', { y: 2500 }, { y: 0, duration: .42, ease: settle, immediateRender: false }, T(C.dialogUp));
+  tl.fromTo('#dAdd', { opacity: 1 }, { opacity: .35, duration: .06, ease: 'none', immediateRender: false }, T(C.confirmTap));
+  tl.to('#dAdd', { opacity: 1, duration: .2, ease: 'none' }, T(C.confirmTap + .12));
+  // home: Safari shrinks away under the swipe, and the icon it added is waiting
+  tl.to(['#ipDialog', '#ipSheet'], { y: '+=2600', duration: .3, ease: 'power2.in' }, T(C.swipe - .06));
+  tl.to('#ipSafari', { scale: .6, y: -120, autoAlpha: 0, borderRadius: 165, transformOrigin: '50% 90%', duration: .36, ease: 'power2.in' }, T(C.swipe));
+  tl.fromTo('#ipHome', { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: .4, ease: settle, immediateRender: false }, T(C.home));
+  tl.fromTo('#myIcon', { scale: 0, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: .5, ease: settle, immediateRender: false }, T(C.iconPop));
+  const ic = ip(ICON.x + 90, ICON.y + 90);
+  tl.fromTo('#r2', { x: ic.x, y: ic.y, scale: .6, opacity: .95 }, { scale: 1.9, opacity: 0, duration: .7, ease: 'power2.out', immediateRender: false }, T(C.iconPop + .12));
+  tl.fromTo('#homebar', { y: 0 }, { y: -40, duration: .16, ease: 'power2.out', immediateRender: false }, T(C.swipe));
+  tl.to('#homebar', { y: 0, duration: .25, ease: settle }, T(C.swipe + .2));
+  // the app opens out of its icon
+  tl.set('#ipApp', { visibility: 'visible' }, T(C.appOpen));
+  tl.fromTo('#ipApp', { clipPath: `inset(${ICON.y}px ${1179 - ICON.x - ICON.s}px ${2556 - ICON.y - ICON.s}px ${ICON.x}px round 41px)` },
+    { clipPath: 'inset(0px 0px 0px 0px round 165px)', duration: .5, ease: 'cam', immediateRender: false }, T(C.appOpen));
+  tl.fromTo('#ipApp .ipPage', { scale: .55, transformOrigin: `${ICON.x + 90}px ${ICON.y - 87}px` }, { scale: 1, duration: .5, ease: 'cam', immediateRender: false }, T(C.appOpen));
+  tl.fromTo('#ipAppIcon', { opacity: 1 }, { opacity: 0, duration: .22, ease: 'none', immediateRender: false }, T(C.appOpen + .06));
+  gesture([
+    { t: C.shareTap, ...ip(589.5, 2416) },
+    { t: C.addTap, ...ip(430, 760 + 300 + 3 * 156 + 78) },
+    { t: C.confirmTap, ...ip(1060, 120 + 40 + 45) },
+  ], { s: .55, leave: false });
+  // …then down to the bar, and the swipe home
+  const sw0 = ip(589.5, 2520), sw1 = ip(589.5, 1880);
+  tl.to('#t1', { x: sw0.x, y: sw0.y, duration: .1, ease: 'move' }, T(C.swipe - .1));
+  tl.to('#t1', { y: sw1.y, duration: .26, ease: 'power2.in' }, T(C.swipe));
+  tl.to('#t1', { opacity: 0, duration: .12, ease: 'none' }, T(C.swipe + .2));
+  gesture([{ t: C.iconTap, ...ip(ICON.x + 90, ICON.y + 90) }], { s: .55 });
+
+  // ── 6 · the brand fills the frame
+  const ipC = ip(590, 1278);
+  tl.fromTo('#endGround', { clipPath: `circle(0px at ${ipC.x}px ${ipC.y}px)` }, { clipPath: `circle(1200px at ${ipC.x}px ${ipC.y}px)`, duration: .62, ease: 'cam' }, T(C.toEnd));
+  tl.fromTo('#glyph', { scale: .84 }, { scale: 1, duration: 1.1, ease: settle, immediateRender: false }, T(C.logo - .02));
+  tl.fromTo('#gStroke', { drawSVG: '0%' }, { drawSVG: '100%', duration: .85, ease: 'power2.inOut' }, T(C.logo - .02));
+  tl.fromTo('#gFill', { opacity: 0 }, { opacity: 1, duration: .38, ease: 'none', immediateRender: false }, T(C.logo + .5));
+  tl.to('#gStroke', { opacity: 0, duration: .3, ease: 'none' }, T(C.logo + .74));
+  tl.fromTo(wm, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .08 }, T(C.wordmark));
+  tl.fromTo('#wordmark', { '--fs': 78 }, { '--fs': 100, duration: 1.1, ease: settle }, T(C.wordmark));
+  tl.fromTo('#s5', { scale: 1 }, { scale: 1.02, duration: DURATION - C.logo + PRE, ease: 'none', immediateRender: false }, T(C.logo));
+  tl.fromTo('#chip5', { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: .6, ease: settle, immediateRender: false }, T(C.chip));
+  tl.fromTo('#cta', { autoAlpha: 0, scale: .88 }, { autoAlpha: 1, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.ctas[0]));
+  tl.fromTo('#cta2', { autoAlpha: 0, scale: .88 }, { autoAlpha: 1, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.ctas[1]));
+  tl.fromTo(['#url', '#fine'], { autoAlpha: 0, y: 18 }, { autoAlpha: 1, y: 0, duration: .6, ease: settle, stagger: .08, immediateRender: false }, T(C.url));
+  ['#cta', '#cta2'].forEach((id, k) => {
+    tl.to(id, { scale: .97, duration: .12, ease: press }, T(C.ctaTaps[k]));
+    tl.to(id, { scale: 1, duration: .3, ease: settle }, T(C.ctaTaps[k] + .14));
+  });
+}
+
+// taps that need measured geometry (the wall's projection, the end card's buttons) go in after a seek
+function placeTaps() {
+  const at = (t, fn) => { tl.seek(T(t), true); return fn(); };
+  const centre = (el, fx = .5, fy = .5) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width * fx, y: r.top + r.height * fy }; };
+  const wallTaps = C.words.map((b, k) => ({ t: b, ...at(b + .12, () => centre(tiles[CONFIG.focus[k]].el, .5, .55)) }));
+  const ends = C.ctaTaps.map((b, k) => ({ t: b, ...at(b, () => centre($(k ? '#cta2' : '#cta'), .64, .6)) }));
+  tl.seek(0, true);
+  gesture(wallTaps);
+  gesture(ends);
+  // leaving the wall: the family screen opens into the iPhone scene
+  const f = wallTaps[3], R = Math.max(...[[0, 0], [1080, 0], [0, 1350], [1080, 1350]].map(([x, y]) => Math.hypot(x - f.x, y - f.y))) + 80;
+  tl.fromTo('#ipGround', { clipPath: `circle(0px at ${f.x}px ${f.y}px)` }, { clipPath: `circle(${R}px at ${f.x}px ${f.y}px)`, duration: .62, ease: 'cam' }, T(C.toIphone));
+  window.CUES.pan = { wall: wallTaps.map((p) => p.x / 540 - 1), ends: ends.map((p) => p.x / 540 - 1) };
+}
+
+// the row inside the shrinking notification stays centred on «قبض برق», whatever the box's shape
+function rowFit() {
+  const n = $('#notif');
+  $('#nRow img').style.top = n.offsetHeight / 2 - (130 + ROW.y + ROW.h / 2) * n.offsetWidth / 1080 + 'px';
+}
+
+function tick() {
+  const t = clock.t - PRE;
+  for (const c of chips) {
+    const a = 11 * c.s, ph = c.i * 1.7;
+    c.cf.style.transform = `translate(${a * Math.sin(t * 1.25 + ph)}px, ${a * Math.cos(t * 1.05 + ph * 1.3)}px) rotate(${2.4 * Math.sin(t * .9 + ph)}deg)`;
+  }
+}
+
+window.DURATION = DURATION;
+window.CUES = { ...C, duration: DURATION, strips, stripDur, chipX: chips.map((c) => c.x / 540 - 1) };
+window.seek = (t) => { tl.seek(T(t), false); };
+window.ready = (async () => {
+  // XHR, not fetch: fetch refuses file:// even where --allow-file-access-from-files lets XHR in
+  const svg = await new Promise((ok, no) => { const x = new XMLHttpRequest(); x.onload = () => ok(x.responseText); x.onerror = no; x.open('GET', '../../worker/public/icon.svg'); x.send(); });
+  GLYPH_D = svg.match(/ d="([^"]+)"/)[1];
+  await document.fonts.load('900 100px Modam');
+  await document.fonts.load('300 100px Modam');
+  await document.fonts.load('700 36px Inter');
+  await document.fonts.ready;
+  await Promise.all($$('img').map((i) => i.decode().catch(() => {})));
+  build();
+  placeTaps();
+  tl.seek(T(0), false);
+  if (!/render/.test(location.search)) { tl.play(); tl.eventCallback('onComplete', () => tl.seek(T(0)).play()); }
+  return true;
+})();
+</script>
+</body>
+</html>

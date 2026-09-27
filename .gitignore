@@ -14,6 +14,9 @@ worker/.wrangler/
 sync/node_modules/
 sync/.wrangler/
 pwa/node_modules/
+tools/ad/node_modules/
+# The video ad's renders: rebuilt by tools/ad/make.sh, too large for the history.
+tools/ad/out/
 # Build output: sync/ serves this, and CI builds it before deploying.
 pwa/dist/
 keystore.properties
