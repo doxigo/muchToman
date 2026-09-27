@@ -1939,7 +1939,7 @@ private fun openNotificationSettings(context: Context) {
         .onFailure { android.util.Log.w("muchtoman", "notification settings unavailable: $it") }
 }
 
-private fun openUrl(context: Context, url: String): Boolean =
+internal fun openUrl(context: Context, url: String): Boolean =
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
 
 /**

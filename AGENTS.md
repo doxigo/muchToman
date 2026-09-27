@@ -59,7 +59,8 @@ change needs both the Gradle and the pwa blocks run.
   text functions they belong to.
 - **No analytics SDK, no identifiers, no accounts, no gamification** — `PRODUCT.md` non-negotiables.
   One anonymous count a day and crash reports she agrees to send (`Diagnostics.kt`) are the whole
-  of what the app reports about itself; widening either is a product decision, not a drive-by.
+  of what the app reports about itself, and the feedback form sends only what she writes; widening
+  any of them is a product decision, not a drive-by.
 - **Secrets**: signing keys live in `keystore.properties` / CI secrets; never commit or echo them.
 
 ## Conventions

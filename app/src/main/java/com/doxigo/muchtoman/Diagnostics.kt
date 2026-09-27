@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -130,21 +132,48 @@ fun pendingCrash(context: Context): String? =
     runCatching { crashFile(context).takeIf { it.exists() }?.readText() }.getOrNull()?.ifBlank { null }
 
 /** Sent to the same Worker as the prices, derived from its origin the way the wallet lookup is. */
-suspend fun postCrashReport(ratesUrl: String, report: String): Result<Unit> = withContext(Dispatchers.IO) {
+suspend fun postCrashReport(ratesUrl: String, report: String): Result<Unit> =
+    postToWorker(ratesUrl, "/crash", "text/plain; charset=utf-8", report)
+
+/** The Worker's own cap, in characters; the field stops taking more at the same count. */
+const val MAX_FEEDBACK_CHARS = 2_000
+
+/**
+ * What she wrote in تنظیمات ← درباره ← بازخورد, to the Worker that mails it to hey@muchtoman.com:
+ * her words, the contact she chose to leave, and the version — exactly what the page says goes.
+ */
+suspend fun postFeedback(ratesUrl: String, message: String, contact: String): Result<Unit> =
+    postToWorker(
+        ratesUrl,
+        "/feedback",
+        "application/json; charset=utf-8",
+        buildJsonObject {
+            put("message", message.trim())
+            put("contact", contact.trim())
+            put("version", BuildConfig.VERSION_NAME)
+        }.toString(),
+    )
+
+private suspend fun postToWorker(
+    ratesUrl: String,
+    path: String,
+    contentType: String,
+    body: String,
+): Result<Unit> = withContext(Dispatchers.IO) {
     runCatching {
         val rates = URL(ratesUrl)
-        val endpoint = URL(rates.protocol, rates.host, rates.port, "/crash")
+        val endpoint = URL(rates.protocol, rates.host, rates.port, path)
         val conn = (endpoint.openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 10_000
             requestMethod = "POST"
             instanceFollowRedirects = false
             doOutput = true
-            setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+            setRequestProperty("Content-Type", contentType)
             setRequestProperty("Connection", "close")
         }
         try {
-            conn.outputStream.use { it.write(report.toByteArray(Charsets.UTF_8)) }
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             if (code !in 200..299) error("HTTP $code")
         } finally {

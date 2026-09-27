@@ -5,7 +5,8 @@
 .set-band { border-radius: var(--r-group); overflow: hidden; background: var(--surface); }
 .set-band + .set-band { margin-top: var(--l); }
 .set-row { position: relative; display: flex; align-items: center; width: 100%; min-height: 56px; padding: var(--l); gap: 0; background: none; border: 0; color: var(--on-surface); text-align: start; font: inherit; }
-button.set-row:active:not(:disabled) { background: color-mix(in srgb, var(--on-surface) 6%, transparent); }
+a.set-row { text-decoration: none; }
+button.set-row:active:not(:disabled), a.set-row:active { background: color-mix(in srgb, var(--on-surface) 6%, transparent); }
 button.set-row:disabled { cursor: default; }
 /* The hairline is inset to where the text starts: a rule under the disc cuts the row in half. */
 .set-row + .set-row::before { content: ""; position: absolute; top: 0; inset-inline: calc(var(--l) + 44px + var(--m)) 0; border-top: 1px solid var(--outline-variant); }
@@ -26,6 +27,7 @@ button.set-row:disabled { cursor: default; }
 .set-note { font-size: 13px; line-height: 20px; color: var(--on-surface-variant); padding: var(--m) var(--xs) 0; }
 .set-note.strong { color: var(--on-surface); }
 .set-note.error { color: var(--error); }
+.feedback textarea { min-height: 168px; resize: vertical; }
 .set-lead { font-size: 15px; line-height: 26px; color: var(--on-surface-variant); padding: 0 var(--xs); }
 
 .identity { display: flex; align-items: center; width: 100%; padding: var(--l); border: 0; border-radius: var(--r-group); background: var(--surface); color: var(--on-surface); text-align: start; font: inherit; }

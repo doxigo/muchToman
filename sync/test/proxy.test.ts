@@ -57,6 +57,21 @@ describe('rates proxies', () => {
     expect(await res.json()).toEqual({ code: 'unavailable' });
   });
 
+  it('carries the feedback form on to the rates Worker, capped at its size', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 204 }));
+    const body = JSON.stringify({ message: 'سلام', contact: '', version: 'pwa' });
+    const res = await SELF.fetch('https://sync.test/feedback', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+    });
+    expect(res.status).toBe(204);
+    const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://rates.muchtoman.com/feedback');
+    expect(init.body).toBe(body);
+    const big = await SELF.fetch('https://sync.test/feedback', { method: 'POST', body: 'x'.repeat(9000) });
+    expect(big.status).toBe(413);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
+
   it('forwards a coin icon query and passes the bytes and cache headers through', async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>

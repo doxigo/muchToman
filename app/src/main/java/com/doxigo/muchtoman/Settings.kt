@@ -7,9 +7,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -24,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -53,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,7 +71,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -90,6 +100,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 
 /**
  * تنظیمات — an index of rooms, not a scroll of everything.
@@ -110,7 +121,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * because a process death that threw her from پشتیبان‌گیری back to the index would read as the
  * app restarting itself — the same reason `settings` itself is saveable upstairs.
  */
-private enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE, HEALTH }
+private enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE, HEALTH, UPGRADE, FEEDBACK }
+
+/** The site, which the «درباره» band opens and the full edition's download falls back to. */
+private const val SITE = "https://muchtoman.com/"
 
 @Composable
 fun SettingsScreen(
@@ -210,16 +224,24 @@ fun SettingsScreen(
         )
 
         SettingsRoom.HEALTH -> LedgerHealthPage(activity, onRescanInbox) { page = SettingsRoom.INDEX }
+
+        SettingsRoom.UPGRADE -> UpgradePage(
+            activity = activity,
+            onBackup = { page = SettingsRoom.BACKUP },
+            onBack = { page = SettingsRoom.INDEX },
+        )
+
+        SettingsRoom.FEEDBACK -> FeedbackPage { page = SettingsRoom.INDEX }
     }
 }
 
 /**
- * The index itself: her, then three bands of doors, then the version line.
+ * The index itself: her, then three bands of doors, then «درباره», then the version line.
  *
  * Three bands and not one, because the six doors are three different questions — where the
  * money comes from and how it is filed, how the app looks and who may look at it, and what
  * happens to all of it if the phone is lost. A single band of six is a list to read; three of
- * two is a shape to recognise.
+ * two is a shape to recognise. «درباره» stands apart: its doors are about the app, not her money.
  */
 @Composable
 private fun SettingsIndex(
@@ -241,6 +263,7 @@ private fun SettingsIndex(
     var renaming by remember { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
     var reminderSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -261,6 +284,7 @@ private fun SettingsIndex(
 
             Spacer(Modifier.height(Space.l))
             IdentityCard(name = name, onRename = { renaming = true })
+            if (BuildConfig.LITE) UpgradeCard { onOpen(SettingsRoom.UPGRADE) }
 
             // The lite edition keeps only the doors its one screen reads from: the messages behind
             // the bank balances, the look, the lock, the backup and the cache. Categories, the
@@ -340,6 +364,22 @@ private fun SettingsIndex(
                     onClick = { onOpen(SettingsRoom.HEALTH) },
                 ) { GlyphIcon(CategoryGlyph.TRAY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             }
+
+            // The address on the row, not just «سایت»: it says where the tap is going before it
+            // goes there, which is the only thing a door out of the app owes her.
+            SectionLabel("درباره")
+            IndexRow(
+                title = "سایت",
+                value = "muchtoman.com",
+                shape = bandShape(0, 2),
+                divided = true,
+                onClick = { openUrl(context, SITE) },
+            ) { GlobeGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
+            IndexRow(
+                title = "بازخورد",
+                shape = bandShape(1, 2),
+                onClick = { onOpen(SettingsRoom.FEEDBACK) },
+            ) { GlyphIcon(CategoryGlyph.NOTE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
 
             // The answer to "which version do you have?" over the phone, without her having to
             // find the system app-info page. A fixed gap, not weight(1f): inside a scrolling
@@ -440,6 +480,36 @@ private fun IdentityCard(name: String, onRename: () -> Unit) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * The lite edition's way to the full one, straight under her card.
+ *
+ * On the hero's own field rather than in a band: every band on this page is a setting, and this
+ * is not one — it is the one thing here that asks her to go and look at something, so it wears
+ * the brand's card and the page's only [ButtonVoice.PRIMARY] pill. The pill opens the preview,
+ * not the download: nobody should be sent to install an app they have not yet seen.
+ */
+@Composable
+private fun UpgradeCard(onOpen: () -> Unit) {
+    HeroPanel(Modifier.padding(top = Space.l)) {
+        Text(
+            "نسخهٔ کامل چقدر تومن",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Black,
+            color = Hero.accent,
+        )
+        Text(
+            "دفتر خرج‌ها، دخل و خرج ماه، بودجه و قسط، طلب و بدهی و دفتر خانوادگی، کنار همین " +
+                "دارایی‌ها. رایگانه.",
+            fontSize = 14.sp,
+            lineHeight = 22.sp,
+            color = Hero.strong,
+            modifier = Modifier.padding(top = Space.xs),
+        )
+        Spacer(Modifier.height(Space.l))
+        PillButton("ببین چی داره", onOpen, voice = ButtonVoice.PRIMARY, fontSize = 15.sp)
     }
 }
 
@@ -1180,6 +1250,222 @@ private fun LedgerHealthPage(activity: FragmentActivity, onImport: () -> Unit, o
     }
 }
 
+/** A screen of the full edition, as [UpgradePage] shows it: its picture in both themes and its line. */
+private class FullScreen(val light: Int, val dark: Int, val title: String, val line: String)
+
+/**
+ * «نسخهٔ کامل» — the screens the lite edition does not have, and the way to them.
+ *
+ * Pictures rather than a list of features: «دفتر» means nothing to someone who has only ever seen
+ * a list of what she owns, and the screen answers what the word cannot. They are the site's own
+ * crops (tools/site/assets.mjs), so a retake of the README captures reaches this page too.
+ *
+ * The full edition is a second app, not this one upgraded — its own package, so both sit on one
+ * phone — and nothing typed here crosses over by itself. The backup is the bridge, so the page
+ * says so and holds the door to it, above the button that leaves.
+ */
+@Composable
+private fun UpgradePage(activity: FragmentActivity, onBackup: () -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val vm = remember(activity) { ViewModelProvider(activity)[AppVm::class.java] }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    // ponytail: gated on the edition so R8 folds it away in the full build and the resource
+    // shrinker drops the ten pictures from that APK — the same trick [demoLedger] rides.
+    val screens = if (BuildConfig.LITE) {
+        listOf(
+            FullScreen(R.drawable.upgrade_ledger, R.drawable.upgrade_ledger_dark, "دفتر",
+                "هر خرج و درآمد از روی پیامک بانک، با دسته‌بندی."),
+            FullScreen(R.drawable.upgrade_report, R.drawable.upgrade_report_dark, "دخل و خرج",
+                "هر ماه چقدر اومد، چقدر رفت و کجا رفت."),
+            FullScreen(R.drawable.upgrade_budget, R.drawable.upgrade_budget_dark, "بودجه و قسط",
+                "سقف خرج هر دسته، هدف پس‌انداز و قسط‌ها."),
+            FullScreen(R.drawable.upgrade_loans, R.drawable.upgrade_loans_dark, "طلب و بدهی",
+                "کی بهت بدهکاره و تو به کی."),
+            FullScreen(R.drawable.upgrade_family, R.drawable.upgrade_family_dark, "خانواده",
+                "یه دفتر مشترک بین چند گوشی که سرور هم نمی‌تونه بخونتش."),
+        )
+    } else {
+        emptyList()
+    }
+
+    SettingsPage("نسخهٔ کامل", onBack) {
+        Text(
+            "همین برنامه‌ست، با این صفحه‌ها کنار دارایی‌ها. رایگانه و کنار همین نسخه نصب می‌شه، " +
+                "پس لازم نیست اینو پاک کنی.",
+            fontSize = 15.sp,
+            lineHeight = 26.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Space.xs),
+        )
+        Spacer(Modifier.height(Space.l))
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(Space.m),
+        ) {
+            screens.forEach { screen ->
+                // One stop for TalkBack: the picture is the line under it, drawn.
+                Column(Modifier.width(180.dp).semantics(mergeDescendants = true) {}) {
+                    Image(
+                        painterResource(if (dark) screen.dark else screen.light),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.card))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(Radius.card)),
+                    )
+                    Text(
+                        screen.title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = Space.m),
+                    )
+                    Text(
+                        screen.line,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        SectionLabel("دارایی‌هات")
+        Text(
+            "نسخهٔ کامل یه برنامهٔ جداست و دارایی‌هایی که اینجا نوشتی خودشون بهش نمی‌رن. از اینجا " +
+                "پشتیبان بگیر، بعد توی نسخهٔ کامل از تنظیمات ← پشتیبان‌گیری، «بازگردانی از پشتیبان» رو بزن.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = Space.xs, end = Space.xs, bottom = Space.m),
+        )
+        DoorRow(
+            title = "پشتیبان‌گیری",
+            subtitle = "همهٔ دارایی‌ها و تنظیمات، توی یک فایل رمزدار",
+            glyph = CategoryGlyph.STACK,
+            shape = bandShape(0, 1),
+            divided = false,
+            enabled = true,
+            onClick = onBackup,
+        )
+
+        Spacer(Modifier.height(Space.xxl))
+        Button(
+            // The Worker's proxied copy, as the update sheet uses: github.com, where the release
+            // page lives, mostly does not load from Iran. No rates yet means no link to it, and
+            // then the site's install section is the next best door.
+            onClick = { openUrl(context, state.rates.latest?.downloadUrlFor(lite = false) ?: "${SITE}#install") },
+            shape = RoundedCornerShape(Radius.pill),
+            colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp),
+        ) { Text("گرفتن نسخهٔ کامل", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+    }
+}
+
+private enum class Sending { IDLE, SENDING, SENT, FAILED }
+
+/**
+ * «بازخورد» — a message to hey@muchtoman.com from inside the app.
+ *
+ * A form rather than a mailto: link, because most phones here have no mail app signed in, and
+ * the Worker that already answers from Iran is the one address the app knows it can reach. What
+ * goes is said above the button — her words, the contact she chose to leave, the version — and
+ * nothing else goes. The draft outlives a failed send and a rotated phone; only a sent one clears.
+ */
+@Composable
+private fun FeedbackPage(onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var message by rememberSaveable { mutableStateOf("") }
+    var contact by rememberSaveable { mutableStateOf("") }
+    var sending by rememberSaveable { mutableStateOf(Sending.IDLE) }
+
+    SettingsPage("بازخورد", onBack) {
+        Text(
+            "مشکلی که دیدی، چیزی که کم داری، یا بانکی که پیامکش خونده نمی‌شه — هر چی هست بنویس.",
+            fontSize = 15.sp,
+            lineHeight = 26.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = Space.xs),
+        )
+        Spacer(Modifier.height(Space.l))
+        OutlinedTextField(
+            value = message,
+            onValueChange = {
+                message = it.take(MAX_FEEDBACK_CHARS)
+                // A new word after «فرستاده شد» is a new message, and the receipt is for the old one.
+                if (sending != Sending.SENDING) sending = Sending.IDLE
+            },
+            minLines = 6,
+            placeholder = { Text("پیامت") },
+            shape = RoundedCornerShape(Radius.field),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "پیامت" },
+        )
+        Spacer(Modifier.height(Space.m))
+        OutlinedTextField(
+            value = contact,
+            onValueChange = { contact = it.take(100) },
+            singleLine = true,
+            label = { Text("اگه جواب می‌خوای: ایمیل یا آیدی تلگرام") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
+            shape = RoundedCornerShape(Radius.field),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "فقط همین‌ها و شمارهٔ نسخهٔ برنامه به ${bidi("hey@muchtoman.com")} فرستاده می‌شه.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
+        )
+        Spacer(Modifier.height(Space.xl))
+        Button(
+            onClick = {
+                sending = Sending.SENDING
+                scope.launch {
+                    val sent = postFeedback(BuildConfig.RATES_URL, message, contact).isSuccess
+                    if (sent) message = ""
+                    sending = if (sent) Sending.SENT else Sending.FAILED
+                }
+            },
+            enabled = message.isNotBlank() && sending != Sending.SENDING,
+            shape = RoundedCornerShape(Radius.pill),
+            colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp),
+        ) {
+            Text(
+                if (sending == Sending.SENDING) "در حال فرستادن…" else "فرستادن",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        val outcome = when (sending) {
+            Sending.SENT -> "فرستاده شد."
+            Sending.FAILED -> "فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه."
+            else -> null
+        }
+        if (outcome != null) {
+            Text(
+                outcome,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = if (sending == Sending.FAILED) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(top = Space.m, start = Space.xs, end = Space.xs)
+                    // Said aloud: the button she pressed is the last thing TalkBack read.
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
 /** «از اول», or the month the ledger starts at and what that leaves out — the start row's line. */
 private fun ledgerStartFa(health: LedgerHealth): String = when {
     health.startsOn <= 0L -> "از اول"
@@ -1590,6 +1876,23 @@ private fun AppearanceGlyph(tint: Color, box: Dp = 22.dp) {
             topLeft = Offset(centre.x - r, centre.y - r),
             size = Size(r * 2f, r * 2f),
         )
+    }
+}
+
+/** The site's mark: a globe — its rim, one meridian and the equator — in the page's own pen. */
+@Composable
+private fun GlobeGlyph(tint: Color, box: Dp = 22.dp) {
+    Canvas(Modifier.size(box)) {
+        val ink = pen(1.8.dp)
+        val r = size.minDimension * 0.40f
+        drawCircle(tint, r, center, style = ink)
+        drawOval(
+            color = tint,
+            topLeft = Offset(center.x - r * 0.45f, center.y - r),
+            size = Size(r * 0.9f, r * 2f),
+            style = ink,
+        )
+        drawLine(tint, Offset(center.x - r, center.y), Offset(center.x + r, center.y), ink.width, StrokeCap.Round)
     }
 }
 

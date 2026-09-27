@@ -36,7 +36,10 @@ with its balances and categories intact.
 
 The screen selection uses `BuildConfig.LITE` in `tabs` in `TabBar.kt`. The updater also uses
 that flag to select the matching APK, and تنظیمات uses it to drop the doors whose rooms only the
-full app reads: categories, the household, installment reminders and ledger health. Shared behavior stays common: a bank detection fix has to land in both APKs
+full app reads: categories, the household, installment reminders and ledger health. In their
+place lite gets a card that opens «نسخهٔ کامل», a preview of the full app's screens from
+`app/src/main/res/drawable-nodpi/upgrade_*.webp` (made by `tools/site/assets.mjs`; the full
+release's resource shrinker drops them) and a link to the full APK. Shared behavior stays common: a bank detection fix has to land in both APKs
 without anyone remembering to do it twice, which is the entire reason this is a flavour and not a
 second repository. The cost is that the lite APK carries the ledger code it never shows, so it is
 fewer screens rather than a smaller download.
@@ -162,6 +165,16 @@ Everything the app reports about itself, which `Diagnostics.kt` holds on the pho
   totals per day, store and version, cached for an hour, plus a 7-day average, the record day and
   a running total. That total is phone-days, not people: with no identifier there is nothing to
   dedupe on. Days before the first count get no bar and no row. It never reads the crash dataset.
+- **Feedback.** Not about the app but from her: تنظیمات ← درباره ← بازخورد posts
+  `{message, contact, version}` to `POST /feedback` (the PWA through the sync Worker's proxy), and
+  the Worker emails it to hey@muchtoman.com through the `FEEDBACK` `send_email` binding, pinned in
+  `wrangler.jsonc` to that one recipient and to `feedback@muchtoman.com` as the sender. A contact
+  that is plainly an address becomes the Reply-To. Nothing is stored and the message is never
+  logged. Before the first deploy with it, onboard muchtoman.com to Email Sending (dashboard →
+  Email → Email Sending — `wrangler email sending enable` needs a token with the email scope) and
+  make sure hey@ is a real inbox under Email Routing; until then every send fails
+  `E_SENDER_NOT_VERIFIED` and the form says «فرستاده نشد». Deploy this Worker before `sync/` and
+  before any app release that has the form, or the form answers «فرستاده نشد» against a 404.
 
 The Worker can only write the two datasets. Reading needs an API token with *Account Analytics:
 Read* and nothing else, set once as secrets so the page can use it:

@@ -43,8 +43,9 @@ const MAX_ID_CHARS = 256;
 const MAX_DEVICE_CHARS = 64;
 const MAX_MEMBER_CHARS = 64;
 const DEFAULT_RATES_ORIGIN = 'https://rates.muchtoman.com';
-/** The rates Worker's own cap on a wallet lookup's body. */
+/** The rates Worker's own caps on a wallet lookup's body and on a feedback message's. */
 const MAX_WALLET_REQUEST_BYTES = 4 * 1024;
+const MAX_FEEDBACK_BYTES = 8 * 1024;
 
 /** How long a pairing token is good for. Long enough to walk to the other phone, no longer. */
 const PAIRING_TTL_MS = 10 * 60 * 1000;
@@ -862,17 +863,18 @@ export default {
         });
       }
 
-      // The same reason for a wallet's balance and a coin's icon: the page may only talk to its
-      // own origin. The body is capped here at the rates Worker's own cap, so an oversized one
-      // never costs a subrequest.
+      // The same reason for a wallet's balance, a coin's icon and the feedback form: the page may
+      // only talk to its own origin. The body is capped here at the rates Worker's own cap, so an
+      // oversized one never costs a subrequest.
       //
-      // Ceiling, named: the rates Worker throttles /wallet-balance per CF-Connecting-IP, and from
-      // there every proxied lookup comes from this Worker — the browsers share one bucket.
-      if (path === '/wallet-balance') {
+      // Ceiling, named: the rates Worker throttles /wallet-balance and /feedback per
+      // CF-Connecting-IP, and from there every proxied request comes from this Worker — the
+      // browsers share one bucket.
+      if (path === '/wallet-balance' || path === '/feedback') {
         if (request.method !== 'POST') return textResponse('POST only\n', 405, 'POST');
         let body: string;
         try {
-          body = await readTextLimited(request, MAX_WALLET_REQUEST_BYTES);
+          body = await readTextLimited(request, path === '/feedback' ? MAX_FEEDBACK_BYTES : MAX_WALLET_REQUEST_BYTES);
         } catch (error) {
           if (error instanceof BodyTooLargeError) return jsonResponse({ code: 'invalid_request' }, 413);
           throw error;
@@ -880,14 +882,14 @@ export default {
         const origin = env.RATES_ORIGIN ?? DEFAULT_RATES_ORIGIN;
         let upstream: Response;
         try {
-          upstream = await fetch(`${origin}/wallet-balance`, {
+          upstream = await fetch(`${origin}${path}`, {
             method: 'POST',
             headers: { 'content-type': request.headers.get('content-type') ?? 'application/json' },
             body,
             signal: AbortSignal.timeout(15_000),
           });
         } catch (error) {
-          console.error(JSON.stringify({ message: 'wallet proxy failed', error: errorMessage(error) }));
+          console.error(JSON.stringify({ message: `${path} proxy failed`, error: errorMessage(error) }));
           return jsonResponse({ code: 'unavailable' }, 502);
         }
         const headers: Record<string, string> = {

@@ -70,8 +70,11 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
 - Money that *is* somewhere — assets, budgets, goals, settings — sits in **bands**
   (`bandShape`: one grouped object, hairline-divided rows, the «+» row built in).
 - **تنظیمات is an index; its settings are rooms.** The page is her card and three bands of
-  doors — دفترت, برنامه, نگهداری — and every switch, and every paragraph that qualifies one,
-  lives on the page its door opens ([Settings.kt](app/src/main/java/com/doxigo/muchtoman/Settings.kt)).
+  doors — دفترت, برنامه, نگهداری — plus «درباره» with the site, and every switch, and every
+  paragraph that qualifies one, lives on the page its door opens
+  ([Settings.kt](app/src/main/java/com/doxigo/muchtoman/Settings.kt)). The lite edition adds
+  one card under hers, on the hero's field with the page's only `Cta` pill: the way to the
+  full edition's preview.
   One rule keeps the two legible: a **`primaryContainer` disc is a door**, a neutral
   **`surfaceContainerHighest` disc is a control**. It is the quiet chip, never `Cta` — «press
   this» keeps meaning one thing.

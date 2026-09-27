@@ -42,5 +42,16 @@
   "analytics_engine_datasets": [
     { "binding": "USAGE", "dataset": "muchtoman_daily" },
     { "binding": "CRASHES", "dataset": "muchtoman_crashes" }
+  ],
+  // POST /feedback, the form in تنظیمات ← درباره. Pinned at both ends, so the endpoint can only
+  // ever mail hey@ from feedback@ whatever a request says. muchtoman.com has to be onboarded to
+  // Email Sending (dashboard → Email → Email Sending) or every send fails E_SENDER_NOT_VERIFIED,
+  // and hey@ has to be a real inbox (Email Routing) for any of it to be read.
+  "send_email": [
+    {
+      "name": "FEEDBACK",
+      "destination_address": "hey@muchtoman.com",
+      "allowed_sender_addresses": ["feedback@muchtoman.com"]
+    }
   ]
 }

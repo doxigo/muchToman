@@ -1,6 +1,6 @@
 /**
  * تنظیمات — an index of rooms, not a scroll of everything (Settings.kt). Her at the top, three
- * bands of doors, the version line; every setting lives in the room it belongs to, beside the
+ * bands of doors, «درباره» with the site and the feedback form, the version line; every setting lives in the room it belongs to, beside the
  * sentences that qualify it.
  *
  * The rooms are the page's own `room` prop rather than more routes: each is only ever one level
@@ -37,7 +37,7 @@ import { BANKS } from './sms';
 import { pref, setPref, useData } from './state';
 import { ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetTitle, TextField } from './ui';
 
-type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH';
+type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH' | 'FEEDBACK';
 
 const THEME_FA: Record<ThemeMode, string> = { SYSTEM: 'خودکار', LIGHT: 'روشن', DARK: 'تیره' };
 const THEMES: ThemeMode[] = ['SYSTEM', 'LIGHT', 'DARK'];
@@ -65,16 +65,24 @@ export function Band({ children, flat }: { children: ComponentChildren; flat?: b
 const Chev = () => <span class="chev"><Chevron size={24} /></span>;
 const Glyph = ({ glyph }: { glyph: CategoryGlyph }) => <CategoryIcon glyph={glyph} size={22} />;
 
-/** One door on the index: a mark on the green disc, a name, what it is set to, the chevron. */
-function IndexRow({ title, value, onClick, mark }: { title: string; value?: string | null; onClick: () => void; mark: ComponentChildren }) {
-  return (
-    <button type="button" class="set-row" onClick={onClick}>
+/**
+ * One door on the index: a mark on the green disc, a name, what it is set to, the chevron. With
+ * `href` it is a real link instead, so the browser opens it the way it opens every other one.
+ */
+function IndexRow({ title, value, onClick, href, mark }: {
+  title: string; value?: string | null; onClick?: () => void; href?: string; mark: ComponentChildren;
+}) {
+  const body = (
+    <>
       <span class="set-disc door">{mark}</span>
       <span class="set-text"><span class="set-title one" style={{ display: 'block' }}>{title}</span></span>
       {value != null && <span class="set-value">{value}</span>}
       <Chev />
-    </button>
+    </>
   );
+  return href
+    ? <a class="set-row" href={href} target="_blank" rel="noopener">{body}</a>
+    : <button type="button" class="set-row" onClick={onClick}>{body}</button>;
 }
 
 /**
@@ -151,6 +159,18 @@ function AppearanceGlyph({ size = 22 }: { size?: number }) {
   );
 }
 
+/** The site's mark: a globe — its rim, one meridian and the equator. */
+function GlobeGlyph({ size = 22 }: { size?: number }) {
+  const c = size / 2; const r = size * 0.4;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" fill="none" stroke="currentColor" stroke-width={1.8} stroke-linecap="round">
+      <circle cx={c} cy={c} r={r} />
+      <ellipse cx={c} cy={c} rx={r * 0.45} ry={r} />
+      <path d={`M${c - r} ${c}H${c + r}`} />
+    </svg>
+  );
+}
+
 // ---- the index ----------------------------------------------------------------------------------
 
 /** "1.0" -> "۱٫۰" so the one latin run on a Persian page disappears. */
@@ -197,6 +217,13 @@ function SettingsIndex() {
         <IndexRow title="پشتیبان‌گیری" onClick={() => openRoom('BACKUP')} mark={<Glyph glyph="STACK" />} />
         <IndexRow title="حافظهٔ موقت" onClick={() => openRoom('CACHE')} mark={<Glyph glyph="SWAP" />} />
         <IndexRow title="وضعیت دفتر" onClick={() => openRoom('HEALTH')} mark={<Glyph glyph="TRAY" />} />
+      </Band>
+
+      {/* The address on the row: a door out of the app says where it goes before it goes. */}
+      <SectionLabel>درباره</SectionLabel>
+      <Band>
+        <IndexRow title="سایت" value="muchtoman.com" href="https://muchtoman.com/" mark={<GlobeGlyph />} />
+        <IndexRow title="بازخورد" onClick={() => openRoom('FEEDBACK')} mark={<Glyph glyph="NOTE" />} />
       </Band>
 
       {/* The answer to "which version do you have?" over the phone. No build number: the browser has none. */}
@@ -506,6 +533,55 @@ function CachePage() {
 // ---- وضعیت دفتر -------------------------------------------------------------------------------------
 
 /** «از اول», or the month the ledger starts at and what that leaves out. */
+/** The rates Worker's own cap, in characters; the field stops taking more at the same count. */
+const MAX_FEEDBACK_CHARS = 2_000;
+
+/**
+ * «بازخورد» (Settings.kt FeedbackPage): a message to hey@muchtoman.com, carried to the rates
+ * Worker that mails it by this origin's own proxy. Her words, the contact she chose to leave and
+ * the version go, as the note says, and nothing else; only a sent draft clears.
+ */
+function FeedbackPage() {
+  const [message, setMessage] = useState('');
+  const [contact, setContact] = useState('');
+  const [sending, setSending] = useState<'IDLE' | 'SENDING' | 'SENT' | 'FAILED'>('IDLE');
+  const send = async (): Promise<void> => {
+    setSending('SENDING');
+    let ok = false;
+    try {
+      const res = await fetch('/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ message: message.trim(), contact: contact.trim(), version: `${VERSION}-pwa` }),
+        redirect: 'manual',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(20_000),
+      });
+      ok = res.ok;
+    } catch { /* offline or timed out: the same «فرستاده نشد» */ }
+    if (ok) setMessage('');
+    setSending(ok ? 'SENT' : 'FAILED');
+  };
+  return (
+    <SettingsPage title="بازخورد">
+      <p class="set-lead">مشکلی که دیدی، چیزی که کم داری، یا بانکی که پیامکش خونده نمی‌شه — هر چی هست بنویس.</p>
+      <div style={{ height: 'var(--l)' }} />
+      <div class="stack feedback">
+        {/* A new word after «فرستاده شد» is a new message, and the receipt is for the old one. */}
+        <TextField multiline label="" ariaLabel="پیامت" placeholder="پیامت" value={message} maxLength={MAX_FEEDBACK_CHARS}
+          onInput={(v) => { setMessage(v); if (sending !== 'SENDING') setSending('IDLE'); }} />
+        <TextField label="اگه جواب می‌خوای: ایمیل یا آیدی تلگرام" value={contact} maxLength={100} inputMode="email" onInput={setContact} />
+      </div>
+      <Note>فقط همین‌ها و شمارهٔ نسخهٔ برنامه به <bdi>hey@muchtoman.com</bdi> فرستاده می‌شه.</Note>
+      <div style={{ height: 'var(--xl)' }} />
+      <PillButton label={sending === 'SENDING' ? 'در حال فرستادن…' : 'فرستادن'} voice="primary" block
+        disabled={!message.trim() || sending === 'SENDING'} onClick={() => void send()} />
+      {sending === 'SENT' && <p class="set-note strong" aria-live="polite">فرستاده شد.</p>}
+      {sending === 'FAILED' && <Note tone="error">فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه.</Note>}
+    </SettingsPage>
+  );
+}
+
 function ledgerStartFa(health: LedgerHealth): string {
   if (health.startsOn <= 0) return 'از اول';
   if (health.setAside > 0) return `از ${reportMonthOf(health.startsOn).fa} • ${faNumber(health.setAside)} تراکنش کنار رفته`;
@@ -603,6 +679,7 @@ function Settings({ room = 'INDEX' }: { room?: Room }) {
     case 'BACKUP': return <BackupPage />;
     case 'CACHE': return <CachePage />;
     case 'HEALTH': return <LedgerHealthPage />;
+    case 'FEEDBACK': return <FeedbackPage />;
     default: return <SettingsIndex />;
   }
 }

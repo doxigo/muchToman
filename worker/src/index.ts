@@ -1413,6 +1413,43 @@ export function countDaily(env: Env, header: string | null): void {
 const MAX_CRASH_REPORT_BYTES = 8 * 1024;
 const crashLimiter = new TokenBucket(10, 10 / (60 * 60 * 1000));
 
+// What she writes in تنظیمات ← درباره ← بازخورد, mailed through a binding pinned at both ends
+// (wrangler.jsonc): this endpoint can only ever write to the one inbox, from the one address, so
+// it is a form and not a relay. The app caps a message at 2,000 characters — Persian is two bytes
+// a character, so 8 KB holds it and the JSON around it.
+const MAX_FEEDBACK_BYTES = 8 * 1024;
+const MAX_FEEDBACK_CHARS = 2_000;
+const MAX_CONTACT_CHARS = 100;
+// ponytail: per address, and the PWA's messages all arrive from the sync Worker's proxy, so its
+// browsers share one bucket — the same ceiling the wallet lookup names. Pass the client's address
+// through an authenticated header if the PWA ever outgrows ten an hour.
+const feedbackLimiter = new TokenBucket(10, 10 / (60 * 60 * 1000));
+const PLAIN_EMAIL = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
+
+/**
+ * Her words, the way back to her if she left one, and which build sent them — nothing the
+ * request did not say. Control characters go (a newline stays in the message, where it is hers),
+ * and her contact only becomes the Reply-To when it is plainly an address, so a crafted one can
+ * never reach a header. Null when there is nothing to send.
+ */
+export function feedbackEmail(body: unknown): EmailMessageBuilder | null {
+  const record = asRecord(body);
+  const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+  const message = text(record.message).replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '')
+    .trim().slice(0, MAX_FEEDBACK_CHARS);
+  if (message === '') return null;
+  const contact = text(record.contact).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim()
+    .slice(0, MAX_CONTACT_CHARS);
+  const version = usageField(text(record.version));
+  return {
+    from: { email: 'feedback@muchtoman.com', name: 'چقدر تومن' },
+    to: 'hey@muchtoman.com',
+    subject: `بازخورد چقدر تومن · ${version}`,
+    ...(PLAIN_EMAIL.test(contact) ? { replyTo: contact } : {}),
+    text: `${message}\n\n—\nراه تماس: ${contact || 'نذاشته'}\nنسخه: ${version}\n`,
+  };
+}
+
 const USAGE_DAYS = 90;
 const USAGE_SLOT = /<!--usage-->[\s\S]*?<!--\/usage-->/;
 
@@ -1621,6 +1658,8 @@ interface Env {
   ASSETS: Fetcher;
   USAGE?: AnalyticsEngineDataset;
   CRASHES?: AnalyticsEngineDataset;
+  /** Pinned to hey@muchtoman.com, from feedback@ (wrangler.jsonc). Absent in tests and local dev. */
+  FEEDBACK?: SendEmail;
   /** Read-only (Account Analytics: Read), for /usage's SQL query. Secrets, not vars. */
   ANALYTICS_ACCOUNT_ID?: string;
   ANALYTICS_TOKEN?: string;
@@ -1716,6 +1755,29 @@ export default {
       }
     }
 
+    if (url.pathname === '/feedback') {
+      if (request.method !== 'POST') {
+        return textResponse('Method not allowed', 405, 'POST');
+      }
+      if (!feedbackLimiter.take(request.headers.get('cf-connecting-ip') ?? 'unknown', Date.now()).ok) {
+        return textResponse('Too many messages', 429);
+      }
+      try {
+        const email = feedbackEmail(JSON.parse(await readTextLimited(request.body, request.headers, MAX_FEEDBACK_BYTES)));
+        if (email == null) return textResponse('Empty message', 400);
+        if (env.FEEDBACK == null) return textResponse('Message not sent', 503);
+        // The app keeps her draft until a 2xx, so a failure here costs her a tap, not the words.
+        await env.FEEDBACK.send(email);
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return textResponse('Message too large', 413);
+        if (error instanceof SyntaxError) return textResponse('Not JSON', 400);
+        // The error, never the message: her words go to the inbox and nowhere else, logs included.
+        console.error(JSON.stringify({ message: 'feedback not sent', error: errorMessage(error) }));
+        return textResponse('Message not sent', 502);
+      }
+    }
+
     // The landing page everywhere except the API hostnames — rates. and workers.dev keep
     // answering with the usage line so the rates origin never turns into a website, and
     // `wrangler dev` on localhost gets the page like the apex does.
@@ -1725,7 +1787,7 @@ export default {
         return await landingPage(request, env);
       }
       return textResponse(
-        'muchtoman: GET /rates, GET /coin-icon, GET /download, POST /wallet-balance, or POST /crash\n',
+        'muchtoman: GET /rates, GET /coin-icon, GET /download, POST /wallet-balance, POST /crash, or POST /feedback\n',
         404,
       );
     }

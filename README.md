@@ -206,7 +206,9 @@ Myket, or Android's package installer for an APK from GitHub). The PWA sends its
 bytes, and the totals are public at [muchtoman.com/usage](https://muchtoman.com/usage). After a
 crash, the next launch shows the crash report and asks whether to send it: class names and code
 line numbers with no exception messages, plus the Android version and phone model. It is sent only
-if you say yes.
+if you say yes. Separately, Settings → About → Feedback is a form: what you type, the contact you
+choose to leave, and the app's version are emailed to hey@muchtoman.com when you press send, and
+nothing else goes with them.
 
 Family sync is optional and end-to-end encrypted. SMS sharing starts off. When a person enables
 it, their phone shares only the parsed amount, direction, time, bank, merchant, and category. It

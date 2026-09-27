@@ -29,6 +29,17 @@ for (const [name, top] of Object.entries(TOPS)) {
     '-resize', '720x', '-quality', '82', at(`worker/public/img/${name}.webp`));
 }
 
+// The lite edition's «نسخهٔ کامل» page previews the screens it lacks (UpgradePage in Settings.kt)
+// from the same crops, at the 180dp it shows them at on a 3× screen.
+mkdirSync(at('app/src/main/res/drawable-nodpi'), { recursive: true });
+for (const name of ['ledger', 'report', 'budget', 'loans', 'family']) {
+  for (const theme of ['', '-dark']) {
+    const top = TOPS[name + theme];
+    magick(at(`docs/screenshots/${name}${theme}.png`), '-crop', `1080x${2400 - top}+0+${top}`, '+repage',
+      '-resize', '540x', '-quality', '80', at(`app/src/main/res/drawable-nodpi/upgrade_${name}${theme.replace('-', '_')}.webp`));
+  }
+}
+
 magick(at('docs/store/promo-total.jpg'), '-resize', '1200x', '-quality', '85', at('worker/public/og.jpg'));
 
 // The banks the SMS reader knows (Sms.kt `Bank`, less Ayandeh), one sprite of <view>s the page
