@@ -211,9 +211,16 @@ export const holdingKey = (h: Holding): string => h.id || h.typeId;
 
 export interface WalletOption { network: string; networkFa: string; contract: string }
 export interface Coin { id: string; name: string; en: string; icon: string; wallets: WalletOption[] }
-export interface Rates { updatedAt: number; toman: Record<string, number>; coins: Coin[] }
+/** One notification line as the rates Worker sends it (quips.ts). Blank [category] is any. */
+export interface Quip { tone: string; category: string; text: string }
+
+/** [quips] is absent when the Worker sent none, so the lines already heard are kept. */
+export interface Rates { updatedAt: number; toman: Record<string, number>; coins: Coin[]; quips?: Record<string, Quip[]> }
 
 export type ThemeMode = 'SYSTEM' | 'LIGHT' | 'DARK';
+
+/** How notes talk (Quips.kt QuipTone). */
+export type QuipTone = 'PLAIN' | 'WITTY' | 'ROAST';
 
 /**
  * Every prefs key the browser keeps, with its default. The names are the phone's, so a backup
@@ -238,6 +245,12 @@ export interface Prefs {
   installmentReminder: number;
   budgetMarks: Array<{ goalId: string; windowStart: number; level: number }>;
   installmentMarks: Record<string, number>;
+  /** The voice notes speak in. Hers, so backed up. */
+  quipTone: QuipTone;
+  /** Which lines this browser already said (quips.ts pickQuip) — a mark, kept out of backups. */
+  quipsSeen: string[];
+  /** The spend the quiet note last asked about (quips.ts quietDays) — a mark too. */
+  quietMark: number;
   lastBackupAt: number;
   backupReminderEnabled: boolean;
   /** Banks whose accounts are switched out of the total. */
@@ -276,6 +289,9 @@ export const PREF_DEFAULTS: Prefs = {
   installmentReminder: 1,
   budgetMarks: [],
   installmentMarks: {},
+  quipTone: 'PLAIN',
+  quipsSeen: [],
+  quietMark: 0,
   lastBackupAt: 0,
   backupReminderEnabled: false,
   disabledBanks: [],

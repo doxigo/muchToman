@@ -29,8 +29,9 @@ import { tehranDay } from './jalali';
 import { setLedgerStartsOn, toggleBankDisabled } from './ledger';
 import { disableLock, enableLock, lockAvailable } from './lock';
 import { BankLogo } from './logos';
-import type { ThemeMode } from './model';
+import type { QuipTone, ThemeMode } from './model';
 import { closeSheet, openPage, openSheet, registerPage, registerSheet } from './nav';
+import { QUIP_TONES, QUIP_TONE_CAPTION, QUIP_TONE_FA, quipToneOf } from './quips';
 import { reportMonthOf } from './reports';
 import type { ReportMonth } from './reports';
 import { BANKS } from './sms';
@@ -210,6 +211,8 @@ function SettingsIndex() {
         <IndexRow title="قفل و امنیت" value={pref('lockEnabled') ? 'روشن' : 'خاموش'} onClick={() => openRoom('SECURITY')} mark={<LockGlyph />} />
         <IndexRow title="یادآوری قسط" value={installmentReminderFa(pref('installmentReminder'))} onClick={() => openSheet('installmentReminder')}
           mark={<Glyph glyph="INSTALMENT" />} />
+        <IndexRow title="لحن اعلان‌ها" value={QUIP_TONE_FA[quipToneOf(pref('quipTone'))]} onClick={() => openSheet('quipTone')}
+          mark={<Glyph glyph="MUSIC" />} />
       </Band>
 
       <SectionLabel>نگهداری</SectionLabel>
@@ -280,6 +283,28 @@ function InstallmentReminderSheet() {
       <p class="sheet-body">قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه.</p>
       <div style={{ height: 'var(--l)' }} />
       <SegmentedChoice options={INSTALLMENT_REMINDER_DAYS} selected={pref('installmentReminder')} label={installmentReminderFa} fontSize={15} onSelect={pick} />
+    </Sheet>
+  );
+}
+
+/**
+ * How the notes talk (Settings.kt QuipToneSheet). One choice, not a switch per kind of line; the
+ * caption names the quiet note and says بی‌تعارف can sting. A voice is only heard in notifications,
+ * so picking one is the moment to ask for them.
+ */
+function QuipToneSheet() {
+  useData();
+  const pick = (tone: QuipTone) => {
+    setPref('quipTone', tone);
+    if (tone !== 'PLAIN' && typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission().catch(() => {});
+    closeSheet();
+  };
+  return (
+    <Sheet label="لحن اعلان‌ها">
+      <SheetTitle>لحن اعلان‌ها</SheetTitle>
+      <p class="sheet-body">{QUIP_TONE_CAPTION}</p>
+      <div style={{ height: 'var(--l)' }} />
+      <SegmentedChoice options={QUIP_TONES} selected={quipToneOf(pref('quipTone'))} label={(t) => QUIP_TONE_FA[t]} fontSize={15} onSelect={pick} />
     </Sheet>
   );
 }
@@ -688,6 +713,7 @@ registerPage('settings', Settings);
 registerSheet('name', NameSheet);
 registerSheet('theme', ThemeSheet);
 registerSheet('installmentReminder', InstallmentReminderSheet);
+registerSheet('quipTone', QuipToneSheet);
 registerSheet('exportPass', ExportPassSheet);
 registerSheet('restore', RestoreSheet);
 registerSheet('ledgerStart', LedgerStartSheet);

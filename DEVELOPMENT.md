@@ -493,6 +493,34 @@ Private only: plans are never `shared`, so the goal sync never publishes them, a
 reads no `installment` decisions. A household plan would need its links to travel, which is a
 new record kind and therefore `sync/` first.
 
+### Notification lines (quips)
+
+«لحن اعلان‌ها» in تنظیمات picks ساده (the default: every note reads as it always did), شوخ or
+بی‌تعارف. Past ساده, budget and installment notes get one line on top of their plain body, and
+a ledger with no spend of her own for five days (under thirty, 10:00–21:00 Tehran) gets asked
+after on its own «احوال‌پرسی» channel. `Quips.kt` and `pwa/src/quips.ts` are the logic.
+
+The lines live in `worker/src/quips.json` and ride the `/rates` payload, so **adding one is a
+deploy of the rates Worker, not an app release**:
+
+```bash
+cd worker && npm run check && npm run deploy
+```
+
+Phones pick them up on their next rates fetch (the edge cache holds `/rates` for ten minutes) and
+keep the last set they heard. Each line is `{ "tone": "witty" | "roast", "text": "…" }` under one
+of `budget_near`, `budget_over`, `installment` or `quiet`, with an optional `"category": "cat_…"`
+to keep it to one category's budget. Placeholders are `{name}` everywhere, `{cat}` on budgets,
+`{plan}` on installments, `{days}` and `{usd}` (the dollar's rise since her last spend) on quiet;
+a line whose placeholder has no value (no name set, a total budget, a dollar that fell) is
+skipped. `worker/test/quips.test.ts` rejects unknown moments, tones, categories and
+placeholders, Latin digits, Arabic ي/ك, dashes and duplicates, so run `check` before deploying.
+
+A tone hears its own lines and the gentler ones. Nothing repeats until everything that fits has
+been said once. Editing a line's text makes it a new line. A malformed entry costs that entry
+only, never the prices around it (`LenientQuips`). A new moment needs an app release to be said,
+but it is safe to add to the file first: old builds ignore moments they don't know.
+
 ### Shared report exclusions
 
 Which categories دخل و خرج leaves out of its totals is one household record, `exclusion:report`

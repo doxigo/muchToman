@@ -1,7 +1,7 @@
 /**
  * The «آینده» tab's actions — MainActivity.kt's addBudget … answerWorthIt and setReportExcluded —
  * written through state.ts, plus [plansOf] (the goals/budgets/installments part of ledgerView)
- * and the browser notifier ([announce], Notify.kt's announceBudgets/announceInstallments).
+ * and the browser notifier ([announce], Notify.kt's announceBudgets/announceInstallments/announceQuiet).
  *
  * The phone republishes the ledger after every write; here every screen re-derives on the state
  * version, so a write is the whole of it. Family sync is the sync module's to trigger.
@@ -11,6 +11,7 @@ import {
 } from './budget';
 import type { BudgetMark, BudgetPeriod, BudgetProgress } from './budget';
 import { mineId } from './derived';
+import { faNumber } from './format';
 import { GoalKind, GoalPeriod, goalProgress, worthItAnswers } from './goals';
 import type { GoalHorizon, GoalProgress } from './goals';
 import {
@@ -20,6 +21,7 @@ import {
 import type { InstallmentProgress } from './installments';
 import { jalaliMonthStart, jalaliOf, tehranDay } from './jalali';
 import type { Category, Decision, Goal, LedgerEntry, Prefs } from './model';
+import { lastSpendAt, quietBody, quietDays, quietTitle, quipToneOf, takeQuip, usdRiseFa, withQuip } from './quips';
 import { DecisionKind, PASS_THROUGH_CATEGORIES } from './rules';
 import { batch, pref, put, row, rows, setPref } from './state';
 import { uuid7 } from './sync';
@@ -346,6 +348,17 @@ const budgetTag = (goalId: string): string => `budget:${goalId}`;
 const installmentTag = (planId: string): string => `installment:${planId}`;
 /** Both notes open «آینده», where the cards are. The worker's click handler reads `tab`. */
 const OPEN_BUDGET = { tab: 'BUDGET' };
+/** The quiet note: one at most, opening دفتر, where a missing spend would be. */
+const QUIET_TAG = 'quiet';
+const OPEN_LEDGER = { tab: 'LEDGER' };
+
+/**
+ * The line over a budget note (Notify.kt budgetQuip). A total has no category to be kept for and
+ * none to name — «کل خرج؟ جدی؟ دوباره؟» reads as a category — so it hears only the general lines.
+ */
+const budgetQuip = (budget: BudgetProgress): string | null => takeQuip(
+  budget.over ? 'budget_over' : 'budget_near', budget.goal.categoryId, budget.total ? {} : { cat: budget.categoryFa },
+);
 
 // Prefs types `level` as a string; the phone's BudgetMark holds the Int level, as here.
 const budgetMarks = (): BudgetMark[] => pref('budgetMarks') as unknown as BudgetMark[];
@@ -400,7 +413,7 @@ export async function announce(entries: LedgerEntry[], goals: Goal[], now = Date
   const news = budgetNews(plans.budgets, budgetMarks());
   if (!same(news.marks, budgetMarks())) setBudgetMarks(news.marks);
   for (const budget of news.alerts) {
-    pending.push(showNote(budgetAlertTitle(budget), budgetAlertBody(budget), budgetTag(budget.goal.id), OPEN_BUDGET));
+    pending.push(showNote(budgetAlertTitle(budget), withQuip(budgetQuip(budget), budgetAlertBody(budget)), budgetTag(budget.goal.id), OPEN_BUDGET));
   }
   // Back under the first threshold — a new window, a refiled receipt — has no note to keep standing.
   for (const budget of plans.budgets) if (budget.level < BudgetLevel.NEAR) pending.push(closeNote(budgetTag(budget.goal.id)));
@@ -420,10 +433,24 @@ export async function announce(entries: LedgerEntry[], goals: Goal[], now = Date
     for (const [progress, due] of reminders.due) {
       pending.push(showNote(
         installmentReminderTitle(progress.plan, due, today),
-        installmentReminderBody(progress.plan, due),
+        withQuip(takeQuip('installment', null, { plan: progress.plan.nameFa }), installmentReminderBody(progress.plan, due)),
         installmentTag(progress.plan.id),
         { ...OPEN_BUDGET, due },
       ));
+    }
+  }
+
+  // Quiet (Notify.kt announceQuiet): only once she picked a voice, once a spell, and marked only
+  // when it can be shown. A spend since the note was posted answers it, so it comes down.
+  if (quipToneOf(pref('quipTone')) !== 'PLAIN') {
+    const last = lastSpendAt(entries);
+    if (last !== pref('quietMark')) pending.push(closeNote(QUIET_TAG));
+    const days = quietDays(last, pref('quietMark'), now);
+    if (days != null && last != null && canNotify()) {
+      setPref('quietMark', last);
+      const usd = usdRiseFa(pref('rateHistory'), last, pref('rates')?.toman.usd);
+      const quip = takeQuip('quiet', null, { days: faNumber(days), usd });
+      pending.push(showNote(quietTitle(days), withQuip(quip, quietBody()), QUIET_TAG, OPEN_LEDGER));
     }
   }
   await Promise.all(pending);

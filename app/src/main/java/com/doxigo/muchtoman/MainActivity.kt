@@ -95,6 +95,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             name = store.name,
             themeMode = store.themeMode,
             installmentReminder = store.installmentReminder,
+            quipTone = store.quipTone,
             history = store.history,
             rateHistory = store.rateHistory,
             onboarded = store.onboarded,
@@ -556,6 +557,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(installmentReminder = days) }
         // It may be the only reason left to watch, or the first one.
         scheduleLedgerWatch(getApplication(), watchWanted())
+    }
+
+    /** The voice notes speak in. Takes effect on the next note; nothing already posted is rewritten. */
+    fun setQuipTone(tone: QuipTone) {
+        store.quipTone = tone
+        _state.update { it.copy(quipTone = tone) }
     }
 
     /**
@@ -2745,6 +2752,8 @@ data class UiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
     val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
+    /** How notes talk — see [Store.quipTone]. */
+    val quipTone: QuipTone = QuipTone.PLAIN,
     val history: Map<Long, Double> = emptyMap(),
     /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
     val rateHistory: Map<Long, Double> = emptyMap(),

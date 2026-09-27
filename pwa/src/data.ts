@@ -13,6 +13,7 @@ import type { Stock } from './catalog';
 import { DAY_MS } from './jalali';
 import { holdingKey } from './model';
 import type { Coin, Holding, Rates, WalletLink, WalletOption } from './model';
+import { sanitizeQuips } from './quips';
 import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa } from './sms';
 import { batch, pref, setPref } from './state';
 
@@ -209,8 +210,11 @@ export const effectiveRates = (fetched: Rates | null, overrides: Record<string, 
  * Fresh prices, but the old catalogue when the new one is empty: when the Worker's name-and-logo
  * source is down it sends prices with no coins, and names and logos do not go stale like a price.
  */
-export const mergeRates = (fresh: Rates, cached: Rates | null): Rates =>
-  ({ ...fresh, coins: fresh.coins.length ? fresh.coins : cached?.coins ?? [] });
+export function mergeRates(fresh: Rates, cached: Rates | null): Rates {
+  // A body from before the Worker sent lines has none; the ones she already has stay.
+  const quips = fresh.quips ?? cached?.quips;
+  return { ...fresh, coins: fresh.coins.length ? fresh.coins : cached?.coins ?? [], ...(quips ? { quips } : {}) };
+}
 
 // ---- the payload's trust boundary -----------------------------------------------------------
 
@@ -281,7 +285,7 @@ function trustedCoinIcon(value: string): string {
 
 /** Everything from the Worker is capped and checked here, field by field, before anything reads it. */
 export function sanitizeRates(raw: unknown, now = Date.now()): Rates {
-  const r = raw as { updatedAt?: unknown; toman?: unknown; coins?: unknown } | null;
+  const r = raw as { updatedAt?: unknown; toman?: unknown; coins?: unknown; quips?: unknown } | null;
   // Where kotlinx would have refused to decode, refuse too.
   if (typeof r !== 'object' || r === null) throw new Error('rates is not an object');
   const rawToman = r.toman ?? {};
@@ -325,7 +329,9 @@ export function sanitizeRates(raw: unknown, now = Date.now()): Rates {
 
   const updatedAt = Number.isInteger(r.updatedAt) && (r.updatedAt as number) >= 1 &&
     (r.updatedAt as number) <= now + MAX_FUTURE_CLOCK_SKEW_MS ? r.updatedAt as number : 0;
-  return { updatedAt, toman: Object.fromEntries(toman), coins };
+  // Judged apart from the prices, and never able to fail them: a malformed line is dropped here.
+  const quips = sanitizeQuips(r.quips);
+  return { updatedAt, toman: Object.fromEntries(toman), coins, ...(quips ? { quips } : {}) };
 }
 
 /** The body, but never more than `maxBytes` of it: a payload that big is a mistake or an attack. */

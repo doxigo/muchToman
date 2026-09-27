@@ -146,9 +146,10 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
  * that lands at the same moment as an app open produces the same rows.
  *
  * Nothing is written that she can see except a notification. No balance, no snapshot, no widget —
- * this worker's whole output is «a budget of yours crossed a line», «an installment falls due» and
- * «something landed that nobody has filed», and [announceBudgets], [announceInstallments] and
- * [announceFiling] are what decide whether any is worth saying.
+ * this worker's whole output is «a budget of yours crossed a line», «an installment falls due»,
+ * «something landed that nobody has filed» and, once she asked for a voice, «زنده‌ای؟» — and
+ * [announceBudgets], [announceInstallments], [announceFiling] and [announceQuiet] are what decide
+ * whether any is worth saying.
  *
  * On a phone that belongs to a household, one more thing: the family sync runs here too, so a
  * spend reaches the rest of the family the minute its message lands rather than the next time
@@ -201,6 +202,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                     announceBudgets(app, store, view.budgets)
                     announceInstallments(app, store, view.installments)
                     announceFiling(app, store, view)
+                    announceQuiet(app, store, view.entries)
                 }
             }
             Result.success()

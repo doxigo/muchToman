@@ -143,6 +143,9 @@ fun SettingsScreen(
     /** Days ahead an installment is reminded of, -1 for never — see [INSTALLMENT_REMINDER_DAYS]. */
     installmentReminder: Int,
     onInstallmentReminderChange: (Int) -> Unit,
+    /** How notes talk — see [QuipTone]. */
+    quipTone: QuipTone,
+    onQuipToneChange: (QuipTone) -> Unit,
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
     onLockChange: (Boolean) -> Unit,
@@ -188,6 +191,8 @@ fun SettingsScreen(
             onThemeChange = onThemeChange,
             installmentReminder = installmentReminder,
             onInstallmentReminderChange = onInstallmentReminderChange,
+            quipTone = quipTone,
+            onQuipToneChange = onQuipToneChange,
             onCategories = onCategories,
             onOpen = { page = it },
             onBack = onBack,
@@ -256,6 +261,8 @@ private fun SettingsIndex(
     onThemeChange: (ThemeMode) -> Unit,
     installmentReminder: Int,
     onInstallmentReminderChange: (Int) -> Unit,
+    quipTone: QuipTone,
+    onQuipToneChange: (QuipTone) -> Unit,
     onCategories: () -> Unit,
     onOpen: (SettingsRoom) -> Unit,
     onBack: () -> Unit,
@@ -263,6 +270,7 @@ private fun SettingsIndex(
     var renaming by remember { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
     var reminderSheet by remember { mutableStateOf(false) }
+    var toneSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -324,14 +332,14 @@ private fun SettingsIndex(
             IndexRow(
                 title = "ظاهر برنامه",
                 value = themeMode.fa,
-                shape = bandShape(0, if (full) 3 else 2),
+                shape = bandShape(0, if (full) 4 else 2),
                 divided = true,
                 onClick = { themeSheet = true },
             ) { AppearanceGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             IndexRow(
                 title = "قفل و امنیت",
                 value = if (lockEnabled) "روشن" else "خاموش",
-                shape = bandShape(1, if (full) 3 else 2),
+                shape = bandShape(1, if (full) 4 else 2),
                 divided = full,
                 onClick = { onOpen(SettingsRoom.SECURITY) },
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
@@ -339,9 +347,17 @@ private fun SettingsIndex(
                 IndexRow(
                     title = "یادآوری قسط",
                     value = installmentReminderFa(installmentReminder),
-                    shape = bandShape(2, 3),
+                    shape = bandShape(2, 4),
+                    divided = true,
                     onClick = { reminderSheet = true },
                 ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+                // Lite has neither budgets nor installments, so no note a voice could be heard in.
+                IndexRow(
+                    title = "لحن اعلان‌ها",
+                    value = quipTone.fa,
+                    shape = bandShape(3, 4),
+                    onClick = { toneSheet = true },
+                ) { GlyphIcon(CategoryGlyph.MUSIC, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             }
 
             SectionLabel("نگهداری")
@@ -427,6 +443,13 @@ private fun SettingsIndex(
             current = installmentReminder,
             onPick = { onInstallmentReminderChange(it); reminderSheet = false },
             onDismiss = { reminderSheet = false },
+        )
+    }
+    if (toneSheet) {
+        QuipToneSheet(
+            current = quipTone,
+            onPick = { onQuipToneChange(it); toneSheet = false },
+            onDismiss = { toneSheet = false },
         )
     }
 }
@@ -770,6 +793,49 @@ private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDism
                 options = INSTALLMENT_REMINDER_DAYS,
                 selected = current,
                 label = ::installmentReminderFa,
+                onSelect = onPick,
+                fontSize = 15.sp,
+            )
+        }
+    }
+}
+
+/**
+ * «لحن اعلان‌ها» — how the notes talk. One choice rather than a switch per kind of line: whether
+ * a kind of note comes at all is Android's own per-channel switch already.
+ *
+ * The caption says what each step changes, including the one note that only exists past ساده,
+ * because «بی‌تعارف» is a choice she should make knowing it can sting.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuipToneSheet(current: QuipTone, onPick: (QuipTone) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("لحن اعلان‌ها")
+            Text(
+                QUIP_TONE_CAPTION,
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            SegmentedChoice(
+                options = QuipTone.entries,
+                selected = current,
+                label = { it.fa },
                 onSelect = onPick,
                 fontSize = 15.sp,
             )

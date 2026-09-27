@@ -17,11 +17,17 @@ import androidx.core.content.ContextCompat
 /**
  * The only thing in this app that speaks while it is closed.
  *
- * There are exactly three channels and three reasons to use them: a budget she set has crossed a line
- * she asked to be told about, a transaction has landed — filed by a rule, or waiting for her
- * to say what it was — and an installment of hers is about to fall due. Nothing here fires because the app was opened, because a price moved, or
- * because a week went by — the rule the reward system already runs on, applied to the one surface
- * that can interrupt her.
+ * There are three channels for three things she asked to hear about: a budget she set has crossed a
+ * line, a transaction has landed — filed by a rule, or waiting for her to say what it was — and an
+ * installment of hers is about to fall due. Nothing on those fires because the app was opened,
+ * because a price moved, or because a week went by — the rule the reward system already runs on,
+ * applied to the one surface that can interrupt her.
+ *
+ * The fourth channel is the one exception, and only once she has asked for it: with a voice picked
+ * in تنظیمات (`Quips.kt`), a ledger that has gone [QUIET_AFTER_DAYS] days without a spend gets asked
+ * after — which is a joke, and also the likeliest sign that this phone stopped hearing from her bank.
+ * The same choice puts a line on top of the budget and installment notes. At the default, ساده,
+ * neither happens and every note reads exactly as it did.
  *
  * ## Why any of this exists
  *
@@ -68,6 +74,12 @@ private const val INSTALLMENT_CHANNEL = "installment"
 
 /** One id for every reminder, with the plan's id as the tag — [BUDGET_NOTE_ID]'s arrangement. */
 private const val INSTALLMENT_NOTE_ID = 4
+
+/** «احوال‌پرسی» — the quiet note's channel, silenceable on its own. See [announceQuiet]. */
+private const val QUIET_CHANNEL = "quiet"
+
+/** One quiet note at most, untagged: a second quiet spell replaces the first. */
+private const val QUIET_NOTE_ID = 5
 
 /**
  * One id for every budget note, with the goal's id as the tag.
@@ -131,6 +143,8 @@ internal fun filingPublicTitle(count: Int): String =
     if (count > 1) "${faNumber(count.toDouble())} تراکنش تازه" else landedPublicTitle()
 
 internal fun installmentPublicTitle(): String = "یادآوری قسط"
+
+internal fun quietPublicTitle(): String = "احوال‌پرسی"
 
 internal fun publicBody(): String = "جزئیات توی برنامه"
 
@@ -217,6 +231,23 @@ private fun ensureInstallmentChannel(context: Context) {
         ).apply {
             description = "یادآوری سررسید قسط‌هایی که ثبت کردی."
             setShowBadge(true)
+        },
+    )
+}
+
+/** The quiet channel, made the way the others are — as soon as she picks a voice, not on first post. */
+private fun ensureQuietChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return
+    if (manager.getNotificationChannel(QUIET_CHANNEL) != null) return
+    manager.createNotificationChannel(
+        NotificationChannel(
+            QUIET_CHANNEL,
+            "احوال‌پرسی",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "وقتی چند روز خرجی نبینیم، حالت رو می‌پرسیم."
+            setShowBadge(false)
         },
     )
 }
@@ -315,20 +346,20 @@ private fun publicVersion(
 // runCatching below is the belt to that braces: a SecurityException from an OEM's own idea of
 // notification policy costs a missed alert and never a crash.
 @SuppressLint("MissingPermission")
-fun notifyBudget(context: Context, budget: BudgetProgress) {
+fun notifyBudget(context: Context, budget: BudgetProgress, quip: String? = null) {
     if (!canNotify(context)) return
     ensureChannel(context)
-    val note = budgetNote(context, budget)
+    val note = budgetNote(context, budget, quip)
     // Wrapped: posting can throw on an OEM build that has its own idea about notification limits,
     // and a budget note that cannot be shown must not take down the worker that computed it.
     runCatching { NotificationManagerCompat.from(context).notify(budget.goal.id, BUDGET_NOTE_ID, note) }
         .onFailure { android.util.Log.w("muchtoman", "budget notify failed: $it") }
 }
 
-/** The budget note itself, built apart from the posting so a test can hold it. */
-internal fun budgetNote(context: Context, budget: BudgetProgress): Notification {
+/** The budget note itself, built apart from the posting so a test can hold it. [quip] goes on top — see `Quips.kt`. */
+internal fun budgetNote(context: Context, budget: BudgetProgress, quip: String? = null): Notification {
     val title = budgetAlertTitle(budget)
-    val body = budgetAlertBody(budget)
+    val body = withQuip(quip, budgetAlertBody(budget))
     return NotificationCompat.Builder(context, BUDGET_CHANNEL)
         // The app's own mark. A notification icon is drawn from the alpha channel alone, so the
         // solid toman glyph comes out as the silhouette the platform wants.
@@ -517,11 +548,11 @@ fun clearFilingNote(context: Context) {
  */
 // [canNotify] checked in the body — see [notifyBudget].
 @SuppressLint("MissingPermission")
-fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long, now: Long) {
+fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long, now: Long, quip: String? = null) {
     if (!canNotify(context)) return
     ensureInstallmentChannel(context)
     val title = installmentReminderTitle(progress.plan, due, tehranDay(now))
-    val body = installmentReminderBody(progress.plan, due)
+    val body = withQuip(quip, installmentReminderBody(progress.plan, due))
     val note = NotificationCompat.Builder(context, INSTALLMENT_CHANNEL)
         .setSmallIcon(R.drawable.ic_toman)
         .setColor(0xFF0A423B.toInt())
@@ -582,7 +613,7 @@ fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress
     if (budgets.isNotEmpty()) ensureChannel(context)
     val news = budgetNews(budgets, store.budgetMarks)
     store.budgetMarks = news.marks
-    for (budget in news.alerts) notifyBudget(context, budget)
+    for (budget in news.alerts) notifyBudget(context, budget, store.budgetQuip(budget))
     // Anything back under the first threshold — a new window, or a receipt she refiled — has no
     // note to keep standing.
     for (budget in budgets) if (!budget.loud) clearBudgetNote(context, budget.goal.id)
@@ -602,7 +633,75 @@ fun announceInstallments(context: Context, store: Store, installments: List<Inst
     val now = System.currentTimeMillis()
     val news = installmentNews(installments, days, store.installmentMarks, now)
     store.installmentMarks = news.marks
-    for ((progress, due) in news.due) notifyInstallment(context, progress, due, now)
+    for ((progress, due) in news.due) {
+        notifyInstallment(context, progress, due, now, store.takeQuip("installment", vars = mapOf("plan" to progress.plan.nameFa)))
+    }
+}
+
+/**
+ * The line over a budget note. A total has no category to be kept for, and none to name either —
+ * «کل خرج؟ جدی؟ دوباره؟» reads as a category called کل خرج — so it only hears the lines that name none.
+ */
+private fun Store.budgetQuip(budget: BudgetProgress): String? = takeQuip(
+    if (budget.over) "budget_over" else "budget_near",
+    category = budget.goal.categoryId,
+    vars = if (budget.total) emptyMap() else mapOf("cat" to budget.categoryFa),
+)
+
+/**
+ * Asks after her when the ledger has gone quiet — only once she picked a voice, and once a spell.
+ *
+ * Called from the watch worker only, like [announceFiling]: the app she is holding is its own
+ * answer to «زنده‌ای؟». Nothing is marked while nothing can be shown, [announceInstallments]' rule —
+ * a spell marked as asked about and never shown would stay silent until she next spent.
+ *
+ * The standing note comes down the moment a spend arrives: the question has been answered. Runs
+ * under [ledgerGate], held by the worker, because the mark and the lines said are get-then-set.
+ */
+fun announceQuiet(context: Context, store: Store, entries: List<LedgerEntry>) {
+    if (store.quipTone == QuipTone.PLAIN) return
+    ensureQuietChannel(context)
+    val last = lastSpendAt(entries)
+    if (last != store.quietMark) clearQuietNote(context)
+    val now = System.currentTimeMillis()
+    val days = quietDays(last, store.quietMark, now) ?: return
+    if (!canNotify(context)) return
+    store.quietMark = last!!
+    val usd = usdRiseFa(store.rateHistory, last, store.cachedRates.toman["usd"])
+    notifyQuiet(context, days, store.takeQuip("quiet", vars = mapOf("days" to faNumber(days.toDouble()), "usd" to usd)))
+}
+
+/** The quiet note. Opens دفتر, where a missing spend would be. Words from `Quips.kt`. */
+// [canNotify] checked in the body — see [notifyBudget].
+@SuppressLint("MissingPermission")
+fun notifyQuiet(context: Context, days: Int, quip: String?) {
+    if (!canNotify(context)) return
+    ensureQuietChannel(context)
+    val title = quietTitle(days)
+    val body = withQuip(quip, quietBody())
+    val note = NotificationCompat.Builder(context, QUIET_CHANNEL)
+        .setSmallIcon(R.drawable.ic_toman)
+        .setColor(0xFF0A423B.toInt())
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        // The app noticing something, not a reminder she set — [landedNote]'s category.
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        .setContentIntent(openLedgerTab(context))
+        .setTicker("$title. $body")
+        // Redacted on a secure lock screen — see [budgetNote] for why. A roast is for her eyes.
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPublicVersion(publicVersion(context, QUIET_CHANNEL, NotificationCompat.CATEGORY_STATUS, quietPublicTitle(), openLedgerTab(context)))
+        .build()
+    runCatching { NotificationManagerCompat.from(context).notify(QUIET_NOTE_ID, note) }
+        .onFailure { android.util.Log.w("muchtoman", "quiet notify failed: $it") }
+}
+
+private fun clearQuietNote(context: Context) {
+    runCatching { NotificationManagerCompat.from(context).cancel(QUIET_NOTE_ID) }
+        .onFailure { android.util.Log.w("muchtoman", "quiet cancel failed: $it") }
 }
 
 /**

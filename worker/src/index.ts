@@ -39,6 +39,7 @@ import {
   TokenBucket,
   usdBandVerdict,
 } from './checks';
+import QUIPS from './quips.json';
 
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -1333,6 +1334,10 @@ async function buildRates(): Promise<Response> {
         notes: release.value.notes,
       }
       : null,
+    // The lines notifications may carry in the voice she picked (quips.json). Here rather than
+    // in the app so a new one is a deploy of this Worker, not a release: phones pick them up on
+    // their next fetch and keep the last set they heard.
+    quips: QUIPS,
   };
 
   // A strong ETag so a phone that already has this exact body pays for headers, not for the

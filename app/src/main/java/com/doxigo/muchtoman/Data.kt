@@ -110,6 +110,9 @@ data class Rates(
     val toman: Map<String, Double> = emptyMap(),
     val coins: List<Coin> = emptyList(),
     val latest: Release? = null,
+    /** Moment → the lines a note may carry — see `Quips.kt`. Null when the Worker sent none. */
+    @Serializable(with = LenientQuips::class)
+    val quips: Map<String, List<Quip>>? = null,
 )
 
 @Serializable
@@ -679,6 +682,7 @@ internal fun sanitizeRates(
         toman = toman,
         coins = coins,
         latest = trustedRelease(raw.latest, ratesUrl),
+        quips = sanitizeQuips(raw.quips),
     )
 }
 
@@ -994,6 +998,21 @@ class Store(context: Context) {
         get() = read("installmentMarks", emptyMap())
         set(v) = write("installmentMarks", v)
 
+    /** The voice notes speak in — see [QuipTone]. Hers, so exported. */
+    var quipTone: QuipTone
+        get() = QuipTone.of(prefs.getString("quipTone", null))
+        set(v) { prefs.edit().putString("quipTone", v.name).apply() }
+
+    /** Which lines this phone has already said — see [pickQuip]. [budgetMarks]'s kind, kept off the backup. */
+    var quipsSeen: Set<String>
+        get() = read("quipsSeen", emptyList<String>()).toSet()
+        set(v) = write("quipsSeen", v.toList())
+
+    /** The spend the quiet note last asked about — see [quietDays]. [budgetMarks]'s kind again. */
+    var quietMark: Long
+        get() = prefs.getLong("quietMark", 0L)
+        set(v) { prefs.edit().putLong("quietMark", v).apply() }
+
     /** How far the inbox has been read, so each scan only looks at what arrived since. */
     var smsFoldNeedsRefresh: Boolean
         get() = prefs.getBoolean("smsFoldNeedsRefresh", false)
@@ -1074,13 +1093,14 @@ val EXPORTED_PREFS: List<String> = listOf(
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans", "notifyScannedTo",
+    "quipTone",
 )
 
 /**
  * Deliberately left out, and pinned by ExportTest so nobody quietly adds one back:
  *
  * - `rates`, `stocks` — caches of public prices; the restored phone refetches them in seconds.
- * - `budgetMarks`, `filingMark`, `installmentMarks` — what *this phone* has already announced. Imported onto another
+ * - `budgetMarks`, `filingMark`, `installmentMarks`, `quipsSeen`, `quietMark` — what *this phone* has already announced. Imported onto another
  *   phone they would silence alerts it never said, or say ones it already had.
  * - `strangers` — suggestions read off this phone's inbox; the next scan rebuilds them.
  *
@@ -1089,7 +1109,7 @@ val EXPORTED_PREFS: List<String> = listOf(
  * in Ledger.kt): a restored phone is a new device and must re-pair, or two phones would write to
  * the household as one.
  */
-val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers")
+val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers", "quipsSeen", "quietMark")
 
 /**
  * One preference as the backup stores it, or null for a shape [Store] never writes. Pure, so the
@@ -1167,6 +1187,8 @@ fun mergeRates(fresh: Rates, cached: Rates): Rates = fresh.copy(
     // GitHub is a source like any other and fails on its own. One fetch that could not reach it
     // must not retract an update note already on screen.
     latest = fresh.latest ?: cached.latest,
+    // A body from before the Worker sent lines has none; the ones she already has stay.
+    quips = fresh.quips ?: cached.quips,
 )
 
 /** [daily] is the day's one count ([dailyPing]); null on every other fetch. */

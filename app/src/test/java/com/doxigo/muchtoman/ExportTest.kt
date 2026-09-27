@@ -260,12 +260,14 @@ class ExportTest {
                 // Rides with seenSms and smsScannedTo for the same reason they ride together: the
                 // restored balances were folded up to exactly these marks.
                 "notifyScannedTo",
+                // The voice she chose for her notes is hers; which lines this phone said is not.
+                "quipTone",
             ),
             EXPORTED_PREFS,
         )
         // Refetchable caches and this-phone announcement marks stay off other phones for ever.
         assertEquals(
-            listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers"),
+            listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers", "quipsSeen", "quietMark"),
             EXCLUDED_PREFS,
         )
         assertTrue(EXPORTED_PREFS.intersect(EXCLUDED_PREFS.toSet()).isEmpty())

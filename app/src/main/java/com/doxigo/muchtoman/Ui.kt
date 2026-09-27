@@ -665,6 +665,12 @@ private fun AppScreens(
                 vm.setInstallmentReminder(days)
                 if (days >= 0 && !canNote) askNotify()
             },
+            quipTone = state.quipTone,
+            // A voice is only heard in notifications, so picking one is the moment to ask for them.
+            onQuipToneChange = { tone ->
+                vm.setQuipTone(tone)
+                if (tone != QuipTone.PLAIN && !canNote) askNotify()
+            },
             onSmsChange = vm::setSmsEnabled,
             onBankChange = vm::setBankEnabled,
             onLockChange = { on ->
