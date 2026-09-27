@@ -760,6 +760,18 @@ class Store(context: Context) {
         get() = holdingsBlob.get()
         set(v) = holdingsBlob.set(v)
 
+    private val loansBlob = CachedBlob(
+        "loans",
+        decode = { JSON.decodeFromString<LoanBook>(it) },
+        encode = { JSON.encodeToString(it) },
+        fallback = { LoanBook() },
+    )
+
+    /** طلب و بدهی: the people and what she wrote down about them — see `Loans.kt`. Hers, so exported. */
+    var loans: LoanBook
+        get() = loansBlob.get()
+        set(v) = loansBlob.set(v)
+
     /** Last successful fetch, so the app still shows something offline. */
     var cachedRates: Rates
         get() = ratesBlob.get()
@@ -1041,7 +1053,7 @@ val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
-    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
+    "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans",
 )
 
 /**

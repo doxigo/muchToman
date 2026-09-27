@@ -4,7 +4,8 @@
  * no streaks, no confetti — a limit she chose, a figure she is working towards, and her answer to
  * «ارزش داشت؟».
  *
- * One screen, three bands. Each section is one grouped object whose last row is the way to grow
+ * One screen, three bands, and a fourth — طلب و بدهی, whose one row is a door to its own page
+ * (loansUi.tsx). Each section is one grouped object whose last row is the way to grow
  * it, under a heading in the assets tab's voice; the air between bands is the separation. Every
  * row opens its own sheet, and delete lives inside that sheet behind the two-tap confirm.
  *
@@ -35,6 +36,7 @@ import {
 } from './installments';
 import type { InstallmentProgress } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
+import { LoansSection } from './loansUi';
 import type { Category, Goal, LedgerEntry, Txn } from './model';
 import { closeSheet, openSheet, registerSheet, registerTab } from './nav';
 import {
@@ -207,6 +209,8 @@ function BudgetScreen() {
       ))}
       <AddRow label={installments.length === 0 ? 'اولین قسط' : 'قسط تازه'}
         radius={bandShape(installments.length, installments.length + 1)} onClick={() => openSheet('installment')} />
+
+      <LoansSection />
     </Screen>
   );
 }

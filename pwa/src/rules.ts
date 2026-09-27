@@ -24,6 +24,8 @@ export const CAT_CASH = 'cat_cash';
 export const CAT_INCOME = 'cat_income';
 export const CAT_LOAN = 'cat_loan';
 export const CAT_LOAN_BACK = 'cat_loan_back';
+/** Where پس‌گرفتن قرض ships, and so where قرض sits on the income grid beside it. */
+const LOAN_BACK_SORT = 260;
 /** قسط و وام: filing a payment here asks which installment plan it paid. */
 export const CAT_INSTALMENT = 'cat_instalment';
 export const CAT_BILLS_ID = 'cat_bills';
@@ -90,7 +92,7 @@ export const BUILTIN_CATEGORIES: readonly Category[] = [
   shipped('cat_sales', 'فروش', 'income', 230),
   shipped('cat_bonus', 'پاداش', 'income', 240),
   shipped('cat_invest_income', 'سود سرمایه‌گذاری', 'income', 250),
-  shipped(CAT_LOAN_BACK, 'پس‌گرفتن قرض', 'income', 260),
+  shipped(CAT_LOAN_BACK, 'پس‌گرفتن قرض', 'income', LOAN_BACK_SORT),
 
   // the three both grids end with; what a row counts as is read off the sign, never the kind
   shipped(CAT_SPOUSE, 'همسر', 'expense', 270),
@@ -147,26 +149,32 @@ export function categoryUseOf(entries: readonly LedgerEntry[], today: number, ha
 }
 
 /**
- * The categories worth offering for one transaction, the ones she uses first. انتقال, همسر and
- * سایر ignore direction by id, hers ignore it too, and an unknown direction gets everything bar
- * the transfer kind. Only [use] reorders, and سایر and انتقال never move: they are ways out.
+ * The categories worth offering for one transaction, the ones she uses first. انتقال, همسر, سایر
+ * and قرض ignore direction by id — قرض because money borrowed arrives the way money lent leaves, and
+ * loans.ts reads which it was off the sign — hers ignore it too, and an unknown direction gets
+ * everything bar the transfer kind. Only [use] reorders, and سایر and انتقال never move: they are ways out.
  */
 export function categoryChoices(
   categories: readonly Category[],
   direction: string | null,
   use: ReadonlyMap<string, number> = new Map(),
 ): Category[] {
-  return categories
+  const offered = categories
     .filter((it) => it.id !== CAT_UNCATEGORISED && !it.archived && (
-      it.id === CAT_TRANSFER || it.id === CAT_SPOUSE || it.id === CAT_OTHER ? true
+      it.id === CAT_TRANSFER || it.id === CAT_SPOUSE || it.id === CAT_OTHER || it.id === CAT_LOAN ? true
       : offeredBothWays(it) ? true
       : direction === 'in' ? it.kind === CategoryKind.INCOME
       : direction === 'out' ? it.kind === CategoryKind.EXPENSE
       : it.kind !== CategoryKind.TRANSFER
-    ))
-    // Stable, so everything that has not earned a promotion holds the shipped order.
-    .sort((a, b) => promotionOf(b, use) - promotionOf(a, use));
+    ));
+  // قرض ships among the spending cells; on the income side it sits beside پس‌گرفتن قرض rather than
+  // opening the grid ahead of درآمد. Stable, so nothing else moves.
+  if (direction === 'in') offered.sort((a, b) => loanSort(a) - loanSort(b));
+  // Stable, so everything that has not earned a promotion holds the shipped order.
+  return offered.sort((a, b) => promotionOf(b, use) - promotionOf(a, use));
 }
+
+const loanSort = (category: Category): number => (category.id === CAT_LOAN ? LOAN_BACK_SORT + 1 : category.sort);
 
 function promotionOf(category: Category, use: ReadonlyMap<string, number>): number {
   if (category.id === CAT_OTHER || category.id === CAT_TRANSFER) return 0;
@@ -317,6 +325,8 @@ export const MAX_NOTE_CHARS = 200;
 export const DecisionKind = {
   CATEGORY: 'category', NOTE: 'note', HIDE: 'hide', WORTH_IT: 'worth_it', ACCOUNT: 'account',
   EXCLUDE: 'exclude', INSTALLMENT: 'installment',
+  /** Whose money this was, and how much, signed — see loans.ts. Private, like the one above. */
+  LOAN: 'loan',
 } as const;
 
 // ---- seeding ---------------------------------------------------------------------------------

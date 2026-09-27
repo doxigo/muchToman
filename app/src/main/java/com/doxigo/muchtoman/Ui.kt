@@ -421,6 +421,13 @@ private fun AppScreens(
     // The hand-entered transaction sheet, over دفتر — the room where its row will land.
     var addingTxn by remember { mutableStateOf(false) }
     var transactionRef by rememberSaveable { mutableStateOf<String?>(null) }
+    // طلب و بدهی: the page of people, and one person over it — one level, like every pushed page
+    // here. The sheets are held apart because four places open them: the pages, آینده's door, the
+    // hero's strip and a holding's own sheet.
+    var loansPage by rememberSaveable { mutableStateOf(false) }
+    var loanPerson by rememberSaveable { mutableStateOf<String?>(null) }
+    var loanAsk by remember { mutableStateOf<LoanAsk?>(null) }
+    val loanType: (String) -> AssetType = { resolveType(it, state.coins, state.stocks) }
 
     // One tab, not three booleans. Three could be true at once, and were: every screen was an
     // overlay with its own «بستن», so an overlay opened from an overlay left her somewhere the
@@ -482,6 +489,8 @@ private fun AppScreens(
             categoriesPage = false
             deck = false
             transactionRef = null
+            loansPage = false
+            loanPerson = null
             tab = wanted
             vm.consumeOpenTab()
         }
@@ -502,6 +511,8 @@ private fun AppScreens(
             companion = false
             categoriesPage = false
             transactionRef = null
+            loansPage = false
+            loanPerson = null
             tab = Tab.LEDGER
             deck = state.ledger.review.isNotEmpty()
             vm.consumeOpenDeck()
@@ -699,9 +710,50 @@ private fun AppScreens(
                 installments = state.ledger.installments,
                 onInstallmentPayment = (vm::setInstallmentPayment).takeIf { installmentPayable(entry, state.ledger.mineId) },
                 onCreateInstallment = (vm::addInstallmentFrom).takeIf { installmentPayable(entry, state.ledger.mineId) },
+                loanViews = state.loanViews,
+                loanLinks = state.ledger.loanLinks,
+                loanType = loanType,
+                onLoanLink = (vm::setLoanLink).takeIf { loanLinkable(entry, state.ledger.mineId) },
+                onCreateLoanPerson = (vm::addLoanPersonFrom).takeIf { loanLinkable(entry, state.ledger.mineId) },
             )
             return
         }
+    }
+
+    // Below the transaction page, so a row opened from a person's trail comes back to that person.
+    if (loansPage || loanPerson != null) {
+        val person = loanPerson?.let { id -> state.loanViews.firstOrNull { it.person.id == id } }
+        if (person != null) {
+            BackHandler { loanPerson = null }
+            LoanPersonScreen(
+                view = person,
+                type = loanType,
+                onEdit = { loanAsk = LoanAsk.EditPerson(person.person.id) },
+                onMove = { giving -> loanAsk = LoanAsk.Move(person.person.id, giving) },
+                onOpenEntry = { transactionRef = it.txn.ref },
+                onDeleteMove = { move ->
+                    vm.deleteLoanMove(move.id)?.let { gone -> notices.show("پاک شد", "برگردون") { vm.restoreLoanMove(gone) } }
+                },
+                onBack = { loanPerson = null },
+            )
+        } else {
+            BackHandler { loansPage = false; loanPerson = null }
+            LoansScreen(
+                views = state.loanViews,
+                totals = state.loanTotals,
+                type = loanType,
+                onOpen = { loanPerson = it },
+                onAdd = { loanAsk = LoanAsk.AddPerson },
+                onBack = { loansPage = false; loanPerson = null },
+            )
+        }
+        LoanAsks(
+            ask = loanAsk, state = state, vm = vm, notices = notices, type = loanType,
+            onClose = { loanAsk = null },
+            onPerson = { loansPage = true; loanPerson = it },
+            onPersonGone = { loanPerson = null },
+        )
+        return
     }
 
     if (deck) {
@@ -719,6 +771,10 @@ private fun AppScreens(
             onNote = vm::setNote,
             onInstallmentPayment = vm::setInstallmentPayment,
             onCreateInstallment = vm::addInstallmentFrom,
+            loanViews = state.loanViews,
+            loanType = loanType,
+            onLoanLink = vm::setLoanLink,
+            onCreateLoanPerson = vm::addLoanPersonFrom,
         )
         return
     }
@@ -822,6 +878,10 @@ private fun AppScreens(
               installments = state.ledger.installments,
               onAddInstallment = vm::addInstallment,
               onInstallmentPayment = vm::setInstallmentPayment,
+              loans = state.loanTotals,
+              loanPeople = state.loans.people.size,
+              onOpenLoans = { loansPage = true },
+              onAddLoan = { loanAsk = LoanAsk.AddPerson },
               onDelete = vm::deleteGoal,
               onAskNotify = askNotify,
               bottomInset = pad.calculateBottomPadding(),
@@ -984,6 +1044,7 @@ private fun AppScreens(
                         onReport = { openReport(it) },
                         portfolio = portfolio,
                         onFamilyTotal = vm::setFamilyTotal,
+                        onLoans = { loansPage = true },
                     )
                 }
             }
@@ -1269,8 +1330,24 @@ private fun AppScreens(
             onRate = { r -> vm.setOverride(typeId, r) },
             onLabel = { name -> vm.setLabel(key, name) },
             onDismiss = { editing = null },
+            // Something she can hand over by the unit — cash, coins, gold, a currency — that she
+            // counts by hand; a wallet's figure is the chain's, and a house is not lent by the gram.
+            onLend = {
+                editing = null
+                loanAsk = LoanAsk.Move(null, giving = true, preset = if (typeId == TOMAN_ID) "" else typeId)
+            }.takeIf {
+                held != null && held.wallet == null && held.amount > 0.0 &&
+                    (typeId == TOMAN_ID || !resolveType(typeId, dynamicTypes).valuedInToman)
+            },
         )
     }
+
+    LoanAsks(
+        ask = loanAsk, state = state, vm = vm, notices = notices, type = loanType,
+        onClose = { loanAsk = null },
+        onPerson = { loansPage = true; loanPerson = it },
+        onPersonGone = { loanPerson = null },
+    )
 }
 
 /**
@@ -1375,6 +1452,8 @@ internal fun HeroCard(
     /** Which screen this card is heading — it decides the door shown when there is no pill. */
     portfolio: Boolean,
     onFamilyTotal: (Boolean) -> Unit,
+    /** The طلب و بدهی page, from the strip beside the total. */
+    onLoans: () -> Unit = {},
 ) {
     // What the family shares in is on this screen but never in [UiState.totals]: her figure
     // stays hers everywhere else — the widget, the daily snapshot, the report. The household
@@ -1501,6 +1580,10 @@ internal fun HeroCard(
                 color = Hero.muted,
                 modifier = Modifier.padding(top = Space.xs),
             )
+
+            // Beside the answer and never in it. Hers alone, so not on the household's figure,
+            // where it would read as the family's.
+            if (!familyMode && !state.loanTotals.isEmpty) HeroLoans(state.loanTotals, onLoans)
 
             when {
                 change != null -> {
@@ -3663,6 +3746,8 @@ private fun EditSheet(
     onRate: (Double?) -> Unit,
     onLabel: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** «به کسی قرض دادم» — null where this holding is not something one lends. See `Loans.kt`. */
+    onLend: (() -> Unit)? = null,
 ) {
     val current = holding?.amount
     val linkedWallet = holding?.wallet
@@ -4305,6 +4390,10 @@ private fun EditSheet(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                 )
+            }
+
+            onLend?.let { lend ->
+                PillButton("به کسی قرض دادم", { close(lend) }, Modifier.fillMaxWidth().padding(top = Space.s), fontSize = 16.sp, minHeight = 52.dp)
             }
 
             if (current != null) {

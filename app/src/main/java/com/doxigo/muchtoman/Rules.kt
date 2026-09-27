@@ -72,6 +72,7 @@ const val CAT_CASH = "cat_cash"
 const val CAT_INCOME = "cat_income"
 const val CAT_LOAN = "cat_loan"
 const val CAT_LOAN_BACK = "cat_loan_back"
+private const val LOAN_BACK_SORT = 260
 /** قسط و وام: filing a payment here asks which installment plan it paid — see `Installments.kt`. */
 const val CAT_INSTALMENT = "cat_instalment"
 
@@ -210,7 +211,7 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category("cat_invest_income", nameFa = "سود سرمایه‌گذاری", kind = CategoryKind.INCOME, sort = 250, builtin = true),
     // «پس‌گرفتن», not «پس‌دادن»: the ledger is hers, and on money coming in she is the one
     // getting it back — the other side is who gave it.
-    Category(CAT_LOAN_BACK, nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = 260, builtin = true),
+    Category(CAT_LOAN_BACK, nameFa = "پس‌گرفتن قرض", kind = CategoryKind.INCOME, sort = LOAN_BACK_SORT, builtin = true),
 
     // ── the three both grids end with ──
     // Money between the two of them, and it runs both ways: what she pays for him is spending,
@@ -246,8 +247,9 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
  * three rows above. A transfer is not her decision and is not shown at all; a قرض is very much
  * her decision, so the report's job is to hold it *apart* from خرج rather than to hide it. That
  * is the whole difference, and it is why this is a table here and not a fourth kind: [kind] also
- * decides which grid a category is offered in, and قرض has to stay in the spending one while
- * پس‌گرفتن قرض stays in the income one.
+ * decides which grid a category is offered in, and قرض has to be offered in the spending one while
+ * پس‌گرفتن قرض stays in the income one. (قرض is offered in both now — money borrowed arrives the
+ * way money lent leaves — which [categoryChoices] does by id, as it does for همسر.)
  *
  * The value is the word the summary card sets over the figure. Both halves of a قرض share one,
  * because «قرض و پس‌گرفتن قرض» is one thing named twice. Declaration order is reading order, so
@@ -375,20 +377,25 @@ fun categoryChoices(
 ): List<Category> =
     categories.filter {
         it.id != CAT_UNCATEGORISED && !it.archived && when {
-            // The three that ignore direction: انتقال because it is the only way back from a
+            // The four that ignore direction: انتقال because it is the only way back from a
             // rejected transfer link, همسر because money between the two of them is one category
-            // whichever way it went, and سایر because «none of the others» is an answer either
-            // side of the ledger can need. All three are carried by id — their `kind` names the
-            // side they shipped on and nothing more.
-            it.id == CAT_TRANSFER || it.id == CAT_SPOUSE || it.id == CAT_OTHER -> true
+            // whichever way it went, سایر because «none of the others» is an answer either side of
+            // the ledger can need, and قرض because money borrowed arrives the same way money lent
+            // leaves — `Loans.kt` reads which it was off the sign. All four are carried by id —
+            // their `kind` names the side they shipped on and nothing more.
+            it.id == CAT_TRANSFER || it.id == CAT_SPOUSE || it.id == CAT_OTHER || it.id == CAT_LOAN -> true
             // Hers ignore it too — see [customCategory].
             offeredBothWays(it) -> true
             direction == "in" -> it.kind == CategoryKind.INCOME
             direction == "out" -> it.kind == CategoryKind.EXPENSE
             else -> it.kind != CategoryKind.TRANSFER
         }
+    }
+        // قرض ships among the spending cells; on the income side it sits beside پس‌گرفتن قرض
+        // rather than opening the grid ahead of درآمد. Stable, so nothing else moves.
+        .let { list -> if (direction == "in") list.sortedBy { if (it.id == CAT_LOAN) LOAN_BACK_SORT + 1 else it.sort } else list }
         // Stable, so everything that has not earned a promotion holds the shipped order.
-    }.sortedByDescending { promotionOf(it, use) }
+        .sortedByDescending { promotionOf(it, use) }
 
 /** What a category has earned toward the front of the grid, and zero is «leave it where it is». */
 private fun promotionOf(category: Category, use: Map<String, Double>): Double =
@@ -627,6 +634,9 @@ object DecisionKind {
 
     /** Which installment this payment paid, and how much of it — see [InstallmentLink]. */
     const val INSTALLMENT = "installment"
+
+    /** Whose money this was, and how much, signed — see [LoanLink]. Private, like the one above. */
+    const val LOAN = "loan"
 }
 
 /**

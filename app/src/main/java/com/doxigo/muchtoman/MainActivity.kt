@@ -85,6 +85,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(
         UiState(
             holdings = store.holdings,
+            loans = store.loans,
             rates = store.cachedRates,
             tse = store.cachedStocks,
             overrides = store.overrides,
@@ -2139,6 +2140,134 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    // ─────────────────────────── طلب و بدهی ───────────────────────────
+
+    private fun saveLoans(book: LoanBook) {
+        store.loans = book
+        _state.update { it.copy(loans = book) }
+    }
+
+    /**
+     * A person, with the balance she carried in with them — [opening] is a move whose id, person
+     * and day are filled in here. Returns the new id so the screen can open the person it made.
+     */
+    fun addLoanPerson(name: String, promise: Long?, opening: LoanMove?): String? {
+        val now = System.currentTimeMillis()
+        val person = newLoanPerson(uuid7(now), name, promise, now) ?: return null
+        val book = _state.value.loans
+        val carried = opening?.copy(id = uuid7(now), personId = person.id, day = tehranDay(now), opening = true, holdingKey = "")
+        saveLoans(book.copy(people = book.people + person, moves = book.moves + listOfNotNull(carried)))
+        return person.id
+    }
+
+    fun editLoanPerson(id: String, name: String, promise: Long?) {
+        val clean = name.trim().take(MAX_LOAN_NAME).ifEmpty { return }
+        val book = _state.value.loans
+        saveLoans(book.copy(people = book.people.map { if (it.id == id) it.copy(name = clean, promise = promise) else it }))
+    }
+
+    /**
+     * The person and everything she wrote down about them. The bank rows she linked keep their
+     * decisions, orphaned — [loanViews] skips them, and bringing the person back brings them back.
+     * Holdings are not touched: coins lent to someone she deletes stay wherever they are.
+     */
+    fun deleteLoanPerson(id: String): Pair<LoanPerson, List<LoanMove>>? {
+        val book = _state.value.loans
+        val person = book.people.firstOrNull { it.id == id } ?: return null
+        val moves = book.moves.filter { it.personId == id }
+        saveLoans(LoanBook(book.people - person, book.moves - moves.toSet()))
+        return person to moves
+    }
+
+    fun restoreLoanPerson(person: LoanPerson, moves: List<LoanMove>) {
+        val book = _state.value.loans
+        if (book.people.any { it.id == person.id }) return // undo tapped twice
+        saveLoans(LoanBook(book.people + person, book.moves + moves))
+    }
+
+    /**
+     * Something handed over or taken back that no bank reported: [giving] is money to them.
+     * [rial] for cash (blank [typeId]), [amount] for anything else. With [moveHolding] the same
+     * amount leaves or joins her دارایی — false when she is lending more than the holding has,
+     * which the sheet has already refused, so nothing is written.
+     */
+    fun addLoanMove(personId: String, typeId: String, rial: Long, amount: Double, giving: Boolean, moveHolding: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+        val sign = if (giving) 1 else -1
+        var key = ""
+        if (moveHolding) {
+            val asset = typeId.ifBlank { TOMAN_ID }
+            val units = if (typeId.isBlank()) tomanOf(rial) else amount
+            val (next, moved) = loanHoldings(_state.value.holdings, asset, units * sign) { newHoldingId() }
+                ?: return false
+            key = moved
+            persist(catalogOrdered(next))
+        }
+        val move = LoanMove(
+            id = uuid7(now), personId = personId, typeId = typeId,
+            rial = if (typeId.isBlank()) rial * sign else 0L,
+            amount = if (typeId.isBlank()) 0.0 else amount * sign,
+            day = tehranDay(now), holdingKey = key,
+        )
+        val book = _state.value.loans
+        saveLoans(book.copy(moves = book.moves + move))
+        return true
+    }
+
+    /** Takes a move back, and its coins back into the holding they left. See [loanHoldingsUndo]. */
+    fun deleteLoanMove(id: String): LoanMove? {
+        val book = _state.value.loans
+        val move = book.moves.firstOrNull { it.id == id } ?: return null
+        if (move.holdingKey.isNotBlank()) persist(loanHoldingsUndo(_state.value.holdings, move))
+        saveLoans(book.copy(moves = book.moves - move))
+        return move
+    }
+
+    fun restoreLoanMove(move: LoanMove) {
+        val book = _state.value.loans
+        if (book.moves.any { it.id == move.id }) return
+        if (move.holdingKey.isNotBlank()) persist(loanHoldingsRedo(_state.value.holdings, move))
+        saveLoans(book.copy(moves = book.moves + move))
+    }
+
+    /** Says whose money this row was, or with null that it was nobody's. */
+    fun setLoanLink(entry: LedgerEntry, personId: String?) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                if (writeLoanLink(durable, entry, personId)) publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setLoanLink failed: $it") }
+        }
+    }
+
+    /** A person made from the row she is filing, and the row linked to them, in one go. */
+    fun addLoanPersonFrom(entry: LedgerEntry, name: String) {
+        val id = addLoanPerson(name, null, null) ?: return
+        setLoanLink(entry, id)
+    }
+
+    /** [writeInstallmentLink]'s shape, one decision per row, with the signed amount on it. */
+    private suspend fun writeLoanLink(durable: DurableDb, entry: LedgerEntry, personId: String?): Boolean {
+        val value = personId?.let { id -> loanLinkRial(entry)?.let { LoanLink(id, it).encode() } }
+        val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.LOAN)
+        if (value == null && (previous == null || previous.deleted)) return false
+        if (previous != null && !previous.deleted && previous.value == value) return false
+        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+        durable.decisions().put(
+            TxnDecision(
+                id = previous?.id ?: uuid7(now),
+                ref = entry.txn.ref,
+                kind = DecisionKind.LOAN,
+                value = value,
+                createdAt = previous?.createdAt ?: now,
+                updatedAt = now,
+                deleted = value == null,
+            )
+        )
+        return true
+    }
+
     /**
      * Which screen a tapped notification was about, held until the UI has moved there.
      *
@@ -2572,6 +2701,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
 data class UiState(
     val holdings: List<Holding> = emptyList(),
+    /** طلب و بدهی, as she wrote it down. The bank's half is [LedgerView.loanLinks]. */
+    val loans: LoanBook = LoanBook(),
     val rates: Rates = Rates(),
     val overrides: Map<String, Double> = emptyMap(),
     val loading: Boolean = false,
@@ -2676,6 +2807,10 @@ data class UiState(
 
     /** Reads both of the above, so as a get() it paid for both of them again every time. */
     val totals: Totals by lazy { computeTotals(listHoldings, effective) }
+
+    /** Every person and where they stand, valued at the same rates the total is. See `Loans.kt`. */
+    val loanViews: List<LoanView> by lazy { loanViews(loans, ledger.loanLinks, ledger.entries, effective) }
+    val loanTotals: LoanTotals by lazy { loanTotals(loanViews) }
 }
 
 /** What the backup rows in تنظیمات have to say. Everything user-visible in it is words. */

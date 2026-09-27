@@ -151,6 +151,11 @@ fun BudgetScreen(
     onAddInstallment: (String, Long, Int, Int) -> Unit,
     /** This transaction paid that plan — or, with null, paid none. */
     onInstallmentPayment: (LedgerEntry, String?) -> Unit,
+    /** طلب و بدهی, as one door: see [LoansDoor]. */
+    loans: LoanTotals,
+    loanPeople: Int,
+    onOpenLoans: () -> Unit,
+    onAddLoan: () -> Unit,
     onDelete: (String) -> Unit,
     onKeepBudget: (String) -> Unit,
     onAskNotify: () -> Unit,
@@ -296,6 +301,19 @@ fun BudgetScreen(
                 shape = bandShape(installments.size, installmentRows),
                 onClick = { addingInstallment = true },
             )
+
+            // Money that comes back, or has to go back — the fourth thing this tab plans around.
+            // One door rather than a list: the people have a page of their own.
+            SectionLabel("طلب و بدهی")
+            if (loanPeople == 0) {
+                Text(
+                    "قرضی که به کسی دادی یا ازش گرفتی، کنار جمع دارایی‌هات نگه داشته می‌شه، نه توش.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp,
+                )
+                Spacer(Modifier.height(Space.l))
+            }
+            LoansDoor(loans, loanPeople, onOpenLoans, onAddLoan)
 
             Spacer(Modifier.height(Space.huge))
         }

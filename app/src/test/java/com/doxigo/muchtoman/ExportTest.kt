@@ -256,7 +256,7 @@ class ExportTest {
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
                 // ledgerStartsOn rides because it is hers: a restored phone that forgot where
                 // she started clean would bring back every month she had put behind her.
-                "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder",
+                "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans",
             ),
             EXPORTED_PREFS,
         )

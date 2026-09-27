@@ -479,6 +479,14 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
           </div>
         )}
 
+        {/* Lent out of this very drawer: the move sheet starts on this asset and asks who (loansUi.tsx).
+            Only what she counts by hand — a wallet's figure is the chain's, not hers to move. */}
+        {holding != null && holding.wallet == null && holding.amount > 0 && (
+          <div style={{ marginTop: 'var(--m)' }}>
+            <button type="button" class="pill" onClick={() => openSheet('loanMove', { giving: true, typeId })}>به کسی قرض دادم</button>
+          </div>
+        )}
+
         <button type="button" class="pill primary block save-btn" onClick={save}
           disabled={!(source === 'MANUAL' || (!walletBusy && selectedWallet != null))}>
           {source === 'WALLET' && walletBusy && <span class="ring" aria-hidden="true" />}

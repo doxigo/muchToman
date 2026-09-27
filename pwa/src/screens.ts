@@ -5,6 +5,7 @@ import './manualTxn';
 import './pasteUi';
 import './categoriesUi';
 import './budgetUi';
+import './loansUi';
 import './report';
 import './settings';
 import './familyUi';

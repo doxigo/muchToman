@@ -20,6 +20,8 @@ import type { CategoryGlyph } from './categoryIcon';
 import { CategoryGrid } from './categoryGrid';
 import { InstallmentLinkRow, WorthItCard, openInstallmentLink } from './budgetUi';
 import { installmentPaidBy, installmentPayable } from './installments';
+import { isLoanCategory, loanLinkable } from './loans';
+import { LoanLinkRow, openLoanLink } from './loansUi';
 import { largeSpendThreshold, worthItAnswers, worthItCandidates } from './goals';
 import { readPlans, answerWorthIt } from './plans';
 import { currentMonthReport, reportMonthOf } from './reports';
@@ -683,6 +685,8 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
   useEffect(() => setChosen(entry.categoryId), [entry.categoryId]);
   const choices = useChoices(entry, view);
   const payable = installmentPayable(entry, view.mineId);
+  const lendable = loanLinkable(entry, view.mineId);
+  const lent = view.loanLinks.has(txn.ref);
   const paidPlan = useMemo(
     () => (payable ? installmentPaidBy(txn.ref, readPlans(view.allEntries, view.entries).installments) : null),
     [payable, view, txn.ref],
@@ -705,6 +709,8 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
           categorise(entry, category.id, learnSimilar);
           // Filed as a قسط, the next question is which one — asked while the payment is in front of her.
           if (category.id === CAT_INSTALMENT && payable && !paidPlan) openInstallmentLink(txn.ref);
+          // Filed as a قرض, the question is whose — the same moment, the same reason.
+          if (isLoanCategory(category.id) && lendable && !lent) openLoanLink(txn.ref);
         }}
         addTile={() => openSheet('category', { kind: txn.direction === 'in' ? 'income' : 'expense', grid: true })} />
 
@@ -712,6 +718,13 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
         <>
           <SectionHeading>قسط</SectionHeading>
           <div style={{ marginTop: 'var(--m)' }}><InstallmentLinkRow current={paidPlan} onOpen={() => openInstallmentLink(txn.ref)} /></div>
+        </>
+      )}
+
+      {lendable && (isLoanCategory(chosen) || lent) && (
+        <>
+          <SectionHeading>قرض</SectionHeading>
+          <div style={{ marginTop: 'var(--m)' }}><LoanLinkRow entry={entry} /></div>
         </>
       )}
 
@@ -798,6 +811,7 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
           categorise(entry, category.id, learnSimilar);
           if (category.id === CAT_INSTALMENT && installmentPayable(entry, view.mineId) &&
             !installmentPaidBy(txn.ref, readPlans(view.allEntries, view.entries).installments)) openInstallmentLink(txn.ref);
+          if (isLoanCategory(category.id) && loanLinkable(entry, view.mineId) && !view.loanLinks.has(txn.ref)) openLoanLink(txn.ref);
         }}
         addTile={() => openSheet('category', { kind: txn.direction === 'in' ? 'income' : 'expense', grid: true })} />
 

@@ -131,7 +131,7 @@ describe('rules', () => {
 describe('the picker', () => {
   it('offers the side the money went, plus the way back from a transfer', () => {
     const incoming = categoryChoices(BUILTIN_CATEGORIES, 'in').map((c) => c.nameFa);
-    expect(incoming).toEqual(['درآمد', 'حقوق', 'فروش', 'پاداش', 'سود سرمایه‌گذاری', 'پس‌گرفتن قرض', 'همسر', 'سایر', 'انتقال بین حساب‌ها']);
+    expect(incoming).toEqual(['درآمد', 'حقوق', 'فروش', 'پاداش', 'سود سرمایه‌گذاری', 'پس‌گرفتن قرض', 'قرض', 'همسر', 'سایر', 'انتقال بین حساب‌ها']);
     const outgoing = categoryChoices(BUILTIN_CATEGORIES, 'out').map((c) => c.nameFa);
     for (const name of ['خواربار', 'سفر', 'ورزش', 'شیرینی', 'گوشت و مرغ', 'آبمیوه بستنی', 'بازپرداخت اسنپ و تپسی', 'آرایشگاه', 'آرایشی و بهداشتی', 'همسر', 'سایر']) {
       expect(outgoing).toContain(name);

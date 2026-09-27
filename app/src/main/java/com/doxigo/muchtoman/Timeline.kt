@@ -183,7 +183,7 @@ fun faDayMoment(at: Long, day: Long, today: Long = tehranDay(System.currentTimeM
     if (at == tehranDayStart(day)) faDay(day, today)
     else "${faDay(day, today)}، ${bidi(faClock(at))}"
 
-private fun faYear(year: Int): String = faDigits(year.toString())
+internal fun faYear(year: Int): String = faDigits(year.toString())
 
 private fun faDigits(s: String): String = buildString {
     for (c in s) append(if (c in '0'..'9') '۰' + (c - '0') else c)
@@ -1273,12 +1273,22 @@ fun TransactionScreen(
     onInstallmentPayment: ((LedgerEntry, String?) -> Unit)? = null,
     /** A plan made from this payment, which becomes its first installment. */
     onCreateInstallment: ((LedgerEntry, String, Long, Int) -> Unit)? = null,
+    /** Everyone in طلب و بدهی, for the «قرض» section and [LoanLinkSheet]. */
+    loanViews: List<LoanView> = emptyList(),
+    loanLinks: Map<String, LoanLink> = emptyMap(),
+    loanType: (String) -> AssetType = { resolveType(it, emptyList()) },
+    /** Says whose money this was, or with null nobody's. Null where the row cannot be linked. */
+    onLoanLink: ((LedgerEntry, String?) -> Unit)? = null,
+    onCreateLoanPerson: ((LedgerEntry, String) -> Unit)? = null,
 ) {
     val txn = entry.txn
     val incoming = txn.direction == "in"
     var learnSimilar by rememberSaveable(txn.ref) { mutableStateOf(false) }
     var linking by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    var lending by rememberSaveable(txn.ref) { mutableStateOf(false) }
     val paidPlan = installmentPaidBy(txn.ref, installments)
+    val loanPerson = loanLinks[txn.ref]?.personId
+    val loanView = loanViews.firstOrNull { it.person.id == loanPerson }
     var chosen by remember(txn.ref) { mutableStateOf(entry.categoryId) }
     var source by remember(txn.ref) { mutableStateOf<String?>(null) }
     var makingCategory by rememberSaveable(txn.ref) { mutableStateOf(false) }
@@ -1357,6 +1367,8 @@ fun TransactionScreen(
                         if (category.id == CAT_INSTALMENT && onInstallmentPayment != null && paidPlan == null) {
                             linking = true
                         }
+                        // Filed as قرض, the next question is whose — the same moment, the same rule.
+                        if (isLoanCategory(category.id) && onLoanLink != null && loanView == null) lending = true
                     },
                     modifier = gutter,
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
@@ -1372,6 +1384,18 @@ fun TransactionScreen(
                         SectionHeading("قسط")
                         Spacer(Modifier.height(Space.m))
                         InstallmentLinkRow(paidPlan, onOpen = { linking = true })
+                    }
+                }
+            }
+
+            // Whose money it was, under the grid that raised it: a قرض row, or any row already linked.
+            if (onLoanLink != null && (isLoanCategory(chosen) || loanView != null)) {
+                item(key = "loan") {
+                    Column(gutter) {
+                        Spacer(Modifier.height(Space.xxl))
+                        SectionHeading("قرض")
+                        Spacer(Modifier.height(Space.m))
+                        LoanLinkRow(entry, loanView, loanType, onOpen = { lending = true })
                     }
                 }
             }
@@ -1472,6 +1496,18 @@ fun TransactionScreen(
             onLink = { onInstallmentPayment(entry, it) },
             onCreate = { name, payment, count -> onCreateInstallment(entry, name, payment, count) },
             onDismiss = { linking = false },
+        )
+    }
+
+    if (lending && onLoanLink != null && onCreateLoanPerson != null) {
+        LoanLinkSheet(
+            entry = entry,
+            views = loanViews,
+            current = loanView?.person?.id,
+            type = loanType,
+            onLink = { onLoanLink(entry, it) },
+            onCreate = { onCreateLoanPerson(entry, it) },
+            onDismiss = { lending = false },
         )
     }
 }
@@ -2063,8 +2099,15 @@ fun ReviewDeck(
     /** The two ends of the link a قسط و وام filing offers — see [InstallmentLinkSheet]. */
     onInstallmentPayment: ((LedgerEntry, String?) -> Unit)? = null,
     onCreateInstallment: ((LedgerEntry, String, Long, Int) -> Unit)? = null,
+    /** The «به کی دادی؟» a قرض filing raises — see [LoanLinkSheet]. */
+    loanViews: List<LoanView> = emptyList(),
+    loanType: (String) -> AssetType = { resolveType(it, emptyList()) },
+    onLoanLink: ((LedgerEntry, String?) -> Unit)? = null,
+    onCreateLoanPerson: ((LedgerEntry, String) -> Unit)? = null,
 ) {
     var skipped by remember { mutableStateOf(setOf<String>()) }
+    // The card she just filed as قرض, for the same reason [linking] outlives its card.
+    var lending by remember { mutableStateOf<LedgerEntry?>(null) }
     // The card she just filed as a قسط, held here because the deck has already moved past it: the
     // question of which plan it paid outlives the card that raised it by one tap.
     var linking by remember { mutableStateOf<LedgerEntry?>(null) }
@@ -2193,6 +2236,11 @@ fun ReviewDeck(
                         ) {
                             linking = entry
                         }
+                        if (isLoanCategory(category.id) && onLoanLink != null &&
+                            loanLinkable(entry, ledger.mineId) && entry.txn.ref !in ledger.loanLinks
+                        ) {
+                            lending = entry
+                        }
                     },
                     selectedLabel = "انتخاب‌شده",
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
@@ -2277,6 +2325,19 @@ fun ReviewDeck(
             onLink = { onInstallmentPayment(paid, it) },
             onCreate = { name, payment, count -> onCreateInstallment(paid, name, payment, count) },
             onDismiss = { linking = null },
+        )
+    }
+
+    val lent = lending
+    if (lent != null && onLoanLink != null && onCreateLoanPerson != null) {
+        LoanLinkSheet(
+            entry = lent,
+            views = loanViews,
+            current = null,
+            type = loanType,
+            onLink = { onLoanLink(lent, it) },
+            onCreate = { onCreateLoanPerson(lent, it) },
+            onDismiss = { lending = null },
         )
     }
 }

@@ -31,6 +31,7 @@ import { InsightCard, QuietStart } from './report';
 import { pref, useData } from './state';
 import { ActionCircle, HeroPanel, Section } from './ui';
 import { AssetIcon, RowAmount, RowTitle, rateIn, useAutoSize, useNow } from './homeSheets';
+import { LoansHeroStrip } from './loansUi';
 import './home.css';
 
 // ---- the list -----------------------------------------------------------------------------------
@@ -149,6 +150,8 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
         {/* Digits are quick to scan but easy to misread by a factor of ten; the words are the check. */}
         {words && <p class="words">{words}</p>}
         <p class="full figure">{`${faNumber(total)} تومان`}</p>
+        {/* Beside the total, never in it; and hers alone, so not on the household's reading. */}
+        {!familyMode && <LoansHeroStrip />}
         {shownChange ? <ChangePill change={shownChange} onClick={() => openReport('ASSETS')} />
           // Before thirty days there is no honest figure; the slot keeps its target and drops the number.
           : !portfolio && <ReportLink onClick={() => openReport('ASSETS')} />}

@@ -3,7 +3,7 @@
 **English** · [فارسی](README.fa.md)
 
 An Android app that shows what all your money adds up to in Toman, and where it goes: a ledger
-filled from bank SMS, budgets, savings goals and installments, for one person or, if you choose,
+filled from bank SMS, budgets, savings goals, installments and loans, for one person or, if you choose,
 the whole family.
 
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
@@ -42,6 +42,11 @@ Sample data, live rates.
 | ![](docs/screenshots/installments.png) | ![](docs/screenshots/installment-link.png) | ![](docs/screenshots/categories.png) |
 | ![](docs/screenshots/installments-dark.png) | ![](docs/screenshots/installment-link-dark.png) | ![](docs/screenshots/categories-dark.png) |
 
+| Loans | One person | Who was it? |
+| --- | --- | --- |
+| ![](docs/screenshots/loans.png) | ![](docs/screenshots/loan-person.png) | ![](docs/screenshots/loan-link.png) |
+| ![](docs/screenshots/loans-dark.png) | ![](docs/screenshots/loan-person-dark.png) | ![](docs/screenshots/loan-link-dark.png) |
+
 ## What it does
 
 - **One total, three ways.** Scannable ("10.8 million Toman"), spelled out in Persian words,
@@ -65,6 +70,12 @@ Sample data, live rates.
   lists the transactions that could be its payments, the exact amount first. The card shows what is
   paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
   Cash payments go into the ledger by hand and are linked the same way.
+- **Who owes you, and whom you owe.** Each person gets a page with the balance in whatever was lent:
+  two gold coins stay two coins, priced at today's rate, rather than turning into a Toman figure that
+  drifts. File a transfer under "Loan" and the app asks who it was, and says what that leaves before you
+  save it; whether it was a loan or a repayment follows from which way the money went. Lending coins or
+  dollars from your assets takes them out of the total, and none of it is counted in the total: it sits
+  beside it on the main card. A promised date turns into "3 days past the date" once it passes.
 - **Where the money went, over any window.** Income & spending reads a week, a month, three, six or twelve,
   income against spending and category by category. Under each figure sits its daily and weekly
   pace, so windows of different lengths compare, and each closed window is also priced in dollars
@@ -214,7 +225,7 @@ costs the alerts and nothing else: the Future tab shows the same figures either 
 badge on Ledger counts the same backlog.
 
 Installment plans, and which transactions paid them, stay on the phone. They are never part of
-the family sync.
+the family sync. The same goes for loans: who owes whom, and which transactions they were.
 
 Wallet tracking is opt-in: when enabled, the public address is sent through the configured
 Worker to a public blockchain RPC or indexer. The app never asks for a recovery phrase or private

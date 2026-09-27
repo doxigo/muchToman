@@ -7,6 +7,7 @@
  * What the phone derives (derived.db: `Txn`, `LedgerEntry`) lives here too, because every
  * screen reads it; it is rebuilt in memory from these tables, never stored.
  */
+import type { LoanBook } from './loans';
 
 // ---- durable.db ----------------------------------------------------------------------------
 
@@ -72,7 +73,7 @@ export interface Rule {
   deleted: boolean;
 }
 
-export type DecisionKind = 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment';
+export type DecisionKind = 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment' | 'loan';
 
 /** `txn_decision`: one per (ref, kind). `id` is `${kind}:${ref}` here, which is that key. */
 export interface Decision {
@@ -243,6 +244,8 @@ export interface Prefs {
   disabledBanks: string[];
   /** The last bank the paste sheet read a message as. */
   lastPasteBank: string;
+  /** طلب و بدهی: the people and what she wrote down about them (loans.ts). Backed up, never synced. */
+  loans: LoanBook;
   /** WebAuthn credential id (base64url) the lock unlocks with. */
   lockCredential: string;
   // Household sync state (sync.ts SyncPrefs; durable_meta on the phone). A backup strips the
@@ -277,6 +280,7 @@ export const PREF_DEFAULTS: Prefs = {
   backupReminderEnabled: false,
   disabledBanks: [],
   lastPasteBank: '',
+  loans: { people: [], moves: [] },
   lockCredential: '',
   syncSeq: 0,
   syncShareSms: false,

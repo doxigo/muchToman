@@ -188,7 +188,8 @@ class ClassifyTest {
         val incoming = categoryChoices(BUILTIN_CATEGORIES, "in").map { it.nameFa }
         assertEquals(
             listOf(
-                "درآمد", "حقوق", "فروش", "پاداش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "همسر",
+                // قرض beside پس‌گرفتن قرض: money borrowed arrives the way money lent leaves.
+                "درآمد", "حقوق", "فروش", "پاداش", "سود سرمایه‌گذاری", "پس‌گرفتن قرض", "قرض", "همسر",
                 "سایر", "انتقال بین حساب‌ها",
             ),
             incoming,

@@ -520,6 +520,14 @@ function persist(list: Holding[], countedBefore?: Totals): void {
 }
 
 /**
+ * The whole list at once, for a loan that moved coins out of the drawer or back in (loans.ts). No
+ * rebase: what she lent really left the total, and the chart should show it leave.
+ */
+export function setHoldings(list: Holding[]): void {
+  persist(catalogOrdered(list));
+}
+
+/**
  * Writes the row `key` names, or adds one under that key — how a second Tether beside the first
  * is made: the picker hands out a fresh key. Copied, not rebuilt, so an edit never un-excludes
  * a set-aside asset nor drops her name for it.

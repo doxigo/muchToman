@@ -15,6 +15,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { jalaliMonthStart, tehranDay } from './jalali';
 import { findLinks, hiddenRefs, transferRefs } from './links';
 import type { LinkCandidate } from './links';
+import { loanLinks } from './loans';
+import type { LoanLink } from './loans';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify } from './rules';
 import type { TxnClass } from './rules';
 import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
@@ -287,6 +289,11 @@ export interface LedgerView {
   allEntries: LedgerEntry[];
   /** Every link candidate, for the transaction page and the refile that rejects a transfer. */
   links: LinkCandidate[];
+  /**
+   * ref → whose money it was, for every row she linked to a person (loans.ts). All of them, the
+   * pruned rows' too: a balance is summed off these, not off [entries].
+   */
+  loanLinks: Map<string, LoanLink>;
 }
 
 const bySortThenName = (a: Category, b: Category): number =>
@@ -384,6 +391,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
     bankTotalRial: bankTotal(bankAccounts),
     allEntries: entries,
     links,
+    loanLinks: loanLinks(input.decisions),
   };
 }
 

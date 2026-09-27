@@ -528,6 +528,11 @@ data class LedgerView(
     /** ref → yes | no | needed, for the ones she has answered. */
     val worthIt: Map<String, String> = emptyMap(),
     /**
+     * ref → whose money it was, for every row she linked to a person — see `Loans.kt`. All of
+     * them, the pruned rows' too: a balance is summed off these, not off [entries].
+     */
+    val loanLinks: Map<String, LoanLink> = emptyMap(),
+    /**
      * The marks she picked, by category name — [LocalCustomGlyphs]'s contents.
      *
      * Read off every category rather than off [categories], archived ones included, for the same
@@ -722,6 +727,7 @@ suspend fun ledgerView(
         installments = active.filter { it.kind == GoalKind.INSTALLMENT }
             .map { installmentProgress(it, links, ledger.entries, today, mineId) },
         worthIt = answers,
+        loanLinks = loanLinks(durable.decisions().ofKind(DecisionKind.LOAN)),
         marks = ledger.marks,
         mineId = mineId,
         ready = true,
