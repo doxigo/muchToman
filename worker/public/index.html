@@ -424,6 +424,39 @@
       .notif .body { font-weight: 500; }
       .notif b { font-weight: 800; }
 
+      /* The notes that talk back: two of the app's notifications, the SMS card's own shape, stacked
+         as the shade stacks them — each with its voice named, the line it adds marked, and the
+         plain facts under it, as the phone posts them (Notify.kt). */
+      .notifs {
+        position: absolute;
+        left: 50%;
+        top: calc(var(--pw) * .13);
+        width: var(--cw);
+        margin-left: calc(var(--cw) / -2);
+        display: grid;
+        gap: calc(var(--pw) * .035);
+      }
+      .notifs .notif { position: relative; left: auto; top: auto; width: auto; margin: 0; }
+      .notif .app { width: 1.9em; height: 1.9em; border-radius: 50%; }
+      .notif .tone {
+        margin-inline-start: auto;
+        padding: .05em .8em .2em;
+        border-radius: var(--r-pill);
+        background: var(--forest);
+        color: var(--bright);
+        font-weight: 800;
+      }
+      .notif .line { margin-top: .2em; font-weight: 700; }
+      .notif mark {
+        padding: 0 .2em;
+        border-radius: .3em;
+        background: var(--bright);
+        color: inherit;
+        -webkit-box-decoration-break: clone;
+        box-decoration-break: clone;
+      }
+      .notif .detail { margin-top: .25em; font-size: .82em; color: #59614f; }
+
       /* The one authored moment: the first screen settles into place. Decelerate hard,
          nothing overshoots — `Motion.enter`. */
       @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
@@ -912,19 +945,35 @@
           <div class="phone">
             <div class="screen">
               <picture>
-                <source srcset="/img/notifications-dark.webp" media="(prefers-color-scheme: dark)" />
+                <source srcset="/img/home-dark.webp" media="(prefers-color-scheme: dark)" />
                 <img
-                  src="/img/notifications.webp" width="720" height="1200" loading="lazy"
-                  alt="اعلان‌های چقدر تومن: «رستوران و کافه: از بودجهٔ مهر گذشتی» با تیکهٔ «گارسونای محل دیگه اسمت رو حفظن.»، «خواربار: ۸۴٪ بودجهٔ مهر رفته» با «آروم‌تر برون، بودجه پشت سرت نفس‌نفس می‌زنه.»، و یادآوری قسط گوشی"
+                  src="/img/home.webp" width="720" height="1513" loading="lazy"
+                  alt="دو اعلان چقدر تومن روی صفحهٔ اول: «رستوران و کافه: از بودجهٔ مهر گذشتی» با تیکهٔ بی‌تعارف «گارسونای محل دیگه اسمت رو حفظن.»، و «۵ روزه خرجی ندیدیم» با تیکهٔ شوخ «زنده‌ای؟ اگه آره، یه چایی مهمون خودت باش.»"
                 />
               </picture>
             </div>
           </div>
-          <div class="crop" style="--x: 42; --y: 230; --w: 996; --h: 364; --r: 42" aria-hidden="true">
-            <picture>
-              <source srcset="/img/notifications-dark.webp" media="(prefers-color-scheme: dark)" />
-              <img src="/img/notifications.webp" width="720" height="1200" alt="" loading="lazy" />
-            </picture>
+          <div class="notifs" aria-hidden="true">
+            <div class="notif">
+              <div class="head">
+                <img class="app" src="/icon.svg" alt="" width="28" height="28" />
+                <span>چقدر تومن · الان</span>
+                <span class="tone">بی‌تعارف</span>
+              </div>
+              <div class="who">رستوران و کافه: از بودجهٔ مهر گذشتی</div>
+              <div class="line"><mark>گارسونای محل دیگه اسمت رو حفظن.</mark></div>
+              <div class="detail"><span class="figure">۱٫۶</span> میلیون بیشتر از <span class="figure">۸</span> میلیون تومان • <span class="figure">۲۶</span> روز تا آخر ماه</div>
+            </div>
+            <div class="notif">
+              <div class="head">
+                <img class="app" src="/icon.svg" alt="" width="28" height="28" />
+                <span>چقدر تومن · الان</span>
+                <span class="tone">شوخ</span>
+              </div>
+              <div class="who">۵ روزه خرجی ندیدیم</div>
+              <div class="line"><mark>زنده‌ای؟ اگه آره، یه چایی مهمون خودت باش.</mark></div>
+              <div class="detail">اگه خرج کردی و اینجا نیست، «وضعیت دفتر» رو توی تنظیمات ببین.</div>
+            </div>
           </div>
         </figure>
       </section>
