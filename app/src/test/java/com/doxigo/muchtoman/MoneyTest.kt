@@ -221,6 +221,14 @@ class MoneyTest {
     }
 
     @Test
+    fun `which one of a run is said the way it is out loud`() {
+        assertEquals(
+            listOf("اول", "دوم", "سوم", "چهارم", "سیزدهم", "بیست و یکم", "بیست و سوم", "سی‌ام", "صدم", "صد و بیستم"),
+            listOf(1, 2, 3, 4, 13, 21, 23, 30, 100, 120).map(::faOrdinal),
+        )
+    }
+
+    @Test
     fun `spelled out amounts skip what cannot help`() {
         assertNull(faWordsToman(0.0))
         assertTrue(faWordsToman(10_800_000.0)!!.endsWith("تومان"))

@@ -48,7 +48,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -663,50 +662,23 @@ private fun RejoinBlock(
         modifier = Modifier.padding(start = Space.xs, end = Space.xs),
     )
     Spacer(Modifier.height(Space.m))
-    ArmedAction(
-        label = if (working) "در حال پیوستن..." else "پیوستن به خانواده جدید",
-        armedLabel = "مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن",
+    // The same two-tap every destructive thing in the app wears, so a stray tap can never cut
+    // this phone off the household it is in.
+    ArmedButton(
+        if (working) "در حال پیوستن..." else "پیوستن به خانواده جدید",
+        "مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن",
+        onConfirm,
+        Modifier.fillMaxWidth(),
         enabled = !working,
-        onConfirmed = onConfirm,
+        block = true,
     )
-    TextButton(
-        onClick = onDismiss,
+    PillButton(
+        "بی‌خیال",
+        onDismiss,
+        Modifier.fillMaxWidth().padding(top = Space.s),
         enabled = !working,
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text("بی‌خیال", fontSize = 15.sp) }
-}
-
-/**
- * The app's two-tap confirm, on the page where the destructive things are people: the first tap
- * only turns the label into the question — the same device the asset sheet and the budgets use —
- * so a stray tap can never cut a phone off the household or re-key it.
- */
-@Composable
-private fun ArmedAction(
-    label: String,
-    armedLabel: String,
-    enabled: Boolean,
-    onConfirmed: () -> Unit,
-) {
-    var armed by remember { mutableStateOf(false) }
-    TextButton(
-        onClick = { if (armed) { armed = false; onConfirmed() } else armed = true },
-        enabled = enabled,
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(
-            if (armed) armedLabel else label,
-            fontSize = 14.sp,
-            fontWeight = if (armed) FontWeight.Bold else FontWeight.SemiBold,
-            // Announced, or the two-tap safeguard is invisible to TalkBack — a second
-            // double-tap acts with no confirmation ever perceived.
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-    }
+        block = true,
+    )
 }
 
 /**
@@ -1189,11 +1161,13 @@ private fun MemberSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(Space.s))
-            ArmedAction(
-                label = "حذف از خانواده",
-                armedLabel = "مطمئنی؟ برای حذف دوباره بزن",
+            ArmedButton(
+                "حذف از خانواده",
+                "مطمئنی؟ برای حذف دوباره بزن",
+                onRemove,
+                Modifier.fillMaxWidth(),
                 enabled = enabled,
-                onConfirmed = onRemove,
+                block = true,
             )
             error?.let {
                 Text(

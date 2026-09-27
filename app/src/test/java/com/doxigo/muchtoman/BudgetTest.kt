@@ -491,6 +491,21 @@ class BudgetTest {
     }
 
     @Test
+    fun `a cap she has run past outranks a payment falling due`() {
+        val rows = listOf(entry(first + 1, -60_000_000))
+        val budgets = budgetsOf(listOf(budget(50_000_000)), rows, first + 5)
+        val phone = Goal(
+            id = "phone", nameFa = "گوشی", targetRial = 10_000_000, kind = GoalKind.INSTALLMENT,
+            period = GoalPeriod.MONTH, startsOn = first, endsOn = jalaliMonthsAfter(first, 2),
+            createdAt = 0, updatedAt = 0,
+        )
+        val late = installmentProgress(phone, emptyMap(), rows, first + 5)
+        val story = buildStory(rows, liquidRial = 0L, today = first + 5, budgets = budgets, installments = listOf(late))
+        assertEquals(budgets.single(), story.attentionBudget)
+        assertTrue(story.attention!!.text.contains("رستوران و کافه"))
+    }
+
+    @Test
     fun `with no budget kept, the home screen is exactly what it was`() {
         val rows = listOf(entry(first + 1, -1_000_000).let { it.copy(needsReview = true) })
         val story = buildStory(rows, liquidRial = 0L, today = first + 5)

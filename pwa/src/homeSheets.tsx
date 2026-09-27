@@ -25,7 +25,7 @@ import { holdingKey } from './model';
 import type { WalletOption } from './model';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
 import { pref, useData } from './state';
-import { AmountField, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField } from './ui';
+import { AmountField, ArmedButton, PillButton, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField } from './ui';
 import './home.css';
 
 // ---- shared row pieces ------------------------------------------------------------------------
@@ -145,13 +145,6 @@ function ToggleRow({ title, sub, checked, onChange }: { title: string; sub?: str
       <span class="switch" aria-hidden="true" aria-checked={checked} />
     </button>
   );
-}
-
-function Btn({ label, onClick, disabled, muted, strong, danger }: {
-  label: ComponentChildren; onClick: () => void; disabled?: boolean; muted?: boolean; strong?: boolean; danger?: boolean;
-}) {
-  const cls = `text-btn${muted ? ' muted' : ''}${strong ? ' strong' : ''}${danger ? ' danger' : ''}`;
-  return <button type="button" class={cls} disabled={disabled} onClick={onClick}>{label}</button>;
 }
 
 /** `remember(keys) { … }` for a piece of state: reseeded whenever one of `keys` changes. */
@@ -363,8 +356,8 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
         {/* Named, not renamed: the label on this holding of it — «تتر شخصی» beside «تتر مشترک». */}
         {!naming ? (
-          <div style={{ marginTop: 'var(--s)' }}>
-            <Btn label={labelText.trim() ? 'تغییر اسم' : 'اسم دلخواه بذار'} onClick={() => { setNaming(true); setNameFocusWanted(true); }} />
+          <div style={{ marginTop: 'var(--m)' }}>
+            <PillButton label={labelText.trim() ? 'تغییر اسم' : 'اسم دلخواه بذار'} onClick={() => { setNaming(true); setNameFocusWanted(true); }} />
           </div>
         ) : (
           <>
@@ -376,10 +369,10 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
             </div>
             {holding && (
               <div class="btn-row">
-                <Btn label="ذخیره اسم" onClick={saveLabel} />
-                {holding.label.trim() && <Btn label="اسم اصلی" onClick={() => { setLabelText(''); setLabel(key, ''); setNaming(false); }} />}
+                <PillButton label="ذخیره اسم" onClick={saveLabel} />
+                {holding.label.trim() && <PillButton label="اسم اصلی" onClick={() => { setLabelText(''); setLabel(key, ''); setNaming(false); }} />}
                 <span class="spacer" />
-                <Btn label="بستن" muted onClick={() => { setLabelText(holding.label); setNaming(false); }} />
+                <PillButton label="بستن" onClick={() => { setLabelText(holding.label); setNaming(false); }} />
               </div>
             )}
           </>
@@ -456,7 +449,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
         {!valued && (!editingRate ? (
           <div class="edit-rate">
             <span>{rate == null ? 'نرخ پیدا نشد' : `هر ${unit}: ${faNumber(rate)} تومان${isOverridden ? '  (دستی وارد شده)' : ''}`}</span>
-            <Btn label="تغییر نرخ" onClick={() => setEditingRate(true)} />
+            <PillButton label="تغییر نرخ" onClick={() => setEditingRate(true)} />
           </div>
         ) : (
           <div style={{ marginTop: 'var(--m)' }}>
@@ -466,8 +459,8 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
                 onEnter={() => { setOverride(typeId, typedRate); setEditingRate(false); }} />
             </div>
             <div class="btn-row">
-              <Btn label="ذخیره نرخ" onClick={() => { setOverride(typeId, typedRate); setEditingRate(false); }} />
-              {isOverridden && <Btn label="برگشت به نرخ خودکار" onClick={() => { setOverride(typeId, null); setRateText(''); setEditingRate(false); }} />}
+              <PillButton label="ذخیره نرخ" onClick={() => { setOverride(typeId, typedRate); setEditingRate(false); }} />
+              {isOverridden && <PillButton label="برگشت به نرخ خودکار" onClick={() => { setOverride(typeId, null); setRateText(''); setEditingRate(false); }} />}
             </div>
           </div>
         ))}
@@ -529,7 +522,7 @@ function Adjust({ dec, unitFa, base, open, onOpen, onApply }: {
   dec: number; unitFa: string; base: number; open: boolean; onOpen: (open: boolean) => void; onApply: (next: number) => void;
 }) {
   const [deltaText, setDeltaText] = useState('');
-  if (!open) return <Btn label="اضافه یا کم کردن" onClick={() => onOpen(true)} />;
+  if (!open) return <div style={{ marginTop: 'var(--m)' }}><PillButton label="اضافه یا کم کردن" onClick={() => onOpen(true)} /></div>;
   const parsed = parseAmount(deltaText);
   const typedDelta = parsed != null && parsed > 0 ? parsed : null;
   const delta = typedDelta != null && parseAmount(trimNumber(typedDelta, dec)) === typedDelta ? typedDelta : null;
@@ -542,12 +535,12 @@ function Adjust({ dec, unitFa, base, open, onOpen, onApply }: {
           error={typedDelta != null && delta == null ? (dec === 0 ? 'فقط عدد کامل وارد کن.' : `حداکثر ${faNumber(dec)} رقم اعشار وارد کن.`) : null} />
       </div>
       {/* Air between the two opposite intents: an edge mis-tap here flips a money adjustment's sign. */}
-      <div class="btn-row">
-        <Btn label="＋ اضافه کن" strong disabled={delta == null} onClick={() => delta != null && apply(base + delta)} />
+      <div class="btn-row" style={{ gap: 'var(--m)' }}>
+        <PillButton label="＋ اضافه کن" disabled={delta == null} onClick={() => delta != null && apply(base + delta)} />
         {/* A holding cannot go below nothing: taking out more than is there is a typo. */}
-        <Btn label="− کم کن" strong disabled={delta == null || base - delta < 0} onClick={() => delta != null && apply(base - delta)} />
+        <PillButton label="− کم کن" disabled={delta == null || base - delta < 0} onClick={() => delta != null && apply(base - delta)} />
         <span class="spacer" />
-        <Btn label="بستن" muted onClick={() => { setDeltaText(''); onOpen(false); }} />
+        <PillButton label="بستن" onClick={() => { setDeltaText(''); onOpen(false); }} />
       </div>
     </>
   );
@@ -595,7 +588,6 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
 }) {
   const off = account.disabled;
   const [draft, setDraft] = useState('');
-  const [sure, setSure] = useState(false);
   const parsed = parseAmount(draft);
   const caption = [account.mask.trim() ? bidi(account.mask) : null, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
     .filter((s): s is string => s != null).join('  •  ');
@@ -631,14 +623,21 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
           </div>
         </>
       )}
+      {/* One act a row, full width — the one that loses something always on its own row, so its armed
+          sentence has room. «ذخیره» takes the row «اصلاح» had; «بستن» is the way out the field never had. */}
       <div class="btn-row">
-        {fixing
-          ? <Btn label="ذخیره موجودی" disabled={parsed == null} onClick={() => { if (parsed != null) onAnchor(parsed); }} />
-          : <Btn label="اصلاح موجودی" onClick={onFix} />}
-        <span class="spacer" />
-        {/* Two taps: a balance she anchored by hand is a number nothing can rebuild. */}
-        <Btn danger strong={sure} onClick={() => (sure ? onForget() : setSure(true))}
-          label={<span aria-live="polite">{sure ? 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن' : 'حذف حساب'}</span>} />
+        {fixing ? (
+          <>
+            <PillButton voice="primary" label="ذخیره موجودی" disabled={parsed == null} onClick={() => { if (parsed != null) onAnchor(parsed); }} />
+            <PillButton label="بستن" onClick={onFix} />
+          </>
+        ) : (
+          <>
+            <PillButton label="اصلاح موجودی" onClick={onFix} />
+            {/* Two taps: a balance she anchored by hand is a number nothing can rebuild. */}
+            <ArmedButton label="حذف حساب" armedLabel="موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن" onConfirmed={onForget} />
+          </>
+        )}
       </div>
     </div>
   );

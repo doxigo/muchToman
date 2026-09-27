@@ -15,7 +15,7 @@ import { GoalKind, GoalPeriod, goalProgress, worthItAnswers } from './goals';
 import type { GoalHorizon, GoalProgress } from './goals';
 import {
   encodeInstallmentLink, installmentLinks, installmentNews, installmentProgress, installmentReminderBody,
-  installmentReminderTitle, newInstallment,
+  installmentReminderTitle, installmentsByDue, newInstallment,
 } from './installments';
 import type { InstallmentProgress } from './installments';
 import { jalaliMonthStart, jalaliOf, tehranDay } from './jalali';
@@ -67,8 +67,8 @@ export function plansOf({
     goals: active.filter((g) => g.kind === GoalKind.SAVE)
       .map((g) => goalProgress(g, entries, today, { mineId, ownerName: ownerNameOf(g, mineId, members) })),
     budgets: budgetsOf(active, kept, today, { names, mineId, members, excluded }),
-    installments: active.filter((g) => g.kind === GoalKind.INSTALLMENT)
-      .map((g) => installmentProgress(g, links, entries, today, mineId)),
+    installments: installmentsByDue(active.filter((g) => g.kind === GoalKind.INSTALLMENT)
+      .map((g) => installmentProgress(g, links, entries, today, mineId))),
     worthIt: worthItAnswers(decisions),
   };
 }

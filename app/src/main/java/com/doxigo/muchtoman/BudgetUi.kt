@@ -43,7 +43,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -285,6 +284,10 @@ fun BudgetScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp,
                 )
+                Spacer(Modifier.height(Space.l))
+            }
+            installmentSummary(installments, tehranDay(System.currentTimeMillis()))?.let {
+                InstallmentSummaryLines(it)
                 Spacer(Modifier.height(Space.l))
             }
             val installmentRows = installments.size + 1
@@ -870,12 +873,10 @@ private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided
                     .background(tone),
             )
         }
-        Spacer(Modifier.height(Space.s))
-        Text(
-            "${faNumber(progress.paidCount.toDouble())} از ${faNumber(progress.count.toDouble())} قسط",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        installmentLeftFa(progress)?.let {
+            Spacer(Modifier.height(Space.s))
+            Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         installmentNoteFa(progress)?.let { (text, loud) ->
             Spacer(Modifier.height(Space.xs))
             Text(
@@ -886,6 +887,36 @@ private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided
                 color = if (loud) tone else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * Every plan at once, above their cards: what leaves each month, what is left and until when, and
+ * how this month's payments stand. Words on the page, not a card — it is the section's opening
+ * sentence, and a card here would read as one more plan.
+ */
+@Composable
+private fun InstallmentSummaryLines(summary: InstallmentSummary) {
+    BasicText(
+        text = bidi("ماهی ${faCompact(tomanOf(summary.monthlyRial))} تومان قسط"),
+        maxLines = 1,
+        autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
+        style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+    )
+    Text(
+        "${faCompact(tomanOf(summary.leftRial))} تومان مونده، تا ${faDate(summary.lastDue)}",
+        fontSize = 13.sp,
+        lineHeight = 22.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (summary.dueThisMonth > 0) {
+        Text(
+            "این ماه ${faNumber(summary.paidThisMonth.toDouble())} از " +
+                "${faNumber(summary.dueThisMonth.toDouble())} قسط پرداخت شده.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -902,8 +933,8 @@ private fun installmentNoteFa(
     progress.overdueRial > 0L ->
         "${faCompact(tomanOf(progress.overdueRial))} تومان از قسط‌هایی که سررسیدشون گذشته، " +
             "هنوز پرداخت نشده." to true
-    progress.nextDue == today -> "سررسید قسط بعدی امروزه." to false
-    progress.nextDue != null -> "قسط بعدی: ${faDate(progress.nextDue)}" to false
+    progress.nextDue == today -> "سررسید قسط ${faOrdinal(progress.paidCount + 1)} امروزه." to false
+    progress.nextDue != null -> "قسط ${faOrdinal(progress.paidCount + 1)}: ${faDate(progress.nextDue)}" to false
     else -> null
 }
 
@@ -1237,9 +1268,13 @@ private fun BudgetSheet(
                     modifier = Modifier.padding(top = Space.m),
                 )
                 if (editing != null && period == editing.period && shared == editing.shared) {
-                    TextButton(onClick = { close(onKeep) }) {
-                        Text("فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن")
-                    }
+                    // Error ink: the way out of the clash deletes the other budgets.
+                    PillButton(
+                        "فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن",
+                        { close(onKeep) },
+                        Modifier.fillMaxWidth().padding(top = Space.m),
+                        voice = ButtonVoice.DANGER,
+                    )
                 }
             }
             Spacer(Modifier.height(Space.l))
@@ -1270,30 +1305,18 @@ private fun BudgetSheet(
 }
 
 /**
- * Delete, inside the sheet and nowhere else — the asset sheet's own device, verbatim: one stray
- * tap must not erase a decision, so the first tap only changes the label to a question.
+ * Delete, inside the sheet and nowhere else, under its save: one stray tap must not erase a
+ * decision, so the first tap only changes the label to a question.
  */
 @Composable
 internal fun SheetDelete(label: String, onConfirmed: () -> Unit) {
-    var confirm by remember { mutableStateOf(false) }
-    TextButton(
-        onClick = { if (confirm) onConfirmed() else confirm = true },
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = MaterialTheme.colorScheme.error,
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = Space.xs),
-    ) {
-        Text(
-            if (confirm) "مطمئنی؟ برای حذف دوباره بزن" else label,
-            fontSize = 15.sp,
-            fontWeight = if (confirm) FontWeight.Bold else FontWeight.Normal,
-            // Announced, or the two-tap safeguard is invisible to TalkBack — a second
-            // double-tap deletes with no confirmation ever perceived.
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-    }
+    ArmedButton(
+        label,
+        "مطمئنی؟ برای حذف دوباره بزن",
+        onConfirmed,
+        Modifier.fillMaxWidth().padding(top = Space.s),
+        block = true,
+    )
 }
 
 /**
@@ -1635,6 +1658,8 @@ private fun InstallmentPaymentsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            InstallmentSchedule(progress)
+
             if (progress.payments.isNotEmpty() || progress.olderRial > 0L) {
                 SheetLabel("پرداخت‌هایی که وصل کردی")
                 progress.payments.forEach { entry ->
@@ -1671,6 +1696,61 @@ private fun InstallmentPaymentsSheet(
             Spacer(Modifier.height(Space.l))
             SheetDelete("حذف این قسط") { close(onDelete) }
         }
+    }
+}
+
+/** How many open payments the schedule lists before folding the rest into a line — half a year. */
+private const val SCHEDULE_ROWS = 6
+
+/**
+ * The plan month by month: the payments covered folded into one line, then the ones still open,
+ * each on its day, with a late one said in words. Covered counts from the first, as
+ * [InstallmentProgress.paidCount] does — a payment settles the oldest one still open.
+ */
+@Composable
+private fun InstallmentSchedule(
+    progress: InstallmentProgress,
+    today: Long = tehranDay(System.currentTimeMillis()),
+) {
+    SheetLabel("جدول قسط‌ها")
+    val paid = progress.paidCount
+    when {
+        progress.done -> "همه‌ی قسط‌ها پرداخت شد."
+        paid == 1 -> "قسط اول پرداخت شد."
+        paid > 1 -> "${faNumber(paid.toDouble())} قسط اول پرداخت شد."
+        else -> null
+    }?.let {
+        Text(it, fontSize = 13.sp, lineHeight = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    val open = paid until progress.count
+    open.take(SCHEDULE_ROWS).forEach { i ->
+        val due = installmentDueOn(progress.plan, i)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 40.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("قسط ${faOrdinal(i + 1)}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            Text(faDate(due), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when {
+                due < today -> "گذشته" to MaterialTheme.colorScheme.error
+                due == today -> "امروز" to MaterialTheme.colorScheme.primary
+                else -> null
+            }?.let { (word, tone) ->
+                Spacer(Modifier.width(Space.s))
+                Text(word, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = tone)
+            }
+        }
+    }
+    val rest = progress.count - paid - SCHEDULE_ROWS
+    if (rest > 0) {
+        Text(
+            "و ${faNumber(rest.toDouble())} قسط دیگه، تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}.",
+            fontSize = 13.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1794,9 +1874,12 @@ internal fun InstallmentLinkSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) { Text("ساختن قسط", fontWeight = FontWeight.Bold) }
-                TextButton(onClick = { close(onDismiss) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("فعلاً نه")
-                }
+                PillButton(
+                    "فعلاً نه",
+                    { close(onDismiss) },
+                    Modifier.fillMaxWidth().padding(top = Space.s),
+                    block = true,
+                )
                 return@Column
             }
 
@@ -1825,14 +1908,19 @@ internal fun InstallmentLinkSheet(
                     }
                 }
             }
-            TextButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth().padding(top = Space.s)) {
-                Text("+ قسط تازه با همین پرداخت", fontWeight = FontWeight.Bold)
-            }
+            PillButton(
+                "+ قسط تازه با همین پرداخت",
+                { creating = true },
+                Modifier.fillMaxWidth().padding(top = Space.l),
+                block = true,
+            )
             if (current != null) {
-                TextButton(
-                    onClick = { close { onLink(null); onDismiss() } },
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("از قسط جداش کن") }
+                PillButton(
+                    "از قسط جداش کن",
+                    { close { onLink(null); onDismiss() } },
+                    Modifier.fillMaxWidth().padding(top = Space.s),
+                    block = true,
+                )
             }
         }
     }

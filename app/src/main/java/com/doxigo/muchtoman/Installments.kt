@@ -224,6 +224,96 @@ fun installmentProgress(
     )
 }
 
+/**
+ * Soonest payment first: a plan behind has its next due in the past, so it leads without a rule of
+ * its own, and a plan paid off has none and goes last. Ties keep the order they were made in.
+ */
+fun installmentsByDue(installments: List<InstallmentProgress>): List<InstallmentProgress> =
+    installments.sortedBy { it.nextDue ?: Long.MAX_VALUE }
+
+/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off. */
+fun installmentLeftFa(progress: InstallmentProgress): String? {
+    if (progress.done) return null
+    val left = progress.count - progress.paidCount
+    return "${faNumber(left.toDouble())} از ${faNumber(progress.count.toDouble())} قسط مونده، " +
+        "تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}"
+}
+
+/** The «قسط‌ها» section in one place: what leaves each month, what is left, and this month's. */
+data class InstallmentSummary(
+    /** One payment of every plan still running. */
+    val monthlyRial: Long,
+    /** What the running plans have left between them. */
+    val leftRial: Long,
+    /** The last payment of the last plan to finish. */
+    val lastDue: Long,
+    /** Plans with a payment that falls due this Jalali month, paid off or not. */
+    val dueThisMonth: Int,
+    /** How many of those that month's payment is covered on. */
+    val paidThisMonth: Int,
+)
+
+/** Null under two running plans: with one, every figure here is already on its card. */
+fun installmentSummary(installments: List<InstallmentProgress>, today: Long): InstallmentSummary? {
+    val running = installments.filter { !it.done }
+    if (running.size < 2) return null
+    val here = jalaliOf(today)
+    var due = 0
+    var paid = 0
+    for (p in installments) {
+        // Which payment falls in this month: the months from the first due to today.
+        val first = jalaliOf(p.plan.startsOn)
+        val index = (here.year - first.year) * 12 + (here.month - first.month)
+        if (index !in 0 until p.count) continue
+        due++
+        if (p.paidCount > index) paid++
+    }
+    return InstallmentSummary(
+        monthlyRial = running.sumOf { it.plan.targetRial },
+        leftRial = running.sumOf { it.totalRial - it.paidRial },
+        lastDue = running.maxOf { it.plan.endsOn ?: it.plan.startsOn },
+        dueThisMonth = due,
+        paidThisMonth = paid,
+    )
+}
+
+// ─────────────────────────── on home ───────────────────────────
+
+/**
+ * The plan worth home's one attention card, and which payment (from 0) it is about: one already
+ * behind, the longest behind first; or else the soonest payment within [daysBefore] of today — the
+ * reminder's own window, and never less than the day itself, so a phone with reminders off still
+ * hears about it on the day.
+ */
+fun pressingInstallment(
+    installments: List<InstallmentProgress>,
+    today: Long,
+    daysBefore: Int,
+): Pair<InstallmentProgress, Int>? {
+    installments.filter { it.overdueRial > 0L }.minByOrNull { it.nextDue ?: Long.MAX_VALUE }
+        ?.let { return it to it.paidCount }
+    val window = daysBefore.coerceAtLeast(0)
+    return installments
+        .mapNotNull { p ->
+            (p.paidCount until p.count).firstOrNull { installmentDueOn(p.plan, it) >= today }
+                ?.takeIf { installmentDueOn(p.plan, it) - today <= window }
+                ?.let { p to it }
+        }
+        .minByOrNull { (p, i) -> installmentDueOn(p.plan, i) }
+}
+
+/** «سررسید قسط «گوشی» فرداست.» — the reminder's words, on home, with the linked payments as evidence. */
+fun installmentInsight(progress: InstallmentProgress, index: Int, today: Long): Insight {
+    val due = installmentDueOn(progress.plan, index)
+    return Insight(
+        text = "سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.",
+        why = "قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، " +
+            "قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count.toDouble())}، ${faDate(due)}.",
+        refs = progress.payments.map { it.txn.ref },
+        tone = Insight.Tone.ATTENTION,
+    )
+}
+
 // ─────────────────────────── the reminder ───────────────────────────
 
 /**
@@ -287,16 +377,18 @@ fun installmentNews(
     return InstallmentNews(due, marks)
 }
 
-/** «گوشی: سررسید قسط فرداست» — the card's own «سررسید قسط بعدی امروزه», said ahead. */
-fun installmentReminderTitle(plan: Goal, due: Long, today: Long): String {
-    val whenFa = when (val days = due - today) {
-        0L -> "امروزه"
-        1L -> "فرداست"
-        2L -> "پس‌فرداست"
-        else -> "${faNumber(days.toDouble())} روز دیگه‌ست"
-    }
-    return "${plan.nameFa}: سررسید قسط $whenFa"
+/** When a due day is, from today: «گذشته», «امروزه», «فرداست», «۳ روز دیگه‌ست». */
+private fun installmentWhenFa(days: Long): String = when {
+    days < 0L -> "گذشته"
+    days == 0L -> "امروزه"
+    days == 1L -> "فرداست"
+    days == 2L -> "پس‌فرداست"
+    else -> "${faNumber(days.toDouble())} روز دیگه‌ست"
 }
+
+/** «گوشی: سررسید قسط فرداست» — the card's own «سررسید قسط اول امروزه», said ahead. */
+fun installmentReminderTitle(plan: Goal, due: Long, today: Long): String =
+    "${plan.nameFa}: سررسید قسط ${installmentWhenFa(due - today)}"
 
 /** How much, and on which date — what she needs in the banking app. */
 fun installmentReminderBody(plan: Goal, due: Long): String =

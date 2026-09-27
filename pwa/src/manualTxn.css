@@ -4,4 +4,4 @@
 .day-stepper .grow { text-align: center; }
 .day-main { font-weight: 700; color: var(--on-surface); }
 .day-sub { font-size: 12px; color: var(--on-surface-variant); }
-.paste-link { padding-inline: var(--xs); font-size: 14px; }
+.paste-link { margin-top: var(--m); }

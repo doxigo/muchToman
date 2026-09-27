@@ -110,6 +110,15 @@ export function faWords(value: number): string {
   return parts.join(' و ');
 }
 
+/** 1 → «اول», 3 → «سوم», 4 → «چهارم», 30 → «سی‌ام»: which one of a run, the way it is said out loud. */
+export function faOrdinal(n: number): string {
+  if (n === 1) return 'اول';
+  const words = faWords(n);
+  if (words.endsWith('سه')) return `${words.slice(0, -2)}سوم`;
+  if (words.endsWith('ی')) return `${words}\u200cام`;
+  return `${words}م`;
+}
+
 export function faWordsToman(value: number): string | null {
   if (value <= 0 || value >= 1e15) return null;
   const words = faWords(Math.round(value));

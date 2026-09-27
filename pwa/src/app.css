@@ -53,6 +53,8 @@
   --outline-variant: #dde2d2;
   --error: #a8200d;
   --on-error: #ffffff;
+  /* The tonal pill's fill: a wash of ink, so it stands off page, sheet and card alike (Ui.kt PillButton). */
+  --wash: rgba(22, 51, 0, .09);
   --error-container: #f9dcd5;
   --on-error-container: #400a02;
   --scrim: rgba(10, 15, 8, .32);
@@ -83,6 +85,7 @@
     --outline: #7f827c; --outline-variant: #383b35;
     --error: #ffb4ab; --on-error: #5f1410; --error-container: #7a2820; --on-error-container: #ffdad5;
     --scrim: rgba(0, 0, 0, .5); --dark: 1;
+    --wash: rgba(242, 243, 239, .10);
   }
 }
 :root[data-theme="dark"] {
@@ -98,6 +101,7 @@
   --outline: #7f827c; --outline-variant: #383b35;
   --error: #ffb4ab; --on-error: #5f1410; --error-container: #7a2820; --on-error-container: #ffdad5;
   --scrim: rgba(0, 0, 0, .5); --dark: 1;
+  --wash: rgba(242, 243, 239, .10);
 }
 
 * { box-sizing: border-box; }
@@ -171,15 +175,18 @@ h1, h2, h3 { margin: 0; }
 .add-row { display: flex; align-items: center; justify-content: center; gap: var(--s); color: var(--primary); font-weight: 800; font-size: 16px; min-height: 56px; }
 
 /* ---- controls ---------------------------------------------------------------------------------- */
-.pill { display: inline-flex; align-items: center; justify-content: center; gap: var(--s); min-height: 44px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--surface-variant); color: var(--on-surface); font-size: 14px; font-weight: 700; white-space: nowrap; transition: transform var(--fast) var(--enter), opacity var(--fast); }
+.pill { display: inline-flex; align-items: center; justify-content: center; gap: var(--s); min-height: 44px; padding: var(--s) var(--l); border: 0; border-radius: var(--r-pill); background: var(--wash); color: var(--on-surface); font-size: 14px; font-weight: 700; line-height: 1.45; text-align: center; white-space: nowrap; transition: transform var(--fast) var(--enter), opacity var(--fast), background var(--fast), color var(--fast); }
 .pill:active { transform: scale(.97); }
 .pill.primary { background: var(--cta-fill); color: var(--cta-ink); }
 .pill.hero-voice { background: var(--hero-well); color: var(--hero-strong); }
 .pill.block { display: flex; width: 100%; min-height: 52px; font-size: 16px; }
+/* An act that loses something: quiet until armed. Armed is the second tap's one loud moment. */
+.pill.danger { color: var(--error); }
+.pill.armed { background: var(--error); color: var(--on-error); }
+/* A sentence — an armed consequence, a long block label — wraps rather than running off the pill. */
+.pill.block, .pill.armed { white-space: normal; text-wrap: balance; }
 .pill:disabled { opacity: .45; cursor: default; transform: none; }
-.text-btn { background: none; border: 0; padding: var(--s) var(--m); min-height: 44px; color: var(--primary); font-weight: 700; font-size: 15px; border-radius: var(--r-pill); }
-.text-btn.danger { color: var(--error); }
-.text-btn.block { display: block; width: 100%; }
+.sheet-delete { margin-top: var(--s); }
 
 .segmented { display: flex; background: var(--surface-container); border-radius: var(--r-pill); padding: var(--xs); }
 .segmented > button { flex: 1; min-height: 48px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--on-surface); font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background var(--fast) var(--enter), color var(--fast); }

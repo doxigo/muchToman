@@ -2,11 +2,12 @@
 import { describe, expect, it } from 'vitest';
 import { GoalKind, GoalPeriod } from '../src/goals';
 import {
-  MAX_INSTALLMENTS, encodeInstallmentLink, firstInstallmentDue, installmentCount, installmentDueOn,
-  installmentLineFa, installmentLinks, installmentNews, installmentNoteFa, installmentPaidBy, installmentPayable,
-  installmentProgress, installmentReminderBody, installmentReminderFa, installmentReminderTitle, newInstallment,
-  tomanFieldToRial,
+  MAX_INSTALLMENTS, encodeInstallmentLink, firstInstallmentDue, installmentCount, installmentDueOn, installmentInsight,
+  installmentLeftFa, installmentLineFa, installmentLinks, installmentNews, installmentNoteFa, installmentPaidBy,
+  installmentPayable, installmentProgress, installmentReminderBody, installmentReminderFa, installmentReminderTitle,
+  installmentSummary, installmentsByDue, newInstallment, pressingInstallment, tomanFieldToRial,
 } from '../src/installments';
+import { buildStory } from '../src/reports';
 import type { InstallmentLink } from '../src/installments';
 import { jalaliDay, jalaliMonthsAfter, jalaliOf, tehranDayStart } from '../src/jalali';
 import type { Decision, Goal, LedgerEntry } from '../src/model';
@@ -190,11 +191,78 @@ describe('installments', () => {
 
     const unpaid = installmentProgress(p, new Map(), [], first);
     expect(installmentLineFa(unpaid)).toBe('ماهی ۱ میلیون تومان • ۰ از ۳ قسط');
-    expect(installmentNoteFa(unpaid, first)).toEqual(['سررسید قسط بعدی امروزه.', false]);
-    expect(installmentNoteFa(installmentProgress(p, new Map(), [], first - 1), first - 1)).toEqual(['قسط بعدی: ۳۱ شهریور ۱۴۰۵', false]);
+    expect(installmentNoteFa(unpaid, first)).toEqual(['سررسید قسط اول امروزه.', false]);
+    expect(installmentNoteFa(installmentProgress(p, new Map(), [], first - 1), first - 1)).toEqual(['قسط اول: ۳۱ شهریور ۱۴۰۵', false]);
+    expect(installmentNoteFa(installmentProgress(p, links(p, ['a', 10_000_000]), [], first), first)).toEqual(['قسط دوم: ۳۰ مهر ۱۴۰۵', false]);
     expect(installmentNoteFa(installmentProgress(p, new Map(), [], first + 1), first + 1))
       .toEqual(['۱ میلیون تومان از قسط‌هایی که سررسیدشون گذشته، هنوز پرداخت نشده.', true]);
     expect(installmentNoteFa(installmentProgress(p, links(p, ['a', 30_000_000]), [], first), first)).toEqual(['همه‌ی قسط‌ها پرداخت شد.', true]);
+  });
+
+  it('plans are listed soonest payment first, a late one ahead and a paid-off one last', () => {
+    const late = plan('late');
+    const later = { ...plan('later'), startsOn: first + 10, endsOn: jalaliMonthsAfter(first + 10, 2) };
+    const done = plan('done');
+    const paid = links(done, ['a', 30_000_000]);
+    const list = [done, later, late].map((g) => installmentProgress(g, paid, [], first + 5));
+    expect(installmentsByDue(list).map((p) => p.plan.id)).toEqual(['late', 'later', 'done']);
+  });
+
+  it('the card says how many are left and when the last one falls due', () => {
+    const p = plan();
+    expect(installmentLeftFa(installmentProgress(p, links(p, ['a', 10_000_000]), [], first))).toBe('۲ از ۳ قسط مونده، تا ۳۰ آبان ۱۴۰۵');
+    expect(installmentLeftFa(installmentProgress(p, links(p, ['a', 30_000_000]), [], first))).toBeNull();
+  });
+
+  it("the section adds up the running plans, and counts this month's payments paid off or not", () => {
+    const phone = plan('phone');
+    const tv = plan('tv', 5_000_000, 12);
+    const old = plan('old');
+    const paid = new Map([...links(phone, ['a', 10_000_000]), ...links(old, ['b', 30_000_000])]);
+    const today = jalaliDay(1405, 6, 20);
+    const all = [phone, tv, old].map((g) => installmentProgress(g, paid, [], today));
+    expect(installmentSummary(all, today)).toEqual({
+      monthlyRial: 15_000_000,
+      leftRial: 20_000_000 + 60_000_000,
+      lastDue: jalaliMonthsAfter(first, 11),
+      dueThisMonth: 3,
+      paidThisMonth: 2,
+    });
+    // One running plan is its own card already.
+    expect(installmentSummary(all.filter((p) => p.plan.id !== 'tv'), today)).toBeNull();
+    // A month none of them has a payment in says nothing about this month.
+    expect(installmentSummary(all, jalaliMonthsAfter(first, 12))!.dueThisMonth).toBe(0);
+  });
+
+  it("home hears of a payment inside the reminder's window, or once it is late", () => {
+    const p = plan();
+    const unpaid = (today: number) => installmentProgress(p, new Map(), [], today);
+
+    const tomorrow = pressingInstallment([unpaid(first - 1)], first - 1, 1)!;
+    expect(tomorrow[1]).toBe(0);
+    const insight = installmentInsight(tomorrow[0], tomorrow[1], first - 1);
+    expect(insight.text).toBe('سررسید قسط «گوشی» فرداست.');
+    expect(insight.why).toBe('قسطی که خودت ساختی: ماهی ۱ میلیون تومان، قسط اول از ۳، ۳۱ شهریور ۱۴۰۵.');
+    expect(insight.tone).toBe('ATTENTION');
+
+    expect(pressingInstallment([unpaid(first - 1)], first - 1, 0)).toBeNull();
+    // Reminders off still leaves the day itself.
+    expect(pressingInstallment([unpaid(first)], first, -1)![1]).toBe(0);
+    const late = pressingInstallment([unpaid(first + 1)], first + 1, 1)!;
+    expect(installmentInsight(late[0], late[1], first + 1).text).toBe('سررسید قسط «گوشی» گذشته.');
+    // Paid ahead, the next one is a month off: nothing to say.
+    expect(pressingInstallment([installmentProgress(p, links(p, ['a', 10_000_000]), [], first - 1)], first - 1, 3)).toBeNull();
+  });
+
+  it("a payment falling due outranks the review queue for home's one slot", () => {
+    const progress = installmentProgress(plan(), new Map(), [], first - 1);
+    const rows = [row(first - 3, -1_000_000, { review: true })];
+    const story = buildStory(rows, 0, first - 1, { installments: [progress] });
+    expect(story.attentionInstallment).toBe(progress);
+    expect(story.attention!.text).toBe('سررسید قسط «گوشی» فرداست.');
+    const quiet = buildStory(rows, 0, first - 1);
+    expect(quiet.attentionInstallment).toBeNull();
+    expect(quiet.attention!.text).toContain('منتظر');
   });
 
   it('a Toman field is whole Rial, or nothing this app would store', () => {

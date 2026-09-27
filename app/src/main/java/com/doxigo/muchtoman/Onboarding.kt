@@ -22,12 +22,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -225,11 +223,5 @@ private fun Primary(label: String, onClick: () -> Unit) {
 /** Always present, always a real way out: nothing here may be a wall. */
 @Composable
 private fun Secondary(label: String, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-    ) { Text(label, fontSize = 15.sp) }
+    PillButton(label, onClick, Modifier.fillMaxWidth().padding(top = Space.s), block = true)
 }

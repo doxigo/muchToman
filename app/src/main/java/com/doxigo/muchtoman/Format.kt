@@ -143,6 +143,20 @@ fun faWords(value: Long): String {
     return parts.joinToString(" و ")
 }
 
+/**
+ * Which one of a run, in words: 1 → «اول», 3 → «سوم», 4 → «چهارم», 30 → «سی‌ام», 23 → «بیست و سوم».
+ * «قسط چهارم» is how a payment is named out loud; «قسط ۴» is how a form names it.
+ */
+fun faOrdinal(n: Int): String {
+    if (n == 1) return "اول"
+    val words = faWords(n.toLong())
+    return when {
+        words.endsWith("سه") -> words.dropLast(2) + "سوم"
+        words.endsWith("ی") -> "$words‌ام"
+        else -> "${words}م"
+    }
+}
+
 /** Words for a Toman figure, or null when spelling it out would not help. */
 fun faWordsToman(value: Double): String? {
     if (value <= 0 || value >= 1e15) return null

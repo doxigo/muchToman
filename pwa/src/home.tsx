@@ -53,8 +53,10 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
       <HomeTopBar name={pref('name')} />
 
       {backupReminderDue(pref('backupReminderEnabled'), pref('lastBackupAt'), Date.now()) && (
-        <button type="button" class="text-btn backup-due" onClick={() => openPage('settings', { room: 'BACKUP' })}>
-          وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.
+        // A door, not a caption: it leads to تنظیمات, so it wears the card and chevron every door does.
+        <button type="button" class="backup-due" onClick={() => openPage('settings', { room: 'BACKUP' })}>
+          <span>وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.</span>
+          <Chevron size={24} />
         </button>
       )}
 
@@ -229,14 +231,21 @@ function ChangePill({ change, onClick }: { change: Change; onClick: () => void }
  */
 function Story({ view }: { view: LedgerView }) {
   const reportExcluded = pref('reportExcluded');
-  const story = useMemo<HomeStory>(() => buildStory(view.entries, view.bankTotalRial, tehranDay(Date.now()), {
-    budgets: readPlans(view.allEntries, view.entries).budgets,
-    // The one gate دخل و خرج reads: قرض و همسر are its shipped default, not a mechanism of their own.
-    countPassThrough: true,
-    excluded: new Set(reportExcluded),
-    mineId: view.mineId,
-  }), [view, reportExcluded]);
+  const installmentDays = pref('installmentReminder');
+  const story = useMemo<HomeStory>(() => {
+    const plans = readPlans(view.allEntries, view.entries);
+    return buildStory(view.entries, view.bankTotalRial, tehranDay(Date.now()), {
+      budgets: plans.budgets,
+      // The one gate دخل و خرج reads: قرض و همسر are its shipped default, not a mechanism of their own.
+      countPassThrough: true,
+      excluded: new Set(reportExcluded),
+      mineId: view.mineId,
+      installments: plans.installments,
+      installmentDays,
+    });
+  }, [view, reportExcluded, installmentDays]);
   const budget = story.attentionBudget != null;
+  const plan = !budget && story.attentionInstallment != null;
   return (
     <>
       {story.month.transactions > 0 ? <MonthFlow story={story} onOpen={() => openReport('CASH_FLOW')} />
@@ -247,8 +256,9 @@ function Story({ view }: { view: LedgerView }) {
           {story.headline && <InsightCard insight={story.headline} />}
           {story.attention && (
             // It leaves the screen, so it says where it goes — and that depends on what is asking.
-            <InsightCard insight={story.attention} action={budget ? 'بودجه رو باز کن' : 'دفتر رو باز کن'}
-              onAction={() => selectTab(budget ? 'BUDGET' : 'LEDGER')} />
+            <InsightCard insight={story.attention}
+              action={budget ? 'بودجه رو باز کن' : plan ? 'قسط‌ها رو باز کن' : 'دفتر رو باز کن'}
+              onAction={() => selectTab(budget || plan ? 'BUDGET' : 'LEDGER')} />
           )}
         </div>
       )}

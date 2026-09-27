@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { faCompact, faHeld, faNumber, faSignedCompact, faWords, faWordsToman, groupDigits, parseAmount } from '../src/format';
+import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faWords, faWordsToman, groupDigits, parseAmount } from '../src/format';
 
 /** The phone's own FormatTest expectations, verbatim where they are literal. */
 describe('format', () => {
@@ -26,6 +26,11 @@ describe('format', () => {
     expect(faWords(1_000)).toBe('هزار'); expect(faWords(1_000_000)).toBe('یک میلیون');
     expect(faWords(999)).toBe('نهصد و نود و نه');
     expect(faWordsToman(3_054_100_221)).toBe('سه میلیارد و پنجاه و چهار میلیون و صد هزار و دویست و بیست و یک تومان');
+  });
+
+  it('which one of a run is said the way it is out loud', () => {
+    expect([1, 2, 3, 4, 13, 21, 23, 30, 100, 120].map(faOrdinal))
+      .toEqual(['اول', 'دوم', 'سوم', 'چهارم', 'سیزدهم', 'بیست و یکم', 'بیست و سوم', 'سی‌ام', 'صدم', 'صد و بیستم']);
   });
 
   it('reads what a Persian keyboard types, and nothing else', () => {

@@ -724,8 +724,10 @@ suspend fun ledgerView(
                 )
             },
         budgets = budgetsOf(active, kept, today, names, mineId, memberNames, excluded),
-        installments = active.filter { it.kind == GoalKind.INSTALLMENT }
-            .map { installmentProgress(it, links, ledger.entries, today, mineId) },
+        installments = installmentsByDue(
+            active.filter { it.kind == GoalKind.INSTALLMENT }
+                .map { installmentProgress(it, links, ledger.entries, today, mineId) },
+        ),
         worthIt = answers,
         loanLinks = loanLinks(durable.decisions().ofKind(DecisionKind.LOAN)),
         marks = ledger.marks,

@@ -1,6 +1,6 @@
 /**
  * The shared kit — Ui.kt's ScreenTitle, SheetTitle, SheetLabel, Panel, HeroPanel, PillButton,
- * ChipChoice, SegmentedChoice, SheetDelete, ActionCircle, the band, the switch row and the text
+ * ArmedButton, ChipChoice, SegmentedChoice, SheetDelete, ActionCircle, the band, the switch row and the text
  * fields — so every screen speaks in the same shapes the app does. Styles live in app.css under
  * the same names; a screen that needs a one-off reaches for the tokens there, not a new colour.
  */
@@ -44,16 +44,30 @@ export function HeroPanel({ children, class: cls = '' }: { children: ComponentCh
   return <div class={`hero ${cls}`}>{children}</div>;
 }
 
-export type Voice = 'primary' | 'tonal' | 'hero';
+/** How loudly a pill speaks — Ui.kt's ButtonVoice. `armed` is only ever set by ArmedButton. */
+export type Voice = 'primary' | 'tonal' | 'hero' | 'danger' | 'armed';
+const VOICE_CLASS: Record<Voice, string> = { primary: ' primary', tonal: '', hero: ' hero-voice', danger: ' danger', armed: ' armed' };
 export function PillButton({ label, onClick, voice = 'tonal', block, disabled, children, type = 'button' }: {
-  label?: string; onClick?: () => void; voice?: Voice; block?: boolean; disabled?: boolean; children?: ComponentChildren;
+  label?: ComponentChildren; onClick?: () => void; voice?: Voice; block?: boolean; disabled?: boolean; children?: ComponentChildren;
   type?: 'button' | 'submit';
 }) {
-  const cls = `pill${voice === 'primary' ? ' primary' : voice === 'hero' ? ' hero-voice' : ''}${block ? ' block' : ''}`;
-  return <button type={type} class={cls} onClick={onClick} disabled={disabled}>{children}{label}</button>;
+  return <button type={type} class={`pill${VOICE_CLASS[voice]}${block ? ' block' : ''}`} onClick={onClick} disabled={disabled}>{children}{label}</button>;
 }
-export function TextButton({ label, onClick, danger, block }: { label: string; onClick: () => void; danger?: boolean; block?: boolean }) {
-  return <button type="button" class={`text-btn${danger ? ' danger' : ''}${block ? ' block' : ''}`} onClick={onClick}>{label}</button>;
+
+/**
+ * The two-tap for everything that cannot be taken back: the first tap turns the label into the
+ * consequence and the pill red, so the armed state is seen and not only read — and announced, or the
+ * safeguard is invisible to a screen reader.
+ */
+export function ArmedButton({ label, armedLabel, onConfirmed, voice = 'danger', block, disabled }: {
+  label: string; armedLabel: string; onConfirmed: () => void; voice?: Voice; block?: boolean; disabled?: boolean;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <PillButton voice={armed ? 'armed' : voice} block={block} disabled={disabled}
+      onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}
+      label={<span aria-live="polite">{armed ? armedLabel : label}</span>} />
+  );
 }
 
 /** One track, one filled pill: the app's only shape for "pick exactly one of a few". */
@@ -97,14 +111,12 @@ export function SwitchRow({ title, sub, checked, onChange, disabled }: {
   );
 }
 
-/** Two taps, and the armed state is announced, or the safeguard is invisible to a screen reader. */
+/** Delete, inside the sheet and nowhere else, under its save. */
 export function SheetDelete({ label, onConfirmed }: { label: string; onConfirmed: () => void }) {
-  const [armed, setArmed] = useState(false);
   return (
-    <button type="button" class="text-btn danger block" style={{ marginTop: 'var(--xs)', fontWeight: armed ? 700 : 400 }}
-      onClick={() => (armed ? onConfirmed() : setArmed(true))}>
-      <span aria-live="polite">{armed ? 'مطمئنی؟ برای حذف دوباره بزن' : label}</span>
-    </button>
+    <div class="sheet-delete">
+      <ArmedButton label={label} armedLabel="مطمئنی؟ برای حذف دوباره بزن" onConfirmed={onConfirmed} block />
+    </div>
   );
 }
 

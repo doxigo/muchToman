@@ -46,7 +46,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -1793,34 +1792,21 @@ private fun RestoreSheet(
                 )
                 Spacer(Modifier.height(Space.xl))
                 // Two taps, as everywhere destructive in the app, with the consequence named
-                // on the second — and announced, so the armed state exists for ears too.
-                var armed by remember { mutableStateOf(false) }
-                TextButton(
-                    onClick = { if (armed) { armed = false; onConfirm() } else armed = true },
+                // on the second.
+                ArmedButton(
+                    "بازگردانی از این پشتیبان",
+                    "مطمئنی؟ همه‌چیز با نسخهٔ پشتیبان عوض می‌شه — دوباره بزن",
+                    onConfirm,
+                    Modifier.fillMaxWidth(),
                     enabled = !backup.working,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                ) {
-                    Text(
-                        if (armed) "مطمئنی؟ همه‌چیز با نسخهٔ پشتیبان عوض می‌شه — دوباره بزن"
-                        else "بازگردانی از این پشتیبان",
-                        fontSize = 15.sp,
-                        fontWeight = if (armed) FontWeight.Bold else FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-                TextButton(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                ) { Text("بی‌خیال", fontSize = 15.sp) }
+                    block = true,
+                )
+                PillButton(
+                    "بی‌خیال",
+                    onDismiss,
+                    Modifier.fillMaxWidth().padding(top = Space.s),
+                    block = true,
+                )
             }
         }
     }

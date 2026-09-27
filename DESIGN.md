@@ -87,6 +87,26 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
 - Tab bar: full-width floor on `surfaceContainerHigh`, hairline on top, M3-sized soft
   `primaryContainer` indicator pill, CTA-green badge. No shadow, no island.
 
+## Buttons
+
+**Every control that stands on its own is a pill** (`PillButton` / `.pill`); a bare line of
+coloured text reads as a caption until it is tried. No `TextButton` anywhere. The voices:
+
+- `PRIMARY` — `Cta`, the one commit on a surface.
+- `TONAL` — the ordinary act. Its fill is a **wash of ink** (forest 9% light, on-surface 10%
+  dark), not a fixed surface, so it stands off page, sheet and card alike; `surfaceVariant`
+  vanished on cards (1.08:1).
+- `DANGER` — the tonal wash in error ink: an act that loses something, quiet until armed.
+- `ARMED` — error-filled, set only by `ArmedButton`, the app's one two-tap: the first tap turns
+  the label into the consequence and the pill red, announced as a live region.
+- `HERO` — the tonal pill on the green field.
+
+`block` is a sheet's full-width answer (52dp, 16sp); in-place acts are 44dp, 14sp. Answers
+stack full width (CTA, then the way out, then the delete). Inside a card, routine acts share a
+row in equal cells and the one that loses something takes its own full-width row, so its
+armed sentence always has room. A **door** that leads elsewhere (the backup reminder) is a
+card with a chevron, not a pill.
+
 ## Spacing
 
 `Space` scale: 4 / 8 / 12 / 16 / 20 / 32 / 48. Screen gutter is `Space.xl` (20) — `edge` in

@@ -5,7 +5,10 @@
 .home-top .disc { width: 40px; height: 40px; background: var(--surface-variant); }
 .home-top .name { font-size: 17px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home-top > svg:last-child { color: var(--on-surface-variant); }
-.backup-due { display: block; width: 100%; margin-top: var(--s); font-size: 14px; line-height: 22px; font-weight: 400; }
+.backup-due { display: flex; align-items: center; gap: var(--m); width: 100%; margin-top: var(--s); padding-block: var(--m); padding-inline: var(--l) var(--s); border: 0; border-radius: var(--r-card); background: var(--surface); color: var(--on-surface); font-size: 14px; line-height: 22px; text-align: start; }
+.backup-due:active { background: color-mix(in srgb, var(--on-surface) 6%, var(--surface)); }
+.backup-due > span { flex: 1; }
+.backup-due > svg { flex: none; color: var(--on-surface-variant); }
 
 /* ---- the hero card ------------------------------------------------------------------------------ */
 .home-hero { margin-top: var(--s); }
@@ -97,11 +100,7 @@
 .asset-icon .chain { position: absolute; bottom: 0; inset-inline-end: 0; display: flex; padding: 1.5px; border-radius: 50%; background: var(--surface); }
 
 /* ---- sheets --------------------------------------------------------------------------------------- */
-.home-sheet .text-btn { padding: var(--s) var(--m); font-size: 14px; font-weight: 500; }
-.home-sheet .text-btn:disabled { opacity: .38; cursor: default; }
-.home-sheet .text-btn.muted { color: var(--on-surface-variant); }
-.home-sheet .text-btn.strong { font-weight: 700; }
-.home-sheet .btn-row { display: flex; align-items: center; gap: var(--m); flex-wrap: wrap; }
+.home-sheet .btn-row { display: flex; align-items: center; gap: var(--s); flex-wrap: wrap; margin-top: var(--m); }
 .home-sheet .btn-row > .spacer { flex: 1; }
 .home-sheet .note { font-size: 13px; line-height: 20px; color: var(--on-surface-variant); padding: 0 var(--xs); }
 .home-sheet .note.small { font-size: 12px; line-height: 19px; padding: var(--xs); }
@@ -158,6 +157,5 @@
 .bank-card .top .grow > span:last-child { display: block; margin-top: 2px; font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bank-card .toggle-row { margin-top: var(--xs); font-size: 14px; }
 .bank-card .doubt { margin-top: var(--s); font-size: 12px; line-height: 19px; color: var(--error); }
-.bank-card .btn-row { margin-top: var(--xs); gap: 0; }
-.bank-card .text-btn.danger { color: var(--error); }
+.bank-card .btn-row { flex-direction: column; align-items: stretch; }
 .off { color: var(--on-surface-variant); }

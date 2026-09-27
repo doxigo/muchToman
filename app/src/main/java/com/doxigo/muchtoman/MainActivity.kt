@@ -2796,6 +2796,8 @@ data class UiState(
             countPassThrough = true,
             excluded = reportExcluded,
             mineId = ledger.mineId,
+            installments = ledger.installments,
+            installmentDays = installmentReminder,
         )
     }
     val stocks: List<Stock> get() = tse.stocks

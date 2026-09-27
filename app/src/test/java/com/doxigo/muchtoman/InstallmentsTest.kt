@@ -237,6 +237,83 @@ class InstallmentsTest {
         )
         assertEquals(mapOf("a" to InstallmentLink("phone", 10_000_000)), found)
     }
+
+    @Test
+    fun `plans are listed soonest payment first, a late one ahead and a paid-off one last`() {
+        val late = plan("late")
+        val later = plan("later").copy(startsOn = first + 10, endsOn = jalaliMonthsAfter(first + 10, 2))
+        val done = plan("done")
+        val paid = links(done, "a" to 30_000_000)
+        val list = listOf(done, later, late).map { installmentProgress(it, paid, emptyList(), first + 5) }
+        assertEquals(listOf("late", "later", "done"), installmentsByDue(list).map { it.plan.id })
+    }
+
+    @Test
+    fun `the card says how many are left and when the last one falls due`() {
+        val p = plan()
+        val one = installmentProgress(p, links(p, "a" to 10_000_000), emptyList(), first)
+        assertEquals("۲ از ۳ قسط مونده، تا ۳۰ آبان ۱۴۰۵", installmentLeftFa(one))
+        assertNull(installmentLeftFa(installmentProgress(p, links(p, "a" to 30_000_000), emptyList(), first)))
+    }
+
+    @Test
+    fun `the section adds up the running plans, and counts this month's payments paid off or not`() {
+        val phone = plan("phone")
+        val tv = plan("tv", payment = 5_000_000, count = 12)
+        val old = plan("old")
+        val paid = links(phone, "a" to 10_000_000) + links(old, "b" to 30_000_000)
+        val today = jalaliDay(1405, 6, 20)
+        val all = listOf(phone, tv, old).map { installmentProgress(it, paid, emptyList(), today) }
+
+        assertEquals(
+            InstallmentSummary(
+                monthlyRial = 15_000_000,
+                leftRial = 20_000_000 + 60_000_000,
+                lastDue = jalaliMonthsAfter(first, 11),
+                dueThisMonth = 3,
+                paidThisMonth = 2,
+            ),
+            installmentSummary(all, today),
+        )
+        // One running plan is its own card already.
+        assertNull(installmentSummary(all.filter { it.plan.id != "tv" }, today))
+        // A month none of them has a payment in says nothing about this month.
+        assertEquals(0, installmentSummary(all, jalaliMonthsAfter(first, 12))!!.dueThisMonth)
+    }
+
+    @Test
+    fun `home hears of a payment inside the reminder's window, or once it is late`() {
+        val p = plan()
+        val unpaid = { today: Long -> installmentProgress(p, emptyMap(), emptyList(), today) }
+
+        val tomorrow = pressingInstallment(listOf(unpaid(first - 1)), first - 1, daysBefore = 1)!!
+        assertEquals(0, tomorrow.second)
+        val insight = installmentInsight(tomorrow.first, tomorrow.second, first - 1)
+        assertEquals("سررسید قسط «گوشی» فرداست.", insight.text)
+        assertEquals("قسطی که خودت ساختی: ماهی ۱ میلیون تومان، قسط اول از ۳، ۳۱ شهریور ۱۴۰۵.", insight.why)
+        assertEquals(Insight.Tone.ATTENTION, insight.tone)
+
+        assertNull(pressingInstallment(listOf(unpaid(first - 1)), first - 1, daysBefore = 0))
+        // Reminders off still leaves the day itself.
+        assertEquals(0, pressingInstallment(listOf(unpaid(first)), first, daysBefore = -1)!!.second)
+        val late = pressingInstallment(listOf(unpaid(first + 1)), first + 1, daysBefore = 1)!!
+        assertEquals("سررسید قسط «گوشی» گذشته.", installmentInsight(late.first, late.second, first + 1).text)
+        // Paid ahead, the next one is a month off: nothing to say.
+        val ahead = installmentProgress(p, links(p, "a" to 10_000_000), emptyList(), first - 1)
+        assertNull(pressingInstallment(listOf(ahead), first - 1, daysBefore = 3))
+    }
+
+    @Test
+    fun `a payment falling due outranks the review queue for home's one slot`() {
+        val progress = installmentProgress(plan(), emptyMap(), emptyList(), first - 1)
+        val rows = listOf(entry(first - 3, 1_000_000).copy(needsReview = true))
+        val story = buildStory(rows, liquidRial = 0L, today = first - 1, installments = listOf(progress))
+        assertEquals(progress, story.attentionInstallment)
+        assertEquals("سررسید قسط «گوشی» فرداست.", story.attention!!.text)
+        val quiet = buildStory(rows, liquidRial = 0L, today = first - 1)
+        assertNull(quiet.attentionInstallment)
+        assertTrue(quiet.attention!!.text.contains("منتظر"))
+    }
 }
 
 /** The one read the screen takes, against a real database: a plan is a plan and nothing else. */

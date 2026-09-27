@@ -12,7 +12,7 @@ import { tomanFieldToRial } from './installments';
 import { tehranDay, tehranDayStart } from './jalali';
 import { faClock, faDay, faWeekdayDate } from './format';
 import { closeSheet, openSheet, registerSheet } from './nav';
-import { AmountField, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 import './timeline.css';
 import './manualTxn.css';
 
@@ -92,7 +92,7 @@ function ManualTxnSheet() {
     <Sheet label="تراکنش دستی">
       <SheetTitle>تراکنش دستی</SheetTitle>
       {/* The browser's own way in for a bank message, since nothing here reads the inbox. */}
-      <button type="button" class="text-btn paste-link" onClick={() => openSheet('pasteSms')}>متن پیامک رو داری؟ بچسبونش</button>
+      <div class="paste-link"><PillButton label="متن پیامک رو داری؟ بچسبونش" onClick={() => openSheet('pasteSms')} /></div>
 
       <SheetLabel>خرج بود یا دخل؟</SheetLabel>
       <SegmentedChoice options={[true, false]} selected={outgoing} label={(it) => (it ? 'خرج' : 'دخل')} onSelect={setOutgoing} />

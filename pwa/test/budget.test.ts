@@ -10,7 +10,8 @@ import {
 } from '../src/budget';
 import type { BudgetMark } from '../src/budget';
 import { GoalKind, GoalPeriod } from '../src/goals';
-import { jalaliDay, weekStart } from '../src/jalali';
+import { installmentProgress } from '../src/installments';
+import { jalaliDay, jalaliMonthsAfter, weekStart } from '../src/jalali';
 import type { Goal } from '../src/model';
 import { buildStory } from '../src/reports';
 import { PASS_THROUGH_CATEGORIES } from '../src/rules';
@@ -349,6 +350,19 @@ describe('budgets', () => {
     const rows = [entry(first + 1, -60_000_000), entry(first + 1, -1_000_000, { categoryId: 'cat_groceries', review: true })];
     const budgets = budgetsOf([budget(50_000_000)], rows, first + 5);
     const story = buildStory(rows, 0, first + 5, { budgets });
+    expect(story.attentionBudget).toBe(budgets[0]);
+    expect(story.attention!.text).toContain('رستوران و کافه');
+  });
+
+  it('a cap she has run past outranks a payment falling due', () => {
+    const rows = [entry(first + 1, -60_000_000)];
+    const budgets = budgetsOf([budget(50_000_000)], rows, first + 5);
+    const phone = goalRow({
+      id: 'phone', nameFa: 'گوشی', targetRial: 10_000_000, kind: GoalKind.INSTALLMENT, period: GoalPeriod.MONTH,
+      startsOn: first, endsOn: jalaliMonthsAfter(first, 2),
+    });
+    const late = installmentProgress(phone, new Map(), rows, first + 5);
+    const story = buildStory(rows, 0, first + 5, { budgets, installments: [late] });
     expect(story.attentionBudget).toBe(budgets[0]);
     expect(story.attention!.text).toContain('رستوران و کافه');
   });

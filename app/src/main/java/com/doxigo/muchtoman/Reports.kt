@@ -1106,6 +1106,11 @@ data class HomeStory(
      * statement and a piece of evidence; where to go about it is the screen's business.
      */
     val attentionBudget: BudgetProgress? = null,
+    /**
+     * The plan behind [attention] when a payment is what is asking for her — due soon or behind.
+     * Only read when [attentionBudget] is null: a cap run past outranks it, as it does in [insights].
+     */
+    val attentionInstallment: InstallmentProgress? = null,
 ) {
     /** The one line worth leading with, and never more than one. */
     val headline: Insight? get() = wins.firstOrNull() ?: insights.firstOrNull { it.tone != Insight.Tone.ATTENTION }
@@ -1143,6 +1148,10 @@ fun buildStory(
      * [scopedTo]. Blank on a phone that never paired, which is the whole ledger there.
      */
     mineId: String = "",
+    /** Her plans, so a payment due soon or behind can take the attention card. See [pressingInstallment]. */
+    installments: List<InstallmentProgress> = emptyList(),
+    /** The reminder's window from تنظیمات, which home keeps to as well. */
+    installmentDays: Int = INSTALLMENT_REMINDER_DEFAULT,
 ): HomeStory {
     val here = reportMonthOf(today)
     val month = monthReport(entries, here, countPassThrough, excluded)
@@ -1150,15 +1159,19 @@ fun buildStory(
     val buffer = bufferDays(entries, liquidRial, today, countPassThrough = countPassThrough, excluded = excluded)
     val had = previous.takeIf { it.transactions > 0 }
     val pressing = pressingBudget(budgets)
+    val payment = pressingInstallment(installments, today, installmentDays)
     return HomeStory(
         month = month,
         previous = previous,
         // First, so that [HomeStory.attention] — which takes the first ATTENTION line there is —
-        // prefers a cap she has run past over a review queue. See [pressingBudget].
-        insights = listOfNotNull(pressing?.let { budgetInsight(it, entries, mineId, excluded) }) +
-            narrate(month, had, entries, buffer, current = true),
+        // prefers a cap she has run past, then a payment falling due, over a review queue.
+        insights = listOfNotNull(
+            pressing?.let { budgetInsight(it, entries, mineId, excluded) },
+            payment?.let { (plan, index) -> installmentInsight(plan, index, today) },
+        ) + narrate(month, had, entries, buffer, current = true),
         wins = quietWins(month, had, buffer, current = true),
         bufferDays = buffer,
         attentionBudget = pressing,
+        attentionInstallment = payment?.first,
     )
 }

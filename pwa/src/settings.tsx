@@ -35,7 +35,7 @@ import { reportMonthOf } from './reports';
 import type { ReportMonth } from './reports';
 import { BANKS } from './sms';
 import { pref, setPref, useData } from './state';
-import { PillButton, Screen, SegmentedChoice, Sheet, SheetTitle, TextField } from './ui';
+import { ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetTitle, TextField } from './ui';
 
 type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH';
 
@@ -115,24 +115,16 @@ export function DoorRow({ title, subtitle, glyph, enabled = true, onClick, chevr
   );
 }
 
-/** Two taps, the consequence named on the second — and announced, so the armed state exists for ears too. */
+/** Two taps, the consequence named on the second: the sheet's armed answer, full width. */
 export function ArmedAction({ label, armedLabel, enabled = true, onConfirmed }: {
   label: string; armedLabel: string; enabled?: boolean; onConfirmed: () => void;
 }) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <button type="button" class="text-btn danger block" disabled={!enabled} style={{ fontWeight: armed ? 700 : 600, fontSize: '15px' }}
-      onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}>
-      <span aria-live="polite">{armed ? armedLabel : label}</span>
-    </button>
-  );
+  return <ArmedButton label={label} armedLabel={armedLabel} onConfirmed={onConfirmed} disabled={!enabled} block />;
 }
 
-/** «بی‌خیال» and its kin: always present, always a real way out. */
+/** «بی‌خیال» and its kin: always present, always a real way out — and a pill, so it reads as one. */
 export function QuietButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button type="button" class="text-btn block" disabled={disabled} style={{ color: 'var(--on-surface-variant)', fontWeight: 400 }} onClick={onClick}>{label}</button>
-  );
+  return <div style={{ marginTop: 'var(--s)' }}><PillButton label={label} onClick={onClick} disabled={disabled} block /></div>;
 }
 
 // ---- the marks the page draws in its own pen ------------------------------------------------------

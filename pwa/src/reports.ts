@@ -13,6 +13,8 @@
  */
 import { budgetInsight, pressingBudget } from './budget';
 import type { BudgetProgress } from './budget';
+import { INSTALLMENT_REMINDER_DEFAULT, installmentInsight, pressingInstallment } from './installments';
+import type { InstallmentProgress } from './installments';
 import { MONTHS, faDigits, faNumber } from './format';
 import { jalaliDay, jalaliMonthLength, jalaliOf, weekStart } from './jalali';
 import type { LedgerEntry } from './model';
@@ -841,6 +843,8 @@ export interface HomeStory {
   bufferDays: number | null;
   /** The budget behind [attention], when a budget is what is asking for her — the card's destination. */
   attentionBudget: BudgetProgress | null;
+  /** The plan behind [attention] when a payment is what is asking — read only when [attentionBudget] is null. */
+  attentionInstallment: InstallmentProgress | null;
   /** The one line worth leading with, and never more than one. */
   headline: Insight | null;
   /** The single thing asking for her, if anything is. */
@@ -852,6 +856,10 @@ export interface StoryOptions extends ReadingOptions {
   budgets?: BudgetProgress[];
   /** This device's member id, so a private cap's evidence is the rows it counted. */
   mineId?: string;
+  /** Her plans, so a payment due soon or behind can take the attention card. */
+  installments?: InstallmentProgress[];
+  /** The reminder's window from تنظیمات, which home keeps to as well. */
+  installmentDays?: number;
 }
 
 /** The current month for home: [buildCashFlow]'s walk minus the six-month series. */
@@ -859,7 +867,10 @@ export function buildStory(
   entries: LedgerEntry[],
   liquidRial: number,
   today: number,
-  { budgets = [], countPassThrough = false, excluded = NONE, mineId = '' }: StoryOptions = {},
+  {
+    budgets = [], countPassThrough = false, excluded = NONE, mineId = '',
+    installments = [], installmentDays = INSTALLMENT_REMINDER_DEFAULT,
+  }: StoryOptions = {},
 ): HomeStory {
   const here = reportMonthOf(today);
   const month = monthReport(entries, here, countPassThrough, excluded);
@@ -867,9 +878,11 @@ export function buildStory(
   const buffer = bufferDays(entries, liquidRial, today, { countPassThrough, excluded });
   const had = previous.transactions > 0 ? previous : null;
   const pressing = pressingBudget(budgets);
-  // The budget first, so [attention] prefers a cap she has run past over a review queue.
+  const payment = pressingInstallment(installments, today, installmentDays);
+  // The budget first, then a payment falling due, so [attention] prefers either over a review queue.
   const insights = [
     ...(pressing ? [budgetInsight(pressing, entries, mineId, excluded)] : []),
+    ...(payment ? [installmentInsight(payment[0], payment[1], today)] : []),
     ...narrate(month, had, entries, buffer, true),
   ];
   const wins = quietWins(month, had, buffer, true);
@@ -880,6 +893,7 @@ export function buildStory(
     wins,
     bufferDays: buffer,
     attentionBudget: pressing,
+    attentionInstallment: payment?.[0] ?? null,
     headline: wins[0] ?? insights.find((i) => i.tone !== 'ATTENTION') ?? null,
     attention: insights.find((i) => i.tone === 'ATTENTION') ?? null,
   };

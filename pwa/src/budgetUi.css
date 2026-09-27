@@ -67,6 +67,13 @@ button.plan-row:active { background: color-mix(in srgb, var(--on-surface) 6%, va
 .total-choice.selected { --mark: var(--on-primary); background: var(--primary); color: var(--on-primary); }
 .total-sub { font-size: 12px; opacity: .75; }
 
+/* InstallmentSummaryLines, and a plan's schedule. */
+.inst-summary { margin-bottom: var(--l); }
+.due-row { display: flex; align-items: center; gap: var(--s); min-height: 40px; }
+.due-state { font-size: 13px; font-weight: 700; }
+.due-state.late { color: var(--error); }
+.due-state.today { color: var(--primary); }
+
 .pay-row { display: flex; align-items: center; gap: var(--s); min-height: 56px; padding: var(--xs) 0; cursor: pointer; }
 .pay-row input { flex: none; width: 18px; height: 18px; margin: 11px; }
 .plan-title { color: var(--on-surface); }

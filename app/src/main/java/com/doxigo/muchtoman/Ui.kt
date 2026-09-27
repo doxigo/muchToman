@@ -93,7 +93,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -1027,9 +1026,31 @@ private fun AppScreens(
                 )
             ) {
                 item(key = "backup-reminder") {
-                    TextButton(onClick = { settings = true }, modifier = Modifier.padding(edge).fillMaxWidth()) {
-                        Text("وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.",
-                            fontSize = 14.sp, lineHeight = 22.sp)
+                    // A door, not a caption: it leads to تنظیمات, so it wears the card and the
+                    // chevron every other door does. As a line of green text it read as a
+                    // greeting under her name.
+                    Row(
+                        Modifier
+                            .padding(edge)
+                            .padding(top = Space.s)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.card))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable(role = Role.Button) { settings = true }
+                            .padding(start = Space.l, end = Space.s, top = Space.m, bottom = Space.m),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.",
+                            fontSize = 14.sp,
+                            lineHeight = 22.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
@@ -1145,11 +1166,16 @@ private fun AppScreens(
                                 // it goes depends on what is asking. A button reading «دفتر رو باز
                                 // کن» under a line about a budget is a button that lies.
                                 val budget = story.attentionBudget != null
+                                val plan = !budget && story.attentionInstallment != null
                                 InsightCard(
                                     it,
                                     Modifier.weight(1f).fillMaxHeight(),
-                                    action = if (budget) "بودجه رو باز کن" else "دفتر رو باز کن",
-                                    onAction = { tab = if (budget) Tab.BUDGET else Tab.LEDGER },
+                                    action = when {
+                                        budget -> "بودجه رو باز کن"
+                                        plan -> "قسط‌ها رو باز کن"
+                                        else -> "دفتر رو باز کن"
+                                    },
+                                    onAction = { tab = if (budget || plan) Tab.BUDGET else Tab.LEDGER },
                                 )
                             }
                         }
@@ -2040,15 +2066,14 @@ private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Un
                     .heightIn(min = 60.dp),
             ) { Text("گرفتن فایل نصب", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 
-            TextButton(
-                onClick = { close(onLater) },
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                modifier = Modifier
+            PillButton(
+                "بعداً",
+                { close(onLater) },
+                Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp),
-            ) { Text("بعداً", fontSize = 15.sp) }
+                    .padding(top = Space.s),
+                block = true,
+            )
         }
     }
 }
@@ -2361,44 +2386,29 @@ private fun BankSheet(
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.padding(top = Space.s),
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                // Air between the confirm and the irreversible dismiss —
-                                // borderless buttons at zero gap invite the edge mis-tap.
-                                horizontalArrangement = Arrangement.spacedBy(Space.m),
+                            // Stacked answers, full width, like a sheet's: the confirm keeps
+                            // «اضافه‌اش کن» — the words that say what it does — at any width.
+                            Column(
+                                Modifier.padding(top = Space.m),
+                                verticalArrangement = Arrangement.spacedBy(Space.s),
                             ) {
-                                TextButton(
-                                    onClick = { onAddNumber(stranger.bank, stranger.sender) },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(
-                                        "این شماره مال $bankFa هست؛ اضافه‌اش کن",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                // Two taps, as for deleting a holding. This sits right beside
+                                PillButton(
+                                    "این شماره مال $bankFa هست؛ اضافه‌اش کن",
+                                    { onAddNumber(stranger.bank, stranger.sender) },
+                                    Modifier.fillMaxWidth(),
+                                    voice = ButtonVoice.PRIMARY,
+                                )
+                                // Two taps, as for deleting a holding. This sits right under
                                 // the confirm button and there is no undo: a mistap here
                                 // silences that bank for good.
-                                var sure by remember(stranger.sender) { mutableStateOf(false) }
-                                TextButton(onClick = {
-                                    if (sure) onDismissSender(stranger.sender) else sure = true
-                                }) {
-                                    Text(
-                                        // Named consequence, like every other second tap in
-                                        // the app — and announced, so the armed state exists
-                                        // for someone listening too.
-                                        if (sure) "برای رد کردن، دوباره بزن" else "رد کردن",
-                                        fontSize = 14.sp,
-                                        fontWeight = if (sure) FontWeight.Bold else FontWeight.Normal,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
-                                        modifier = Modifier.semantics {
-                                            liveRegion = LiveRegionMode.Polite
-                                        },
-                                    )
-                                }
+                                ArmedButton(
+                                    "رد کردن",
+                                    "برای رد کردن، دوباره بزن",
+                                    { onDismissSender(stranger.sender) },
+                                    Modifier.fillMaxWidth(),
+                                    voice = ButtonVoice.TONAL,
+                                    key = stranger.sender,
+                                )
                             }
                         }
                     }
@@ -2408,20 +2418,18 @@ private fun BankSheet(
                 // (خاورمیانه) never earns a suggestion card, so a new number of theirs could not
                 // be added at all. This lists every unknown sender whose messages would be read,
                 // and she names the bank.
+                // Full-width pills, a gap below the last card: these act on the whole list, not
+                // on the card above them, and two floating green lines read as neither.
                 if (!picking) {
                     item {
-                        TextButton(
-                            onClick = { picking = true; reading = true },
-                            modifier = Modifier
+                        PillButton(
+                            "اضافه کردن شمارهٔ بانک از پیامک‌ها",
+                            { picking = true; reading = true },
+                            Modifier
                                 .fillMaxWidth()
                                 .padding(top = Space.l),
-                        ) {
-                            Text(
-                                "اضافه کردن شمارهٔ بانک از پیامک‌ها",
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
+                            block = true,
+                        )
                     }
                 } else {
                     // One card per sender: one that is already a suggestion above stays there.
@@ -2462,22 +2470,16 @@ private fun BankSheet(
                 // wrong stays wrong on its own. This is the way back: forget the lot and read
                 // her messages again from the start.
                 item {
-                    var sure by remember { mutableStateOf(false) }
-                    TextButton(
-                        onClick = { if (sure) { onRescan(); sure = false } else sure = true },
-                        modifier = Modifier
+                    ArmedButton(
+                        "دوباره خوندن همه پیامک‌ها",
+                        "همه مبلغ‌ها دوباره از پیامک‌ها خونده بشن؟ دوباره بزن",
+                        onRescan,
+                        Modifier
                             .fillMaxWidth()
-                            .padding(top = Space.l),
-                    ) {
-                        Text(
-                            if (sure) "همه مبلغ‌ها دوباره از پیامک‌ها خونده بشن؟ دوباره بزن"
-                            else "دوباره خوندن همه پیامک‌ها",
-                            fontSize = 14.sp,
-                            fontWeight = if (sure) FontWeight.Bold else FontWeight.Normal,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        )
-                    }
+                            .padding(top = if (picking) Space.l else 0.dp),
+                        voice = ButtonVoice.TONAL,
+                        block = true,
+                    )
                 }
             }
         }
@@ -2537,24 +2539,24 @@ private fun SenderCandidateCard(
             )
             // Stacked, not side by side: beside «بانک دیگه» a long name like خاورمیانه cut the
             // confirm off before «اضافه‌اش کن», the one word that says what the button does.
-            Column {
+            Column(
+                Modifier.padding(top = Space.m),
+                verticalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
                 bank?.let { b ->
-                    TextButton(onClick = { onAdd(b) }) {
-                        Text(
-                            "این شماره مال ${b.fa} هست؛ اضافه‌اش کن",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
+                    PillButton(
+                        "این شماره مال ${b.fa} هست؛ اضافه‌اش کن",
+                        { onAdd(b) },
+                        Modifier.fillMaxWidth(),
+                        voice = ButtonVoice.PRIMARY,
+                    )
                 }
                 Box {
-                    TextButton(onClick = { choosing = true }) {
-                        Text(
-                            if (bank == null) "انتخاب بانک" else "بانک دیگه",
-                            fontSize = 14.sp,
-                            fontWeight = if (bank == null) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
+                    PillButton(
+                        if (bank == null) "انتخاب بانک" else "بانک دیگه",
+                        { choosing = true },
+                        Modifier.fillMaxWidth(),
+                    )
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         for (b in PICKABLE_BANKS) {
                             DropdownMenuItem(
@@ -2694,39 +2696,42 @@ private fun BankAccountRow(
                 )
             }
 
-            Row(Modifier.padding(top = Space.xs)) {
-                if (account.sender.isNotBlank()) {
-                    TextButton(onClick = onOpenSms) {
-                        Text("دیدن پیامک‌ها", fontSize = 14.sp)
+            // The routine acts share a row in equal cells; the one that loses something gets a
+            // row of its own, full width, so its armed sentence always has room. Flowing pills
+            // left «حذف حساب» hanging alone under the first one on a 411dp phone. «ذخیره» lands
+            // in the cell «اصلاح» had, under the thumb that asked for it, and «بستن» is the way
+            // back out that the field never had.
+            Column(
+                Modifier.padding(top = Space.m),
+                verticalArrangement = Arrangement.spacedBy(Space.s),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                    if (account.sender.isNotBlank()) {
+                        PillButton("دیدن پیامک‌ها", onOpenSms, Modifier.weight(1f))
+                    }
+                    if (fixing) {
+                        PillButton(
+                            "ذخیره موجودی",
+                            { parseAmount(draft)?.let(onAnchor) },
+                            Modifier.weight(1f),
+                            voice = ButtonVoice.PRIMARY,
+                            enabled = parseAmount(draft) != null,
+                        )
+                    } else {
+                        PillButton("اصلاح موجودی", onFix, Modifier.weight(1f))
                     }
                 }
                 if (fixing) {
-                    TextButton(
-                        onClick = { parseAmount(draft)?.let(onAnchor) },
-                        enabled = parseAmount(draft) != null,
-                    ) { Text("ذخیره موجودی", fontSize = 14.sp) }
+                    PillButton("بستن", onFix, Modifier.fillMaxWidth())
                 } else {
-                    TextButton(onClick = onFix) { Text("اصلاح موجودی", fontSize = 14.sp) }
-                }
-                Spacer(Modifier.weight(1f))
-                // Two taps, as for deleting a holding: the balance she anchored by hand is a
-                // number nothing can rebuild, so the first tap only names what would be lost.
-                // Keyed by account, so a recycled row never wakes up armed.
-                var sure by remember(account.key) { mutableStateOf(false) }
-                TextButton(
-                    onClick = { if (sure) onForget() else sure = true },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(
-                        if (sure) "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن"
-                        else "حذف حساب",
-                        fontSize = 14.sp,
-                        fontWeight = if (sure) FontWeight.Bold else null,
-                        // Announced, or the two-tap safeguard is invisible to TalkBack — a
-                        // second double-tap deletes with no confirmation ever perceived.
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    // Two taps, as for deleting a holding: the balance she anchored by hand is
+                    // a number nothing can rebuild, so the first tap only names what is lost.
+                    ArmedButton(
+                        "حذف حساب",
+                        "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
+                        onForget,
+                        Modifier.fillMaxWidth(),
+                        key = account.key,
                     )
                 }
             }
@@ -3361,16 +3366,34 @@ internal fun SheetLabel(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** How loudly a [PillButton] speaks: the answer, a real but quieter act, or an act on the field. */
-internal enum class ButtonVoice { PRIMARY, TONAL, HERO }
+/** How loudly a [PillButton] speaks. */
+internal enum class ButtonVoice {
+    /** The one commit on a surface: [Cta] green. */
+    PRIMARY,
+
+    /** A real but quieter act. */
+    TONAL,
+
+    /** A tonal act on the green field, where the ordinary surfaces vanish. */
+    HERO,
+
+    /** An act that loses something: the tonal pill in error ink, quiet until it is armed. */
+    DANGER,
+
+    /** The second tap of an [ArmedButton]: filled error — the one moment a button shouts. */
+    ARMED,
+}
 
 /**
  * The app's one shape for «press this» wherever a control stands on its own.
  *
- * A bare TextButton reads as a caption until it is tried, and half the app's ways out — «برگشت»,
- * «بستن», «بعداً» — were captions. The pill is the shape the review pill, the sheet answers and
- * the tab badge already speak in, so a control wearing it is recognisable as one before it is
- * touched. [ButtonVoice.HERO] is for the green field, where the ordinary surfaces vanish.
+ * A bare TextButton reads as a caption until it is tried: a bank card's «دیدن پیامک‌ها ·
+ * اصلاح موجودی · حذف حساب» was a line of green and red words, and half the app's ways out —
+ * «برگشت», «بستن», «بعداً» — were captions. The pill is the shape the review pill, the sheet
+ * answers and the tab badge already speak in, so a control wearing it is recognisable as one
+ * before it is touched.
+ *
+ * [block] is the full-width answer at the foot of a sheet, a size up.
  */
 @Composable
 internal fun PillButton(
@@ -3378,18 +3401,32 @@ internal fun PillButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     voice: ButtonVoice = ButtonVoice.TONAL,
-    fontSize: TextUnit = 14.sp,
-    minHeight: Dp = 44.dp,
+    enabled: Boolean = true,
+    block: Boolean = false,
+    fontSize: TextUnit = if (block) 16.sp else 14.sp,
+    minHeight: Dp = if (block) 52.dp else 44.dp,
 ) {
+    // A wash of ink rather than a fixed surface, so the pill stands off whatever it sits on.
+    // surfaceVariant all but vanished on a card (1.08:1 on the light card colour), which is where
+    // most of the in-place acts live. Forest in the light keeps the green whisper; the dark stays
+    // neutral — the room the green only visits.
+    val wash = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    } else {
+        Hero.forest.copy(alpha = 0.09f)
+    }
     val fill = when (voice) {
         ButtonVoice.PRIMARY -> Cta.fill
-        ButtonVoice.TONAL -> MaterialTheme.colorScheme.surfaceVariant
+        ButtonVoice.TONAL, ButtonVoice.DANGER -> wash
         ButtonVoice.HERO -> Hero.well
+        ButtonVoice.ARMED -> MaterialTheme.colorScheme.error
     }
     val ink = when (voice) {
         ButtonVoice.PRIMARY -> Cta.ink
         ButtonVoice.TONAL -> MaterialTheme.colorScheme.onSurface
         ButtonVoice.HERO -> Hero.strong
+        ButtonVoice.DANGER -> MaterialTheme.colorScheme.error
+        ButtonVoice.ARMED -> MaterialTheme.colorScheme.onError
     }
     // The give under the thumb, from the frame the finger lands — response is the whole of
     // what makes a flat pill feel like a button rather than a printed one.
@@ -3399,20 +3436,62 @@ internal fun PillButton(
     Box(
         modifier
             .scale(give)
+            .alpha(if (enabled) 1f else 0.38f)
             .clip(RoundedCornerShape(Radius.pill))
             .background(fill)
             .clickable(
+                enabled = enabled,
                 role = Role.Button,
                 interactionSource = press,
                 indication = LocalIndication.current,
                 onClick = onClick,
             )
             .heightIn(min = minHeight)
-            .padding(horizontal = Space.l),
+            // Vertical air only shows when a label wraps: an armed consequence is a sentence, and
+            // a sentence cut off at one line is a warning nobody finished reading.
+            .padding(horizontal = Space.l, vertical = Space.s),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, fontSize = fontSize, fontWeight = FontWeight.Bold, color = ink, maxLines = 1)
+        Text(
+            label,
+            fontSize = fontSize,
+            lineHeight = fontSize * 1.45f,
+            fontWeight = FontWeight.Bold,
+            color = ink,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
+}
+
+/**
+ * The app's two-tap, for every act that cannot be taken back: the first tap only turns the label
+ * into the consequence and the pill into the one red-filled thing on screen, so the armed state
+ * is seen rather than only read — and announced, or the safeguard is invisible to TalkBack and a
+ * second double-tap acts with no confirmation ever perceived. [key] resets it, so a recycled row
+ * never wakes up armed.
+ */
+@Composable
+internal fun ArmedButton(
+    label: String,
+    armedLabel: String,
+    onConfirmed: () -> Unit,
+    modifier: Modifier = Modifier,
+    voice: ButtonVoice = ButtonVoice.DANGER,
+    enabled: Boolean = true,
+    block: Boolean = false,
+    key: Any? = null,
+) {
+    var armed by remember(key) { mutableStateOf(false) }
+    PillButton(
+        if (armed) armedLabel else label,
+        onClick = { if (armed) { armed = false; onConfirmed() } else armed = true },
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        voice = if (armed) ButtonVoice.ARMED else voice,
+        enabled = enabled,
+        block = block,
+    )
 }
 
 /**
@@ -3776,7 +3855,6 @@ private fun EditSheet(
     var nameFocusWanted by remember(key) { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     var deltaText by remember { mutableStateOf("") }
-    var confirmDelete by remember { mutableStateOf(false) }
     var manualSubmitted by remember { mutableStateOf(false) }
     var walletAddress by remember(key, linkedWallet?.address) {
         mutableStateOf(linkedWallet?.address.orEmpty())
@@ -3872,15 +3950,11 @@ private fun EditSheet(
             // start for املاک و خودرو, where the asset's own name never tells two apart, and
             // behind a tap everywhere else, where it usually does.
             if (!naming) {
-                TextButton(
-                    onClick = { naming = true; nameFocusWanted = true },
-                    modifier = Modifier.padding(top = Space.s),
-                ) {
-                    Text(
-                        if (labelText.isBlank()) "اسم دلخواه بذار" else "تغییر اسم",
-                        fontSize = 14.sp,
-                    )
-                }
+                PillButton(
+                    if (labelText.isBlank()) "اسم دلخواه بذار" else "تغییر اسم",
+                    { naming = true; nameFocusWanted = true },
+                    Modifier.padding(top = Space.m),
+                )
             } else {
                 val nameFocus = remember { FocusRequester() }
                 // Only when she asked for the field. Opened on its own for a new ملک the amount
@@ -3921,21 +3995,20 @@ private fun EditSheet(
                 // A name can be saved on its own only once there is a row to hang it on. While
                 // adding, ذخیره at the bottom carries it in together with the amount.
                 if (holding != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
-                        TextButton(onClick = { onLabel(labelText); naming = false }) {
-                            Text("ذخیره اسم", fontSize = 14.sp)
-                        }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.s),
+                        modifier = Modifier.padding(top = Space.m),
+                    ) {
+                        PillButton("ذخیره اسم", { onLabel(labelText); naming = false })
                         if (holding.label.isNotBlank()) {
-                            TextButton(onClick = {
+                            PillButton("اسم اصلی", {
                                 labelText = ""
                                 onLabel("")
                                 naming = false
-                            }) { Text("اسم اصلی", fontSize = 14.sp) }
+                            })
                         }
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { labelText = holding.label; naming = false }) {
-                            Text("بستن", fontSize = 14.sp, color = muted)
-                        }
+                        PillButton("بستن", { labelText = holding.label; naming = false })
                     }
                 }
             }
@@ -4037,9 +4110,7 @@ private fun EditSheet(
             // other edit, so there is still exactly one moment money is written.
             if (current != null) {
                 if (!adjusting) {
-                    TextButton(onClick = { adjusting = true }) {
-                        Text("اضافه یا کم کردن", fontSize = 14.sp)
-                    }
+                    PillButton("اضافه یا کم کردن", { adjusting = true }, Modifier.padding(top = Space.m))
                 } else {
                     val deltaFocus = remember { FocusRequester() }
                     LaunchedEffect(Unit) { deltaFocus.requestFocus() }
@@ -4084,21 +4155,24 @@ private fun EditSheet(
                     }
                     // Air between the two opposite intents: an edge mis-tap here flips the
                     // sign of a money adjustment.
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
-                        TextButton(
-                            onClick = { delta?.let { apply(base + it) } },
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.m),
+                        modifier = Modifier.padding(top = Space.m),
+                    ) {
+                        PillButton(
+                            "＋ اضافه کن",
+                            { delta?.let { apply(base + it) } },
                             enabled = delta != null,
-                        ) { Text("＋ اضافه کن", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
-                        TextButton(
-                            onClick = { delta?.let { apply(base - it) } },
+                        )
+                        PillButton(
+                            "− کم کن",
+                            { delta?.let { apply(base - it) } },
                             // A holding cannot go below nothing — taking out more than is
                             // there is a typo, not a request.
                             enabled = delta != null && base - delta >= 0,
-                        ) { Text("− کم کن", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                        )
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { adjusting = false; deltaText = "" }) {
-                            Text("بستن", fontSize = 14.sp, color = muted)
-                        }
+                        PillButton("بستن", { adjusting = false; deltaText = "" })
                     }
                 }
             }
@@ -4278,9 +4352,8 @@ private fun EditSheet(
                             color = muted,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = { editingRate = true }) {
-                            Text("تغییر نرخ", fontSize = 14.sp)
-                        }
+                        Spacer(Modifier.width(Space.s))
+                        PillButton("تغییر نرخ", { editingRate = true })
                     }
                 } else {
                     // She tapped "تغییر نرخ" to type a rate; typing must land in this field,
@@ -4301,14 +4374,15 @@ private fun EditSheet(
                             .focusRequester(rateFocus)
                             .semantics { contentDescription = "هر ${type.unitFa} چند تومان؟" },
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
-                        TextButton(onClick = { onRate(typedRate); editingRate = false }) {
-                            Text("ذخیره نرخ", fontSize = 14.sp)
-                        }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.s),
+                        modifier = Modifier.padding(top = Space.m),
+                    ) {
+                        PillButton("ذخیره نرخ", { onRate(typedRate); editingRate = false })
                         if (isOverridden) {
-                            TextButton(onClick = {
+                            PillButton("برگشت به نرخ خودکار", {
                                 onRate(null); rateText = ""; editingRate = false
-                            }) { Text("برگشت به نرخ خودکار", fontSize = 14.sp) }
+                            })
                         }
                     }
                 }
@@ -4396,29 +4470,8 @@ private fun EditSheet(
                 PillButton("به کسی قرض دادم", { close(lend) }, Modifier.fillMaxWidth().padding(top = Space.s), fontSize = 16.sp, minHeight = 52.dp)
             }
 
-            if (current != null) {
-                // One stray tap must not erase a holding: the first tap only changes the
-                // label to a question, the second actually deletes.
-                TextButton(
-                    onClick = { if (confirmDelete) close(onDelete) else confirmDelete = true },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = Space.xs),
-                ) {
-                    Text(
-                        if (confirmDelete) "مطمئنی؟ برای حذف دوباره بزن"
-                        else "حذف این دارایی",
-                        fontSize = 15.sp,
-                        fontWeight = if (confirmDelete) FontWeight.Bold else FontWeight.Normal,
-                        // Announced, or the two-tap safeguard is invisible to TalkBack — a
-                        // second double-tap deletes with no confirmation ever perceived.
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-            }
+            // One stray tap must not erase a holding: the first tap only asks.
+            if (current != null) SheetDelete("حذف این دارایی") { close(onDelete) }
 
             Spacer(Modifier.height(Space.l))
         }

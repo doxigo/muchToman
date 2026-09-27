@@ -28,13 +28,14 @@ import type { CategoryGlyph } from './categoryIcon';
 import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { requestFamilySync, useFamily } from './family';
-import { bidi, faCompact, faDate, faDay, faDigits, faNumber, parseAmount, tomanOf } from './format';
+import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, parseAmount, today as tehranToday, tomanOf } from './format';
 import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
-  MAX_INSTALLMENTS, firstInstallmentDue, installmentLineFa, installmentNoteFa, installmentPaidBy, tomanFieldToRial,
+  MAX_INSTALLMENTS, firstInstallmentDue, installmentDueOn, installmentLeftFa, installmentLineFa, installmentNoteFa,
+  installmentPaidBy, installmentSummary, tomanFieldToRial,
 } from './installments';
-import type { InstallmentProgress } from './installments';
+import type { InstallmentProgress, InstallmentSummary } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
 import { LoansSection } from './loansUi';
 import type { Category, Goal, LedgerEntry, Txn } from './model';
@@ -48,7 +49,7 @@ import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
 import { pref } from './state';
 import {
-  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextButton, TextField,
+  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
 } from './ui';
 import './budgetUi.css';
 
@@ -203,6 +204,7 @@ function BudgetScreen() {
         // Says where the payments come from — the one thing nobody would guess: nothing here is typed twice.
         <p class="plan-empty">قسط گوشی، وام یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.</p>
       )}
+      <InstallmentSummaryLines summary={installmentSummary(installments, tehranToday())} />
       {installments.map((progress, i) => (
         <InstallmentCard key={progress.plan.id} progress={progress} radius={bandShape(i, installments.length + 1)}
           onOpen={() => openSheet('installmentPayments', { id: progress.plan.id })} />
@@ -366,6 +368,7 @@ function GoalCard({ progress, radius, onOpen }: { progress: GoalProgress; radius
 function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentProgress; radius: string; onOpen: () => void }) {
   const tone = progress.done ? 'var(--tertiary)' : progress.overdueRial > 0 ? 'var(--error)' : 'var(--primary)';
   const note = installmentNoteFa(progress);
+  const left = installmentLeftFa(progress);
   return (
     <BandCard radius={radius} onOpen={onOpen} tone={tone}>
       <span class="plan-head">
@@ -379,9 +382,26 @@ function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentPr
         <FitFigure text={bidi(`${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(progress.totalRial))}`)} />
       </span>
       <span class="mt-s"><Bar share={progress.share} /></span>
-      <span class="plan-sub mt-s">{faNumber(progress.paidCount)} از {faNumber(progress.count)} قسط</span>
+      {left && <span class="plan-sub mt-s">{left}</span>}
       {note && <span class={`plan-note quiet mt-xs${note[1] ? ' loud' : ''}`}>{note[0]}</span>}
     </BandCard>
+  );
+}
+
+/**
+ * Every plan at once, above their cards: what leaves each month, what is left and until when, and how
+ * this month's payments stand. Words on the page, not a card — a card here would read as one more plan.
+ */
+function InstallmentSummaryLines({ summary }: { summary: InstallmentSummary | null }) {
+  if (!summary) return null;
+  return (
+    <div class="inst-summary">
+      <FitFigure text={bidi(`ماهی ${faCompact(tomanOf(summary.monthlyRial))} تومان قسط`)} />
+      <p class="plan-lede">{faCompact(tomanOf(summary.leftRial))} تومان مونده، تا {faDate(summary.lastDue)}</p>
+      {summary.dueThisMonth > 0 && (
+        <p class="plan-lede">این ماه {faNumber(summary.paidThisMonth)} از {faNumber(summary.dueThisMonth)} قسط پرداخت شده.</p>
+      )}
+    </div>
   );
 }
 
@@ -521,8 +541,11 @@ function BudgetSheet({ id }: { id?: string }) {
               ' تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.'}
           </p>
           {editing && period === editing.period && shared === editing.shared && (
-            <TextButton label={`فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن`}
-              onClick={() => close(synced(paired, () => keepBudget(editing.goal.id)))} />
+            // Error ink: the way out of the clash deletes the other budgets.
+            <div class="mt-m">
+              <PillButton voice="danger" block label={`فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن`}
+                onClick={() => close(synced(paired, () => keepBudget(editing.goal.id)))} />
+            </div>
           )}
         </>
       )}
@@ -687,6 +710,7 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
       <p class="plan-lede">
         ماهی {faCompact(tomanOf(plan.targetRial))} تومان، از {faDate(plan.startsOn)} تا {faDate(plan.endsOn ?? plan.startsOn)}
       </p>
+      <InstallmentSchedule progress={progress} />
       {(progress.payments.length > 0 || progress.olderRial > 0) && (
         <>
           <SheetLabel>پرداخت‌هایی که وصل کردی</SheetLabel>
@@ -708,6 +732,42 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
         <SheetDelete label="حذف این قسط" onConfirmed={() => close(synced(paired, () => deleteGoal(plan.id)))} />
       </div>
     </Sheet>
+  );
+}
+
+/** How many open payments the schedule lists before folding the rest into a line — half a year. */
+const SCHEDULE_ROWS = 6;
+
+/**
+ * The plan month by month: the payments covered folded into one line, then the ones still open, each
+ * on its day, with a late one said in words. Covered counts from the first, as paidCount does.
+ */
+function InstallmentSchedule({ progress }: { progress: InstallmentProgress }) {
+  const today = tehranToday();
+  const paid = progress.paidCount;
+  const covered = progress.done ? 'همه‌ی قسط‌ها پرداخت شد.'
+    : paid === 1 ? 'قسط اول پرداخت شد.'
+    : paid > 1 ? `${faNumber(paid)} قسط اول پرداخت شد.`
+    : null;
+  const open = Array.from({ length: Math.min(progress.count - paid, SCHEDULE_ROWS) }, (_, k) => paid + k);
+  const rest = progress.count - paid - SCHEDULE_ROWS;
+  return (
+    <>
+      <SheetLabel>جدول قسط‌ها</SheetLabel>
+      {covered && <p class="plan-lede">{covered}</p>}
+      {open.map((i) => {
+        const due = installmentDueOn(progress.plan, i);
+        const state = due < today ? 'late' : due === today ? 'today' : null;
+        return (
+          <div key={i} class="due-row">
+            <span class="grow plan-title">قسط {faOrdinal(i + 1)}</span>
+            <span class="plan-lede">{faDate(due)}</span>
+            {state && <span class={`due-state ${state}`}>{state === 'late' ? 'گذشته' : 'امروز'}</span>}
+          </div>
+        );
+      })}
+      {rest > 0 && <p class="plan-lede">و {faNumber(rest)} قسط دیگه، تا {faDate(progress.plan.endsOn ?? progress.plan.startsOn)}.</p>}
+    </>
   );
 }
 
@@ -779,7 +839,7 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
         <>
           <p class="plan-first-plan">هنوز قسطی نساختی. اگه این پرداختِ یه قسط ماهانه‌ست، با همین بسازش تا ببینی چند تا مونده.</p>
           <PillButton voice="primary" block label="ساختن قسط" onClick={() => setCreating(true)} />
-          <TextButton block label="فعلاً نه" onClick={() => close()} />
+          <div class="mt-s"><PillButton block label="فعلاً نه" onClick={() => close()} /></div>
         </>
       ) : (
         <>
@@ -798,8 +858,8 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
               );
             })}
           </div>
-          <div class="mt-s"><TextButton block label="+ قسط تازه با همین پرداخت" onClick={() => setCreating(true)} /></div>
-          {current && <TextButton block label="از قسط جداش کن" onClick={() => link(null)} />}
+          <div class="mt-l"><PillButton block label="+ قسط تازه با همین پرداخت" onClick={() => setCreating(true)} /></div>
+          {current && <div class="mt-s"><PillButton block label="از قسط جداش کن" onClick={() => link(null)} /></div>}
         </>
       )}
     </Sheet>

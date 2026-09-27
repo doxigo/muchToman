@@ -13,6 +13,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { bidi } from './format';
 import { registerGate } from './nav';
 import { pref, setPref } from './state';
+import { PillButton } from './ui';
 
 const canAskNotify = (): boolean => typeof Notification !== 'undefined' && Notification.permission === 'default';
 const installed = (): boolean =>
@@ -43,7 +44,7 @@ function Primary({ label, onClick }: { label: string; onClick: () => void }) {
 /** Always present, always a real way out: nothing here may be a wall. */
 function Secondary({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" class="text-btn block" style={{ color: 'var(--on-surface-variant)', fontWeight: 400, minHeight: '48px' }} onClick={onClick}>{label}</button>
+    <div style={{ marginTop: 'var(--s)' }}><PillButton label={label} onClick={onClick} block /></div>
   );
 }
 

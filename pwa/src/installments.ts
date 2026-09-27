@@ -6,12 +6,13 @@
  * already holds plus an `installment` decision saying which plan it paid — never a figure typed
  * twice. Always private: `shared` is false, so the sync never publishes these.
  */
-import { faCompact, faDate, faNumber, parseAmount, today as tehranToday, tomanOf } from './format';
+import { faCompact, faDate, faNumber, faOrdinal, parseAmount, today as tehranToday, tomanOf } from './format';
 import { GoalKind, GoalPeriod } from './goals';
 import {
   DAY_MS, TEHRAN_OFFSET_MS, jalaliDay, jalaliMonthLength, jalaliMonthsAfter, jalaliMonthsAheadEnd, jalaliOf, tehranDay,
 } from './jalali';
 import type { Decision, Goal, LedgerEntry } from './model';
+import type { Insight } from './reports';
 import { DecisionKind } from './rules';
 import { MAX_PLAUSIBLE_RIAL } from './sms';
 
@@ -213,6 +214,98 @@ export function installmentProgress(
   };
 }
 
+/**
+ * Soonest payment first: a plan behind has its next due in the past, so it leads without a rule of
+ * its own, and a plan paid off has none and goes last. Ties keep the order they were made in.
+ */
+export function installmentsByDue(installments: InstallmentProgress[]): InstallmentProgress[] {
+  const key = (p: InstallmentProgress) => p.nextDue ?? Number.MAX_SAFE_INTEGER;
+  return [...installments].sort((a, b) => key(a) - key(b));
+}
+
+/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off. */
+export function installmentLeftFa(progress: InstallmentProgress): string | null {
+  if (progress.done) return null;
+  return `${faNumber(progress.count - progress.paidCount)} از ${faNumber(progress.count)} قسط مونده، ` +
+    `تا ${faDate(progress.plan.endsOn ?? progress.plan.startsOn)}`;
+}
+
+/** The «قسط‌ها» section in one place: what leaves each month, what is left, and this month's. */
+export interface InstallmentSummary {
+  /** One payment of every plan still running. */
+  monthlyRial: number;
+  /** What the running plans have left between them. */
+  leftRial: number;
+  /** The last payment of the last plan to finish. */
+  lastDue: number;
+  /** Plans with a payment that falls due this Jalali month, paid off or not. */
+  dueThisMonth: number;
+  /** How many of those that month's payment is covered on. */
+  paidThisMonth: number;
+}
+
+/** Null under two running plans: with one, every figure here is already on its card. */
+export function installmentSummary(installments: InstallmentProgress[], today: number): InstallmentSummary | null {
+  const running = installments.filter((p) => !p.done);
+  if (running.length < 2) return null;
+  const here = jalaliOf(today);
+  let due = 0;
+  let paid = 0;
+  for (const p of installments) {
+    // Which payment falls in this month: the months from the first due to today.
+    const first = jalaliOf(p.plan.startsOn);
+    const index = (here.year - first.year) * 12 + (here.month - first.month);
+    if (index < 0 || index >= p.count) continue;
+    due++;
+    if (p.paidCount > index) paid++;
+  }
+  return {
+    monthlyRial: running.reduce((sum, p) => sum + p.plan.targetRial, 0),
+    leftRial: running.reduce((sum, p) => sum + p.totalRial - p.paidRial, 0),
+    lastDue: Math.max(...running.map((p) => p.plan.endsOn ?? p.plan.startsOn)),
+    dueThisMonth: due,
+    paidThisMonth: paid,
+  };
+}
+
+// ─────────────────────────── on home ───────────────────────────
+
+/**
+ * The plan worth home's one attention card, and which payment (from 0) it is about: one already
+ * behind, the longest behind first; or else the soonest payment within [daysBefore] of today — the
+ * reminder's own window, and never less than the day itself.
+ */
+export function pressingInstallment(
+  installments: InstallmentProgress[],
+  today: number,
+  daysBefore: number,
+): [progress: InstallmentProgress, index: number] | null {
+  const late = installments.filter((p) => p.overdueRial > 0)
+    .sort((a, b) => (a.nextDue ?? Number.MAX_SAFE_INTEGER) - (b.nextDue ?? Number.MAX_SAFE_INTEGER))[0];
+  if (late) return [late, late.paidCount];
+  const window = Math.max(daysBefore, 0);
+  let best: [InstallmentProgress, number] | null = null;
+  for (const p of installments) {
+    let i = p.paidCount;
+    while (i < p.count && installmentDueOn(p.plan, i) < today) i++;
+    if (i >= p.count || installmentDueOn(p.plan, i) - today > window) continue;
+    if (!best || installmentDueOn(p.plan, i) < installmentDueOn(best[0].plan, best[1])) best = [p, i];
+  }
+  return best;
+}
+
+/** «سررسید قسط «گوشی» فرداست.» — the reminder's words, on home, with the linked payments as evidence. */
+export function installmentInsight(progress: InstallmentProgress, index: number, today: number): Insight {
+  const due = installmentDueOn(progress.plan, index);
+  return {
+    text: `سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`,
+    why: `قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، ` +
+      `قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count)}، ${faDate(due)}.`,
+    refs: progress.payments.map((e) => e.txn.ref),
+    tone: 'ATTENTION',
+  };
+}
+
 // ─────────────────────────── the reminder ───────────────────────────
 
 /** How many days before a due date the reminder comes — `-1` for never. On by default, a day ahead. */
@@ -265,11 +358,18 @@ export function installmentNews(
   return { due, marks };
 }
 
+/** When a due day is, from today: «گذشته», «امروزه», «فرداست», «۳ روز دیگه‌ست». */
+function installmentWhenFa(days: number): string {
+  if (days < 0) return 'گذشته';
+  if (days === 0) return 'امروزه';
+  if (days === 1) return 'فرداست';
+  if (days === 2) return 'پس‌فرداست';
+  return `${faNumber(days)} روز دیگه‌ست`;
+}
+
 /** «گوشی: سررسید قسط فرداست». */
 export function installmentReminderTitle(plan: Goal, due: number, today: number): string {
-  const days = due - today;
-  const whenFa = days === 0 ? 'امروزه' : days === 1 ? 'فرداست' : days === 2 ? 'پس‌فرداست' : `${faNumber(days)} روز دیگه‌ست`;
-  return `${plan.nameFa}: سررسید قسط ${whenFa}`;
+  return `${plan.nameFa}: سررسید قسط ${installmentWhenFa(due - today)}`;
 }
 
 /** How much, and on which date — what she needs in the banking app. */
@@ -296,8 +396,9 @@ export function installmentNoteFa(progress: InstallmentProgress, today: number =
     return [`${faCompact(tomanOf(progress.overdueRial))} تومان از قسط‌هایی که سررسیدشون گذشته، ` +
       'هنوز پرداخت نشده.', true];
   }
-  if (progress.nextDue === today) return ['سررسید قسط بعدی امروزه.', false];
-  if (progress.nextDue != null) return [`قسط بعدی: ${faDate(progress.nextDue)}`, false];
+  const next = faOrdinal(progress.paidCount + 1);
+  if (progress.nextDue === today) return [`سررسید قسط ${next} امروزه.`, false];
+  if (progress.nextDue != null) return [`قسط ${next}: ${faDate(progress.nextDue)}`, false];
   return null;
 }
 
