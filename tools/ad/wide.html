@@ -77,8 +77,8 @@
   #lRflash { position: absolute; inset: 0; background: var(--bright); opacity: 0; mix-blend-mode: multiply; }
 
   /* 3 · sms */
-  #h3, #h4 { top: 330px; font-size: 104px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
-  #sub3, #sub4 { top: 615px; font-size: 46px; font-weight: 500; --hc: var(--fstrong); line-height: 1.5; }
+  #h3, #h4, #hq { top: 330px; font-size: 104px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  #sub3, #sub4, #subq { top: 615px; font-size: 46px; font-weight: 500; --hc: var(--fstrong); line-height: 1.5; }
   #notif { position: absolute; left: 135px; top: 170px; width: 790px; border-radius: 52px; background: #FAFBF7; overflow: hidden;
     box-shadow: 0 44px 80px -26px rgba(0,0,0,.6), 0 14px 30px -12px rgba(0,0,0,.35); }
   #nContent { padding: 32px 50px 38px; color: #131711; font-size: 36px; line-height: 1.6; }
@@ -92,6 +92,16 @@
   .mk i { position: absolute; inset: .1em -.18em .02em; border-radius: .32em; background: var(--bright); z-index: -1; transform-origin: 100% 50%; transform: scaleX(0); }
   #nRow { position: absolute; inset: 0; opacity: 0; overflow: hidden; background: #fff; }
   #nRow img { position: absolute; left: 0; width: 100%; }
+
+  /* 3½ · the notes that talk back: the app's own notifications over the phone, each with its line on top */
+  .qn { position: absolute; left: 120px; top: 170px; width: 820px; border-radius: 52px; background: #FAFBF7; padding: 30px 50px 36px;
+    color: #131711; font-size: 33px; line-height: 1.55; box-shadow: 0 44px 80px -26px rgba(0,0,0,.6), 0 14px 30px -12px rgba(0,0,0,.35); }
+  .qn .nHead img { width: 1.9em; height: 1.9em; border-radius: 50%; }
+  .qn .tone { position: absolute; left: 40px; top: 28px; padding: 2px 24px 6px; border-radius: 999px; background: var(--forest);
+    color: var(--bright); font-size: 27px; font-weight: 800; }
+  .qn .qt { margin-top: .3em; font-weight: 800; }
+  .qn .qq { margin-top: .15em; font-weight: 700; }
+  .qn .qf { margin-top: .2em; font-size: .8em; font-weight: 500; color: var(--muted); }
 
   /* 4 · loans, 6 · family: a card of the page lifted out of it, larger */
   .lift { position: absolute; overflow: hidden; visibility: hidden; }
@@ -179,6 +189,7 @@
       <div id="nRow"><img src="../../docs/screenshots/ledger.png"></div>
     </div>
   </div>
+  <div id="sQ" class="L"><div id="hq" class="hl R"></div><div id="subq" class="hl R"></div></div>
   <div id="s4" class="L"><div id="h4" class="hl R"></div><div id="sub4" class="hl R"></div><div id="lift" class="lift"><img src="../../docs/screenshots/loans.png"></div></div>
   <div id="bright2" class="L"></div>
   <div id="wallCam" class="L"><div id="wall"></div></div>
@@ -249,6 +260,18 @@ const CONFIG = {
   smsSub: 'همون‌جا روی گوشی خونده می‌شه\nو به هیچ سروری نمی‌رسه',
   notif: { meta: 'پیامک • الان', who: 'بانک',
     body: 'برداشت <b class="mk">۲٬۴۳۲٬۰۰۰ ریال<i></i></b>، <span class="mk">قبض برق<i></i></span><br>مانده ۴۸٬۲۵۰٬۰۰۰ ریال' },
+  // The app's notifications as it posts them (Notify.kt, Quips.kt): the plain title and figures, and a
+  // line from worker/src/quips.json on top — a roast at بی‌تعارف, and the شوخ default asking after you.
+  quips: {
+    title: 'اعلان‌هاش هم\n*زبون* داره',
+    sub: 'پیش‌فرضش شوخه؛\nبی‌تعارفش رو خودت روشن کن',
+    meta: 'چقدر تومن • الان',
+    notes: [
+      { tone: 'بی‌تعارف', title: 'رستوران و کافه: از بودجهٔ مهر گذشتی', line: 'گارسونای محل دیگه اسمت رو حفظن.',
+        facts: '۱٫۶ میلیون بیشتر از ۸ میلیون تومان • ۲۶ روز تا آخر ماه' },
+      { tone: 'شوخ', title: '۵ روزه خرجی ندیدیم', line: 'زنده‌ای؟ اگه آره، یه چایی مهمون خودت باش.' },
+    ],
+  },
   loans: 'طلب و بدهی،\n*کنار جمعت*',                               // the landing page's loans band
   loansSub: 'دو سکه، دو سکه می‌مونه\nو ارزش امروزش به تومن کنارش میاد',
   words: ['بودجه', 'قسط', 'گزارش', 'خانواده'],                        // the last opens the family scene
@@ -279,13 +302,14 @@ const C = {
   drop: 2.0, h2In: 2.22, scan: 3.0, scanDur: 1.0, sub2In: 3.62,
   h2Out: 4.66, zoom: 4.75, zoomDur: .85, h3In: 5.4, tabSwap: 5.8,
   notif: 6.0, marks: [6.5, 6.7], notifTap: 7.0, morph: 7.05, land: 7.65,
-  h3Out: 8.0, loans: 8.15, h4In: 8.3, lift: 9.3, sub4In: 9.45, personTap: 10.5, h4Out: 11.55,
-  wall: 12.0, words: [12.5, 13.0, 13.5, 14.0],
-  toFamily: 15.75, famIn: 15.85, hFIn: 16.1, famLift: 17.0, subFIn: 17.15, famSwap: 18.4, famScroll: 19.0, famLift2: 19.6, subRoll: 19.6, lock: 20.55,
-  toEnd: 21.75, logo: 22.0, wordmark: 22.55, tag: 22.85, chip: 23.15, url: 23.35,
-  ctas: [22.85],            // sound.py pops each: the 4:5's buttons, here the tagline
-  break: [8.0, 12.0],       // the music's calm bars (the 4:5's are the iPhone scene): no kick, the filter breathes
-  brand: 22.0, end: 24.0,   // the brand's hit and the last one (the 4:5's are 16 and 18)
+  h3Out: 8.0, hqIn: 8.4, quips: [8.5, 10.0], quipMarks: [8.95, 10.45], subqIn: 8.66, hqOut: 11.9,
+  loans: 12.15, h4In: 12.3, lift: 13.3, sub4In: 13.45, personTap: 14.5, h4Out: 15.55,
+  wall: 16.0, words: [16.5, 17.0, 17.5, 18.0],
+  toFamily: 19.75, famIn: 19.85, hFIn: 20.1, famLift: 21.0, subFIn: 21.15, famSwap: 22.4, famScroll: 23.0, famLift2: 23.6, subRoll: 23.6, lock: 24.55,
+  toEnd: 25.75, logo: 26.0, wordmark: 26.55, tag: 26.85, chip: 27.15, url: 27.35,
+  ctas: [26.85],            // sound.py pops each: the 4:5's buttons, here the tagline
+  break: [12.0, 16.0],      // the music's calm bars (the 4:5's are the iPhone scene): no kick, the filter breathes
+  brand: 26.0, end: 28.0,   // the brand's hit and the last one (the 4:5's are 20 and 22)
 };
 
 // ———————————————————————————————— motion vocabulary: the app's own (Theme.kt Motion) ————————————————————————————————
@@ -301,7 +325,7 @@ const settle = spring(9), press = spring(13);
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const PRE = 0.5;              // pre-roll: frame 0 opens mid-motion, the headline already landing
-const DURATION = 26.5;
+const DURATION = 30.5;
 const T = (t) => t + PRE;
 let GLYPH_D = '';             // icon.svg's mark, read at load
 
@@ -345,6 +369,16 @@ const h3 = words($('#h3'), CONFIG.sms);
 const sub3 = words($('#sub3'), CONFIG.smsSub);
 const h4 = words($('#h4'), CONFIG.loans);
 const sub4 = words($('#sub4'), CONFIG.loansSub);
+const hq = words($('#hq'), CONFIG.quips.title);
+const subq = words($('#subq'), CONFIG.quips.sub);
+const qns = CONFIG.quips.notes.map((n) => {
+  const el = document.createElement('div');
+  el.className = 'qn';
+  el.innerHTML = `<span class="tone">${n.tone}</span><div class="nHead"><img src="../../pwa/public/apple-touch-icon.png"><span>${CONFIG.quips.meta}</span></div>` +
+    `<div class="qt">${n.title}</div><div class="qq"><span class="mk">${n.line}<i></i></span></div>` + (n.facts ? `<div class="qf">${n.facts}</div>` : '');
+  $('#sQ').appendChild(el);
+  return el;
+});
 const hF = words($('#hF'), CONFIG.family);
 const subFa = words($('#subFa'), CONFIG.familyA);
 const subFb = words($('#subFb'), CONFIG.familyB);
@@ -459,7 +493,7 @@ function build() {
   gsap.set(['#lock', '#chip5'], { xPercent: -50 });
   gsap.set('#lock', { autoAlpha: 0 });
   gsap.set('#lB', { y: -ROW.h });
-  gsap.set(['#notif', '#chip5', '#fine'], { autoAlpha: 0 });
+  gsap.set(['#notif', '#chip5', '#fine', ...qns], { autoAlpha: 0 });
   gsap.set('#wall', { transformOrigin: `${LC.x}px ${LC.y}px` });
   gsap.set('#pill', { xPercent: -50 });
   const measure = (els, extra) => els.map((p) => { p.style.position = 'static'; p.style.display = 'inline-flex'; const w = p.offsetWidth + extra; p.removeAttribute('style'); return w; });
@@ -524,6 +558,20 @@ function build() {
   tl.set('#notif', { autoAlpha: 0 }, T(C.land));
   tl.fromTo('#lRflash', { opacity: .5 }, { opacity: 0, duration: .7, ease: 'power1.out', immediateRender: false }, T(C.land));
   gesture([{ t: C.notifTap, x: 610, y: 337 }]);
+
+  // ── 3½ · the notes talk back: a roast on the budget she blew, then the default voice asking after her.
+  // The newest lands on top, as in the shade, and pushes the one before it down.
+  tl.fromTo(hq, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.hqIn));
+  tl.fromTo('#hq', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.hqIn));
+  tl.fromTo(subq, { yPercent: 165 }, { yPercent: 0, duration: .75, ease: 'enter', stagger: .025 }, T(C.subqIn));
+  qns.forEach((q, k) => {
+    tl.fromTo(q, { autoAlpha: 0, y: -64, scale: .94 }, { autoAlpha: 1, y: 0, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.quips[k]));
+    qns.slice(0, k).forEach((older) => tl.to(older, { y: `+=${q.offsetHeight + 28}`, duration: .55, ease: settle }, T(C.quips[k])));
+    tl.fromTo($('.mk i', q), { scaleX: 0 }, { scaleX: 1, duration: .36, ease: 'enter' }, T(C.quipMarks[k]));
+  });
+  tl.to(hq, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.hqOut));
+  tl.to(subq, { yPercent: -165, duration: .3, ease: 'exit', stagger: .01 }, T(C.hqOut));
+  tl.to([...qns].reverse(), { autoAlpha: 0, y: '-=48', duration: .3, ease: 'exit', stagger: .05 }, T(C.hqOut + .05));
 
   // ── 4 · loans: the ledger gives way to who owes whom; the people who owe you lift out, and a tap opens one
   tl.to(h3, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h3Out));
