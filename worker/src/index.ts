@@ -1459,30 +1459,50 @@ function sumBy(rows: UsageRow[], key: (row: UsageRow) => string): [string, numbe
   return [...out].sort((a, b) => b[1] - a[1]);
 }
 
-function tableFa(caption: string, head: string, rows: [string, number][]): string {
-  return `<table><caption>${caption}</caption><thead><tr><th>${head}</th><th class="n">گوشی</th></tr></thead><tbody>` +
-    rows.map(([name, n]) => `<tr><td><bdi>${escapeHtml(name)}</bdi></td><td class="n">${faFigure(n)}</td></tr>`).join('') +
+/** A whole-number share that truncates like every other figure, so a sliver never reads as ۰٪. */
+function shareFa(n: number, total: number): string {
+  const p = Math.floor((n * 100) / total);
+  return p < 1 ? 'زیر ۱٪' : `${faDigits(String(p))}٪`;
+}
+
+function tableFa(caption: string, head: string, rows: [string, number][], share = false): string {
+  const total = rows.reduce((sum, [, n]) => sum + n, 0);
+  return `<table><caption>${caption}</caption><thead><tr><th>${head}</th><th class="n">گوشی</th>` +
+    `${share ? '<th class="n">سهم</th>' : ''}</tr></thead><tbody>` +
+    rows.map(([name, n]) => `<tr><td><bdi>${escapeHtml(name)}</bdi></td><td class="n">${faFigure(n)}</td>` +
+      `${share ? `<td class="n">${shareFa(n, total)}</td>` : ''}</tr>`).join('') +
     '</tbody></table>';
 }
 
+// Enough columns that one counted day is a bar, not a wall.
+const MIN_CHART_DAYS = 30;
+
 /**
  * The numbers, as HTML for the page's slot. Up to yesterday only: today is still being counted, and
- * a half-day bar at the end reads as everyone leaving.
+ * a half-day bar at the end reads as everyone leaving. Days before the first count were not zero,
+ * they were not counted, so they get no bar and no row.
+ *
+ * There is no "people in total": with no id, two days from one phone look like two phones. The
+ * running total is phone-days, and the page's note says so.
  */
 export function renderUsage(rows: UsageRow[], now = Date.now()): string {
-  if (!rows.some((row) => row.devices > 0)) {
-    return '<p class="empty">هنوز هیچ روزی شمرده نشده.</p>';
-  }
-  const days = Array.from({ length: USAGE_DAYS }, (_, i) =>
+  const window = Array.from({ length: USAGE_DAYS }, (_, i) =>
     new Date(now - (USAGE_DAYS - i) * 86_400_000).toISOString().slice(0, 10));
-  const yesterday = days[days.length - 1];
   const perDay = new Map(sumBy(rows, (row) => row.day));
-  const counts = days.map((day) => perDay.get(day) ?? 0);
+  const count = (day: string) => perDay.get(day) ?? 0;
+  const first = window.findIndex((day) => count(day) > 0);
+  if (first < 0) return '<p class="empty">هنوز هیچ روزی شمرده نشده.</p>';
+
+  const counted = window.slice(first);
+  const start = counted[0];
+  const yesterday = counted[counted.length - 1];
+  const days = window.slice(-Math.max(counted.length, MIN_CHART_DAYS));
+  const counts = days.map(count);
   const last = rows.filter((row) => row.day === yesterday);
 
   const W = 900;
   const H = 220;
-  const band = W / USAGE_DAYS;
+  const band = W / days.length;
   // Floored at ten so the half-way gridline is always a whole number.
   const top = niceCeil(Math.max(...counts, 10));
   const bars = counts.map((n, i) => {
@@ -1494,7 +1514,8 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
     const bar = n > 0
       ? `<path class="bar" d="M${x} ${H}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${H}Z"/>`
       : '';
-    return `<g class="day"><title>${dayFa(days[i])} · ${faFigure(n)} گوشی</title>` +
+    const said = days[i] < start ? 'هنوز شمرده نمی‌شد' : `${faFigure(n)} گوشی`;
+    return `<g class="day"><title>${dayFa(days[i])} · ${said}</title>` +
       `<rect class="hit" x="${x - 1}" y="0" width="${band}" height="${H}"/>${bar}</g>`;
   }).join('');
   const grid = [0, H / 2, H].map((y) =>
@@ -1503,9 +1524,29 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
   const versions = sumBy(last, (row) => row.version);
   const rest = versions.slice(MAX_VERSION_ROWS).reduce((sum, [, n]) => sum + n, 0);
 
+  // Words carry the direction; the page has no colour for up or down.
+  const diff = counted.length > 1 ? count(yesterday) - count(counted[counted.length - 2]) : null;
+  const change = diff == null ? ''
+    : diff === 0 ? '<p class="label">همون قدر که پریروز</p>'
+    : `<p class="label">${faFigure(Math.abs(diff))} تا ${diff > 0 ? 'بیشتر' : 'کمتر'} از پریروز</p>`;
+  const stat = (label: string, figure: number, note: string) =>
+    `<div><dt>${label}</dt><dd class="figure">${faFigure(figure)}</dd><dd>${note}</dd></div>`;
+  const peak = counted.reduce((a, b) => (count(b) > count(a) ? b : a));
+  // One day would only repeat the hero; a week's average needs a whole week.
+  const stats = counted.length < 2 ? '' : '<dl class="stats">' +
+    (counted.length >= 7
+      ? stat('میانگین هر روز', Math.floor(counted.slice(-7).reduce((s, d) => s + count(d), 0) / 7), 'هفت روز گذشته')
+      : '') +
+    stat('بیشترین در یک روز', count(peak), dayFa(peak)) +
+    stat('روی هم', counted.reduce((s, d) => s + count(d), 0), `روز استفاده از ${dayFa(start)}`) +
+    '</dl>';
+  const since = first > 0
+    ? `از ${dayFa(start)} که شمارش شروع شد`
+    : `${faDigits(String(USAGE_DAYS))} روز گذشته`;
+
   return `<section class="hero"><p class="label">گوشی‌هایی که دیروز برنامه رو باز کردن</p>` +
-    `<p class="figure">${faFigure(perDay.get(yesterday) ?? 0)}</p></section>` +
-    `<figure class="chart"><figcaption>گوشی‌های فعال هر روز، ${faDigits(String(USAGE_DAYS))} روز گذشته</figcaption>` +
+    `<p class="figure">${faFigure(count(yesterday))}</p>${change}</section>${stats}` +
+    `<figure class="chart"><figcaption>گوشی‌های فعال هر روز، ${since}</figcaption>` +
     `<div class="plot"><span class="tick" style="top:0">${faFigure(top)}</span>` +
     `<span class="tick" style="top:50%">${faFigure(top / 2)}</span>` +
     `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
@@ -1513,14 +1554,14 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
     `${grid}${bars}</svg></div>` +
     `<div class="axis"><span>${dayFa(days[0])}</span><span>${dayFa(yesterday)}</span></div></figure>` +
     '<div class="tables">' +
-    tableFa('دیروز، به تفکیک فروشگاه', 'فروشگاه', sumBy(last, (row) => STORES[row.source] ?? DIRECT_INSTALL)) +
+    tableFa('دیروز، به تفکیک فروشگاه', 'فروشگاه', sumBy(last, (row) => STORES[row.source] ?? DIRECT_INSTALL), true) +
     tableFa('دیروز، به تفکیک نسخه', 'نسخه', [
       ...versions.slice(0, MAX_VERSION_ROWS),
       ...(rest > 0 ? [['بقیه', rest] as [string, number]] : []),
-    ]) +
+    ], true) +
     '</div>' +
     `<details><summary>همهٔ عددها، روزبه‌روز</summary>` +
-    tableFa('گوشی‌های فعال هر روز', 'روز', days.map((day, i) => [dayFa(day), counts[i]] as [string, number]).reverse()) +
+    tableFa('گوشی‌های فعال هر روز', 'روز', counted.map((day) => [dayFa(day), count(day)] as [string, number]).reverse()) +
     '</details>';
 }
 

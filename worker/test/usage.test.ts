@@ -74,12 +74,24 @@ describe('/usage', () => {
     ], NOW);
 
     expect(html).toContain('<p class="figure">۱٬۲۳۴</p>');
+    expect(html).toContain('۴۳۴ تا بیشتر از پریروز');
     expect(html).toContain('کافه‌بازار');
-    expect(html).toContain('<bdi>گیت‌هاب و نصب مستقیم</bdi></td><td class="n">۳۴</td>');
+    expect(html).toContain('<bdi>گیت‌هاب و نصب مستقیم</bdi></td><td class="n">۳۴</td><td class="n">۲٪</td>');
+    expect(html).toContain('<td class="n">زیر ۱٪</td>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('۹۹۹٬۹۹۹');
-    expect(html.match(/<g class="day">/g)?.length).toBe(90);
+    // Two counted days: the running total is phone-days, and nothing before the first count is a zero.
+    expect(html).toContain('<dd class="figure">۲٬۰۳۴</dd>');
+    expect(html).not.toContain('میانگین هر روز');
+    expect(html.match(/<g class="day">/g)?.length).toBe(30);
+    expect(html.match(/هنوز شمرده نمی‌شد/g)?.length).toBe(28);
+    expect(html.split('<summary>')[1].match(/<tr><td>/g)?.length).toBe(2);
+  });
+
+  it('says nothing is counted until a whole day is', () => {
+    expect(renderUsage([{ day: '2026-09-26', version: '1.2.5', source: 'pwa', devices: 5 }], NOW))
+      .toContain('هنوز هیچ روزی شمرده نشده');
   });
 
   it('reads the SQL API once an hour and keeps the fallback line without credentials', async () => {

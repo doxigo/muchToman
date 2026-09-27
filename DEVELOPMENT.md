@@ -158,7 +158,9 @@ Everything the app reports about itself, which `Diagnostics.kt` holds on the pho
   the app the way it does on Android, extensions and failed fetches throw their own, and the bundle
   ships without source maps, so the reports would be noise.
 - **The public page.** `muchtoman.com/usage` reads `muchtoman_daily` over the SQL API and shows
-  totals per day, store and version, cached for an hour. It never reads the crash dataset.
+  totals per day, store and version, cached for an hour, plus a 7-day average, the record day and
+  a running total. That total is phone-days, not people: with no identifier there is nothing to
+  dedupe on. Days before the first count get no bar and no row. It never reads the crash dataset.
 
 The Worker can only write the two datasets. Reading needs an API token with *Account Analytics:
 Read* and nothing else, set once as secrets so the page can use it:

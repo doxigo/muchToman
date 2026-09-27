@@ -79,6 +79,13 @@
       .hero .label { margin: 0; color: var(--muted); }
       .hero .figure { margin: 0; font-size: clamp(3rem, 9vw, 4.5rem); line-height: 1.2; font-weight: 800; font-stretch: 90%; color: var(--heading); }
 
+      /* The supporting figures, one size down from the hero, in a row that wraps on a phone. */
+      .stats { display: flex; flex-wrap: wrap; gap: var(--l) var(--huge); margin: var(--xl) 0 0; }
+      .stats dt, .stats dd { margin: 0; }
+      .stats dt { color: var(--muted); }
+      .stats .figure { font-size: 2rem; line-height: 1.3; font-weight: 800; font-stretch: 90%; color: var(--heading); }
+      .stats dd:last-child { font-size: .9rem; color: var(--muted); }
+
       /* Columns from one baseline, time running right to left like the page (Report.kt's bars).
          No scripts, so each day's native <title> is its tooltip, over a full-height hit strip. */
       .chart { margin: var(--xxl) 0 0; }
@@ -126,7 +133,9 @@
       <!--/usage-->
       <p class="note muted">
         هر ستون یک روز به وقت گرینویچه و فقط گوشی‌هایی رو می‌شمره که اون روز برنامه رو باز کردن.
-        گوشی‌ای که برنامه روش نصبه ولی بازش نکرده شمرده نمی‌شه. کد شمارش و همین صفحه
+        گوشی‌ای که برنامه روش نصبه ولی بازش نکرده شمرده نمی‌شه. «روی هم» جمع همین ستون‌هاست، پس
+        گوشی‌ای که ده روز برنامه رو باز کرده ده بار توش حساب شده. تعداد آدم‌ها رو نمی‌شه جمع زد،
+        چون هیچ شناسه‌ای فرستاده نمی‌شه که معلوم کنه دو روز مال یک گوشیه. کد شمارش و همین صفحه
         <a href="https://github.com/doxigo/muchToman/blob/main/worker/src/index.ts">روی گیت‌هاب</a> هست.
       </p>
     </main>
