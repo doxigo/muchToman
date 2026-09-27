@@ -63,8 +63,10 @@ describe('picking a line', () => {
     expect(pickQuip({ quiet: lines }, 'quiet', 'WITTY', null, {}, seen, seeded(9))![1].size).toBe(1);
   });
 
-  it('reads an unknown stored tone as plain', () => {
-    expect(quipToneOf('SAVAGE')).toBe('PLAIN');
+  it('reads an unset or unknown tone as witty, and keeps an explicit plain', () => {
+    expect(quipToneOf(undefined)).toBe('WITTY');
+    expect(quipToneOf('SAVAGE')).toBe('WITTY');
+    expect(quipToneOf('PLAIN')).toBe('PLAIN');
     expect(quipToneOf('ROAST')).toBe('ROAST');
   });
 });

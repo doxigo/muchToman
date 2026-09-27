@@ -114,6 +114,8 @@ describe('plans', () => {
     vi.stubGlobal('Notification', { permission: 'granted' });
     vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } });
     try {
+      // The budget note alone: the default voice would also ask after a spend five days old.
+      state.setPref('quipTone', 'PLAIN');
       const goal = { ...cap('b1', 50_000_000), shared: false };
       const rows = [entry(first, -41_500_000, { categoryId: 'cat_dining', category: 'رستوران و کافه' })];
       const now = tehranDayStart(first + 5) + 10 * 3_600_000;
@@ -125,6 +127,33 @@ describe('plans', () => {
       expect(shown).toHaveLength(1);
       // Nothing new said, nothing written: a subscriber re-running this cannot loop.
       expect(state.dataVersion()).toBe(version);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('asks after a quiet ledger once a spell by default, with a line from the payload', async () => {
+    const shown: Array<{ title: string; options: NotificationOptions }> = [];
+    const reg = {
+      showNotification: async (title: string, options: NotificationOptions) => { shown.push({ title, options }); },
+      getNotifications: async () => [],
+    };
+    vi.stubGlobal('Notification', { permission: 'granted' });
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } });
+    try {
+      state.setPref('rates', { updatedAt: 1, toman: {}, coins: [], quips: { quiet: [{ tone: 'witty', category: '', text: 'زنده‌ای؟' }] } });
+      const rows = [entry(first, -500_000)];
+      const now = tehranDayStart(first + 5) + 10 * 3_600_000;
+      await plans.announce(rows, [], now);
+      expect(shown.map((s) => [s.title, s.options.body])).toEqual([['۵ روزه خرجی ندیدیم', `زنده‌ای؟\n${'اگه خرج کردی و اینجا نیست، «وضعیت دفتر» رو توی تنظیمات ببین.'}`]]);
+      expect(shown[0].options).toMatchObject({ tag: 'quiet', data: { tab: 'LEDGER' } });
+      await plans.announce(rows, [], now + 3_600_000);
+      expect(shown).toHaveLength(1);
+      // An explicit ساده is kept, and says nothing.
+      state.setPref('quietMark', 0);
+      state.setPref('quipTone', 'PLAIN');
+      await plans.announce(rows, [], now);
+      expect(shown).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
     }

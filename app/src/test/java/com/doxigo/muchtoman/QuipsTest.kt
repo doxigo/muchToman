@@ -28,6 +28,14 @@ class QuipsTest {
     ) = pickQuip(mapOf("budget_over" to lines), "budget_over", tone, category, vars, seen, Random(7))
 
     @Test
+    fun `a phone that never chose, an upgrade included, is witty, and an explicit plain stays plain`() {
+        assertEquals(QuipTone.WITTY, QuipTone.of(null))
+        assertEquals(QuipTone.WITTY, QuipTone.of("SAVAGE"))
+        assertEquals(QuipTone.PLAIN, QuipTone.of("PLAIN"))
+        assertEquals(QuipTone.ROAST, QuipTone.of("ROAST"))
+    }
+
+    @Test
     fun `plain says nothing, whatever there is to say`() {
         assertNull(pick(listOf(witty, roast), tone = QuipTone.PLAIN))
     }

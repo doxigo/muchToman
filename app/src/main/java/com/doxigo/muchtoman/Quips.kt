@@ -29,7 +29,14 @@ import kotlin.random.Random
  * The title. It is always the plain sentence — «رستوران و کافه: از بودجهٔ مهر گذشتی» — and the plain
  * body stays under the line. The line goes on top because a collapsed note shows only its first
  * line and a joke nobody sees is not one; the figure is in the title and one pull away. And at
- * [QuipTone.PLAIN], the default, nothing here says anything at all.
+ * [QuipTone.PLAIN] nothing here says anything at all.
+ *
+ * ## شوخ by default
+ *
+ * [QUIP_TONE_DEFAULT] is what a phone that never chose reads, and that includes every phone
+ * upgrading into this: only an explicit ساده is stored as one. The lite edition is the exception —
+ * it has no budgets or installments to speak over and no row to change the voice from, so it is
+ * always ساده (see [Store.quipTone]) and never asks after anybody.
  *
  * ## What the phone refuses
  *
@@ -47,13 +54,16 @@ enum class QuipTone(val fa: String) {
     ROAST("بی‌تعارف");
 
     companion object {
-        fun of(name: String?): QuipTone = entries.firstOrNull { it.name == name } ?: PLAIN
+        fun of(name: String?): QuipTone = entries.firstOrNull { it.name == name } ?: QUIP_TONE_DEFAULT
 
         /** quips.json spells them in lower case; «plain» is not a line's tone, it is the absence of one. */
         internal fun wire(tone: String): QuipTone? =
             entries.firstOrNull { it != PLAIN && it.name.lowercase() == tone }
     }
 }
+
+/** The voice of a phone that never picked one, upgrades included — see the file comment. */
+val QUIP_TONE_DEFAULT = QuipTone.WITTY
 
 /** One line as the Worker sends it. [category] limits it to one category's budget; blank is any. */
 @Serializable

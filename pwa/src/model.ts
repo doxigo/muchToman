@@ -245,7 +245,7 @@ export interface Prefs {
   installmentReminder: number;
   budgetMarks: Array<{ goalId: string; windowStart: number; level: number }>;
   installmentMarks: Record<string, number>;
-  /** The voice notes speak in. Hers, so backed up. */
+  /** The voice notes speak in. Hers, so backed up. Unset — every browser before it existed — is شوخ. */
   quipTone: QuipTone;
   /** Which lines this browser already said (quips.ts pickQuip) — a mark, kept out of backups. */
   quipsSeen: string[];
@@ -289,7 +289,7 @@ export const PREF_DEFAULTS: Prefs = {
   installmentReminder: 1,
   budgetMarks: [],
   installmentMarks: {},
-  quipTone: 'PLAIN',
+  quipTone: 'WITTY',
   quipsSeen: [],
   quietMark: 0,
   lastBackupAt: 0,

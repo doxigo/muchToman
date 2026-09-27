@@ -495,8 +495,9 @@ new record kind and therefore `sync/` first.
 
 ### Notification lines (quips)
 
-«لحن اعلان‌ها» in تنظیمات picks ساده (the default: every note reads as it always did), شوخ or
-بی‌تعارف. Past ساده, budget and installment notes get one line on top of their plain body, and
+«لحن اعلان‌ها» in تنظیمات picks ساده (every note reads as it always did), شوخ (the default,
+upgrades included, since only an explicit choice is stored) or بی‌تعارف. Lite has no row and is
+always ساده. Past ساده, budget and installment notes get one line on top of their plain body, and
 a ledger with no spend of her own for five days (under thirty, 10:00–21:00 Tehran) gets asked
 after on its own «احوال‌پرسی» channel. `Quips.kt` and `pwa/src/quips.ts` are the logic.
 

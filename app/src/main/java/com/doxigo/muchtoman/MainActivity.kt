@@ -2753,7 +2753,7 @@ data class UiState(
     /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
     val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
     /** How notes talk — see [Store.quipTone]. */
-    val quipTone: QuipTone = QuipTone.PLAIN,
+    val quipTone: QuipTone = QUIP_TONE_DEFAULT,
     val history: Map<Long, Double> = emptyMap(),
     /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
     val rateHistory: Map<Long, Double> = emptyMap(),

@@ -23,11 +23,11 @@ import androidx.core.content.ContextCompat
  * because a price moved, or because a week went by — the rule the reward system already runs on,
  * applied to the one surface that can interrupt her.
  *
- * The fourth channel is the one exception, and only once she has asked for it: with a voice picked
- * in تنظیمات (`Quips.kt`), a ledger that has gone [QUIET_AFTER_DAYS] days without a spend gets asked
- * after — which is a joke, and also the likeliest sign that this phone stopped hearing from her bank.
- * The same choice puts a line on top of the budget and installment notes. At the default, ساده,
- * neither happens and every note reads exactly as it did.
+ * The fourth channel is the one exception, and it goes with the voice set in تنظیمات (`Quips.kt`),
+ * شوخ unless she changed it: a ledger that has gone [QUIET_AFTER_DAYS] days without a spend gets
+ * asked after — which is a joke, and also the likeliest sign that this phone stopped hearing from
+ * her bank. The same voice puts a line on top of the budget and installment notes. At ساده, and
+ * always in lite, neither happens and every note reads exactly as it did.
  *
  * ## Why any of this exists
  *

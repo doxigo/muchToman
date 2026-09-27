@@ -4,11 +4,12 @@
  *
  * The lines come from `worker/src/quips.json` on the /rates payload (the sync Worker passes it
  * through untouched), so a new one is a deploy of the rates Worker and never a release of this.
- * The title stays the plain sentence and the plain body stays under the line; at ساده, the
- * default, nothing here says anything at all.
+ * The title stays the plain sentence and the plain body stays under the line; at ساده nothing
+ * here says anything at all. شوخ is the default, upgrades included: only an explicit ساده is stored.
  */
 import { faNumber } from './format';
 import { DAY_MS, TEHRAN_OFFSET_MS } from './jalali';
+import { PREF_DEFAULTS } from './model';
 import type { LedgerEntry, Quip, QuipTone } from './model';
 import { pref, setPref } from './state';
 
@@ -22,7 +23,7 @@ export const QUIP_TONE_CAPTION =
   'با هر دوتاش، اگه چند روز خرجی نبینیم حالت رو می‌پرسیم.';
 
 /** A pref from an older build or a hand-edited backup reads as the default. */
-export const quipToneOf = (tone: unknown): QuipTone => (QUIP_TONES.includes(tone as QuipTone) ? tone as QuipTone : 'PLAIN');
+export const quipToneOf = (tone: unknown): QuipTone => (QUIP_TONES.includes(tone as QuipTone) ? tone as QuipTone : PREF_DEFAULTS.quipTone);
 
 /** quips.json spells them in lower case; «plain» is not a line's tone, it is the absence of one. */
 const wireTone = (tone: string): number => (tone === 'witty' ? 1 : tone === 'roast' ? 2 : -1);

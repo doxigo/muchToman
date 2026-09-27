@@ -998,9 +998,12 @@ class Store(context: Context) {
         get() = read("installmentMarks", emptyMap())
         set(v) = write("installmentMarks", v)
 
-    /** The voice notes speak in — see [QuipTone]. Hers, so exported. */
+    /**
+     * The voice notes speak in — see [QuipTone]. Hers, so exported. Unset reads as
+     * [QUIP_TONE_DEFAULT]; lite is always ساده, having no notes to voice and no row to change it.
+     */
     var quipTone: QuipTone
-        get() = QuipTone.of(prefs.getString("quipTone", null))
+        get() = if (BuildConfig.LITE) QuipTone.PLAIN else QuipTone.of(prefs.getString("quipTone", null))
         set(v) { prefs.edit().putString("quipTone", v.name).apply() }
 
     /** Which lines this phone has already said — see [pickQuip]. [budgetMarks]'s kind, kept off the backup. */
