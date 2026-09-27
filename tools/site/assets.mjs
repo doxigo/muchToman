@@ -21,6 +21,7 @@ const TOPS = {
   categories: 714, 'categories-dark': 705,
   installments: 938, 'installments-dark': 754,
   family: 130, 'family-dark': 130,
+  loans: 130, 'loans-dark': 130,
 };
 mkdirSync(at('worker/public/img'), { recursive: true });
 for (const [name, top] of Object.entries(TOPS)) {
