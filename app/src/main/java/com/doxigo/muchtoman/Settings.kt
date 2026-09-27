@@ -262,31 +262,36 @@ private fun SettingsIndex(
             Spacer(Modifier.height(Space.l))
             IdentityCard(name = name, onRename = { renaming = true })
 
+            // The lite edition keeps only the doors its one screen reads from: the messages behind
+            // the bank balances, the look, the lock, the backup and the cache. Categories, the
+            // household, installment reminders and the ledger's health all belong to screens it
+            // never shows, and a door into a room nothing uses is a setting that does nothing.
+            val full = !BuildConfig.LITE
+
             // خانواده is the ledger shared, so it sits with the ledger's doors — one door among
             // them, not the card on top. Most people keep this book alone; the household is
             // there for whoever opens it, not the first thing everybody is asked about.
-            val ledgerDoors = if (BuildConfig.LITE) 2 else 3
             SectionLabel("دفترت")
             IndexRow(
                 title = "پیامک‌های بانک",
                 value = if (smsOn) "روشن" else "خاموش",
-                shape = bandShape(0, ledgerDoors),
-                divided = true,
+                shape = bandShape(0, if (full) 3 else 1),
+                divided = full,
                 onClick = { onOpen(SettingsRoom.SMS) },
             ) { GlyphIcon(CategoryGlyph.ENVELOPE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
-            IndexRow(
-                title = "دسته‌بندی‌ها",
-                shape = bandShape(1, ledgerDoors),
-                divided = !BuildConfig.LITE,
-                onClick = onCategories,
-            ) { GlyphIcon(CategoryGlyph.TAG, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
-            if (!BuildConfig.LITE) {
+            if (full) {
+                IndexRow(
+                    title = "دسته‌بندی‌ها",
+                    shape = bandShape(1, 3),
+                    divided = true,
+                    onClick = onCategories,
+                ) { GlyphIcon(CategoryGlyph.TAG, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
                 IndexRow(
                     title = "خانواده",
                     // No value until there is a household: an unpaired phone is not a setting
                     // left «خاموش», it is simply somebody's own book.
                     value = if (family.paired) "${faNumber(family.members.size.toDouble())} عضو" else null,
-                    shape = bandShape(2, ledgerDoors),
+                    shape = bandShape(2, 3),
                     onClick = onCompanion,
                 ) { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             }
@@ -295,42 +300,46 @@ private fun SettingsIndex(
             IndexRow(
                 title = "ظاهر برنامه",
                 value = themeMode.fa,
-                shape = bandShape(0, 3),
+                shape = bandShape(0, if (full) 3 else 2),
                 divided = true,
                 onClick = { themeSheet = true },
             ) { AppearanceGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             IndexRow(
                 title = "قفل و امنیت",
                 value = if (lockEnabled) "روشن" else "خاموش",
-                shape = bandShape(1, 3),
-                divided = true,
+                shape = bandShape(1, if (full) 3 else 2),
+                divided = full,
                 onClick = { onOpen(SettingsRoom.SECURITY) },
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
-            IndexRow(
-                title = "یادآوری قسط",
-                value = installmentReminderFa(installmentReminder),
-                shape = bandShape(2, 3),
-                onClick = { reminderSheet = true },
-            ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            if (full) {
+                IndexRow(
+                    title = "یادآوری قسط",
+                    value = installmentReminderFa(installmentReminder),
+                    shape = bandShape(2, 3),
+                    onClick = { reminderSheet = true },
+                ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            }
 
             SectionLabel("نگهداری")
             IndexRow(
                 title = "پشتیبان‌گیری",
-                shape = bandShape(0, 3),
+                shape = bandShape(0, if (full) 3 else 2),
                 divided = true,
                 onClick = { onOpen(SettingsRoom.BACKUP) },
             ) { GlyphIcon(CategoryGlyph.STACK, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             IndexRow(
                 title = "حافظهٔ موقت",
-                shape = bandShape(1, 3),
-                divided = true,
+                shape = bandShape(1, if (full) 3 else 2),
+                divided = full,
                 onClick = { onOpen(SettingsRoom.CACHE) },
             ) { GlyphIcon(CategoryGlyph.SWAP, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
-            IndexRow(
-                title = "وضعیت دفتر",
-                shape = bandShape(2, 3),
-                onClick = { onOpen(SettingsRoom.HEALTH) },
-            ) { GlyphIcon(CategoryGlyph.TRAY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            if (full) {
+                IndexRow(
+                    title = "وضعیت دفتر",
+                    shape = bandShape(2, 3),
+                    onClick = { onOpen(SettingsRoom.HEALTH) },
+                ) { GlyphIcon(CategoryGlyph.TRAY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            }
 
             // The answer to "which version do you have?" over the phone, without her having to
             // find the system app-info page. A fixed gap, not weight(1f): inside a scrolling

@@ -35,7 +35,8 @@ keeps the released `com.doxigo.muchtoman`, which is why a v1.0.4 install upgrade
 with its balances and categories intact.
 
 The screen selection uses `BuildConfig.LITE` in `tabs` in `TabBar.kt`. The updater also uses
-that flag to select the matching APK. Shared behavior stays common: a bank detection fix has to land in both APKs
+that flag to select the matching APK, and تنظیمات uses it to drop the doors whose rooms only the
+full app reads: categories, the household, installment reminders and ledger health. Shared behavior stays common: a bank detection fix has to land in both APKs
 without anyone remembering to do it twice, which is the entire reason this is a flavour and not a
 second repository. The cost is that the lite APK carries the ledger code it never shows, so it is
 fewer screens rather than a smaller download.
