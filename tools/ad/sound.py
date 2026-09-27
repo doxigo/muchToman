@@ -515,6 +515,12 @@ place(sfx, whoosh(1.0, 250, 1800, 500, q=.9, peak=.35), C['wall'] - .05, .4)
 for tw, x in zip(C['words'], C['pan']['wall']):
     place(sfx, tap(), tw, .38, pan=x * .6)
     place(sfx, whoosh(.25, 900, 4000, q=1.6, peak=.6), tw - .12, .08)
+# the notes that talk back (ad.html): each lands on the SMS's chime a step up, and its line is marked
+if 'quips' in C:
+    for tm in C['quips']:
+        place(sfx, chime([90, 95], gap=.09, dur=1.2), tm + .02, .3, pan=-.1, send=.3)
+    for tm in C['quipMarks']:
+        place(sfx, marker(), tm, .16, pan=-.2)
 # into the iPhone scene (ad.html)
 if 'toIphone' in C:
     place(sfx, whoosh(.7, 400, 3200, 900, q=1.0, peak=.45), C['toIphone'], .3)

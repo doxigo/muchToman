@@ -47,6 +47,11 @@ Sample data, live rates.
 | ![](docs/screenshots/loans.png) | ![](docs/screenshots/loan-person.png) | ![](docs/screenshots/loan-link.png) |
 | ![](docs/screenshots/loans-dark.png) | ![](docs/screenshots/loan-person-dark.png) | ![](docs/screenshots/loan-link-dark.png) |
 
+| Notifications, with a line | Five quiet days | Their voice |
+| --- | --- | --- |
+| ![](docs/screenshots/notifications.png) | ![](docs/screenshots/quiet.png) | ![](docs/screenshots/tone.png) |
+| ![](docs/screenshots/notifications-dark.png) | ![](docs/screenshots/quiet-dark.png) | ![](docs/screenshots/tone-dark.png) |
+
 ## What it does
 
 - **One total, three ways.** Scannable ("10.8 million Toman"), spelled out in Persian words,
@@ -70,6 +75,13 @@ Sample data, live rates.
   lists the transactions that could be its payments, the exact amount first. The card shows what is
   paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
   Cash payments go into the ledger by hand and are linked the same way.
+- **Notifications with a voice, witty by default.** Budget warnings and installment reminders keep
+  the plain facts in the title and the figures, and carry one line on top: witty out of the box
+  («آروم‌تر برون، بودجه پشت سرت نفس‌نفس می‌زنه.»), a roast if you pick بی‌تعارف in Settings
+  («گارسونای محل دیگه اسمت رو حفظن.»), or nothing at all at ساده. Five days without a spend of your
+  own brings a note asking whether you are still alive, which is also the likeliest sign the phone
+  has stopped hearing from your bank. No line repeats until every one that fits has been said, new
+  lines arrive with the prices rather than with an update, and a secured lock screen shows none of it.
 - **Who owes you, and whom you owe.** Each person gets a page with the balance in whatever was lent:
   two gold coins stay two coins, priced at today's rate, rather than turning into a Toman figure that
   drifts. File a transfer under "Loan" and the app asks who it was, and says what that leaves before you

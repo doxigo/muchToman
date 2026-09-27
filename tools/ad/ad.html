@@ -92,6 +92,17 @@
   #nRow { position: absolute; inset: 0; opacity: 0; overflow: hidden; background: #fff; }
   #nRow img { position: absolute; left: 0; width: 100%; }
 
+  /* 3½ · the notes that talk back: the app's own notifications, each with its line on top */
+  #h4 { top: 64px; font-size: 90px; --hc: var(--bright); --accBg: var(--bright); --accInk: var(--forest); }
+  .qn { position: absolute; left: 120px; top: 330px; width: 840px; border-radius: 46px; background: #FAFBF7; padding: 28px 44px 32px;
+    color: #131711; font-size: 32px; line-height: 1.55; box-shadow: 0 44px 80px -26px rgba(0,0,0,.6), 0 14px 30px -12px rgba(0,0,0,.35); }
+  .qn .nHead img { width: 1.9em; height: 1.9em; border-radius: 50%; }
+  .qn .tone { position: absolute; left: 36px; top: 26px; padding: 2px 22px 6px; border-radius: 999px; background: var(--forest);
+    color: var(--bright); font-size: 26px; font-weight: 800; }
+  .qn .qt { margin-top: .3em; font-weight: 800; }
+  .qn .qq { margin-top: .15em; font-weight: 700; }
+  .qn .qf { margin-top: .2em; font-size: .8em; font-weight: 500; color: var(--muted); }
+
   /* 4 · the wall of screens */
   #bright2 { background: var(--bright); clip-path: circle(0px at 540px 1050px); }
   #wallCam { perspective: 2600px; perspective-origin: 540px 640px; visibility: hidden; }
@@ -222,6 +233,7 @@
       <div id="nRow"><img src="../../docs/screenshots/ledger.png"></div>
     </div>
   </div>
+  <div id="s4q" class="L"><div id="h4" class="hl"></div></div>
   <div id="bright2" class="L"></div>
   <div id="wallCam" class="L"><div id="wall"></div></div>
   <div id="pill" class="pill"></div>
@@ -316,6 +328,17 @@ const CONFIG = {
   smsSub: 'همون‌جا روی گوشی خونده می‌شه و به هیچ سروری نمی‌رسه',
   notif: { meta: 'پیامک • الان', who: 'بانک',
     body: 'برداشت <b class="mk">۲٬۴۳۲٬۰۰۰ ریال<i></i></b>، <span class="mk">قبض برق<i></i></span><br>مانده ۴۸٬۲۵۰٬۰۰۰ ریال' },
+  // The app's notifications as it posts them (Notify.kt, Quips.kt): the plain title and figures, and a
+  // line from worker/src/quips.json on top — a roast at بی‌تعارف, and the شوخ default asking after you.
+  quips: {
+    title: 'اعلان‌هاش هم\n*زبون* داره',
+    meta: 'چقدر تومن • الان',
+    notes: [
+      { tone: 'بی‌تعارف', title: 'رستوران و کافه: از بودجهٔ مهر گذشتی', line: 'گارسونای محل دیگه اسمت رو حفظن.',
+        facts: '۱٫۶ میلیون بیشتر از ۸ میلیون تومان • ۲۶ روز تا آخر ماه' },
+      { tone: 'شوخ', title: '۵ روزه خرجی ندیدیم', line: 'زنده‌ای؟ اگه آره، یه چایی مهمون خودت باش.' },
+    ],
+  },
   words: ['بودجه', 'قسط', 'گزارش', 'یک دفتر، همهٔ خانواده'],
   focus: ['budget-dark', 'installments', 'report-dark', 'family'],
   iphone: 'آیفون داری؟\nهمین اپ، به‌شکل *PWA*',
@@ -346,11 +369,14 @@ const C = {
   drop: 2.0, h2In: 2.22, scan: 3.0, scanDur: 1.0, sub2In: 3.62,
   h2Out: 4.66, zoom: 4.75, zoomDur: .85, h3In: 5.4, tabSwap: 5.8,
   notif: 6.0, marks: [6.5, 6.7], notifTap: 7.0, morph: 7.05, land: 7.65,
-  h3Out: 8.0, wall: 8.5, words: [9.0, 9.5, 10.0, 10.5],
-  toIphone: 11.45, h6In: 11.72, ipIn: 11.8, stepAt: [11.95, 12.56, 13.94],
-  shareTap: 12.6, sheetUp: 12.66, addTap: 13.15, dialogUp: 13.22, confirmTap: 13.62, swipe: 13.74, home: 13.8,
-  iconPop: 14.0, iconTap: 14.45, appOpen: 14.5,
-  toEnd: 15.75, logo: 16.0, wordmark: 16.55, chip: 16.85, ctas: [17.05, 17.2], url: 17.4, ctaTaps: [18.0, 18.5],
+  h3Out: 8.0, h4In: 8.4, quips: [8.5, 10.0], quipMarks: [8.95, 10.45], h4Out: 11.9,
+  wall: 12.5, words: [13.0, 13.5, 14.0, 14.5],
+  toIphone: 15.45, h6In: 15.72, ipIn: 15.8, stepAt: [15.95, 16.56, 17.94],
+  shareTap: 16.6, sheetUp: 16.66, addTap: 17.15, dialogUp: 17.22, confirmTap: 17.62, swipe: 17.74, home: 17.8,
+  iconPop: 18.0, iconTap: 18.45, appOpen: 18.5,
+  toEnd: 19.75, logo: 20.0, wordmark: 20.55, chip: 20.85, ctas: [21.05, 21.2], url: 21.4, ctaTaps: [22.0, 22.5],
+  break: [15.5, 20.0],      // the music's calm bars: the iPhone scene, no kick, the filter breathes
+  brand: 20.0, end: 22.0,   // the brand's hit and the last one
 };
 
 // ———————————————————————————————— motion vocabulary: the app's own (Theme.kt Motion) ————————————————————————————————
@@ -371,7 +397,7 @@ const PRE = 0.5;              // pre-roll: frame 0 opens mid-motion, the headlin
 // Its frame 0 is that ground, the timeline's own 0 rather than PRE.
 const LOOP = /loop/.test(location.search);
 const START = LOOP ? 0 : PRE;
-const DURATION = LOOP ? 17 : 20.5;
+const DURATION = LOOP ? 21 : 24.5;
 const T = (t) => t + PRE;
 let GLYPH_D = '';             // icon.svg's mark, read at load
 
@@ -412,6 +438,15 @@ const h2b = words($('#h2b'), CONFIG.answer);
 const h2a = words($('#h2a'), CONFIG.answer);
 const sub2 = words($('#sub2'), CONFIG.answerSub);
 const h3 = words($('#h3'), CONFIG.sms);
+const h4 = words($('#h4'), CONFIG.quips.title);
+const qns = CONFIG.quips.notes.map((n) => {
+  const el = document.createElement('div');
+  el.className = 'qn';
+  el.innerHTML = `<span class="tone">${n.tone}</span><div class="nHead"><img src="../../pwa/public/apple-touch-icon.png"><span>${CONFIG.quips.meta}</span></div>` +
+    `<div class="qt">${n.title}</div><div class="qq"><span class="mk">${n.line}<i></i></span></div>` + (n.facts ? `<div class="qf">${n.facts}</div>` : '');
+  $('#s4q').appendChild(el);
+  return el;
+});
 const sub3 = words($('#sub3'), CONFIG.smsSub);
 const h6 = words($('#h6'), CONFIG.iphone);
 const wm = words($('#wordmark'), CONFIG.brand);
@@ -508,7 +543,7 @@ function build() {
   gsap.set('#rigWrap', { x: RIG_A.x, y: RIG_A.y, scale: RIG_A.s });
   gsap.set(['#pgLedger', '#lR'], { autoAlpha: 0 });
   gsap.set('#lB', { y: -ROW.h });
-  gsap.set(['#notif', '#chip5', '#cta', '#cta2', '#url', '#fine'], { autoAlpha: 0 });
+  gsap.set(['#notif', '#chip5', '#cta', '#cta2', '#url', '#fine', ...qns], { autoAlpha: 0 });
   gsap.set('#wall', { transformOrigin: `${LC.x}px ${LC.y}px` });
   gsap.set(['#pill', '#steps', '#chip5', '#cta', '#cta2'], { xPercent: -50 });
   gsap.set('#ipWrap', { x: IP_X, y: 1420, scale: IP_S });
@@ -577,6 +612,18 @@ function build() {
   tl.set('#notif', { autoAlpha: 0 }, T(C.land));
   tl.fromTo('#lRflash', { opacity: .5 }, { opacity: 0, duration: .7, ease: 'power1.out', immediateRender: false }, T(C.land));
   gesture([{ t: C.notifTap, x: 610, y: 600 }]);
+
+  // ── 3½ · the notes talk back: a roast on the budget she blew, then the default voice asking after her.
+  // The newest lands on top, as in the shade, and pushes the one before it down.
+  tl.fromTo(h4, { yPercent: 165 }, { yPercent: 0, duration: .85, ease: 'enter', stagger: .06 }, T(C.h4In));
+  tl.fromTo('#h4', { '--fs': 80 }, { '--fs': 100, duration: 1, ease: settle }, T(C.h4In));
+  qns.forEach((q, k) => {
+    tl.fromTo(q, { autoAlpha: 0, y: -64, scale: .94 }, { autoAlpha: 1, y: 0, scale: 1, duration: .6, ease: settle, immediateRender: false }, T(C.quips[k]));
+    qns.slice(0, k).forEach((older) => tl.to(older, { y: `+=${q.offsetHeight + 28}`, duration: .55, ease: settle }, T(C.quips[k])));
+    tl.fromTo($('.mk i', q), { scaleX: 0 }, { scaleX: 1, duration: .36, ease: 'enter' }, T(C.quipMarks[k]));
+  });
+  tl.to(h4, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h4Out));
+  tl.to([...qns].reverse(), { autoAlpha: 0, y: '-=48', duration: .3, ease: 'exit', stagger: .05 }, T(C.h4Out + .05));
 
   // ── 4 · the phone steps back into a wall of every screen the app has
   tl.to(h3, { yPercent: -165, duration: .34, ease: 'exit', stagger: .03 }, T(C.h3Out));

@@ -22,6 +22,8 @@ const TOPS = {
   installments: 938, 'installments-dark': 754,
   family: 130, 'family-dark': 130,
   loans: 130, 'loans-dark': 130,
+  // The notification shade: below its quick-settings tiles, from the top of the app's bundle.
+  notifications: 600, 'notifications-dark': 600,
 };
 mkdirSync(at('worker/public/img'), { recursive: true });
 for (const [name, top] of Object.entries(TOPS)) {

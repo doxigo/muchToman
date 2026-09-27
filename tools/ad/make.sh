@@ -1,5 +1,5 @@
 #!/bin/sh
-# The 20.5s 4:5 video ad (1080×1350, 30fps, H.264 + AAC at -14 LUFS), built from the repo's own
+# The 24.5s 4:5 video ad (1080×1350, 30fps, H.264 + AAC at -14 LUFS), built from the repo's own
 # captures so it follows them when they're retaken: the picture from ad.html (render.mjs), the
 # soundtrack from the same cue sheet (sound.py), loudness-normalised in two passes and muxed.
 # The copy lives in ad.html's CONFIG and must stay true to worker/public/index.html.
