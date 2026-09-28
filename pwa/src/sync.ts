@@ -1149,9 +1149,9 @@ function resetFamilySharing(): void {
 export function claimHousehold(base: string, memberName: string): Promise<Session> {
   return withFamilySync(async () => {
     const session = await claimFreshHousehold(base, newIdentity(), newIdentity());
+    // No session does not mean no household: whatever an earlier one left here is buried first.
     batch(() => {
-      setSyncPref('syncSeq', 0);
-      resetFamilySharing();
+      buryHousehold(null, null);
       ownRow(session, memberName);
     });
     await settled();
@@ -1203,13 +1203,13 @@ async function pairHousehold(pairing: PairingInvite): Promise<Session> {
 
 /**
  * The local half: the session becomes this device's household, private until she says otherwise.
+ * Whatever a household before it left here is buried first, [former] being who she was in it.
  * Her report-exclusion stamp is put down rather than carried in, or her join would rewrite a set
  * the household settled on months ago.
  */
-async function commitJoin(session: Session, memberName: string): Promise<void> {
+async function commitJoin(session: Session, memberName: string, former: string | null): Promise<void> {
   batch(() => {
-    setSyncPref('syncSeq', 0);
-    resetFamilySharing();
+    buryHousehold(null, former);
     setSyncPref('reportExclusions', null);
     ownRow(session, memberName);
   });
@@ -1220,7 +1220,7 @@ async function commitJoin(session: Session, memberName: string): Promise<void> {
 export function joinHousehold(pairing: PairingInvite, memberName: string): Promise<Session> {
   return withFamilySync(async () => {
     const session = await pairHousehold(pairing);
-    await commitJoin(session, memberName);
+    await commitJoin(session, memberName, null);
     return session;
   });
 }
@@ -1230,8 +1230,7 @@ export function rejoinHousehold(pairing: PairingInvite, memberName: string): Pro
   return withFamilySync(async () => {
     const former = (await loadSession())?.member ?? null;
     const session = await pairHousehold(pairing);
-    buryHousehold(null, former);
-    await commitJoin(session, memberName);
+    await commitJoin(session, memberName, former);
     return session;
   });
 }
@@ -1295,6 +1294,14 @@ export function renewHousehold(): Promise<Session> {
  */
 function buryHousehold(keepMember: string | null, formerMember: string | null): void {
   const now = Date.now();
+  // Sync.kt formerMemberIds: who she was, from the session being replaced and from her own live
+  // transaction and دارایی marks — the only kinds never written for somebody else's record.
+  const former = new Set<string>(formerMember ? [formerMember] : []);
+  for (const p of rows('publications')) {
+    if (p.deleted) continue;
+    if (p.sourceKind === 'sms' || p.sourceKind === 'manual') { const owner = ownerOfFamilyTxnId(p.id); if (owner) former.add(owner); }
+    if (p.sourceKind === 'asset') former.add(p.id.replace(/^asset:/, ''));
+  }
   batch(() => {
     setSyncPref('syncSeq', 0);
     resetFamilySharing();
@@ -1315,7 +1322,9 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
       if (goal.deleted) continue;
       // Every goal she made while paired carries the member id being left — private caps and
       // instalment plans included — so that id is hers too, or leaving deletes all her plans.
-      const hers = blank(goal.ownerMemberId) || goal.ownerMemberId === keepMember || goal.ownerMemberId === formerMember;
+      // With nothing to say who she was (a restore brings goals but neither session nor marks),
+      // no goal is provably somebody else's, and a plan of hers deleted is worse than theirs kept.
+      const hers = blank(goal.ownerMemberId) || goal.ownerMemberId === keepMember || former.has(goal.ownerMemberId) || former.size === 0;
       put('goals', hers
         ? { ...goal, shared: false, ownerMemberId: keepMember ?? '', updatedAt: nextStamp(goal.updatedAt, now) }
         : { ...goal, updatedAt: nextStamp(goal.updatedAt, now), deleted: true });

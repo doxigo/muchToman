@@ -540,12 +540,25 @@ private fun claimFreshHousehold(base: String, member: String, device: String): S
 suspend fun claimHousehold(base: String, durable: DurableDb, memberName: String): SyncSession =
     withFamilySync {
         val session = claimFreshHousehold(base, newIdentity(), newIdentity())
+        commitSession(durable, session, memberName)
+        session
+    }
+
+/**
+ * The local half of every new membership, claimed or joined: whatever a previous household left
+ * here is buried in the same transaction that writes the new session. «No session» does not mean
+ * «no household» — a restored backup has its session stripped but keeps the old household's
+ * members, rows and publication marks, and left standing they would show her twice beside people
+ * who are not in this household, and sweep her old `txn:` ids as tombstones the server refuses
+ * under the new token, failing every push after.
+ */
+private suspend fun commitSession(durable: DurableDb, session: SyncSession, memberName: String) =
+    durable.withTransaction {
+        buryHousehold(durable, keepMember = null)
         saveSession(durable, session)
-        resetFamilySharing(durable)
         durable.familyMembers().put(
             FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
         )
-        session
     }
 
 suspend fun saveSession(durable: DurableDb, session: SyncSession) = durable.withTransaction {
@@ -666,18 +679,14 @@ private fun pairHousehold(link: String, allowedBase: String = BuildConfig.SYNC_U
 }
 
 /** The local half: the session becomes this phone's household, private until she says otherwise. */
-private suspend fun commitJoin(durable: DurableDb, session: SyncSession, memberName: String) {
-    saveSession(durable, session)
-    resetFamilySharing(durable)
+private suspend fun commitJoin(durable: DurableDb, session: SyncSession, memberName: String) = durable.withTransaction {
+    commitSession(durable, session, memberName)
     // She is walking into a household that already has an answer to «what does the report
     // count?», so her own stamp is put down rather than carried in: kept, it would win the
     // first sync against a set the family settled on months ago, and her join would silently
     // rewrite everyone's report. Her local reading stands until the household's record lands —
     // or until she edits it here, which is then a real edit and speaks with a real stamp.
     durable.meta().delete(META_REPORT_EXCLUSIONS)
-    durable.familyMembers().put(
-        FamilyMember(session.member, cleanMemberName(memberName), sharesSms = false, updatedAt = System.currentTimeMillis())
-    )
 }
 
 private suspend fun resetFamilySharing(durable: DurableDb) {
@@ -715,8 +724,8 @@ fun pairingCase(sessionToken: String?, linkHid: String): PairingCase = when {
 /**
  * A confirmed replace: the same join, from a phone that already belongs somewhere. The network
  * pair runs first so a dead code costs nothing — the old household is untouched until the new
- * one has said yes — and then, in one transaction, the old household is buried exactly as
- * [renewHousehold] buries it and the new session is written. Nobody is kept: unlike a renewal,
+ * one has said yes — and then [commitJoin] buries the old household exactly as [renewHousehold]
+ * buries it, in the transaction that writes the new session. Nobody is kept: unlike a renewal,
  * the pair minted a fresh member id, so the old own row belongs to a household this phone left.
  */
 suspend fun rejoinHousehold(
@@ -727,10 +736,7 @@ suspend fun rejoinHousehold(
 ): SyncSession =
     withFamilySync {
         val session = pairHousehold(link, allowedBase)
-        durable.withTransaction {
-            buryHousehold(durable, keepMember = null, formerMember = loadSession(durable)?.member)
-            commitJoin(durable, session, memberName)
-        }
+        commitJoin(durable, session, memberName)
         session
     }
 
@@ -802,7 +808,7 @@ suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFa
         SYNC_JSON.encodeToString(LeaveBody(tombstone)),
     )
     durable.withTransaction {
-        buryHousehold(durable, keepMember = null, formerMember = active.member)
+        buryHousehold(durable, keepMember = null)
         // loadSession treats any stored base as a session to resume, so the keys must go, not blank.
         durable.meta().delete(META_SYNC_BASE)
         durable.meta().delete(META_SYNC_TOKEN)
@@ -830,18 +836,21 @@ suspend fun renewHousehold(durable: DurableDb): SyncSession = withFamilySync {
         saveSession(durable, session)
         // The device keeps its identity here, so its own member row rides into the new
         // household; everything else about the old one is buried.
-        buryHousehold(durable, keepMember = session.member, formerMember = old.member)
+        buryHousehold(durable, keepMember = session.member)
     }
     session
 }
 
 /**
  * Every local trace of the household this phone is leaving, buried in place — shared by
- * [renewHousehold] and [rejoinHousehold], whose only difference is whether the member walks
- * into the next household under the same identity. Callers run this inside the transaction
- * that writes the replacement session, so a crash can never leave half a household.
+ * [commitSession], [leaveFamily] and [renewHousehold], whose only difference is whether the
+ * member walks into the next household under the same identity. Callers run this inside the
+ * transaction that writes the replacement session, before it is written, so a crash can never
+ * leave half a household and the session being replaced can still say who she was.
  */
-private suspend fun buryHousehold(durable: DurableDb, keepMember: String?, formerMember: String?) {
+private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
+    val publications = durable.syncPublications().all()
+    val formerMembers = formerMemberIds(durable, publications)
     // The cursor and the identity registration belong to a server this device will never
     // speak to again; the publications are buried rather than deleted so the same rows keep
     // their monotonic stamps when they are re-published under the new key.
@@ -849,7 +858,6 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?, forme
     durable.meta().put(DurableMeta(META_SYNC_SEQ, "0"))
     durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "false"))
     resetFamilySharing(durable)
-    val publications = durable.syncPublications().all()
     if (publications.isNotEmpty()) {
         durable.syncPublications().putAll(publications.map { it.copy(deleted = true) })
     }
@@ -883,9 +891,11 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?, forme
         if (goal.deleted) continue
         // Her own goals carry the member id she had in the household being left — every one she
         // made while paired, private caps and instalment plans included — so that id is hers too,
-        // or leaving would delete everything she ever planned while she had a family.
+        // or leaving would delete everything she ever planned while she had a family. When nothing
+        // here can say who she was, no goal can be told apart as somebody else's, and a plan of
+        // hers deleted is worse than a partner's old cap kept private.
         val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember ||
-            goal.ownerMemberId == formerMember
+            goal.ownerMemberId in formerMembers || formerMembers.isEmpty()
         durable.goals().put(
             if (hers) {
                 goal.copy(
@@ -897,6 +907,24 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?, forme
                 goal.copy(updatedAt = nextStamp(goal.updatedAt, now), deleted = true)
             }
         )
+    }
+}
+
+/**
+ * The member ids she answered to in the household being buried: the stored session's, and the
+ * ones her own live publications name — which is all a restored backup has left, since it strips
+ * the session. Only transaction and دارایی marks, the two kinds never written for somebody
+ * else's record, and only live ones: every burial leaves its marks deleted, so a live mark
+ * belongs to the latest household and never names an id from an older one.
+ */
+private suspend fun formerMemberIds(durable: DurableDb, publications: List<SyncPublication>): Set<String> = buildSet {
+    durable.meta().get(META_SYNC_MEMBER)?.let(::add)
+    for (publication in publications) {
+        if (publication.deleted) continue
+        when (publication.sourceKind) {
+            "sms", "manual" -> ownerOfFamilyTxnId(publication.id)?.let(::add)
+            "asset" -> add(publication.id.removePrefix("asset:"))
+        }
     }
 }
 

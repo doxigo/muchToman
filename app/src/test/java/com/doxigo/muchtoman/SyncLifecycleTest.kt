@@ -102,6 +102,115 @@ class SyncLifecycleTest {
 
     private fun hidOf(session: SyncSession): String = session.token.substringBefore('.')
 
+    private val oldMe = "d".repeat(32)
+    private val oldThem = "b".repeat(32)
+
+    private fun goal(id: String, shared: Boolean, owner: String) = Goal(
+        id = id, nameFa = id, targetRial = 1_000_000, kind = GoalKind.CAP, period = GoalPeriod.MONTH,
+        startsOn = 0, createdAt = 1, updatedAt = 1, shared = shared, ownerMemberId = owner,
+    )
+
+    /**
+     * A paired phone's durable.db after an encrypted backup came back: the session is stripped
+     * ([BACKUP_STRIPPED_META]) and everything else of the old household is still here.
+     */
+    private suspend fun restoredHousehold(durable: DurableDb, marks: List<SyncPublication>) {
+        durable.familyMembers().put(FamilyMember(oldMe, "سهیل", updatedAt = 1000))
+        durable.familyMembers().put(FamilyMember(oldThem, "رضا", updatedAt = 1000))
+        durable.familyTxns().put(
+            FamilyTxn(familyTxnId(oldThem, "m:1"), oldThem, "manual", at = 1000, day = 1, amountRial = -50_000, updatedAt = 1000)
+        )
+        durable.familyAssets().put(FamilyAsset(oldThem, "[]", 0.0, updatedAt = 1000))
+        durable.syncPublications().putAll(marks)
+        durable.goals().put(goal("hers-private", shared = false, owner = oldMe))
+        durable.goals().put(goal("hers-shared", shared = true, owner = oldMe))
+        durable.goals().put(goal("theirs", shared = true, owner = oldThem))
+    }
+
+    /** Syncs once and hands back every record pushed under [session]'s token. */
+    private suspend fun pushedBy(server: FakeSyncServer, durable: DurableDb, session: SyncSession): List<JSONObject> {
+        val derived = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext<Context>(), DerivedDb::class.java
+        ).build()
+        try {
+            derive(durable, derived, emptyMap())
+            syncNow(durable, derived, session)
+        } finally {
+            derived.close()
+        }
+        return server.requestsTo("/v1/sync")
+            .filter { it.method == "POST" && it.auth == "Bearer ${session.token}" }
+            .flatMap { request -> JSONObject(request.body).getJSONArray("records").let { a -> (0 until a.length()).map(a::getJSONObject) } }
+    }
+
+    /** Only the new own member is left, nothing pushed names the old household, and her goals stayed. */
+    private suspend fun assertOldHouseholdBuried(server: FakeSyncServer, durable: DurableDb, session: SyncSession) {
+        assertEquals(listOf(session.member), durable.familyMembers().all().filterNot { it.deleted }.map { it.id })
+        val pushed = pushedBy(server, durable, session)
+        assertTrue(pushed.isNotEmpty())
+        for (record in pushed) {
+            val id = record.getString("id")
+            assertFalse(id, id.contains(oldMe) || id.contains(oldThem))
+            if (record.getString("kind") in setOf("transaction", "asset", "member")) {
+                assertEquals(id, session.member, record.getString("ownerMemberId"))
+            }
+        }
+        for (id in listOf("hers-private", "hers-shared")) {
+            val kept = durable.goals().anyById(id)!!
+            assertFalse("$id was deleted", kept.deleted)
+            assertFalse(kept.shared)
+            assertEquals("", kept.ownerMemberId)
+        }
+    }
+
+    @Test
+    fun `claiming on a restored backup buries the old household`() = lifecycle { server, durable ->
+        restoredHousehold(
+            durable,
+            listOf(
+                SyncPublication(familyTxnId(oldMe, "m:1"), "manual", "h", updatedAt = 1000),
+                SyncPublication("category:${"c".repeat(64)}", "category", "h", updatedAt = 1000),
+            ),
+        )
+
+        val session = claimHousehold(server.base, durable, "سهیل")
+
+        assertOldHouseholdBuried(server, durable, session)
+        assertTrue(durable.goals().anyById("theirs")!!.deleted)
+        assertTrue(durable.familyTxns().all().all { it.deleted })
+        assertTrue(durable.familyAssets().all().all { it.deleted })
+    }
+
+    @Test
+    fun `joining from a restored backup buries the old household`() = lifecycle { server, durable ->
+        // Only her دارایی mark left to say who she was.
+        restoredHousehold(durable, listOf(SyncPublication("asset:$oldMe", "asset", "h", updatedAt = 1000)))
+        val durable2 = secondDurable()
+        try {
+            val host = claimHousehold(server.base, durable2, "مریم")
+            val link = pairingUrl(host, invite(host, durable2))
+
+            val session = joinHousehold(link, durable, "سهیل", allowedBase = server.base)
+
+            assertOldHouseholdBuried(server, durable, session)
+            assertTrue(durable.goals().anyById("theirs")!!.deleted)
+        } finally {
+            durable2.close()
+        }
+    }
+
+    @Test
+    fun `a restore with nothing naming her keeps every goal, private and hers`() = lifecycle { server, durable ->
+        restoredHousehold(durable, emptyList())
+
+        val session = claimHousehold(server.base, durable, "سهیل")
+
+        assertOldHouseholdBuried(server, durable, session)
+        val theirs = durable.goals().anyById("theirs")!!
+        assertFalse(theirs.deleted)
+        assertFalse(theirs.shared)
+    }
+
     @Test
     fun `claim writes a resumable session`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")

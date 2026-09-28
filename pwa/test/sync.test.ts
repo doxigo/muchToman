@@ -370,6 +370,76 @@ describe('the household', () => {
     expect(state.row('goals', 'h')?.deleted).toBe(true);
   });
 
+  describe('after a restore', () => {
+    const OLD_ME = '5'.repeat(32);
+    const goal = { id: 'g', nameFa: 'x', targetRial: 1, kind: 'cap' as const, categoryId: null, period: 'jmonth' as const, startsOn: 1, endsOn: null, createdAt: 1, updatedAt: 1, deleted: false, shared: true, ownerMemberId: OLD_ME, editedByMemberId: OLD_ME };
+    /** A paired store with its session gone and the old household still in it, as a phone's restore leaves it. */
+    async function leftovers(marks: import('../src/model').Publication[]): Promise<void> {
+      await db.deleteMeta('session');
+      state.put('familyMembers', { id: OLD_ME, name: 'سهیل', sharesSms: false, avatar: '', updatedAt: 1, deleted: false });
+      state.put('familyMembers', { id: THEM, name: 'رضا', sharesSms: true, avatar: '', updatedAt: 1, deleted: false });
+      state.put('familyTxns', { id: sync.familyTxnId(THEM, 'm:1'), ownerMemberId: THEM, sourceKind: 'manual', at: 1, day: 1, amountRial: -1, bank: 'MANUAL', merchant: '', updatedAt: 1, deleted: false, transfer: false });
+      state.put('familyAssets', { id: THEM, items: [], totalToman: 0, updatedAt: 1, deleted: false });
+      state.putAll('publications', marks);
+      state.putAll('goals', [{ ...goal, id: 'hers' }, { ...goal, id: 'hers-private', shared: false }, { ...goal, id: 'theirs', ownerMemberId: THEM }]);
+    }
+    function serve(): WireRecord[] {
+      const pushed: WireRecord[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/v1/sync?')) return Response.json({ seq: 0, records: [], hasMore: false });
+        if (url.endsWith('/v1/sync')) { pushed.push(...(JSON.parse(String(init?.body)) as { records: WireRecord[] }).records); return Response.json({ clamped: [] }); }
+        return Response.json({ secret: 'c'.repeat(64) });
+      }));
+      return pushed;
+    }
+    async function expectBuried(joined: Session, pushed: WireRecord[]): Promise<void> {
+      expect(state.rows('familyMembers').filter((m) => !m.deleted).map((m) => m.id)).toEqual([joined.member]);
+      await sync.syncNow(joined, NOW);
+      expect(pushed.length).toBeGreaterThan(0);
+      for (const r of pushed) {
+        expect(r.id).not.toContain(OLD_ME);
+        expect(r.id).not.toContain(THEM);
+        if (['transaction', 'asset', 'member'].includes(r.kind)) expect(r.ownerMemberId).toBe(joined.member);
+      }
+      for (const id of ['hers', 'hers-private']) expect(state.row('goals', id)).toMatchObject({ deleted: false, shared: false, ownerMemberId: '' });
+      expect(state.rows('familyTxns').every((t) => t.deleted)).toBe(true);
+      expect(state.rows('familyAssets').every((a) => a.deleted)).toBe(true);
+    }
+
+    it('claims a household with the old one buried, and her goals kept', async () => {
+      await leftovers([
+        { id: sync.familyTxnId(OLD_ME, 'm:1'), sourceKind: 'manual', contentHash: 'h', updatedAt: 1, deleted: false },
+        { id: `category:${'c'.repeat(64)}`, sourceKind: 'category', contentHash: 'h', updatedAt: 1, deleted: false },
+      ]);
+      const pushed = serve();
+      await expectBuried(await sync.claimHousehold('https://sync.test', 'سهیل'), pushed);
+      expect(state.row('goals', 'theirs')?.deleted).toBe(true);
+    });
+
+    it('joins a household with the old one buried, knowing her by her دارایی mark alone', async () => {
+      await leftovers([{ id: `asset:${OLD_ME}`, sourceKind: 'asset', contentHash: 'h', updatedAt: 1, deleted: false }]);
+      const pushed = serve();
+      const pairing = { base: 'https://sync.test', hid: HID, code: '0'.repeat(32), scope: `family:${HID}`, key: crypt.fromBase64Url(session.raw!) };
+      await expectBuried(await sync.joinHousehold(pairing, 'سهیل'), pushed);
+      expect(state.row('goals', 'theirs')?.deleted).toBe(true);
+    });
+
+    it('keeps every goal a browser backup brings back, since nothing in it says which were hers', async () => {
+      state.putAll('goals', [{ ...goal, id: 'hers', ownerMemberId: ME }, { ...goal, id: 'theirs', ownerMemberId: THEM }]);
+      state.put('publications', { id: sync.familyTxnId(ME, 'm:1'), sourceKind: 'manual', contentHash: 'h', updatedAt: 1, deleted: false });
+      const payload = await (await import('../src/backup')).browserPayload();
+      // A fresh browser: the file brings the goals, never the session or the publication marks.
+      vi.resetModules(); globalThis.indexedDB = new IDBFactory();
+      state = await import('../src/state'); sync = await import('../src/sync');
+      await state.load();
+      await (await import('../src/backup')).applyRestore(payload);
+      expect(state.rows('publications')).toEqual([]);
+      serve();
+      await sync.claimHousehold('https://sync.test', 'سهیل');
+      for (const id of ['hers', 'theirs']) expect(state.row('goals', id)).toMatchObject({ deleted: false, shared: false, ownerMemberId: '' });
+    });
+  });
+
   it('leaves through the server first, then buries the household and forgets the session', async () => {
     const bodies: unknown[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
