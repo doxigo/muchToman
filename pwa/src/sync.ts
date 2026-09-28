@@ -206,7 +206,7 @@ export function syncErrorFa(error: unknown): string {
     if (error.status === 429) return 'درخواست‌ها زیاد شده. کمی بعد دوباره امتحان کن.';
     return `سرویس همگام‌سازی خطا داد (${error.status}). تغییرات روی گوشی محفوظ موند.`;
   }
-  if (error instanceof SyncIoError) return 'اتصال نشد. اینترنتت رو چک کن. تغییرات روی گوشی محفوظ موند.';
+  if (error instanceof SyncIoError) return 'متصل نشد. اینترنتت رو چک کن. تغییرات روی گوشی محفوظ موند.';
   return 'همگام‌سازی کامل نشد. تغییرات روی گوشی محفوظ موند.';
 }
 

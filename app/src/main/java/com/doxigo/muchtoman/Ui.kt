@@ -1640,7 +1640,7 @@ internal fun HeroCard(
                 val failed = state.error != null && state.rates.updatedAt == 0L
                 // Anything worth a caution sentence on this card dims the dot too — cached
                 // rates under a failed fetch are usable, but a bright green all-clear beside
-                // «اتصال نشد» is the colour contradicting the words.
+                // «متصل نشد» is the colour contradicting the words.
                 val trouble = failed || stale || state.error != null
                 // Colour confirms; the words carry it. A dot on its own would be the one
                 // thing in this app that says "something is wrong" in hue alone.
@@ -1666,7 +1666,7 @@ internal fun HeroCard(
             }
             if (state.error != null && state.rates.updatedAt > 0L) {
                 Text(
-                    "اتصال نشد. نرخ‌های قبلی نشون داده می‌شن.",
+                    "متصل نشد. نرخ‌های قبلی نشون داده می‌شن.",
                     fontSize = 12.sp,
                     lineHeight = 19.sp,
                     color = Hero.muted,

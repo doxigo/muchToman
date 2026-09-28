@@ -132,7 +132,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
   const figure = faCompact(total, 3, true);
   const words = faWordsToman(total);
   const failed = error != null && updatedAt === 0;
-  // Anything worth a caution sentence dims the dot too: an all-clear green beside «اتصال نشد» contradicts the words.
+  // Anything worth a caution sentence dims the dot too: an all-clear green beside «متصل نشد» contradicts the words.
   const trouble = failed || stale || error != null;
 
   return (
@@ -165,7 +165,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
                 : `نرخ‌ها: ${faAgo(updatedAt, now)}`}
           </span>
         </div>
-        {error != null && updatedAt > 0 && <p class="stale-note">اتصال نشد. نرخ‌های قبلی نشون داده می‌شن.</p>}
+        {error != null && updatedAt > 0 && <p class="stale-note">متصل نشد. نرخ‌های قبلی نشون داده می‌شن.</p>}
       </HeroPanel>
     </div>
   );

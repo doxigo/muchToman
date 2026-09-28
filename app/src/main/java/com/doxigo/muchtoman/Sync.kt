@@ -349,7 +349,7 @@ internal fun syncErrorFa(error: Throwable): String = when {
         "درخواست‌ها زیاد شده. کمی بعد دوباره امتحان کن."
     error is SyncHttpException ->
         "سرویس همگام‌سازی خطا داد (${error.status}). تغییرات روی گوشی محفوظ موند."
-    error is java.io.IOException -> "اتصال نشد. اینترنتت رو چک کن. تغییرات روی گوشی محفوظ موند."
+    error is java.io.IOException -> "متصل نشد. اینترنتت رو چک کن. تغییرات روی گوشی محفوظ موند."
     else -> "همگام‌سازی کامل نشد. تغییرات روی گوشی محفوظ موند."
 }
 

@@ -186,7 +186,7 @@ export async function startFamily(name: string): Promise<void> {
     refreshFamily(next, 'خانواده ساخته شد.');
     requestFamilySync(true);
   } catch {
-    refreshFamily(null, undefined, 'اتصال نشد. بعداً دوباره امتحان کن.');
+    refreshFamily(null, undefined, 'متصل نشد. بعداً دوباره امتحان کن.');
   }
 }
 

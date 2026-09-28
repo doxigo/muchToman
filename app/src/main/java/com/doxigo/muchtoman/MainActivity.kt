@@ -1447,7 +1447,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
                 .onFailure {
                     android.util.Log.w("muchtoman", "claim failed: $it")
-                    refreshFamily(null, error = "اتصال نشد. بعداً دوباره امتحان کن.")
+                    refreshFamily(null, error = "متصل نشد. بعداً دوباره امتحان کن.")
                 }
         }
     }
