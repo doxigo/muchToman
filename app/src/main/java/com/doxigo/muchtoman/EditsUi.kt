@@ -1,6 +1,20 @@
 package com.doxigo.muchtoman
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -376,5 +390,148 @@ internal fun SplitPanel(split: List<SplitPart>) {
                 )
             }
         }
+    }
+}
+
+/**
+ * The foot of a transaction's page: what can be done to the row, in the band تنظیمات speaks in.
+ *
+ * Down here because none of it is the page's job — the page is for reading a transaction and
+ * filing it — and in a band because that is how this app already offers a short list of acts: a
+ * mark on a disc, a name, where it stands, and the chevron to the sheet it opens. Grey discs,
+ * because each acts on this row rather than leading anywhere (DESIGN.md: a green disc is a door).
+ *
+ * Delete is a band of its own under the others, never a row among them: the one act that loses
+ * something must not sit a thumb's slip from the two that do not. Its two taps are the app's one
+ * two-tap, worn by the row itself — the first turns the whole row red and says what the second
+ * will do, and says it aloud.
+ */
+@Composable
+internal fun TxnActs(
+    entry: LedgerEntry,
+    onEdit: (() -> Unit)?,
+    onSplit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val acts = buildList<@Composable (Shape, Boolean) -> Unit> {
+        onEdit?.let {
+            add { shape, divided ->
+                ActRow("ویرایش تراکنش", ActGlyph.PENCIL, shape, divided, it, "اصلاح‌شده".takeIf { entry.edited })
+            }
+        }
+        onSplit?.let {
+            add { shape, divided ->
+                ActRow(
+                    "تقسیم بین دسته‌ها", ActGlyph.SPLIT, shape, divided, it,
+                    entry.split.takeIf { p -> p.isNotEmpty() }?.let { p -> "${faNumber(p.size.toDouble())} دسته" },
+                )
+            }
+        }
+    }
+    Column(modifier) {
+        acts.forEachIndexed { i, act -> act(bandShape(i, acts.size), i < acts.size - 1) }
+        if (onDelete != null) {
+            if (acts.isNotEmpty()) Spacer(Modifier.height(Space.l))
+            DeleteRow(entry.txn.ref, onDelete)
+        }
+    }
+}
+
+/** One act in the band: [IndexRow]'s anatomy with the control's grey disc. */
+@Composable
+private fun ActRow(
+    title: String,
+    glyph: ActGlyph,
+    shape: Shape,
+    divided: Boolean,
+    onClick: () -> Unit,
+    value: String? = null,
+) {
+    Box(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)) {
+        Row(
+            Modifier
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(Space.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) { ActIcon(glyph, MaterialTheme.colorScheme.onSurface) }
+            Text(
+                title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = Space.m).weight(1f),
+            )
+            value?.let {
+                Text(
+                    it,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = Space.s),
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = Space.l + 44.dp + Space.m),
+            )
+        }
+    }
+}
+
+/**
+ * The delete, as a row of its own band. Error ink on the band's own ground until the first tap;
+ * then the row fills with error and the name becomes the question — the colour confirms, the
+ * words carry it, and TalkBack hears it. Keyed by [ref], so a row reused for another transaction
+ * never arrives armed.
+ */
+@Composable
+private fun DeleteRow(ref: String, onConfirmed: () -> Unit) {
+    var armed by remember(ref) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    val ground by animateColorAsState(
+        if (armed) scheme.error else scheme.surface, tween(Motion.fast, easing = Motion.enter), label = "deleteGround",
+    )
+    val ink by animateColorAsState(
+        if (armed) scheme.onError else scheme.error, tween(Motion.fast, easing = Motion.enter), label = "deleteInk",
+    )
+    val disc by animateColorAsState(
+        if (armed) scheme.onError.copy(alpha = 0.16f) else scheme.errorContainer,
+        tween(Motion.fast, easing = Motion.enter),
+        label = "deleteDisc",
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.group))
+            .background(ground)
+            .clickable(role = Role.Button) { if (armed) { armed = false; onConfirmed() } else armed = true }
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(disc), contentAlignment = Alignment.Center) {
+            ActIcon(ActGlyph.TRASH, ink)
+        }
+        Text(
+            if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف این تراکنش",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            color = ink,
+            modifier = Modifier.padding(horizontal = Space.m).weight(1f),
+        )
     }
 }

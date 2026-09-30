@@ -1272,6 +1272,8 @@ fun TransactionScreen(
     members: List<FamilyMember> = emptyList(),
     /** The row in parts, or with none whole again — see [SplitSheet]. */
     onSplit: ((LedgerEntry, List<Pair<String, Long>>) -> Unit)? = null,
+    /** «برای موارد مشابه» flipped on a row already filed: teach it now, or take it back. */
+    onLearnSimilar: ((LedgerEntry, Boolean) -> Unit)? = null,
     /** A category of her own, made right here where its absence was discovered. */
     onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
     /** Her installment plans, for the «قسط» section and [InstallmentLinkSheet]. */
@@ -1339,23 +1341,6 @@ fun TransactionScreen(
                 )
             }
 
-            // Right under the figure and the day they correct: the two things she can change
-            // about the row itself, in equal cells.
-            if (canEdit || canSplit) {
-                item(key = "edit") {
-                    Row(gutter.padding(top = Space.l), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-                        if (canEdit) PillButton("ویرایش", { editing = true }, modifier = Modifier.weight(1f))
-                        if (canSplit) {
-                            PillButton(
-                                if (entry.split.isEmpty()) "تقسیم بین دسته‌ها" else "ویرایش تقسیم",
-                                { splitting = true },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            }
-
             item(key = "category_heading") {
                 Column(gutter) {
                     Spacer(Modifier.height(Space.xxl))
@@ -1382,8 +1367,6 @@ fun TransactionScreen(
                         Spacer(Modifier.height(Space.m))
                         SplitPanel(entry.split)
                     }
-                    Spacer(Modifier.height(Space.m))
-                    LearnSimilarToggle(txn, learnSimilar) { learnSimilar = it }
                     Spacer(Modifier.height(Space.l))
                 }
             }
@@ -1409,6 +1392,21 @@ fun TransactionScreen(
                     modifier = gutter,
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
                 )
+            }
+
+            // Under the grid, because it is seldom wanted — which also means it is as often
+            // flipped after the pick as before it. On a row already filed it acts at once, and
+            // off takes back what on taught; on one still waiting it rides the next pick.
+            item(key = "learn") {
+                Column(gutter) {
+                    Spacer(Modifier.height(Space.m))
+                    LearnSimilarToggle(txn, learnSimilar) { on ->
+                        learnSimilar = on
+                        if (onLearnSimilar != null && !entry.needsReview && !entry.transfer && entry.split.isEmpty()) {
+                            onLearnSimilar(entry, on)
+                        }
+                    }
+                }
             }
 
             // Right under the grid that raised it: a قسط و وام payment, or any payment already
@@ -1476,20 +1474,21 @@ fun TransactionScreen(
                 }
             }
 
-            // Only on this phone's own rows — `m:` typed in, `s:` read from a message; a row
-            // another member shared (`f:`) is theirs to delete, not ours. The message itself
-            // stays in the archive either way: deleting an SMS row hides what was made of it,
-            // it does not destroy evidence. The two-tap confirm is the budget sheet's own,
-            // because one stray touch down here must not erase a transaction.
-            if (onDelete != null && (txn.ref.startsWith("m:") || txn.ref.startsWith("s:"))) {
-                item(key = "delete") {
-                    Column(gutter) {
-                        Spacer(Modifier.height(Space.xl))
-                        SheetDelete("حذف این تراکنش") {
-                            onDelete(entry)
-                            onBack()
-                        }
-                    }
+            // The acts on the row itself, at its foot — see [TxnActs]. Delete only on this phone's
+            // own rows — `m:` typed in, `s:` read from a message; a row another member shared
+            // (`f:`) is theirs to delete, not ours. The message itself stays in the archive
+            // either way: deleting an SMS row hides what was made of it, it does not destroy
+            // evidence.
+            val canDelete = onDelete != null && (txn.ref.startsWith("m:") || txn.ref.startsWith("s:"))
+            if (canEdit || canSplit || canDelete) {
+                item(key = "acts") {
+                    TxnActs(
+                        entry = entry,
+                        onEdit = { editing = true }.takeIf { canEdit },
+                        onSplit = { splitting = true }.takeIf { canSplit },
+                        onDelete = { onDelete?.invoke(entry); onBack() }.takeIf { canDelete },
+                        modifier = gutter.padding(top = Space.xxl),
+                    )
                 }
             }
         }
@@ -2227,8 +2226,6 @@ fun ReviewDeck(
                     modifier = Modifier.semantics { heading() },
                 )
                 Spacer(Modifier.height(Space.m))
-                LearnSimilarToggle(entry.txn, learnSimilar) { learnSimilar = it }
-                Spacer(Modifier.height(Space.m))
                 CategoryGrid(
                     choices = choices,
                     selectedId = picked,
@@ -2250,6 +2247,10 @@ fun ReviewDeck(
                     selectedLabel = "انتخاب‌شده",
                     onAdd = onCreateCategory?.let { { makingCategory = true } },
                 )
+                // Seldom wanted, so under the grid; here it rides the next pick, since a pick
+                // moves the deck on.
+                Spacer(Modifier.height(Space.m))
+                LearnSimilarToggle(entry.txn, learnSimilar) { learnSimilar = it }
 
                 if (onNote != null) {
                     Spacer(Modifier.height(Space.xxl))

@@ -20,6 +20,11 @@ button.set-row:disabled { cursor: default; }
 /* A green disc is a door, a grey disc is a control — the page's one rule. */
 .set-disc { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-highest); color: var(--on-surface); }
 .set-disc.door { background: var(--primary-container); color: var(--on-primary-container); }
+/* The row that loses something: error ink until armed, then the whole row is the question. */
+.set-row.danger { color: var(--error); transition: background var(--fast) var(--enter), color var(--fast) var(--enter); }
+.set-row.danger .set-disc { background: var(--error-container); color: var(--error); transition: background var(--fast) var(--enter), color var(--fast) var(--enter); }
+.set-row.danger.armed { background: var(--error); color: var(--on-error); }
+.set-row.danger.armed .set-disc { background: color-mix(in srgb, var(--on-error) 16%, transparent); color: var(--on-error); }
 .set-row[role="switch"] > .switch { pointer-events: none; }
 .set-row[role="switch"]:disabled > .switch { opacity: .38; }
 

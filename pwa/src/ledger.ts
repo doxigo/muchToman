@@ -15,7 +15,7 @@ import { MAX_PLAUSIBLE_RIAL } from './sms';
 import { forgetMarkId, ledger, manualRef, mineId } from './derived';
 import { bodyToStore, parsePasted } from './paste';
 import { printedMoment, sourceId } from './sms';
-import { batch, pref, put, row, setPref } from './state';
+import { batch, pref, put, row, rows, setPref } from './state';
 import { familyTxnId, uuid7 } from './sync';
 import type { Category, CategoryKindId, Decision, LedgerEntry, Source, Txn } from './model';
 
@@ -59,6 +59,20 @@ export function categorise(entry: LedgerEntry, categoryId: string, learnSimilar:
     // One category is the row whole again.
     answer(entry.txn, DecisionKind.SPLIT, null);
     if (learnSimilar) put('rules', ruleFrom(entry.txn, categoryId, addrKeyOf(entry.txn), now));
+  });
+}
+
+/**
+ * «برای موارد مشابه» switched on a row already filed: its category is taught as a rule now, as a
+ * pick with the switch on would. Off takes back every rule taught from this row.
+ */
+export function learnSimilarNow(entry: LedgerEntry, on: boolean): void {
+  if (on) return categorise(entry, entry.categoryId, true);
+  const now = Date.now();
+  batch(() => {
+    for (const rule of rows('rules')) {
+      if (rule.originRef === entry.txn.ref && !rule.deleted) put('rules', { ...rule, deleted: true, updatedAt: Math.max(now, rule.updatedAt + 1) });
+    }
   });
 }
 

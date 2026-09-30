@@ -77,6 +77,8 @@
 .txn-words { padding-top: var(--s); font-size: 14px; line-height: 24px; color: color-mix(in srgb, var(--hero-strong) 93%, transparent); }
 .txn-no-amount { padding-top: var(--s); font-size: 18px; font-weight: 700; color: var(--hero-warn); }
 .txn-section { margin-top: var(--xxl); font-size: 18px; font-weight: 700; color: var(--on-bg); }
+.txn-acts { margin-top: var(--xxl); }
+.txn-acts > .set-band + .set-band { margin-top: var(--l); }
 .txn-caption { margin-top: var(--xs); font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
 
 .learn-toggle { display: flex; align-items: center; gap: var(--m); padding: var(--m); border-radius: var(--r-field); background: var(--surface-variant); cursor: pointer; }

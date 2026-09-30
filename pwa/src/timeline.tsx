@@ -10,9 +10,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import './timeline.css';
 import { useLedger, ledger } from './derived';
 import type { LedgerView } from './derived';
-import { categoriseAll, categorise, deleteTxn, restoreTxn, setNote } from './ledger';
+import { categoriseAll, categorise, deleteTxn, learnSimilarNow, restoreTxn, setNote } from './ledger';
 import { editable, splitParts, splittable } from './edits';
-import { SplitPanel } from './editsUi';
+import { SplitPanel, TxnActs } from './editsUi';
 import { autoFilePlan } from './filing';
 import { CAT_INSTALMENT, MAX_NOTE_CHARS, categoryChoices } from './rules';
 import { bankFa } from './sms';
@@ -34,7 +34,7 @@ import {
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
 import { CheckMark, PlusMark, SearchMark } from './icons';
-import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetDelete, SheetTitle, SegmentedChoice, Switch } from './ui';
+import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, Switch } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
 
 // ---- words ------------------------------------------------------------------------------------
@@ -687,19 +687,6 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
     <div class="screen no-tabs txn-page">
       <TransactionHero entry={entry} />
 
-      {/* Right under the figure and the day they correct, in equal cells. */}
-      {(canEdit || canSplit) && (
-        <div class="row-flex" style={{ marginTop: 'var(--l)', gap: 'var(--s)' }}>
-          {canEdit && <div class="grow"><PillButton label="ویرایش" block onClick={() => openSheet('editTxn', { txnRef: txn.ref })} /></div>}
-          {canSplit && (
-            <div class="grow">
-              <PillButton label={entry.split?.length ? 'ویرایش تقسیم' : 'تقسیم بین دسته‌ها'} block
-                onClick={() => openSheet('splitTxn', { txnRef: txn.ref })} />
-            </div>
-          )}
-        </div>
-      )}
-
       <SectionHeading>دسته‌بندی</SectionHeading>
       <p class="txn-caption">
         {entry.transfer ? 'این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی.'
@@ -708,7 +695,7 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
               : `دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن.`}
       </p>
       {!!entry.split?.length && <div style={{ marginTop: 'var(--m)' }}><SplitPanel split={entry.split} /></div>}
-      <div style={{ margin: 'var(--m) 0 var(--l)' }}><LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={setLearnSimilar} /></div>
+      <div style={{ marginTop: 'var(--l)' }} />
       <CategoryGrid categories={choices} selected={chosen}
         onSelect={(category) => {
           setChosen(category.id);
@@ -719,6 +706,14 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
           if (isLoanCategory(category.id) && lendable && !lent) openLoanLink(txn.ref);
         }}
         addTile={() => openSheet('category', { kind: txn.direction === 'in' ? 'income' : 'expense', grid: true })} />
+      {/* Under the grid because it is seldom wanted, so as often flipped after the pick as before:
+          on a row already filed it acts at once, and off takes back what on taught. */}
+      <div style={{ marginTop: 'var(--m)' }}>
+        <LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={(on) => {
+          setLearnSimilar(on);
+          if (!entry.needsReview && !entry.transfer && !entry.split?.length) learnSimilarNow(entry, on);
+        }} />
+      </div>
 
       {payable && (chosen === CAT_INSTALMENT || paidPlan) && (
         <>
@@ -744,18 +739,20 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
       {/* Whole and selectable here, where the message is the subject of the screen. */}
       <p class="panel source source-text" style={{ marginTop: 'var(--m)' }}>{sourceText(entry)}</p>
 
-      {/* Only her own rows: another member's (`f:`) is theirs to delete. A pasted message stays
-          stored either way — deleting hides what was made of it; it does not destroy evidence. */}
-      {own && (
-        <div style={{ marginTop: 'var(--xl)' }}>
-          <SheetDelete label="حذف این تراکنش" onConfirmed={() => {
+      {/* The acts on the row itself, at its foot (TxnActs). Delete only on her own rows: another
+          member's (`f:`) is theirs to delete. A pasted message stays stored either way — deleting
+          hides what was made of it; it does not destroy evidence. */}
+      {(canEdit || canSplit || own) && (
+        <TxnActs entry={entry}
+          onEdit={canEdit ? () => openSheet('editTxn', { txnRef: txn.ref }) : undefined}
+          onSplit={canSplit ? () => openSheet('splitTxn', { txnRef: txn.ref }) : undefined}
+          onDelete={own ? () => {
             const ref = txn.ref;
             deleteTxn(entry);
             closePage();
             // The undo is a second net under the two-tap arming, not a replacement.
             showNotice('تراکنش پاک شد', { label: 'برگردون', run: () => restoreTxn(ref) });
-          }} />
-        </div>
+          } : undefined} />
       )}
     </div>
   );
@@ -800,7 +797,7 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       <h2 class="deck-question">
         {txn.direction === 'in' ? 'این واریز رو چی حساب کنم؟' : txn.direction === 'out' ? 'این خرج رو چی حساب کنم؟' : 'این تراکنش رو چی حساب کنم؟'}
       </h2>
-      <div style={{ margin: 'var(--m) 0' }}><LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={setLearnSimilar} /></div>
+      <div style={{ marginTop: 'var(--m)' }} />
       <CategoryGrid categories={choices} selected={picked} selectedLabel="انتخاب‌شده"
         onSelect={(category) => {
           setPicked(category.id);
@@ -810,6 +807,8 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
           if (isLoanCategory(category.id) && loanLinkable(entry, view.mineId) && !view.loanLinks.has(txn.ref)) openLoanLink(txn.ref);
         }}
         addTile={() => openSheet('category', { kind: txn.direction === 'in' ? 'income' : 'expense', grid: true })} />
+      {/* Seldom wanted, so under the grid; here it rides the next pick, since a pick moves the deck on. */}
+      <div style={{ marginTop: 'var(--m)' }}><LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={setLearnSimilar} /></div>
 
       <SectionHeading>یادداشت</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} /></div>

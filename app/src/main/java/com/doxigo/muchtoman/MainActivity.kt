@@ -1095,6 +1095,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
 
     /**
+     * «برای موارد مشابه» switched on a row already filed: its category is taught as a rule now,
+     * exactly as a pick with the switch on would. Off takes back every rule taught from this row.
+     */
+    fun learnSimilar(entry: LedgerEntry, on: Boolean) {
+        if (on) return categorise(entry, entry.categoryId, always = true)
+        ledgerEdit("learnSimilar", rederive = true) { durable ->
+            val now = System.currentTimeMillis()
+            durable.rules().madeFrom(entry.txn.ref).forEach { durable.rules().delete(it.id, now) }
+        }
+    }
+
+    /**
      * An answer written, the ledger published, the household told. Only a filing needs [derive] —
      * the corrections in `Edits.kt` are laid over the rows where they are read.
      */

@@ -452,6 +452,15 @@ describe('ledger actions', () => {
     expect(derived.ledger().entries[0].txn.day).toBe(today);
   });
 
+  it('teaches a filed row\'s category when the switch is flipped after the pick, and takes it back', () => {
+    ledger.addManualTxn(-5_000, 'cat_dining', 'کافه لمیز', '', Date.now());
+    const filed = derived.ledger().entries[0];
+    ledger.learnSimilarNow(filed, true);
+    expect(state.rows('rules').filter((r) => r.originRef === filed.txn.ref && !r.deleted)).toMatchObject([{ categoryId: 'cat_dining' }]);
+    ledger.learnSimilarNow(derived.ledger().entries[0], false);
+    expect(state.rows('rules').filter((r) => r.originRef === filed.txn.ref && !r.deleted)).toEqual([]);
+  });
+
   it('corrects a figure over the row, and splits it into parts every total counts', async () => {
     const today = tehranDay(Date.now());
     ledger.addManualTxn(-60_000_000, 'cat_groceries', '', '', tehranDayStart(today) + 60_000);

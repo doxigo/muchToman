@@ -715,6 +715,7 @@ private fun AppScreens(
                 onRevertEdits = vm::revertTxnEdits,
                 members = state.family.members,
                 onSplit = vm::splitTxn,
+                onLearnSimilar = vm::learnSimilar,
                 installments = state.ledger.installments,
                 onInstallmentPayment = (vm::setInstallmentPayment).takeIf { installmentPayable(entry, state.ledger.mineId) },
                 onCreateInstallment = (vm::addInstallmentFrom).takeIf { installmentPayable(entry, state.ledger.mineId) },

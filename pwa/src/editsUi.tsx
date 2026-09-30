@@ -2,7 +2,10 @@
  * «ویرایش تراکنش» and «تقسیم بین دسته‌ها» (EditsUi.kt) — the figure, the day and whose it was on
  * one of her own rows, and one payment broken into the things it bought.
  */
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
+import './settings.css';
+import { ActIcon } from './categoryIcon';
+import type { ActGlyph } from './categoryIcon';
 import { CategoryGrid } from './categoryGrid';
 import { useLedger } from './derived';
 import { MAX_SPLIT_PARTS } from './edits';
@@ -16,7 +19,8 @@ import { closeSheet, registerSheet } from './nav';
 import { DayStepper } from './manualTxn';
 import { MemberFace, useTehranDay } from './timeline';
 import { AmountField, PillButton, Sheet, SheetLabel, SheetTitle } from './ui';
-import type { SplitPart } from './model';
+import { Chevron } from './icons';
+import type { LedgerEntry, SplitPart } from './model';
 
 /** A Rial figure as the amount field holds it: Toman digits, a tenth only when there is one. */
 export const rialToField = (rial: number): string =>
@@ -186,6 +190,57 @@ export function SplitPanel({ split }: { split: SplitPart[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * The foot of a transaction's page (EditsUi.kt `TxnActs`): what can be done to the row, in the
+ * band تنظیمات speaks in — grey discs, because each acts on this row rather than leading anywhere.
+ * Delete is a band of its own under the others, so the one act that loses something never sits a
+ * slip from the two that do not; its two taps are worn by the row itself, the first turning it red
+ * and saying — aloud — what the second will do.
+ */
+export function TxnActs({ entry, onEdit, onSplit, onDelete }: {
+  entry: LedgerEntry; onEdit?: () => void; onSplit?: () => void; onDelete?: () => void;
+}) {
+  const parts = entry.split?.length ?? 0;
+  return (
+    <div class="txn-acts">
+      {(onEdit || onSplit) && (
+        <div class="set-band">
+          {onEdit && <ActRow title="ویرایش تراکنش" glyph="PENCIL" value={entry.edited ? 'اصلاح‌شده' : null} onClick={onEdit} />}
+          {onSplit && <ActRow title="تقسیم بین دسته‌ها" glyph="SPLIT" value={parts ? `${faNumber(parts)} دسته` : null} onClick={onSplit} />}
+        </div>
+      )}
+      {onDelete && <div class="set-band"><DeleteRow txnRef={entry.txn.ref} onConfirmed={onDelete} /></div>}
+    </div>
+  );
+}
+
+function ActRow({ title, glyph, value, onClick }: { title: string; glyph: ActGlyph; value: string | null; onClick: () => void }) {
+  return (
+    <button type="button" class="set-row" onClick={onClick}>
+      <span class="set-disc"><ActIcon glyph={glyph} /></span>
+      <span class="set-text"><span class="set-title one" style={{ display: 'block' }}>{title}</span></span>
+      {value != null && <span class="set-value">{value}</span>}
+      <span class="chev"><Chevron size={24} /></span>
+    </button>
+  );
+}
+
+/** Error ink until the first tap; then the row fills with error and its name becomes the question. */
+function DeleteRow({ txnRef, onConfirmed }: { txnRef: string; onConfirmed: () => void }) {
+  const [armed, setArmed] = useState(false);
+  // A row reused for another transaction never arrives armed.
+  useEffect(() => setArmed(false), [txnRef]);
+  return (
+    <button type="button" class={`set-row danger${armed ? ' armed' : ''}`}
+      onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}>
+      <span class="set-disc"><ActIcon glyph="TRASH" /></span>
+      <span class="set-text"><span class="set-title" style={{ display: 'block' }} aria-live="polite">
+        {armed ? 'مطمئنی؟ برای حذف دوباره بزن' : 'حذف این تراکنش'}
+      </span></span>
+    </button>
   );
 }
 

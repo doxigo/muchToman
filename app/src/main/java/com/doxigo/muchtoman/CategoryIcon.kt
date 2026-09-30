@@ -437,6 +437,28 @@ internal val LUCIDE: Map<CategoryGlyph, String> = mapOf(
     CategoryGlyph.PIGGY to "M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z M16 10h.01 M2 8v1a2 2 0 0 0 2 2h1", // piggy-bank
 )
 
+/**
+ * What can be done to a transaction, in the categories' own pen — Lucide's `pencil`, `split` and
+ * `trash-2`. An enum of its own rather than three more [CategoryGlyph]s, which would put a bin in
+ * the picker she chooses a category's mark from.
+ */
+enum class ActGlyph(d: String) {
+    PENCIL("M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5l4 4"),
+    SPLIT("M16 3h5v5 M8 3H3v5 M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3 M15 9l6-6"),
+    TRASH("M10 11v6 M14 11v6 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),
+    ;
+
+    internal val path: Path by lazy { PathParser().parsePathString(d).toPath() }
+}
+
+/** An [ActGlyph] in the box and pen a [GlyphIcon] of the same size would use. */
+@Composable
+fun ActIcon(glyph: ActGlyph, tint: Color, size: Dp = 22.dp, stroke: Dp = 1.6.dp) {
+    Canvas(Modifier.size(size)) {
+        inset(this.size.minDimension * 0.06f) { drawLucide(glyph.path, tint, stroke) }
+    }
+}
+
 /** Parsed once. The table never changes, and a mark is drawn on every row of every list. */
 private val lucidePaths: Map<CategoryGlyph, Path> by lazy {
     LUCIDE.mapValues { PathParser().parsePathString(it.value).toPath() }
