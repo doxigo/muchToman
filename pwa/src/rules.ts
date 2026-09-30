@@ -327,6 +327,14 @@ export const DecisionKind = {
   EXCLUDE: 'exclude', INSTALLMENT: 'installment',
   /** Whose money this was, and how much, signed — see loans.ts. Private, like the one above. */
   LOAN: 'loan',
+  /** Her figure for one of her own rows, Rial magnitude — see edits.ts. */
+  AMOUNT: 'amount',
+  /** The Tehran day she moved one of her own rows to; the minute stays the row's. */
+  DAY: 'day',
+  /** Whose spending the row was, when not the device it landed on — a member id. */
+  MEMBER: 'member',
+  /** The row in parts, `category:rial` each, comma-joined — see `parseSplit`. */
+  SPLIT: 'split',
 } as const;
 
 // ---- seeding ---------------------------------------------------------------------------------

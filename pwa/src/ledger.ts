@@ -6,9 +6,12 @@
  * `max(now, previous + 1)`: a hand-set clock behind the other phone's must not lose her edit to
  * last-write-wins.
  */
-import { tehranDay, tehranDayStart, DAY_MS } from './jalali';
+import { editable, parseSplit, splitLead, splitValue } from './edits';
+import type { SplitSpec } from './edits';
+import { tehranDay } from './jalali';
 import { LinkKind, Verdict, linkDecision } from './links';
 import { CAT_TRANSFER, DecisionKind, MAX_NOTE_CHARS, customCategory, ruleFrom } from './rules';
+import { MAX_PLAUSIBLE_RIAL } from './sms';
 import { forgetMarkId, ledger, manualRef, mineId } from './derived';
 import { bodyToStore, parsePasted } from './paste';
 import { printedMoment, sourceId } from './sms';
@@ -53,6 +56,8 @@ export function categorise(entry: LedgerEntry, categoryId: string, learnSimilar:
     }
     // A fresh answer, not an edit of the old one: the phone REPLACEs on (ref, kind).
     put('decisions', decision(ref, DecisionKind.CATEGORY, categoryId, now, familyRefOf(entry.txn)));
+    // One category is the row whole again.
+    answer(entry.txn, DecisionKind.SPLIT, null);
     if (learnSimilar) put('rules', ruleFrom(entry.txn, categoryId, addrKeyOf(entry.txn), now));
   });
 }
@@ -136,18 +141,57 @@ export function restoreTxn(ref: string): void {
 }
 
 /**
- * Moves a typed row to another day, keeping the minute it was recorded at. Only ever a typed one:
- * a pasted row's day is read back off the message on every derive.
+ * One answer about one row, stamped past the one it replaces — null takes it back, on the same
+ * (ref, kind) row, so a retracted answer is re-answered rather than raced.
  */
-export function setManualTxnDay(entry: LedgerEntry, day: number): void {
-  if (entry.txn.sourceKind !== 'manual' || !entry.txn.ref.startsWith('m:')) return;
-  const manual = row('manual', entry.txn.ref.slice(2));
-  if (!manual) return;
-  const now = Date.now();
-  // The ledger records what happened, and tomorrow has not.
-  const moved = Math.min(day, tehranDay(now));
-  const minute = Math.min(Math.max(manual.at - tehranDayStart(manual.day), 0), DAY_MS - 1);
-  put('manual', { ...manual, at: tehranDayStart(moved) + minute, day: moved, updatedAt: stamp(manual, now) });
+function answer(txn: Txn, kind: Decision['kind'], value: string | null): void {
+  const previous = row('decisions', `${kind}:${txn.ref}`);
+  if (value == null && (!previous || previous.deleted)) return;
+  put('decisions', { ...decision(txn.ref, kind, value, stamp(previous), familyRefOf(txn), previous), deleted: value == null });
+}
+
+/**
+ * Her corrections to one of her own rows — figure, day, whose it was; null leaves that one as it
+ * stands (Edits.kt `editRow`). The day stops at today, and a row put back to its own member takes
+ * the attribution back rather than storing it.
+ */
+export function editTxn(entry: LedgerEntry, rial: number | null, day: number | null, memberId: string | null): void {
+  if (!editable(entry)) return;
+  const txn = entry.txn;
+  batch(() => {
+    if (rial != null && rial >= 1 && rial <= MAX_PLAUSIBLE_RIAL && rial !== txn.amountRial) answer(txn, DecisionKind.AMOUNT, String(rial));
+    if (day != null) {
+      const moved = Math.min(day, tehranDay(Date.now()));
+      if (moved !== txn.day) answer(txn, DecisionKind.DAY, String(moved));
+    }
+    if (memberId != null && memberId !== entry.ownerMemberId) {
+      const own = memberId === (txn.ownerMemberId || mineId());
+      answer(txn, DecisionKind.MEMBER, own ? null : memberId);
+    }
+  });
+}
+
+/** Back to the figure and day the row was read or typed with. Whose it was stays. */
+export function revertTxnEdits(entry: LedgerEntry): void {
+  batch(() => {
+    answer(entry.txn, DecisionKind.AMOUNT, null);
+    answer(entry.txn, DecisionKind.DAY, null);
+  });
+}
+
+/**
+ * The row in parts — or, with none, whole again — filed under its biggest part either way
+ * (Edits.kt `splitRow`). False, writing nothing, for parts that do not add up to the row.
+ */
+export function splitTxn(entry: LedgerEntry, parts: SplitSpec): boolean {
+  const parsed = parseSplit(splitValue(parts));
+  const split = parsed.reduce((sum, [, r]) => sum + r, 0) === entry.txn.amountRial ? parsed : [];
+  if (parts.length && !split.length) return false;
+  batch(() => {
+    answer(entry.txn, DecisionKind.CATEGORY, splitLead(split) ?? entry.categoryId);
+    answer(entry.txn, DecisionKind.SPLIT, split.length ? splitValue(split) : null);
+  });
+  return true;
 }
 
 // ---- categories --------------------------------------------------------------------------------

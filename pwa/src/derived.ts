@@ -17,6 +17,7 @@ import { findLinks, hiddenRefs, transferRefs } from './links';
 import type { LinkCandidate } from './links';
 import { loanLinks } from './loans';
 import type { LoanLink } from './loans';
+import { editedTxn, splitOf } from './edits';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify } from './rules';
 import type { TxnClass } from './rules';
 import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
@@ -333,13 +334,25 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const notes = new Map(ofKind(DecisionKind.NOTE).filter((d) => d.value?.trim()).map((d) => [d.ref, d]));
   const hidden = hiddenRefs(links);
   const excluded = new Set(input.excludedBanks);
+  // Her corrections, laid over the rows here and not in the derive above — see edits.ts.
+  const valuesOf = (kind: string) => new Map(ofKind(kind).map((d) => [d.ref, d.value]));
+  const amounts = valuesOf(DecisionKind.AMOUNT);
+  const days = valuesOf(DecisionKind.DAY);
+  const attributed = valuesOf(DecisionKind.MEMBER);
+  const splits = valuesOf(DecisionKind.SPLIT);
+  const numberOf = (v: string | null | undefined): number | null => (v != null && /^\d+$/.test(v) ? Number(v) : null);
 
-  const entries = [...all].sort((a, b) => -byTime(a, b)).map((txn): LedgerEntry => {
+  const entries = all.map((original): LedgerEntry => {
+    const txn = editedTxn(original, numberOf(amounts.get(original.ref)), numberOf(days.get(original.ref)));
     const filed = classes.get(txn.ref);
-    const owner = txn.ownerMemberId || mineId;
+    // A member who has since left falls back to whose row it is.
+    const byHer = attributed.get(txn.ref);
+    const owner = byHer && (members.has(byHer) || byHer === mineId) ? byHer : txn.ownerMemberId || mineId;
     const note = notes.get(txn.ref);
     return {
       txn,
+      edited: txn !== original,
+      split: splitOf(splits.get(txn.ref), txn.amountRial, names),
       categoryId: filed?.categoryId ?? CAT_UNCATEGORISED,
       categoryFa: names.get(filed?.categoryId ?? '') ?? 'دسته‌بندی نشده',
       confidence: filed?.confidence ?? Confidence.NONE,
@@ -357,7 +370,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
       sharedWithFamily: txn.familyRef !== '' ||
         (mineId !== '' && !excluded.has(txn.bank) && (txn.sourceKind !== 'sms' || input.sharesSms)),
     };
-  });
+  }).sort((a, b) => -byTime(a.txn, b.txn));
 
   // Set aside here, at the view, and nowhere earlier: every balance still reads every message.
   const kept = startingFrom(entries, startsOn);

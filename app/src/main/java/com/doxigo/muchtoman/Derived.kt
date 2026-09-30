@@ -510,6 +510,10 @@ data class LedgerEntry(
      */
     val noteAuthorName: String = "",
     val sharedWithFamily: Boolean = true,
+    /** Her figure or day laid over the row — see `Edits.kt`. The balance still reads the bank's. */
+    val edited: Boolean = false,
+    /** The parts the row is split into, empty when it is one — see [splitParts]. */
+    val split: List<SplitPart> = emptyList(),
 )
 
 /** Everything the ledger screens need, read in one pass. */
@@ -627,12 +631,24 @@ suspend fun ledgerEntries(
     val hidden = hiddenRefs(links)
     val transfers = transferRefs(links) + durable.familyTxns().all()
         .filter { it.transfer }.map { familyLocalRef(it.id) }
-    val entries = transactions.map { txn ->
+    // Her corrections, laid over the rows here and not in derive — see `Edits.kt`.
+    val edits = listOf(DecisionKind.AMOUNT, DecisionKind.DAY, DecisionKind.MEMBER, DecisionKind.SPLIT)
+        .associateWith { kind -> durable.decisions().ofKind(kind).associate { it.ref to it.value } }
+    val amounts = edits.getValue(DecisionKind.AMOUNT)
+    val days = edits.getValue(DecisionKind.DAY)
+    val attributed = edits.getValue(DecisionKind.MEMBER)
+    val splits = edits.getValue(DecisionKind.SPLIT)
+    val entries = transactions.map { original ->
+        val txn = editedTxn(original, amounts[original.ref]?.toLongOrNull(), days[original.ref]?.toLongOrNull())
         val filed = classes[txn.ref]
-        val ownerMemberId = txn.ownerMemberId.ifBlank { currentMemberId }
+        // A member who has since left falls back to whose row it is.
+        val ownerMemberId = attributed[txn.ref]?.takeIf { it in members || it == currentMemberId }
+            ?: txn.ownerMemberId.ifBlank { currentMemberId }
         val categoryEditorId = categoryDecisions[txn.ref]?.memberId.orEmpty()
         LedgerEntry(
             txn = txn,
+            edited = txn != original,
+            split = splitOf(splits[txn.ref], txn.amountRial, names),
             categoryId = filed?.categoryId ?: CAT_UNCATEGORISED,
             categoryFa = names[filed?.categoryId] ?: "دسته‌بندی نشده",
             confidence = filed?.confidence ?: Confidence.NONE,
@@ -655,7 +671,7 @@ suspend fun ledgerEntries(
                 ?.let { members[it]?.name }
                 .orEmpty(),
         )
-    }
+    }.let { rows -> if (days.isEmpty()) rows else rows.sortedByDescending { it.txn.at } }
     return LedgerEntries(entries, categories, categoryDecisions, customGlyphs(everyCategory), everyCategory)
 }
 

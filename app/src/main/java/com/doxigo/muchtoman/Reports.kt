@@ -377,7 +377,13 @@ private const val MIN_AVERAGE_WEEK_DAYS = 14
  * denominator of [PeriodReport.automaticShare] and made the number the app is judged on worse
  * for every balance message her bank sent.
  */
-fun spendable(entries: List<LedgerEntry>): List<LedgerEntry> =
+fun spendable(entries: List<LedgerEntry>): List<LedgerEntry> = spendableRows(entries).flatMap(::splitParts)
+
+/**
+ * [spendable] one line per transaction, a split row whole — for what asks about a purchase rather
+ * than about money by category: «می‌ارزید؟», the large-spend bar, the filing notes.
+ */
+fun spendableRows(entries: List<LedgerEntry>): List<LedgerEntry> =
     entries.filterNot { it.duplicate || it.transfer || it.txn.amountRial == null }
 
 /**
@@ -461,8 +467,9 @@ fun periodReport(
         spentRial = spent,
         spendingByCategory = spending.toList().sortedByDescending { it.second },
         incomeByCategory = earning.toList().sortedByDescending { it.second },
-        transactions = inRange.size,
-        handledAutomatically = inRange.count { !it.needsReview },
+        // Counted by transaction, not by part: a split receipt is still one thing she bought.
+        transactions = inRange.distinctBy { it.txn.ref }.size,
+        handledAutomatically = inRange.distinctBy { it.txn.ref }.count { !it.needsReview },
         passedRial = passed,
         // Named in the table's order rather than the ledger's, so the label is «قرض و همسر» in
         // every window that holds both and never «همسر و قرض» because a transfer landed first.

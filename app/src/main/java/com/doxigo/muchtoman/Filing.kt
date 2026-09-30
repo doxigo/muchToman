@@ -168,10 +168,10 @@ fun filingNews(
     // clamp — a mark written off a poison stamp would silence every note until that date arrived.
     val mark = maxOf(said, entries.maxOfOrNull { it.txn.at } ?: 0L).coerceAtMost(now)
     val fresh = review.filter { it.txn.at > said }
-    // [spendable] rather than the exclusions written out again: it is the same list plus the
+    // [spendableRows] rather than the exclusions written out again: it is the same list plus the
     // مانده rows, which have no amount and are not news — «یک تراکنش تازه از بانک اقتصاد نوین»
     // about a message that only said what the account holds is an interruption for nothing.
-    val filed = spendable(entries).filter { !it.needsReview && it.txn.at > said }
+    val filed = spendableRows(entries).filter { !it.needsReview && it.txn.at > said }
     // A first pass over a ledger that already holds more than a handful is the rewind-or-sync
     // case: learn where it is and say nothing. Over a ledger holding only what just arrived, it
     // is a new phone's first spend, and that is worth saying.

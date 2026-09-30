@@ -711,7 +711,10 @@ private fun AppScreens(
                     notices.show("تراکنش پاک شد", "برگردون") { vm.restoreTxn(deletedRef) }
                 },
                 onCreateCategory = vm::addCategory,
-                onDay = vm::setManualTxnDay,
+                onEdit = vm::editTxn,
+                onRevertEdits = vm::revertTxnEdits,
+                members = state.family.members,
+                onSplit = vm::splitTxn,
                 installments = state.ledger.installments,
                 onInstallmentPayment = (vm::setInstallmentPayment).takeIf { installmentPayable(entry, state.ledger.mineId) },
                 onCreateInstallment = (vm::addInstallmentFrom).takeIf { installmentPayable(entry, state.ledger.mineId) },

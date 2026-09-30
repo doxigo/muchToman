@@ -563,7 +563,7 @@ fun budgetInsight(
         append(if (budget.shared) "خانواده در ${budget.window.fa}" else budget.window.fa)
         append('.')
     },
-    refs = budgetRows(entries, budget.goal, budget.window, mineId, excluded).map { it.txn.ref },
+    refs = budgetRows(entries, budget.goal, budget.window, mineId, excluded).map { it.txn.ref }.distinct(),
     tone = Insight.Tone.ATTENTION,
 )
 

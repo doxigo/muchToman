@@ -819,6 +819,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         },
                     )
                 )
+                // One category is the row whole again.
+                putAnswer(durable, entry.txn, DecisionKind.SPLIT, null, session?.member.orEmpty())
                 if (always) {
                     val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
                     durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
@@ -1079,49 +1081,34 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Her figure, day and member for one of this phone's own rows — see [editRow]. */
+    fun editTxn(entry: LedgerEntry, rial: Long?, day: Long?, memberId: String?) =
+        ledgerEdit("editTxn") { durable -> editRow(durable, entry, rial, day, memberId, loadSession(durable)?.member.orEmpty()) }
+
+    fun revertTxnEdits(entry: LedgerEntry) =
+        ledgerEdit("revertTxnEdits") { durable -> revertRow(durable, entry, loadSession(durable)?.member.orEmpty()) }
+
+    /** The row in parts, or whole again — see [splitRow]. Refiling is a derive; an edit is not. */
+    fun splitTxn(entry: LedgerEntry, parts: List<Pair<String, Long>>) =
+        ledgerEdit("splitTxn", rederive = true) { durable ->
+            splitRow(durable, entry, parts, loadSession(durable)?.member.orEmpty())
+        }
+
     /**
-     * Moves a row she typed in to another day, keeping the minute it was recorded at.
-     *
-     * Only ever a hand-entered row, and that is not a UI convenience — a message-derived one has
-     * no day to store. `at` and `day` on an `s:` row are read back off the message by every
-     * [derive], so an override written here would be erased by the next one; and the bank's own
-     * stamp is what orders the walk [deriveBalance] anchors on, so moving it would move a
-     * مانده the bank itself printed. A `f:` row belongs to another phone, which files its own.
-     *
-     * The minute survives the move: a row entered at ۱۴:۰۳ under the wrong date is still a row
-     * from ۱۴:۰۳, and one entered from a bare date keeps the bare midnight that makes
-     * [faMoment] print no clock for it.
+     * An answer written, the ledger published, the household told. Only a filing needs [derive] —
+     * the corrections in `Edits.kt` are laid over the rows where they are read.
      */
-    fun setManualTxnDay(entry: LedgerEntry, day: Long) {
-        if (entry.txn.sourceKind != "manual" || !entry.txn.ref.startsWith("m:")) return
+    private fun ledgerEdit(what: String, rederive: Boolean = false, write: suspend (DurableDb) -> Unit) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
             val derived = DerivedDb.get(app)
             runCatching {
-                val now = System.currentTimeMillis()
-                // The ledger records what happened, and tomorrow has not. The stepper stops at
-                // today and so does this — the two clocks can disagree by a midnight.
-                val moved = day.coerceAtMost(tehranDay(now))
-                val id = entry.txn.ref.removePrefix("m:")
-                val row = durable.manual().all().firstOrNull { it.id == id } ?: return@runCatching
-                // Every writer stamps `day` as `tehranDay(at)`, so this is inside the day it
-                // names — the clamp is only what guarantees the move lands on the day she
-                // picked even if some older row's two halves ever disagreed.
-                val minute = (row.at - tehranDayStart(row.day)).coerceIn(0L, DAY_MS - 1)
-                durable.manual().put(
-                    row.copy(
-                        at = tehranDayStart(moved) + minute,
-                        day = moved,
-                        // Monotonic, exactly as the delete's is: the stamp is what tells the
-                        // other phones this row changed.
-                        updatedAt = maxOf(now, row.updatedAt + 1),
-                    )
-                )
-                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                write(durable)
+                if (rederive) derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "setManualTxnDay failed: $it") }
+            }.onFailure { android.util.Log.w("muchtoman", "$what failed: $it") }
         }
     }
 

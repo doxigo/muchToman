@@ -446,10 +446,36 @@ describe('ledger actions', () => {
     const today = tehranDay(Date.now());
     ledger.addManualTxn(-5_000, null, '', '', tehranDayStart(today) + 14 * 3_600_000 + 3 * 60_000);
     const typed = derived.ledger().entries[0];
-    ledger.setManualTxnDay(typed, today - 3);
+    ledger.editTxn(typed, null, today - 3, null);
     expect(derived.ledger().entries[0].txn).toMatchObject({ day: today - 3, at: tehranDayStart(today - 3) + (14 * 60 + 3) * 60_000 });
-    ledger.setManualTxnDay(derived.ledger().entries[0], today + 5);
+    ledger.editTxn(derived.ledger().entries[0], null, today + 5, null);
     expect(derived.ledger().entries[0].txn.day).toBe(today);
+  });
+
+  it('corrects a figure over the row, and splits it into parts every total counts', async () => {
+    const today = tehranDay(Date.now());
+    ledger.addManualTxn(-60_000_000, 'cat_groceries', '', '', tehranDayStart(today) + 60_000);
+    const typed = derived.ledger().entries[0];
+    ledger.editTxn(typed, 50_000_000, null, null);
+    const fixed = derived.ledger().entries[0];
+    expect(fixed).toMatchObject({ edited: true, txn: { amountRial: 50_000_000, signedRial: -50_000_000 } });
+    // Parts that do not add up to the row are refused whole.
+    expect(ledger.splitTxn(fixed, [['cat_groceries', 40_000_000], ['cat_sweets', 20_000_000]])).toBe(false);
+    expect(ledger.splitTxn(fixed, [['cat_sweets', 20_000_000], ['cat_groceries', 30_000_000]])).toBe(true);
+    const split = derived.ledger().entries[0];
+    expect(split.categoryId).toBe('cat_groceries');
+    expect(split.split?.map((p) => [p.categoryId, p.rial])).toEqual([['cat_sweets', 20_000_000], ['cat_groceries', 30_000_000]]);
+    const { ReportRange, periodReport, reportMonthOf } = await import('../src/reports');
+    const month = reportMonthOf(today);
+    const report = periodReport(derived.ledger().entries, new ReportRange(month, month));
+    expect(report.transactions).toBe(1);
+    expect(report.spentRial).toBe(50_000_000);
+    expect(report.spendingByCategory.length).toBe(2);
+    // One category is the row whole again, and the figure goes back to what was typed.
+    ledger.categorise(split, 'cat_dining', false);
+    expect(derived.ledger().entries[0].split).toEqual([]);
+    ledger.revertTxnEdits(derived.ledger().entries[0]);
+    expect(derived.ledger().entries[0]).toMatchObject({ edited: false, txn: { amountRial: 60_000_000 } });
   });
 
   it('adds, renames and archives categories without touching a filed row', () => {

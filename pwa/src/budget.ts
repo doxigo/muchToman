@@ -335,7 +335,7 @@ export function budgetInsight(
   return {
     text,
     why: `${whose}، در برابر خرج ${budget.shared ? `خانواده در ${budget.window.fa}` : budget.window.fa}.`,
-    refs: budgetRows(entries, budget.goal, budget.window, mineId, excluded).map((e) => e.txn.ref),
+    refs: [...new Set(budgetRows(entries, budget.goal, budget.window, mineId, excluded).map((e) => e.txn.ref))],
     tone: 'ATTENTION',
   };
 }

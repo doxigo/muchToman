@@ -606,6 +606,16 @@ adb shell dumpsys notification --noredact | grep -A20 "pkg=$P" | grep android.ti
 Clearing app data puts a device back into the "never looked" state, which is the other case worth
 seeing: the first pass must stay silent.
 
+### Edits and splits
+
+Her figure, day and member for one of her own rows, and a row split between categories, are
+`txn_decision` kinds (`amount`, `day`, `member`, `split`) laid over the rows in `ledgerEntries`,
+never in `derive` — so reports, budgets, the timeline and the family's copy read the corrected
+row while every balance still reads the bank's stamp and مانده. `spendable` expands a split into
+one entry per part; `spendableRows` keeps it whole for the per-purchase questions. No new record
+kind: the member rides the owner's `transaction` payload and the split rides the `category`
+record (any member may split any shared row), both as defaulted fields an older build ignores.
+
 ### Shipping a parser fix
 
 Bump `PARSER_VERSION` in `Derived.kt`. The next launch re-derives every transaction from the
@@ -697,6 +707,7 @@ It is a port, file for file, so the Kotlin is the spec and the two read side by 
 | `Ledger.kt`/`Rules.kt`/`Links.kt`/`Goals.kt` tables, `Data.kt` prefs | `model.ts` (types), `state.ts` (in memory, written through to IndexedDB) |
 | `Sms.kt` (parser) · `Derived.kt` · `Rules.kt` · `Links.kt` · `Filing.kt` | `paste.ts`, `sms.ts` · `derived.ts` · `rules.ts` · `links.ts` · `filing.ts` |
 | AppVm's ledger actions | `ledger.ts` |
+| `Edits.kt` · `EditsUi.kt` | `edits.ts` · `editsUi.tsx` |
 | `Catalog.kt` · `Data.kt` (holdings, rates, history, wallets) | `catalog.ts` · `data.ts` |
 | `Reports.kt` · `Budget.kt` · `Goals.kt` · `Installments.kt` · AppVm's plan actions + `Notify.kt` | `reports.ts` · `budget.ts` · `goals.ts` · `installments.ts` · `plans.ts` |
 | `Sync.kt` · AppVm's family actions | `sync.ts` · `family.ts` (+ `crypto.ts`, `db.ts`) |

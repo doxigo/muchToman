@@ -9,7 +9,7 @@
 import { faCompact, faDate, faNumber, tomanOf } from './format';
 import { jalaliMonthsAheadEnd, weekStart } from './jalali';
 import type { Decision, Goal, LedgerEntry } from './model';
-import { spendable } from './reports';
+import { spendable, spendableRows } from './reports';
 import { CAT_BILLS_ID, CAT_CASH, CAT_FEES, CAT_INCOME, CAT_TRANSFER, DecisionKind } from './rules';
 
 export const GoalKind = { SAVE: 'save', CAP: 'cap', INSTALLMENT: 'installment' } as const;
@@ -152,7 +152,7 @@ export function worthItCandidates(
   threshold: number,
 ): LedgerEntry[] {
   const weekFrom = weekStart(today);
-  return spendable(entries)
+  return spendableRows(entries)
     .filter((e) => e.txn.day >= weekFrom &&
       e.txn.direction === 'out' &&
       (e.txn.amountRial ?? 0) >= threshold &&
@@ -166,7 +166,7 @@ export function worthItCandidates(
 
 /** The 90th percentile of what she spends, floored so a quiet month does not ask about bus fares. */
 export function largeSpendThreshold(entries: LedgerEntry[], floorRial = 20_000_000): number {
-  const amounts = spendable(entries)
+  const amounts = spendableRows(entries)
     .filter((e) => e.txn.direction === 'out')
     .map((e) => e.txn.amountRial)
     .filter((a): a is number => a != null)

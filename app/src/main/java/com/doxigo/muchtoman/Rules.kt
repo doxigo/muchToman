@@ -637,6 +637,18 @@ object DecisionKind {
 
     /** Whose money this was, and how much, signed — see [LoanLink]. Private, like the one above. */
     const val LOAN = "loan"
+
+    /** Her figure for one of her own rows, Rial magnitude — see `Edits.kt`. */
+    const val AMOUNT = "amount"
+
+    /** The Tehran day she moved one of her own rows to; the minute stays the row's. */
+    const val DAY = "day"
+
+    /** Whose spending the row was, when not the phone it landed on — a member id. */
+    const val MEMBER = "member"
+
+    /** The row in parts, `category:rial` each, comma-joined — see [parseSplit]. */
+    const val SPLIT = "split"
 }
 
 /**

@@ -73,7 +73,9 @@ export interface Rule {
   deleted: boolean;
 }
 
-export type DecisionKind = 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment' | 'loan';
+export type DecisionKind =
+  | 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment' | 'loan'
+  | 'amount' | 'day' | 'member' | 'split';
 
 /** `txn_decision`: one per (ref, kind). `id` is `${kind}:${ref}` here, which is that key. */
 export interface Decision {
@@ -350,4 +352,11 @@ export interface LedgerEntry {
   note: string;
   noteAuthorName: string;
   sharedWithFamily: boolean;
+  /** Her figure or day laid over the row — see edits.ts. The balance still reads the bank's. */
+  edited?: boolean;
+  /** The parts the row is split into, absent or empty when it is one — see `splitParts`. */
+  split?: SplitPart[];
 }
+
+/** One part of a split row: what it was filed as, and how much of the row it was. */
+export interface SplitPart { categoryId: string; categoryFa: string; rial: number }

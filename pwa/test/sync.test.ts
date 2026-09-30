@@ -216,6 +216,49 @@ describe('publishing', () => {
     expect(out).toHaveLength(3);
   });
 
+  it('says whose spending her row was, and carries a split on the filing record', async () => {
+    const custom = { id: 'cat_mine', parentId: null, nameFa: 'باشگاه', kind: 'expense' as const, sort: 500, builtin: false, archived: false, updatedAt: NOW - 50, glyph: 'DOTS' };
+    const groceries = { id: 'cat_groceries', parentId: null, nameFa: 'خواربار', kind: 'expense' as const, sort: 10, builtin: true, archived: false, updatedAt: 0, glyph: '' };
+    const decisions = [
+      { id: 'category:m:one', ref: 'm:one', kind: 'category' as const, value: 'cat_groceries', createdAt: 1, updatedAt: NOW - 7, deleted: false, memberId: ME, familyRef: '' },
+      { id: 'split:m:one', ref: 'm:one', kind: 'split' as const, value: 'cat_groceries:30,cat_mine:20', createdAt: 1, updatedAt: NOW - 7, deleted: false, memberId: ME, familyRef: '' },
+    ];
+    const out = await sync.outgoingRecords(input([entry(txn('m:one', -50), { ownerMemberId: THEM })], { decisions, categories: [custom, groceries] }));
+    expect(await plainOf(out[1])).toMatchObject({ amountRial: 50, member: THEM });
+    expect(await plainOf(out[2])).toMatchObject({
+      categoryId: 'cat_groceries', split: 'cat_groceries:30,cat_mine:20',
+      splitCategories: [{ id: 'cat_mine', name: 'باشگاه', kind: 'expense', glyph: 'DOTS', editedAt: NOW - 50 }],
+    });
+    // An untouched row says neither: its payload is byte for byte what it was before splits.
+    const [, plain] = await sync.outgoingRecords(input([entry(txn('m:two', -5))]));
+    expect(await plainOf(plain)).not.toHaveProperty('member');
+  });
+
+  it('lands the owner\'s word on whose it was, and a split another member filed', async () => {
+    const id = sync.familyTxnId(THEM, 'm:theirs');
+    const ref = derived.familyLocalRef(id);
+    const row = (member: string | undefined, at: number) => record(id, 'transaction', JSON.stringify({
+      ownerMemberId: THEM, at: NOW - 5000, amountRial: 50, direction: 'out', ...(member ? { member } : {}),
+    }), { updatedAt: at });
+    expect(await apply(await row(ME, NOW - 900))).toBe(true);
+    expect(derived.ledger().allEntries.find((e) => e.txn.ref === ref)?.ownerMemberId).toBe(ME);
+
+    const filing = (split: string, at: number) => record(sync.familyTxnId(THEM, 'x').replace('txn:', 'category:'), 'category', JSON.stringify({
+      target: id, categoryId: 'cat_groceries', categoryName: 'خواربار', categoryKind: 'expense', editedByMemberId: THEM,
+      ...(split ? { split, splitCategories: [{ id: 'cat_theirs', name: 'باشگاه', kind: 'expense' }] } : {}),
+    }), { updatedAt: at });
+    expect(await apply(await filing('cat_groceries:30,cat_theirs:20', NOW - 800))).toBe(true);
+    const split = derived.ledger().allEntries.find((e) => e.txn.ref === ref)!;
+    expect(split.split?.map((p) => [p.categoryFa, p.rial])).toEqual([['خواربار', 30], ['باشگاه', 20]]);
+
+    // Taken back: a later record without a split, and a later row without a member.
+    expect(await apply(await filing('', NOW - 700))).toBe(true);
+    expect(await apply(await row(undefined, NOW - 600))).toBe(true);
+    const whole = derived.ledger().allEntries.find((e) => e.txn.ref === ref)!;
+    expect(whole.split).toEqual([]);
+    expect(whole.ownerMemberId).toBe(THEM);
+  });
+
   it('holds a received goal at its fixed point, so it is never echoed back', async () => {
     const payload = JSON.stringify({ goalId: 'g1', nameFa: 'خرج ماه', targetRial: 5_000_000, goalKind: 'cap', period: 'jmonth', startsOn: 20_000, createdAt: 1, ownerMemberId: THEM, editedByMemberId: THEM });
     expect(await apply(await record('goal:g1', 'goal', payload))).toBe(true);

@@ -10,7 +10,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import './timeline.css';
 import { useLedger, ledger } from './derived';
 import type { LedgerView } from './derived';
-import { categoriseAll, categorise, deleteTxn, restoreTxn, setManualTxnDay, setNote } from './ledger';
+import { categoriseAll, categorise, deleteTxn, restoreTxn, setNote } from './ledger';
+import { editable, splitParts, splittable } from './edits';
+import { SplitPanel } from './editsUi';
 import { autoFilePlan } from './filing';
 import { CAT_INSTALMENT, MAX_NOTE_CHARS, categoryChoices } from './rules';
 import { bankFa } from './sms';
@@ -31,7 +33,6 @@ import {
 } from './format';
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
-import { DayStepper } from './manualTxn';
 import { CheckMark, PlusMark, SearchMark } from './icons';
 import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetDelete, SheetTitle, SegmentedChoice, Switch } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
@@ -50,6 +51,10 @@ export function txnTitleFa(txn: Txn): string {
 /** What the row prints on its category line — the transfer override included, so a search for
  * «انتقال» finds what a search of the visible words should find. */
 export const ledgerCategoryFa = (entry: LedgerEntry): string =>
+  entry.split?.length ? entry.split.map((p) => p.categoryFa).join('، ') : ledgerMarkFa(entry);
+
+/** The one category whose mark the row wears — a split row's biggest part. */
+export const ledgerMarkFa = (entry: LedgerEntry): string =>
   entry.transfer ? 'انتقال بین حساب‌ها' : entry.categoryFa;
 
 /**
@@ -118,6 +123,7 @@ function transactionDetails(entry: LedgerEntry): Array<[string, string]> {
   const out: Array<[string, string]> = [['نوع', txn.direction === 'in' ? 'واریز' : txn.direction === 'out' ? 'برداشت' : 'نامشخص']];
   if (entry.ownerName.trim()) out.push(['صاحب تراکنش', entry.ownerName]);
   if (entry.categoryEditorName.trim()) out.push(['دسته‌بندی توسط', entry.categoryEditorName]);
+  if (entry.edited) out.push(['ویرایش', 'مبلغ یا تاریخش دستی اصلاح شده']);
   // The hero says «امروز»; the written-out date and its minute belong here. «زمان ثبت» is a
   // different fact: the stamp the bank printed, often a bare date.
   out.push(['تاریخ', faMoment(txn.at, txn.day)]);
@@ -227,11 +233,12 @@ function useCatFilter(): readonly string[] {
 
 /** Every category the ledger actually holds rows under, in the picker's order — no dead options. */
 function filterOptionsOf(everything: LedgerEntry[], view: LedgerView): Array<[string, string]> {
-  const used = new Set(everything.map((e) => e.categoryId));
+  const parts = everything.flatMap((e) => [e, ...splitParts(e)]);
+  const used = new Set(parts.map((e) => e.categoryId));
   const known = view.categories.filter((c) => used.has(c.id));
   const knownIds = new Set(known.map((c) => c.id));
   const leftover = [...used].filter((id) => !knownIds.has(id))
-    .map((id): [string, string] => [id, everything.find((e) => e.categoryId === id)!.categoryFa]);
+    .map((id): [string, string] => [id, parts.find((e) => e.categoryId === id)!.categoryFa]);
   return [...known.map((c): [string, string] => [c.id, c.nameFa]), ...leftover];
 }
 
@@ -249,7 +256,9 @@ function TimelineScreen() {
   // «Nothing here at all» and «nothing on this side» are different facts with different answers.
   const everything = useMemo(() => view.entries.filter((e) => !e.duplicate), [view.entries]);
   const visible = useMemo(
-    () => everything.filter((e) => lensMatches(lens, e) && (!filter.length || filter.includes(e.categoryId)) && matchesLedgerSearch(e, query)),
+    () => everything.filter((e) => lensMatches(lens, e) &&
+      (!filter.length || filter.includes(e.categoryId) || !!e.split?.some((p) => filter.includes(p.categoryId))) &&
+      matchesLedgerSearch(e, query)),
     [everything, lens, filter, query],
   );
   const grouped = useMemo(() => {
@@ -454,7 +463,7 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
   const txn = entry.txn;
   const incoming = txn.direction === 'in';
   const categoryFa = ledgerCategoryFa(entry);
-  const glyph = glyphOf(categoryFa, glyphsOf(ledger()));
+  const glyph = glyphOf(ledgerMarkFa(entry), glyphsOf(ledger()));
   const hue = hueCss(glyph);
   const rial = txn.signedRial ?? txn.amountRial;
   const waiting = entry.needsReview && !entry.transfer;
@@ -603,26 +612,6 @@ function NoteField({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-/**
- * The day a typed row is filed under, moved when she says so — nothing auto-saves, because a stray
- * tap on «روز قبل» must not move a transaction out of a report she has already read. `today` is
- * the live one: the page can be left open past midnight.
- */
-function DayField({ entry }: { entry: LedgerEntry }) {
-  const today = useTehranDay();
-  const [draft, setDraft] = useState(entry.txn.day);
-  // The ledger's own answer settles the draft once the save lands, or when another phone moved it.
-  useEffect(() => setDraft(entry.txn.day), [entry.txn.day]);
-  return (
-    <div>
-      <DayStepper day={draft} today={today} onDay={setDraft} />
-      {draft !== entry.txn.day && (
-        <div style={{ marginTop: 'var(--m)' }}><PillButton label="ذخیره تاریخ" voice="primary" onClick={() => setManualTxnDay(entry, draft)} /></div>
-      )}
-    </div>
-  );
-}
-
 function DetailsPanel({ details }: { details: Array<[string, string]> }) {
   return (
     <div class="details">
@@ -692,16 +681,33 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
     [payable, view, txn.ref],
   );
   const own = txn.ref.startsWith('m:') || txn.ref.startsWith('s:');
+  const canEdit = editable(entry);
+  const canSplit = splittable(entry);
   return (
     <div class="screen no-tabs txn-page">
       <TransactionHero entry={entry} />
 
+      {/* Right under the figure and the day they correct, in equal cells. */}
+      {(canEdit || canSplit) && (
+        <div class="row-flex" style={{ marginTop: 'var(--l)', gap: 'var(--s)' }}>
+          {canEdit && <div class="grow"><PillButton label="ویرایش" block onClick={() => openSheet('editTxn', { txnRef: txn.ref })} /></div>}
+          {canSplit && (
+            <div class="grow">
+              <PillButton label={entry.split?.length ? 'ویرایش تقسیم' : 'تقسیم بین دسته‌ها'} block
+                onClick={() => openSheet('splitTxn', { txnRef: txn.ref })} />
+            </div>
+          )}
+        </div>
+      )}
+
       <SectionHeading>دسته‌بندی</SectionHeading>
       <p class="txn-caption">
         {entry.transfer ? 'این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی.'
-          : entry.needsReview ? 'دسته درست رو بزن تا این مورد تایید بشه.'
-            : `دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن.`}
+          : entry.split?.length ? 'بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه.'
+            : entry.needsReview ? 'دسته درست رو بزن تا این مورد تایید بشه.'
+              : `دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن.`}
       </p>
+      {!!entry.split?.length && <div style={{ marginTop: 'var(--m)' }}><SplitPanel split={entry.split} /></div>}
       <div style={{ margin: 'var(--m) 0 var(--l)' }}><LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={setLearnSimilar} /></div>
       <CategoryGrid categories={choices} selected={chosen}
         onSelect={(category) => {
@@ -730,16 +736,6 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
 
       <SectionHeading>یادداشت</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} /></div>
-
-      {/* Above «جزئیات», which states the date — the correction sits by what it corrects. Only on
-          this browser's own typed rows: a message's day is the bank's stamp, re-read every derive. */}
-      {txn.ref.startsWith('m:') && (
-        <>
-          <SectionHeading>تاریخ</SectionHeading>
-          <p class="txn-caption">اگه روز اشتباهی ثبت شده، همین‌جا درستش کن. ساعتش همون که بود می‌مونه.</p>
-          <div style={{ marginTop: 'var(--m)' }}><DayField entry={entry} /></div>
-        </>
-      )}
 
       <SectionHeading>جزئیات</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><DetailsPanel details={transactionDetails(entry)} /></div>

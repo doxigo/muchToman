@@ -345,7 +345,7 @@ fun worthItCandidates(
     threshold: Long,
 ): List<LedgerEntry> {
     val weekFrom = weekStart(today)
-    return spendable(entries)
+    return spendableRows(entries)
         .filter {
             it.txn.day >= weekFrom &&
                 it.txn.direction == "out" &&
@@ -367,7 +367,7 @@ fun worthItCandidates(
  * runs in Kotlin anyway.
  */
 fun largeSpendThreshold(entries: List<LedgerEntry>, floorRial: Long = 20_000_000L): Long {
-    val amounts = spendable(entries)
+    val amounts = spendableRows(entries)
         .filter { it.txn.direction == "out" }
         .mapNotNull { it.txn.amountRial }
         .sorted()

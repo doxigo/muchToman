@@ -2002,7 +2002,8 @@ private fun CategorySheet(
 
             if (window.rows.isNotEmpty()) {
                 item(key = "rows_head") { SheetLabel("تراکنش‌های این بازه") }
-                itemsIndexed(window.rows, key = { _, e -> e.txn.ref }) { i, e ->
+                // Ref and category: a member's window can hold two parts of one split row.
+                itemsIndexed(window.rows, key = { _, e -> "${e.txn.ref}:${e.categoryId}" }) { i, e ->
                     // The timeline's own row, in the timeline's own band — a transaction looks
                     // the same wherever it is met, and tapping it goes where it always goes.
                     Box(

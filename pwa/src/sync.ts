@@ -23,6 +23,7 @@ import { safeAssetShareItems } from './data';
 import type { AssetShareItem } from './data';
 import { deleteMeta, getMeta, partition, setMeta, withSyncLock } from './db';
 import { familyLocalRef, ledger } from './derived';
+import { MAX_SPLIT_PARTS, parseSplit, splitValue } from './edits';
 import { tehranDay } from './jalali';
 import { MAX_NOTE_CHARS } from './rules';
 import { MAX_PLAUSIBLE_RIAL, sha256Hex } from './sms';
@@ -267,6 +268,8 @@ export interface SyncEntry {
   /** Compatibility with records written before category ids were synchronized. */
   category: string;
   merchant: string;
+  /** Whose spending the owner says this was, when not their own. Absent on every untouched row. */
+  member: string;
 }
 export const parseEntry = (plain: string): SyncEntry | null => decode(plain, (o) => ({
   kind: field(o, 'kind', isString, 'transaction'),
@@ -286,6 +289,7 @@ export const parseEntry = (plain: string): SyncEntry | null => decode(plain, (o)
   categoryEditedAt: field(o, 'categoryEditedAt', isLong, 0),
   category: field(o, 'category', isString, ''),
   merchant: field(o, 'merchant', isString, ''),
+  member: field(o, 'member', isString, ''),
 }));
 
 export interface SyncMemberPayload { memberId: string; name: string; sharesSms: boolean; avatar: string }
@@ -321,9 +325,17 @@ const parseGoal = (plain: string): SyncGoalPayload | null => decode(plain, (o) =
   editedByMemberId: field(o, 'editedByMemberId', isString),
 }));
 
+/** A category a split names beside the lead one — enough to draw it on a device that never saw it. */
+interface SyncSplitCategory { id: string; name: string; kind: string; glyph: string; editedAt: number }
+const isSplitCategories = (v: unknown): v is SyncSplitCategory[] =>
+  Array.isArray(v) && v.every((c) => !!c && typeof c === 'object' && isString((c as Json).id) &&
+    isString((c as Json).name) && isString((c as Json).kind));
+
 interface SyncCategoryPayload {
   target: string; categoryId: string; categoryName: string; categoryKind: string; categoryGlyph: string;
   editedByMemberId: string; categoryEditedAt: number;
+  /** The row in parts, blank when it is one; `categoryId` stays the biggest part (Sync.kt). */
+  split: string; splitCategories: SyncSplitCategory[];
 }
 const parseCategory = (plain: string): SyncCategoryPayload | null => decode(plain, (o) => ({
   target: field(o, 'target', isString),
@@ -333,6 +345,11 @@ const parseCategory = (plain: string): SyncCategoryPayload | null => decode(plai
   categoryGlyph: field(o, 'categoryGlyph', isString, ''),
   editedByMemberId: field(o, 'editedByMemberId', isString),
   categoryEditedAt: field(o, 'categoryEditedAt', isLong, 0),
+  split: field(o, 'split', isString, ''),
+  splitCategories: field(o, 'splitCategories', isSplitCategories, []).map((c) => ({
+    id: c.id, name: c.name, kind: c.kind,
+    glyph: isString(c.glyph) ? c.glyph : '', editedAt: isLong(c.editedAt) ? c.editedAt : 0,
+  })),
 }));
 
 interface SyncExclusionPayload { categoryIds: string[]; editedByMemberId: string }
@@ -578,6 +595,9 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
       categoryUpdatedAt: decision?.updatedAt ?? 0,
       categoryEditedAt: category ? editedAt(category) : 0,
       merchant: txn.merchant,
+      // Absent, not blank, on a row nobody moved: kotlinx leaves defaults out, and an untouched
+      // row's payload has to stay byte for byte what it was or every row republishes at once.
+      ...(entry.ownerMemberId !== me && !blank(entry.ownerMemberId) ? { member: entry.ownerMemberId } : {}),
     });
     const contentHash = sha256Hex(payload);
     const previous = publications.get(id);
@@ -659,6 +679,7 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
   }
 
   const entriesByRef = new Map(p.entries.map((e) => [e.txn.ref, e]));
+  const splits = new Map(p.decisions.filter((d) => d.kind === 'split' && !d.deleted).map((d) => [d.ref, parseSplit(d.value)]));
   for (const decision of categoryDecisions) {
     const categoryId = decision.value;
     if (categoryId == null) continue;
@@ -668,9 +689,18 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
     if (!target) continue;
     const category = categoryById.get(categoryId);
     if (!category) continue;
+    const split = splits.get(decision.ref) ?? [];
+    const splitCategories = split.flatMap(([id]) => {
+      const c = categoryById.get(id);
+      return c && !c.builtin && c.id !== category.id
+        ? [{ id: c.id, name: c.nameFa, kind: c.kind, ...(c.glyph ? { glyph: c.glyph } : {}), ...(editedAt(c) ? { editedAt: editedAt(c) } : {}) }]
+        : [];
+    });
     const payload = JSON.stringify({
       kind: 'category', target, categoryId: category.id, categoryName: category.nameFa, categoryKind: category.kind,
       categoryGlyph: category.glyph, editedByMemberId: blank(decision.memberId) ? me : decision.memberId, categoryEditedAt: editedAt(category),
+      ...(split.length ? { split: splitValue(split) } : {}),
+      ...(splitCategories.length ? { splitCategories } : {}),
     });
     const id = categoryRecordId(target);
     const contentHash = sha256Hex(payload);
@@ -779,6 +809,19 @@ function applyTransaction(session: Session, record: WireRecord, payload: SyncEnt
     updatedAt: record.updatedAt, deleted: false, transfer: payload.transfer,
   });
 
+  // Whose spending the owner says it was. Only the owner writes this record, so its own stamp
+  // settles it: a blank one takes an earlier attribution back.
+  const localRef = familyLocalRef(familyRef);
+  const attributedTo = isValidSyncIdentity(payload.member) && payload.member !== owner ? payload.member : '';
+  const attributed = row('decisions', `member:${localRef}`);
+  if (attributedTo || (attributed && !attributed.deleted)) {
+    put('decisions', {
+      id: `member:${localRef}`, ref: localRef, kind: 'member', value: attributedTo,
+      createdAt: attributed?.createdAt ?? record.updatedAt, updatedAt: record.updatedAt, deleted: !attributedTo,
+      memberId: owner, familyRef,
+    });
+  }
+
   const categoryId = safeSyncedText(payload.categoryId, 80);
   if (!blank(categoryId)) {
     putSyncedCategory(categoryId, blank(payload.categoryName) ? payload.category : payload.categoryName, payload.categoryKind,
@@ -814,10 +857,30 @@ function applyCategory(session: Session, record: WireRecord, payload: SyncCatego
   const remarked = putSyncedCategory(categoryId, payload.categoryName, payload.categoryKind, payload.categoryGlyph, payload.categoryEditedAt, record.updatedAt, now);
   const existing = liveDecision(localRef, 'category');
   const editor = blank(record.authorMemberId) ? payload.editedByMemberId : record.authorMemberId;
-  if (!syncedEditWins(existing?.updatedAt, existing?.memberId ?? '', record.updatedAt, editor)) return remarked;
+  // Its own stamp, not the category's: the transaction record can land the same filing first.
+  const resplit = applySplit(localRef, record, payload, editor, now);
+  if (!syncedEditWins(existing?.updatedAt, existing?.memberId ?? '', record.updatedAt, editor)) return remarked || resplit;
   put('decisions', {
     id: `category:${localRef}`, ref: localRef, kind: 'category', value: categoryId,
     createdAt: existing?.createdAt ?? record.updatedAt, updatedAt: record.updatedAt, deleted: record.deleted,
+    memberId: editor, familyRef: payload.target,
+  });
+  return true;
+}
+
+/** A split arriving on a category record (Sync.kt `applySplit`). Later write wins. */
+function applySplit(localRef: string, record: WireRecord, payload: SyncCategoryPayload, editor: string, now: number): boolean {
+  const split = splitValue(parseSplit(payload.split));
+  const existing = row('decisions', `split:${localRef}`);
+  if (!split && (!existing || existing.deleted)) return false;
+  if (!syncedEditWins(existing?.updatedAt, existing?.memberId ?? '', record.updatedAt, editor)) return false;
+  for (const c of payload.splitCategories.slice(0, MAX_SPLIT_PARTS)) {
+    const id = safeSyncedText(c.id, 80);
+    if (!blank(id)) putSyncedCategory(id, c.name, c.kind, c.glyph, c.editedAt, record.updatedAt, now);
+  }
+  put('decisions', {
+    id: `split:${localRef}`, ref: localRef, kind: 'split', value: split,
+    createdAt: existing?.createdAt ?? record.updatedAt, updatedAt: record.updatedAt, deleted: !split,
     memberId: editor, familyRef: payload.target,
   });
   return true;

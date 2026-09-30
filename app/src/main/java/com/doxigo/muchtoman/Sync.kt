@@ -117,6 +117,11 @@ data class SyncEntry(
     /** Compatibility with records written before category ids were synchronized. */
     val category: String = "",
     val merchant: String = "",
+    /**
+     * Whose spending the owner says this was, when not their own — a [DecisionKind.MEMBER]. Blank
+     * on every row nobody moved, so the payload of an untouched row is byte for byte what it was.
+     */
+    val member: String = "",
 )
 
 @Serializable
@@ -200,6 +205,24 @@ private data class SyncCategoryPayload(
     val categoryGlyph: String = "",
     val editedByMemberId: String,
     val categoryEditedAt: Long = 0L,
+    /**
+     * The row in parts, as a [DecisionKind.SPLIT] value — blank when it is one. Filing, so it rides
+     * the record any member may write, and [categoryId] stays the biggest part: a build from before
+     * splits files the row whole under it, and one from after reads the parts. Blank arriving on a
+     * newer stamp takes a split back, which is also what an old build refiling the row says.
+     */
+    val split: String = "",
+    /** The parts' categories that only she has, so another phone can name them. */
+    val splitCategories: List<SyncSplitCategory> = emptyList(),
+)
+
+@Serializable
+private data class SyncSplitCategory(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val glyph: String = "",
+    val editedAt: Long = 0L,
 )
 
 /**
@@ -1039,6 +1062,7 @@ private suspend fun outgoingRecords(
                 categoryUpdatedAt = categoryDecision?.updatedAt ?: 0L,
                 categoryEditedAt = category?.editedAt ?: 0L,
                 merchant = txn.merchant,
+                member = entry.ownerMemberId.takeIf { it != session.member }.orEmpty(),
             )
         )
         val contentHash = sha256Hex(payload)
@@ -1204,6 +1228,7 @@ private suspend fun outgoingRecords(
     }
 
     val entriesByRef = ledger.entries.associateBy { it.txn.ref }
+    val splits = durable.decisions().ofKind(DecisionKind.SPLIT).associate { it.ref to parseSplit(it.value) }
     for (decision in categoryDecisions) {
         if (decision.deleted) continue
         val categoryId = decision.value ?: continue
@@ -1212,6 +1237,7 @@ private suspend fun outgoingRecords(
         val target = familyTargetOf(decision, transaction, session.member) ?: continue
         val category = categoryById[categoryId] ?: continue
         val editor = decision.memberId.ifBlank { session.member }
+        val split = splits[decision.ref].orEmpty()
         val payload = SYNC_JSON.encodeToString(
             SyncCategoryPayload(
                 target = target,
@@ -1221,6 +1247,11 @@ private suspend fun outgoingRecords(
                 categoryGlyph = category.glyph,
                 editedByMemberId = editor,
                 categoryEditedAt = category.editedAt,
+                split = splitValue(split),
+                splitCategories = split.mapNotNull { (id, _) ->
+                    categoryById[id]?.takeIf { !it.builtin && it.id != category.id }
+                        ?.let { SyncSplitCategory(it.id, it.nameFa, it.kind, it.glyph, it.editedAt) }
+                },
             )
         )
         val id = categoryRecordId(target)
@@ -1522,6 +1553,26 @@ private suspend fun applyTransaction(
         )
     )
 
+    // Whose spending the owner says it was. Only the owner writes this record, so the record's own
+    // stamp settles it: a blank one takes an earlier attribution back.
+    val attributedTo = payload.member.takeIf { isValidSyncIdentity(it) && it != owner }.orEmpty()
+    val attributed = durable.decisions().answerFor(familyLocalRef(familyRef), DecisionKind.MEMBER)
+    if (attributedTo.isNotEmpty() || (attributed != null && !attributed.deleted)) {
+        durable.decisions().put(
+            TxnDecision(
+                id = attributed?.id ?: "member:${familyLocalRef(familyRef)}",
+                ref = familyLocalRef(familyRef),
+                kind = DecisionKind.MEMBER,
+                value = attributedTo,
+                createdAt = attributed?.createdAt ?: record.updatedAt,
+                updatedAt = record.updatedAt,
+                deleted = attributedTo.isEmpty(),
+                memberId = owner,
+                familyRef = familyRef,
+            )
+        )
+    }
+
     val categoryId = safeSyncedText(payload.categoryId, 80)
     if (categoryId.isNotBlank()) {
         putSyncedCategory(
@@ -1593,7 +1644,10 @@ private suspend fun applyCategory(
     )
     val existing = durable.decisions().forRef(localRef).firstOrNull { it.kind == DecisionKind.CATEGORY }
     val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
-    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return remarked
+    // Its own stamp, not the category's: the transaction record can land the same filing first
+    // at the same millisecond, and the split must not lose to its own lead part.
+    val resplit = applySplit(durable, localRef, record, payload, editor, now)
+    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return remarked || resplit
     durable.decisions().put(
         TxnDecision(
             id = existing?.id ?: categoryRecordId(payload.target),
@@ -1603,6 +1657,39 @@ private suspend fun applyCategory(
             createdAt = existing?.createdAt ?: record.updatedAt,
             updatedAt = record.updatedAt,
             deleted = record.deleted,
+            memberId = editor,
+            familyRef = payload.target,
+        )
+    )
+    return true
+}
+
+/** A split arriving on a category record — see [SyncCategoryPayload.split]. Later write wins. */
+private suspend fun applySplit(
+    durable: DurableDb,
+    localRef: String,
+    record: WireRecord,
+    payload: SyncCategoryPayload,
+    editor: String,
+    now: Long,
+): Boolean {
+    val split = splitValue(parseSplit(payload.split))
+    val existing = durable.decisions().answerFor(localRef, DecisionKind.SPLIT)
+    if (split.isEmpty() && (existing == null || existing.deleted)) return false
+    if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
+    for (c in payload.splitCategories.take(MAX_SPLIT_PARTS)) {
+        val id = safeSyncedText(c.id, 80)
+        if (id.isNotBlank()) putSyncedCategory(durable, id, c.name, c.kind, c.glyph, c.editedAt, record.updatedAt, now)
+    }
+    durable.decisions().put(
+        TxnDecision(
+            id = existing?.id ?: "split:$localRef",
+            ref = localRef,
+            kind = DecisionKind.SPLIT,
+            value = split,
+            createdAt = existing?.createdAt ?: record.updatedAt,
+            updatedAt = record.updatedAt,
+            deleted = split.isEmpty(),
             memberId = editor,
             familyRef = payload.target,
         )

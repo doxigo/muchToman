@@ -266,6 +266,10 @@ internal fun searchFold(s: String): String = buildString {
 /** What the row prints on its category line — the transfer override included, so a search for
  * «انتقال» finds what a search of the visible words should find. */
 internal fun ledgerCategoryFa(entry: LedgerEntry): String =
+    if (entry.split.isNotEmpty()) entry.split.joinToString("، ") { it.categoryFa } else ledgerMarkFa(entry)
+
+/** The one category whose mark the row wears — a split row's biggest part. */
+internal fun ledgerMarkFa(entry: LedgerEntry): String =
     if (entry.transfer) "انتقال بین حساب‌ها" else entry.categoryFa
 
 /**
@@ -327,7 +331,7 @@ fun TimelineScreen(
     val visible = remember(everything, lens, catFilter, query) {
         everything.filter {
             lens.matches(it) &&
-                (catFilter.isEmpty() || it.categoryId in catFilter) &&
+                (catFilter.isEmpty() || it.categoryId in catFilter || it.split.any { p -> p.categoryId in catFilter }) &&
                 matchesLedgerSearch(it, query)
         }
     }
@@ -337,11 +341,11 @@ fun TimelineScreen(
     // Every category the ledger actually holds rows under, in the picker's own order — the
     // filter can only ever narrow to things that exist, so nothing here is a dead option.
     val filterOptions = remember(everything, ledger.categories) {
-        val used = everything.map { it.categoryId }.toSet()
+        val used = everything.flatMap { e -> listOf(e.categoryId) + e.split.map { it.categoryId } }.toSet()
         val known = ledger.categories.filter { it.id in used }
         val named = known.map { it.id to it.nameFa }
         val leftover = (used - known.map { it.id }.toSet()).mapNotNull { id ->
-            everything.firstOrNull { it.categoryId == id }?.let { id to it.categoryFa }
+            everything.flatMap(::splitParts).firstOrNull { it.categoryId == id }?.let { id to it.categoryFa }
         }
         named + leftover
     }
@@ -1045,12 +1049,13 @@ internal fun TimelineRow(
         else -> MaterialTheme.colorScheme.onBackground
     }
     val categoryFa = ledgerCategoryFa(entry)
+    val markFa = ledgerMarkFa(entry)
     // Same mark *and* same colour as the grid she chose it in: a hundred rows are read by the
     // disc at the start of the line long before the word is. «دسته‌بندی نشده» has no mark of
     // its own, falls to DOTS, and DOTS is the one entry in [categoryHue] that returns muted
     // text rather than a hue — a row still waiting for her stays grey while every filed row
     // beside it carries colour, which is the distinction the disc is for.
-    val hue = categoryHue(categoryFa)
+    val hue = categoryHue(markFa)
     val rial = txn.signedRial ?: txn.amountRial
     // The amber dot below is colour and nothing else, and colour is the one channel TalkBack
     // and a colour-blind reader share none of. On a waiting row the whole line is restated the
@@ -1093,7 +1098,7 @@ internal fun TimelineRow(
                         .clip(CircleShape)
                         .background(hue.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center,
-                ) { CategoryIcon(categoryFa, hue, size = 22.dp, stroke = 1.8.dp) }
+                ) { CategoryIcon(markFa, hue, size = 22.dp, stroke = 1.8.dp) }
                 // Whose row, on the disc's edge — the face they picked ([MemberFace]),
                 // shrunk to a badge. A badge rather than a disc of its own because the disc's
                 // hue is the category and stays the first thing the eye reads; on a shared
@@ -1257,11 +1262,16 @@ fun TransactionScreen(
     /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
     onDelete: ((LedgerEntry) -> Unit)? = null,
     /**
-     * Moves a hand-entered row to another day. Offered on the same rows [onDelete] is, and for
-     * the same reason: a message's date is the bank's own stamp, re-read from the message on
-     * every derive, so there is nothing here to edit that would survive one.
+     * Her figure, day and member for one of this phone's own rows — see `Edits.kt`. Null leaves
+     * that one as it stands. Offered on the rows [onDelete] is: another member's row is theirs.
      */
-    onDay: ((LedgerEntry, Long) -> Unit)? = null,
+    onEdit: ((LedgerEntry, Long?, Long?, String?) -> Unit)? = null,
+    /** Back to the figure and day the row came with. */
+    onRevertEdits: ((LedgerEntry) -> Unit)? = null,
+    /** The household, for «خرج کی بود؟». Fewer than two and the question is not asked. */
+    members: List<FamilyMember> = emptyList(),
+    /** The row in parts, or with none whole again — see [SplitSheet]. */
+    onSplit: ((LedgerEntry, List<Pair<String, Long>>) -> Unit)? = null,
     /** A category of her own, made right here where its absence was discovered. */
     onCreateCategory: ((String, String, CategoryGlyph) -> Unit)? = null,
     /** Her installment plans, for the «قسط» section and [InstallmentLinkSheet]. */
@@ -1292,6 +1302,10 @@ fun TransactionScreen(
     var chosen by remember(txn.ref) { mutableStateOf(entry.categoryId) }
     var source by remember(txn.ref) { mutableStateOf<String?>(null) }
     var makingCategory by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    var editing by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    var splitting by rememberSaveable(txn.ref) { mutableStateOf(false) }
+    val canEdit = onEdit != null && editable(entry)
+    val canSplit = onSplit != null && splittable(entry)
 
     LaunchedEffect(txn.ref) { source = onLoadSource(entry) }
     LaunchedEffect(entry.categoryId) { chosen = entry.categoryId }
@@ -1325,6 +1339,23 @@ fun TransactionScreen(
                 )
             }
 
+            // Right under the figure and the day they correct: the two things she can change
+            // about the row itself, in equal cells.
+            if (canEdit || canSplit) {
+                item(key = "edit") {
+                    Row(gutter.padding(top = Space.l), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                        if (canEdit) PillButton("ویرایش", { editing = true }, modifier = Modifier.weight(1f))
+                        if (canSplit) {
+                            PillButton(
+                                if (entry.split.isEmpty()) "تقسیم بین دسته‌ها" else "ویرایش تقسیم",
+                                { splitting = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+
             item(key = "category_heading") {
                 Column(gutter) {
                     Spacer(Modifier.height(Space.xxl))
@@ -1339,6 +1370,7 @@ fun TransactionScreen(
                     Text(
                         when {
                             entry.transfer -> "این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی."
+                            entry.split.isNotEmpty() -> "بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه."
                             entry.needsReview -> "دسته درست رو بزن تا این مورد تایید بشه."
                             else -> "دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن."
                         },
@@ -1346,6 +1378,10 @@ fun TransactionScreen(
                         lineHeight = 22.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (entry.split.isNotEmpty()) {
+                        Spacer(Modifier.height(Space.m))
+                        SplitPanel(entry.split)
+                    }
                     Spacer(Modifier.height(Space.m))
                     LearnSimilarToggle(txn, learnSimilar) { learnSimilar = it }
                     Spacer(Modifier.height(Space.l))
@@ -1407,27 +1443,6 @@ fun TransactionScreen(
                         SectionHeading("یادداشت")
                         Spacer(Modifier.height(Space.m))
                         NoteField(entry, onNote)
-                    }
-                }
-            }
-
-            // Above «جزئیات», which is the panel that states the date — the correction belongs
-            // next to the thing it corrects. Only on this phone's own hand-entered rows: `s:`
-            // and `f:` both take their day from a message, and a message is evidence.
-            if (onDay != null && txn.ref.startsWith("m:")) {
-                item(key = "day") {
-                    Column(gutter) {
-                        Spacer(Modifier.height(Space.xxl))
-                        SectionHeading("تاریخ")
-                        Spacer(Modifier.height(Space.xs))
-                        Text(
-                            "اگه روز اشتباهی ثبت شده، همین‌جا درستش کن. ساعتش همون که بود می‌مونه.",
-                            fontSize = 13.sp,
-                            lineHeight = 22.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(Space.m))
-                        DayField(entry, onDay)
                     }
                 }
             }
@@ -1496,6 +1511,26 @@ fun TransactionScreen(
             onLink = { onInstallmentPayment(entry, it) },
             onCreate = { name, payment, count -> onCreateInstallment(entry, name, payment, count) },
             onDismiss = { linking = false },
+        )
+    }
+
+    if (editing && onEdit != null) {
+        EditTxnSheet(
+            entry = entry,
+            members = members,
+            onSave = { rial, day, member -> onEdit(entry, rial, day, member) },
+            onRevert = onRevertEdits?.takeIf { entry.edited }?.let { revert -> { revert(entry) } },
+            onDismiss = { editing = false },
+        )
+    }
+
+    if (splitting && onSplit != null) {
+        SplitSheet(
+            entry = entry,
+            categories = categories,
+            categoryUse = categoryUse,
+            onSave = { parts -> onSplit(entry, parts) },
+            onDismiss = { splitting = false },
         )
     }
 
@@ -1596,37 +1631,6 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
 }
 
 /**
- * The day the row is filed under, moved when she says so — the note field's own bargain.
- *
- * The pill exists only while the stepper and the ledger disagree, and its disappearance after
- * the tap is the receipt: the day on screen is the day the ledger holds. Nothing auto-saves
- * here, because a stray tap on «روز قبل» must not silently move a transaction into last month
- * and out of a report she has already read.
- *
- * [today] is the live one, not a constant captured on open: the screen can be left standing
- * past midnight, and a stepper that still lets her walk forward onto what was yesterday's
- * tomorrow would store a day that has not happened.
- */
-@Composable
-private fun DayField(entry: LedgerEntry, onDay: (LedgerEntry, Long) -> Unit) {
-    val today = rememberTehranDay()
-    var draft by rememberSaveable(entry.txn.ref) { mutableStateOf(entry.txn.day) }
-    // The ledger's own answer settles the draft once the save lands — and it is what wins if the
-    // day arrives changed from another phone while she is looking at it.
-    LaunchedEffect(entry.txn.day) { draft = entry.txn.day }
-    Column {
-        // Not clamped for display: a row that somehow carries a future day says so, and
-        // «روز قبل» is the way back off it. Clamping here would print today over a stored
-        // tomorrow, which is the stepper telling her the ledger says something it does not.
-        DayStepper(draft, today) { draft = it }
-        if (draft != entry.txn.day) {
-            Spacer(Modifier.height(Space.m))
-            PillButton("ذخیره تاریخ", { onDay(entry, draft) }, voice = ButtonVoice.PRIMARY)
-        }
-    }
-}
-
-/**
  * Everything the app knows about one transaction that is not its figure, in reading order.
  *
  * Built here rather than on the screen that shows it, because two screens now show it: the
@@ -1643,6 +1647,7 @@ private fun transactionDetails(entry: LedgerEntry): List<Pair<String, String>> {
         })
         entry.ownerName.takeIf { it.isNotBlank() }?.let { add("صاحب تراکنش" to it) }
         entry.categoryEditorName.takeIf { it.isNotBlank() }?.let { add("دسته‌بندی توسط" to it) }
+        if (entry.edited) add("ویرایش" to "مبلغ یا تاریخش دستی اصلاح شده")
         // The field above says «امروز» for the two days she is thinking about, so the written-out
         // date belongs here — with the minute beside it, which nothing else on the screen states.
         // «زمان ثبت» below is a different fact: the stamp the bank itself printed in the message,

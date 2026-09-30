@@ -11,6 +11,7 @@
  *  - A month only speaks for itself: every range is closed-open, so a report on تیر cannot cite
  *    a transaction from مرداد, and today's cash is never a past month's runway.
  */
+import { splitParts } from './edits';
 import { budgetInsight, pressingBudget } from './budget';
 import type { BudgetProgress } from './budget';
 import { INSTALLMENT_REMINDER_DEFAULT, installmentInsight, pressingInstallment } from './installments';
@@ -285,6 +286,14 @@ export class PeriodReport {
  * (a balance with no amount would drag the automatic share down for every balance message).
  */
 export function spendable(entries: LedgerEntry[]): LedgerEntry[] {
+  return spendableRows(entries).flatMap(splitParts);
+}
+
+/**
+ * [spendable] one line per transaction, a split row whole — for what asks about a purchase rather
+ * than about money by category: «می‌ارزید؟» and the large-spend bar.
+ */
+export function spendableRows(entries: LedgerEntry[]): LedgerEntry[] {
   return entries.filter((e) => !(e.duplicate || e.transfer || e.txn.amountRial == null));
 }
 
@@ -347,8 +356,9 @@ export function periodReport(
     spentRial: spent,
     spendingByCategory: biggestFirst(spending),
     incomeByCategory: biggestFirst(earning),
-    transactions: inRange.length,
-    handledAutomatically: inRange.filter((e) => !e.needsReview).length,
+    // Counted by transaction, not by part: a split receipt is still one thing she bought.
+    transactions: new Set(inRange.map((e) => e.txn.ref)).size,
+    handledAutomatically: new Set(inRange.filter((e) => !e.needsReview).map((e) => e.txn.ref)).size,
     passedRial: passed,
     // The table's order, so it is «قرض و همسر» whichever landed first.
     passedFa: [...new Set(PASS_THROUGH_CATEGORIES.values())].filter((n) => passedNames.has(n)).join(' و '),
