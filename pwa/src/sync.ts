@@ -380,13 +380,18 @@ export const parseTombstone = (plain: string): { v: number; id: string; deleted:
 const tombstonePayload = (id: string): string => JSON.stringify({ v: 1, id, deleted: true });
 
 interface PullBody {
-  seq: number; records: WireRecord[]; primaryMemberId: string; hasMore: boolean | null; rotationClientSecret: boolean;
+  /** Null where an envelope would not read: the page keeps its length, so its cursor still moves. */
+  seq: number; records: (WireRecord | null)[]; primaryMemberId: string; hasMore: boolean | null; rotationClientSecret: boolean;
 }
 const isWire = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
-function parsePull(text: string): PullBody {
-  const body = decode(text, (o) => ({
-    seq: field(o, 'seq', isLong, 0),
-    records: field(o, 'records', (v): v is Json[] => Array.isArray(v) && v.every(isWire), []).map((r) => ({
+/**
+ * One envelope, or null — dropped alone, never the page: one bad row failing the whole pull
+ * would hold every device's cursor on it for ever.
+ */
+function wireOf(r: unknown): WireRecord | null {
+  try {
+    if (!isWire(r)) throw new Malformed('record');
+    return {
       id: field(r, 'id', isString),
       scope: field(r, 'scope', isString),
       updatedAt: field(r, 'updatedAt', isLong),
@@ -397,7 +402,16 @@ function parsePull(text: string): PullBody {
       deleted: field(r, 'deleted', isBool, false),
       nonce: field(r, 'nonce', isString),
       body: field(r, 'body', isString),
-    })),
+    };
+  } catch (error) {
+    console.warn('skipped a malformed pulled record', error);
+    return null;
+  }
+}
+function parsePull(text: string): PullBody {
+  const body = decode(text, (o) => ({
+    seq: field(o, 'seq', isLong, 0),
+    records: field(o, 'records', (v): v is unknown[] => Array.isArray(v), []).map(wireOf),
     primaryMemberId: field(o, 'primaryMemberId', isString, ''),
     hasMore: field(o, 'hasMore', (v): v is boolean | null => v === null || isBool(v), null),
     rotationClientSecret: field(o, 'rotationClientSecret', isBool, false),
@@ -1098,7 +1112,7 @@ export function applyRecord(session: Session, record: WireRecord, plain: string 
 /** One pulled page, opened first and then folded in as one write, its cursor last in the queue. */
 async function applyPage(session: Session, pulled: PullBody, nextCursor: number, now: number): Promise<number> {
   // The client half of the skew bound, in one choke point: everything downstream sees the clamp.
-  const bounded = pulled.records.map((r) => ({ ...r, updatedAt: clampSyncStamp(r.updatedAt, now) }));
+  const bounded = pulled.records.flatMap((r) => (r ? [{ ...r, updatedAt: clampSyncStamp(r.updatedAt, now) }] : []));
   const plains = await Promise.all(bounded.map((r) => (r.device === session.device ? null : openRecord(session, r))));
   let applied = 0;
   batch(() => {

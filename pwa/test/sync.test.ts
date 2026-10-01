@@ -113,6 +113,23 @@ describe('last write wins', () => {
     expect(state.row('decisions', `category:${ref}`)?.value).toBe('cat_high');
   });
 
+  it('drops a malformed envelope alone and still moves the cursor past it', async () => {
+    const plain = JSON.stringify({ ownerMemberId: THEM, at: NOW - 5000, amountRial: 1000, direction: 'out' });
+    const good = await record(sync.familyTxnId(THEM, 'm:3'), 'transaction', plain);
+    const fractional = { ...(await record(sync.familyTxnId(THEM, 'm:1'), 'transaction', plain)), updatedAt: NOW - 1000.5 };
+    const { nonce: _, ...noNonce } = await record(sync.familyTxnId(THEM, 'm:2'), 'transaction', plain);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/v1/sync?')) return Response.json({ seq: 4, records: [fractional, noNonce, 'junk', good], hasMore: false });
+      return Response.json({ clamped: [] });
+    }));
+    await sync.syncNow(session, NOW);
+    expect(state.rows('familyTxns').map((t) => t.id)).toEqual([good.id]);
+    expect(sync.syncPref('syncSeq')).toBe(4);
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
+  });
+
   it('clamps a stamp from the far future to two days ahead', async () => {
     const plain = JSON.stringify({ memberId: THEM, name: 'علی', sharesSms: false });
     expect(sync.clampSyncStamp(NOW + 10 * 86_400_000, NOW)).toBe(NOW + sync.MAX_SYNC_STAMP_SKEW_MS);

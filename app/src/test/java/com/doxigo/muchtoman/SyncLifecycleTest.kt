@@ -688,6 +688,19 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `a malformed envelope is dropped alone and the cursor still moves past it`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val them = "b".repeat(32)
+        val fractional = txnRecord(session, them, "m:1", 1000).put("updatedAt", 1000.5)
+        val noNonce = txnRecord(session, them, "m:2", 1000).apply { remove("nonce") }
+
+        pullOnce(server, durable, session, fractional, noNonce, memberRecord(session, them, "رضا", 1000), txnRecord(session, them, "m:3", 1000))
+
+        assertEquals(listOf(familyTxnId(them, "m:3")), durable.familyTxns().all().map { it.id })
+        assertEquals("4", durable.meta().get(META_SYNC_SEQ))
+    }
+
+    @Test
     fun `what goes out is sealed under the record's own name`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         val member = pushedBy(server, durable, session).single { it.getString("kind") == "member" }

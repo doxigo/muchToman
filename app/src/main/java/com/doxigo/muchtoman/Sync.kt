@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.SecureRandom
@@ -337,7 +339,8 @@ private data class PushBody(val records: List<WireRecord>)
 @Serializable
 private data class PullBody(
     val seq: Long = 0,
-    val records: List<WireRecord> = emptyList(),
+    /** Read one at a time in [syncNow], so one envelope that will not decode is dropped alone. */
+    val records: List<JsonElement> = emptyList(),
     val primaryMemberId: String = "",
     val hasMore: Boolean? = null,
     val rotationClientSecret: Boolean = false,
@@ -2245,7 +2248,12 @@ suspend fun syncNow(
         val nextCursor = maxOf(cursor, pulled.seq)
         received += durable.withTransaction {
             var applied = 0
-            for (record in pulled.records) {
+            for (element in pulled.records) {
+                // Dropped alone, never the page: one bad row failing the whole pull would hold
+                // every device's cursor on it for ever.
+                val record = runCatching { SYNC_JSON.decodeFromJsonElement<WireRecord>(element) }
+                    .onFailure { android.util.Log.w("muchtoman", "skipped a malformed pulled record: $it") }
+                    .getOrNull() ?: continue
                 // The client half of the skew bound, in one choke point: everything downstream
                 // compares and stores the clamped stamp.
                 val bounded = record.copy(updatedAt = clampSyncStamp(record.updatedAt, now))
