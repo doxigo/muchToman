@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -17,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
 
 /**
  * The household lifecycle — claim, join by link, rejoin, leave, remove, renew — against a
@@ -46,6 +50,8 @@ class SyncLifecycleTest {
         private val scripted = mutableMapOf<String, ArrayDeque<Pair<Int, String>>>()
         /** Pull pages, handed out one per `GET /v1/sync`; an empty pull once they run out. */
         val pulls = ArrayDeque<String>()
+        /** A path whose answer waits: the first latch opens when the request arrives, the second lets it go. */
+        val held = mutableMapOf<String, Pair<CountDownLatch, CountDownLatch>>()
         private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 
         init {
@@ -70,6 +76,7 @@ class SyncLifecycleTest {
                     "/v1/invite" -> 200 to JSONObject().put("code", inviteCode).toString()
                     else -> 200 to "{}"
                 }
+                held[path]?.let { (arrived, release) -> arrived.countDown(); release.await() }
                 val bytes = response.toByteArray(Charsets.UTF_8)
                 exchange.sendResponseHeaders(status, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
@@ -502,6 +509,24 @@ class SyncLifecycleTest {
         pullOnce(server, durable, session, txnRecord(session, left, "m:2", 3000), asset(left))
         assertNull(durable.familyTxns().get(familyTxnId(left, "m:2")))
         assertNull(durable.familyAssets().get(left))
+    }
+
+    @Test
+    fun `a remove cancelled while the server answers still buries the member here`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val other = "b".repeat(32)
+        durable.familyMembers().put(FamilyMember(other, "رضا", updatedAt = 1000))
+        val arrived = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        server.held["/v1/remove"] = arrived to release
+
+        val removal = CoroutineScope(Dispatchers.IO).launch { removeFamilyMember(session, durable, other) }
+        arrived.await()
+        removal.cancel()
+        release.countDown()
+        removal.join()
+
+        assertTrue(durable.familyMembers().get(other)!!.deleted)
     }
 
     @Test

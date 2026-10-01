@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Base64
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -804,21 +805,26 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
             deleted = true,
         )
-        request(
-            "${active.base}/v1/remove",
-            "POST",
-            active.token,
-            SYNC_JSON.encodeToString(RemoveMemberBody(memberId, tombstone)),
-        )
-        durable.withTransaction {
-            durable.familyMembers().put(
-                (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
-                    .copy(updatedAt = stamp, deleted = true)
+        // Once the server is asked, the local half is not optional. Cancelled in between — the
+        // sheet closed, the screen left — the tombstone would stand on the server while this
+        // phone, whose pull skips it, kept the member for ever.
+        withContext(NonCancellable) {
+            request(
+                "${active.base}/v1/remove",
+                "POST",
+                active.token,
+                SYNC_JSON.encodeToString(RemoveMemberBody(memberId, tombstone)),
             )
-            dropMemberRows(durable, memberId)
-            // The re-derive a pulled tombstone would have asked for, since this one is never pulled.
-            val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)?.toLongOrNull() ?: 0L
-            durable.meta().put(DurableMeta(META_SYNC_DERIVE_REVISION, (revision + 1).toString()))
+            durable.withTransaction {
+                durable.familyMembers().put(
+                    (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
+                        .copy(updatedAt = stamp, deleted = true)
+                )
+                dropMemberRows(durable, memberId)
+                // The re-derive a pulled tombstone would have asked for, since this one is never pulled.
+                val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)?.toLongOrNull() ?: 0L
+                durable.meta().put(DurableMeta(META_SYNC_DERIVE_REVISION, (revision + 1).toString()))
+            }
         }
     }
 
