@@ -113,6 +113,14 @@ describe('quick paste', () => {
     expect(parsePasted('برداشت مبلغ 1,000,000 ریال\nمانده:5,000,000-').balanceRial).toBe(-5_000_000);
   });
 
+  it('never lets an advert\'s toman make a bare-rial message toman', () => {
+    // پاسارگاد, رسالت and صادرات print bare Rial; the advert's «۲۰۰ میلیون تومان» under it is prose.
+    expect(parsePasted('برداشت 5,000,000\nمانده 20,000,000\nبا همراه‌بانک تا ۲۰۰ میلیون تومان جایزه ببرید'))
+      .toMatchObject({ amountRial: 5_000_000, balanceRial: 20_000_000, direction: 'out' });
+    // A money figure printed in تومان still speaks for the bare ones beside it.
+    expect(parsePasted('برداشت 5,000,000 تومان\nمانده 20,000,000').balanceRial).toBe(200_000_000);
+  });
+
   it('never reads a wallet promo as the bank balance', () => {
     // The corpus pins this as a declined message, which this side skips — declining is about
     // who sent it. The veto itself still has to hold here, or a pasted promo states a balance.

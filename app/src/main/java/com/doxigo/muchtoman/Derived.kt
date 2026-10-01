@@ -77,7 +77,9 @@ import kotlinx.coroutines.sync.withLock
 // 0.7 Toman, stored on every such row and anchoring the account there until the rebuild.
 // 15: a sign glued to a stated مانده is kept. An overdrawn account's «مانده: -5,000,000» had been
 // stored as five million in hand.
-const val PARSER_VERSION = 15
+// 16: a تومان decides the unit of bare figures only when it sits on a money figure. An advert's
+// «۲۰۰ میلیون تومان» under a bare-Rial message had every figure in it stored ten times high.
+const val PARSER_VERSION = 16
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

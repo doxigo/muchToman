@@ -481,12 +481,20 @@ private fun unitAfter(text: String, end: Int): Double? {
 }
 
 /**
- * The unit for a figure that printed none of its own. Only a body naming تومان and never ریال
- * is taken as Toman; anything else is Rial, which is both the convention and the direction that
- * understates rather than overstates.
+ * The unit for a figure that printed none of its own. Only a body that prints money in تومان and
+ * never names ریال is taken as Toman; anything else is Rial, which is both the convention and the
+ * direction that understates rather than overstates.
+ *
+ * The تومان has to sit on a money figure, not anywhere in the body. پاسارگاد, رسالت and صادرات
+ * print bare Rial, and one of theirs with an advert under it — «وام تا ۲۰۰ میلیون تومان» — had
+ * every figure in it read ten times high. A figure that needs «میلیون» is prose, as
+ * [MIN_MONEY_FIGURE] says, so the «۲۰۰» carries no unit for anything else.
  */
 private fun fallbackDivisor(text: String): Double =
-    if ((text.contains("تومان") || text.contains("تومن")) && !text.contains("ریال")) 1.0 else 10.0
+    if (!text.contains("ریال") && NUMBER.findAll(text).any {
+            (moneyOf(it.value) ?: 0.0) >= MIN_MONEY_FIGURE && unitAfter(text, it.range.last + 1) == 1.0
+        }
+    ) 1.0 else 10.0
 
 /**
  * The first real money figure after any of [labels].

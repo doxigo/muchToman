@@ -210,8 +210,18 @@ function unitAfter(text: string, end: number): number | null {
   return null;
 }
 
+/**
+ * The unit for a figure that printed none: Toman only when the body prints a money figure in تومان
+ * and never names ریال. A تومان anywhere else — an advert's «وام تا ۲۰۰ میلیون تومان» under a bank
+ * that prints bare Rial — read every figure ten times high; «۲۰۰» needs «میلیون» to be money, so it
+ * is prose and its unit governs nothing.
+ */
 function fallbackDivisor(text: string): number {
-  return (text.includes('تومان') || text.includes('تومن')) && !text.includes('ریال') ? 1 : 10;
+  if (text.includes('ریال')) return 10;
+  for (const m of text.matchAll(NUMBER)) {
+    if (Number(digitsOf(m[0])) >= MIN_MONEY_FIGURE && unitAfter(text, m.index! + m[0].length) === 1) return 1;
+  }
+  return 10;
 }
 
 function figureAfter(

@@ -906,6 +906,16 @@ class MoneyTest {
     }
 
     @Test
+    fun `a toman in an advert does not make a bare-rial message toman`() {
+        // پاسارگاد, رسالت and صادرات print bare Rial; the advert's «۲۰۰ میلیون تومان» under it is prose.
+        val m = sms("برداشت 5,000,000\nمانده 20,000,000\nبا همراه‌بانک تا ۲۰۰ میلیون تومان جایزه ببرید")!!
+        assertEquals(-500_000.0, m.delta!!, 0.01)
+        assertEquals(2_000_000.0, m.balance!!, 0.01)
+        // A money figure printed in تومان still speaks for the bare ones beside it.
+        assertEquals(20_000_000.0, sms("برداشت 5,000,000 تومان\nمانده 20,000,000")!!.balance!!, 0.01)
+    }
+
+    @Test
     fun `an account number between the label and the figure is not the figure`() {
         // "مانده حساب 829-800-1092308-1 : 50,000,000 ریال" — the first digits after the label
         // are the account, and reading them as the balance turned 5 million into 82 Toman.
