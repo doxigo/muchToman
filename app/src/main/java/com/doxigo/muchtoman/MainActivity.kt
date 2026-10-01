@@ -52,8 +52,10 @@ private const val MAX_PARALLEL_WALLET_FETCHES = 4
 class AppVm(app: Application) : AndroidViewModel(app) {
     // Before the first Store read, deliberately: if a staged restore is waiting, the swap and the
     // prefs rewrite happen now, so the state built two lines down — and the first frame after
-    // «ببند و باز کن» — is already the backup. Milliseconds when idle (one file stat), renames
-    // when not; the bytes were written at import time.
+    // «ببند و باز کن» — is already the backup. Milliseconds when idle (one file stat); once, after
+    // a restore, two synced copies and one integrity pass — the bytes were written and checked at
+    // import time. ponytail: still on Main, a few hundred ms for a few-MB ledger on a slow phone;
+    // move it behind a loading frame before AppVm is built if a durable.db ever runs to tens of MB.
     private val restoredAtLaunch = DurableDb.completePendingRestore(app)
     private val store = Store(app)
 

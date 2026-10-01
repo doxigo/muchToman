@@ -1173,7 +1173,10 @@ internal fun finishStagedRestore(context: Context): Boolean {
     val stagedPrefs = File(dir, RESTORE_PREFS)
     val stagedDb = File(dir, RESTORE_DB)
     val prefs = decodeBackupPrefs(stagedPrefs.readText())
-    validateRestoreDatabase(context, stagedDb)
+    // The staged file is not validated again here. stageRestore checked it when it was written,
+    // and the check after the install below reads the very same bytes with the rollback already in
+    // place — a second integrity pass and Room open on Main at launch bought nothing those two
+    // do not.
 
     clearRestoreRollback(dir)
     DATABASE_SUFFIXES.forEach { suffix ->

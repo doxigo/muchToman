@@ -424,6 +424,21 @@ class PersistenceTest {
     }
 
     @Test
+    fun `a staged file damaged after staging is caught after the install and rolled back`() = runBlocking {
+        val original = schemaDatabase(DURABLE_DB_VERSION, "durable.db", "original")
+        val backup = schemaDatabase(9, "older.db", "restored")
+        val prefs = context.getSharedPreferences("muchtoman", 0)
+        prefs.edit().putString("name", "original").commit()
+        stageRestore(context, backup.readBytes(), encodeBackupPrefs(mapOf("name" to BackupPref("s", "restored"))))
+        File(original.parentFile, "durable.db.restore").writeBytes(byteArrayOf(1, 2, 3))
+        assertThrows(Exception::class.java) { finishStagedRestore(context) }
+        assertEquals("original", prefs.getString("name", null))
+        DurableDb.builder(context, "durable.db").build().use { db ->
+            assertEquals("original", db.smsSource().bodyOf("preserved"))
+        }
+    }
+
+    @Test
     fun `startup recovers an interrupted swap from its original files before retrying`() = runBlocking {
         val original = schemaDatabase(DURABLE_DB_VERSION, "durable.db", "original")
         val backup = schemaDatabase(9, "older.db", "restored")
