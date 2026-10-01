@@ -929,8 +929,8 @@ class Store(context: Context) {
      * waiting for a new message to arrive.
      */
     var bankAccounts: List<BankAccount>
-        get() = collapseAccounts(read("bankAccounts", emptyList()))
-        set(v) = write("bankAccounts", collapseAccounts(v))
+        get() = collapseAccounts(read("bankAccounts", emptyList()), extraLookup(extraBankNumbers))
+        set(v) = write("bankAccounts", collapseAccounts(v, extraLookup(extraBankNumbers)))
 
     /** Banks she switched off: still tracked and still listed, just not in the total. */
     var disabledBanks: Set<String>

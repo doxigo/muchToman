@@ -1173,16 +1173,22 @@ fun anchorAccount(accounts: List<BankAccount>, key: String, balance: Double, at:
  *
  * The survivor is the best evidence available: a stated balance beats a running total, and the
  * more recent beats the older. Adding them together would be the doubling all over again.
+ *
+ * [extra] is [extraLookup] of the numbers she confirmed: a bank this build ships no number for
+ * (سینا, شهر, …) is read once she adds one, and its row is as live as any other. Filtered out, its
+ * balance showed for one session and was gone at the next write.
  */
-fun collapseAccounts(accounts: List<BankAccount>): List<BankAccount> =
-    accounts
+fun collapseAccounts(accounts: List<BankAccount>, extra: Map<String, Bank> = emptyMap()): List<BankAccount> {
+    val read = READ_BANKS + extra.values.map { it.name }
+    return accounts
         // A bank we no longer read can never be corrected by another message, so its figure is
         // frozen at whatever the build that wrote it believed — and it cannot even be named,
         // since the enum entry is gone. Rows from banks that were guessed at by wording, rather
         // than known by their number, are exactly this: unnameable and unfixable.
-        .filter { it.bank in READ_BANKS }
+        .filter { it.bank in read }
         .groupBy { it.bank }
         .map { (_, rows) -> rows.maxWith(compareBy({ it.anchored }, { it.updatedAt })) }
+}
 
 private val READ_BANKS: Set<String> =
     Bank.entries.filter { it.numbers.isNotEmpty() }.map { it.name }.toSet()

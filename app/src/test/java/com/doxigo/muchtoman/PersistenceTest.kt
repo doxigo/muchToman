@@ -265,6 +265,20 @@ class PersistenceTest {
     }
 
     @Test
+    fun `a bank read only through a number she added keeps its balance across a restart`() {
+        // سینا ships no number, so only her confirmed one reads it; the collapse used to drop
+        // every row of a bank without a built-in number on the next write.
+        val store = Store(context)
+        store.extraBankNumbers = mapOf(Bank.SINA.name to listOf("+98 21 1234"))
+        store.bankAccounts = listOf(
+            BankAccount(Bank.SINA.name, balance = 7_000_000.0, updatedAt = 1, anchored = true),
+            BankAccount(Bank.SHAHR.name, balance = 9.0, updatedAt = 1, anchored = true),
+        )
+        assertEquals(listOf(Bank.SINA.name), Store(context).bankAccounts.map { it.bank })
+        assertEquals(7_000_000.0, Store(context).bankAccounts.single().balance, 0.0)
+    }
+
+    @Test
     fun `complete ledger and goal include the spending before four thousand newest rows`() = runBlocking {
         DurableDb.builder(context, "large-ledger.db").build().use { durable ->
             androidx.room.Room.databaseBuilder(context, DerivedDb::class.java, "large-derived.db")
