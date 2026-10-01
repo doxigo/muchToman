@@ -5,7 +5,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { BudgetPeriod } from '../src/budget';
+import { BudgetLevel, BudgetPeriod } from '../src/budget';
 import { GoalKind } from '../src/goals';
 import { jalaliDay, tehranDayStart } from '../src/jalali';
 import type { Goal } from '../src/model';
@@ -119,14 +119,36 @@ describe('plans', () => {
       const goal = { ...cap('b1', 50_000_000), shared: false };
       const rows = [entry(first, -41_500_000, { categoryId: 'cat_dining', category: 'رستوران و کافه' })];
       const now = tehranDayStart(first + 5) + 10 * 3_600_000;
-      await plans.announce(rows, [goal], now);
+      await plans.announce(rows, rows, [goal], now);
       expect(shown.map((s) => s.title)).toEqual(['رستوران و کافه: ۸۳٪ بودجهٔ مرداد رفته']);
       expect(shown[0].options).toMatchObject({ tag: 'budget:b1', data: { tab: 'BUDGET' } });
       const version = state.dataVersion();
-      await plans.announce(rows, [goal], now);
+      await plans.announce(rows, rows, [goal], now);
       expect(shown).toHaveLength(1);
       // Nothing new said, nothing written: a subscriber re-running this cannot loop.
       expect(state.dataVersion()).toBe(version);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a budget note counts from the ledger start, as its card does', async () => {
+    const shown: string[] = [];
+    const reg = { showNotification: async (title: string) => { shown.push(title); }, getNotifications: async () => [] };
+    vi.stubGlobal('Notification', { permission: 'granted' });
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } });
+    try {
+      state.setPref('quipTone', 'PLAIN');
+      const goal = { ...cap('b1', 50_000_000), shared: false };
+      const dining = { categoryId: 'cat_dining', category: 'رستوران و کافه' };
+      // 11.5m before the start she moved, 30m after: the card says ۶۰٪, under any note's threshold.
+      const before = entry(first, -11_500_000, dining);
+      const after = entry(first + 3, -30_000_000, dining);
+      const now = tehranDayStart(first + 5) + 10 * 3_600_000;
+      await plans.announce([before, after], [after], [goal], now);
+      expect(shown).toEqual([]);
+      // And no high-water mark raised past what the card shows.
+      expect((state.pref('budgetMarks') as unknown as Array<{ level: number }>).every((m) => m.level === BudgetLevel.OK)).toBe(true);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -144,15 +166,15 @@ describe('plans', () => {
       state.setPref('rates', { updatedAt: 1, toman: {}, coins: [], quips: { quiet: [{ tone: 'witty', category: '', text: 'زنده‌ای؟' }] } });
       const rows = [entry(first, -500_000)];
       const now = tehranDayStart(first + 5) + 10 * 3_600_000;
-      await plans.announce(rows, [], now);
+      await plans.announce(rows, rows, [], now);
       expect(shown.map((s) => [s.title, s.options.body])).toEqual([['۵ روزه خرجی ندیدیم', `زنده‌ای؟\n${'اگه خرج کردی و اینجا نیست، «وضعیت دفتر» رو توی تنظیمات ببین.'}`]]);
       expect(shown[0].options).toMatchObject({ tag: 'quiet', data: { tab: 'LEDGER' } });
-      await plans.announce(rows, [], now + 3_600_000);
+      await plans.announce(rows, rows, [], now + 3_600_000);
       expect(shown).toHaveLength(1);
       // An explicit ساده is kept, and says nothing.
       state.setPref('quietMark', 0);
       state.setPref('quipTone', 'PLAIN');
-      await plans.announce(rows, [], now);
+      await plans.announce(rows, rows, [], now);
       expect(shown).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();

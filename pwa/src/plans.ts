@@ -398,15 +398,16 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 /**
  * Work out what is worth saying, say it, and write down what was said — idempotent, so it can run
- * after every ledger change. [entries] are the ledger from `ledgerStartsOn` on (what the caps
- * read); [goals] every goal row.
+ * after every ledger change. [entries] are the whole ledger (what installments read), [kept] the
+ * ledger from `ledgerStartsOn` on (what the caps read, as their cards do); [goals] every goal row.
+ * With the whole ledger alone, a moved start left the note at «۸۳٪» over a card saying «۶۰٪».
  *
  * Marks are read and written before anything awaits, so two overlapping calls cannot both announce
  * one crossing; and written only when they changed, because a pref write re-renders every screen
  * and a caller subscribed to the store would otherwise loop.
  */
-export async function announce(entries: LedgerEntry[], goals: Goal[], now = Date.now()): Promise<void> {
-  const plans = plansOf({ ...stored(now), goals, entries });
+export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goals: Goal[], now = Date.now()): Promise<void> {
+  const plans = plansOf({ ...stored(now), goals, entries, kept });
   const pending: Array<Promise<void>> = [];
 
   // Budgets: marked whether or not the device can show a note (Notify.kt announceBudgets).
@@ -443,7 +444,7 @@ export async function announce(entries: LedgerEntry[], goals: Goal[], now = Date
   // Quiet (Notify.kt announceQuiet): only once she picked a voice, once a spell, and marked only
   // when it can be shown. A spend since the note was posted answers it, so it comes down.
   if (quipToneOf(pref('quipTone')) !== 'PLAIN') {
-    const last = lastSpendAt(entries);
+    const last = lastSpendAt(kept);
     if (last !== pref('quietMark')) pending.push(closeNote(QUIET_TAG));
     const days = quietDays(last, pref('quietMark'), now);
     if (days != null && last != null && canNotify()) {
