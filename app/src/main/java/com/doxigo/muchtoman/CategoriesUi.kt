@@ -51,7 +51,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 @Composable
 fun CategoriesScreen(
@@ -262,7 +261,7 @@ fun CategorySheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     // The mark it wears now, which on a shipped category is looked up by name rather than stored.
     val worn = editing?.let { glyphOf(it.nameFa) }

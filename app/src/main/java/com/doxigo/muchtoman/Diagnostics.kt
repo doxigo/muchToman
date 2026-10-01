@@ -30,7 +30,6 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -192,7 +191,7 @@ private suspend fun postToWorker(
 internal fun CrashSheet(report: String, onSend: () -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,

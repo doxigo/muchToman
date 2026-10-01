@@ -78,7 +78,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.round
-import kotlinx.coroutines.launch
 
 /**
  * The report answers one follow-up question: "بیشتر شده یا کمتر؟" — over a window she picks.
@@ -1905,7 +1904,7 @@ private fun CategorySheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     // A member has no category hue to borrow — a person's name through [categoryHue] would pick
     // a colour that means «خوراک» somewhere else on the screen — so the side she is reading
     // colours the sheet instead, which is the colour her bar already wore.
@@ -2228,7 +2227,7 @@ private fun ExcludeSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     val offered = remember(categories) {
         categories.filter {

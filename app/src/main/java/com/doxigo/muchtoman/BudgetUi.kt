@@ -70,7 +70,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
 /**
@@ -1106,7 +1105,7 @@ private fun BudgetSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     var picked by remember { mutableStateOf<Category?>(null) }
     // «کل خرج», which is a choice about *what* rather than a category, so it is its own piece of
@@ -1347,7 +1346,7 @@ private fun GoalSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     var shared by remember { mutableStateOf(editing?.shared ?: false) }
     var name by remember { mutableStateOf(editing?.goal?.nameFa ?: "") }
@@ -1482,7 +1481,7 @@ private fun InstallmentSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var name by remember { mutableStateOf("") }
@@ -1635,7 +1634,7 @@ private fun InstallmentPaymentsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1830,7 +1829,7 @@ internal fun InstallmentLinkSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     val amount = entry.txn.amountRial
     val current = installmentPaidBy(entry.txn.ref, installments)
     val offered = installments

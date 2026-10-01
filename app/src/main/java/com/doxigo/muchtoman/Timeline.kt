@@ -92,7 +92,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * The activity timeline — what happened, grouped by the day it happened in Tehran.
@@ -804,7 +803,7 @@ private fun CategoryFilterSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2465,7 +2464,7 @@ private fun AutoFileSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

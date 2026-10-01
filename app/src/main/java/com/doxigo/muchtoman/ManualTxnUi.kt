@@ -39,7 +39,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 /**
  * «۱۴:۰۳» read back into minutes since Tehran midnight, from either digit set, or null.
@@ -83,7 +82,7 @@ fun ManualTxnSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     var outgoing by rememberSaveable { mutableStateOf(true) }
     var amount by rememberSaveable { mutableStateOf("") }

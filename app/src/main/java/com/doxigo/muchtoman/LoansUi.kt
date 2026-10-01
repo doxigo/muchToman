@@ -67,7 +67,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
@@ -768,7 +767,7 @@ internal fun LoanPersonSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var name by rememberSaveable { mutableStateOf(person?.name.orEmpty()) }
     var promise by rememberSaveable { mutableStateOf(person?.promise) }
@@ -894,7 +893,7 @@ internal fun LoanMoveSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     var who by rememberSaveable { mutableStateOf(person?.person?.id) }
     var naming by rememberSaveable { mutableStateOf(person == null && people.isEmpty()) }
     var newName by rememberSaveable { mutableStateOf("") }
@@ -1019,7 +1018,7 @@ internal fun LoanLinkSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     val delta = loanLinkRial(entry) ?: 0L
     var picked by rememberSaveable(entry.txn.ref) { mutableStateOf(current) }
     var naming by rememberSaveable(entry.txn.ref) { mutableStateOf(views.isEmpty()) }

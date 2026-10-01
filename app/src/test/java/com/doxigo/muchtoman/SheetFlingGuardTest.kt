@@ -1,8 +1,16 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SheetFlingGuardTest {
@@ -17,5 +25,16 @@ class SheetFlingGuardTest {
 
         assertEquals(Velocity.Zero, SheetFlingGuard.onPostFling(Velocity.Zero, Velocity(0f, 1200f)))
         assertEquals(Velocity.Zero, SheetFlingGuard.onPostFling(Velocity.Zero, Velocity.Zero))
+    }
+
+    // A back press mid-slide cancels the close's hide; the save queued behind it must still run.
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test
+    fun aCutShortHideStillRunsWhatWasQueuedBehindIt() {
+        val state = SheetState(false, { 0f }, { 0f }, SheetValue.Expanded)
+        val scope = CoroutineScope(Job() + Dispatchers.Unconfined).apply { cancel() }
+        var saved = false
+        scope.hideThen(state) { saved = true }
+        assertTrue(saved)
     }
 }

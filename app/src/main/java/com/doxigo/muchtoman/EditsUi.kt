@@ -37,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -59,7 +60,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+
+/**
+ * Slides a sheet away, then runs [then] — however the slide ends. A back press or a scrim tap
+ * in those ~250 ms starts the sheet's own hide, which cancels this one, and a save queued behind
+ * it in the same coroutine was dropped with the sheet. Every sheet's `close` comes through here.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun CoroutineScope.hideThen(sheetState: SheetState, then: () -> Unit) {
+    launch { sheetState.hide() }.invokeOnCompletion { then() }
+}
 
 /** A Rial figure as the amount field holds it: Toman digits, a tenth only when there is one. */
 internal fun rialToField(rial: Long): String =
@@ -84,7 +96,7 @@ fun EditTxnSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     val txn = entry.txn
     val today = remember { tehranDay(System.currentTimeMillis()) }
@@ -230,7 +242,7 @@ fun SplitSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     val total = entry.txn.amountRial ?: 0L
     val choices = remember(categories, categoryUse) {

@@ -3201,7 +3201,7 @@ private fun PickTypeSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     // Play the sheet out before removing it from composition, or the selection just blinks.
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -3909,7 +3909,7 @@ private fun EditSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     ModalBottomSheet(
         // Nothing to write to while adding: there is no row until ذخیره makes one.
