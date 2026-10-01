@@ -111,6 +111,33 @@ describe('the first load after the upgrade', () => {
   });
 });
 
+describe('a scanned invite on a browser already in a household', () => {
+  // Pinned word for word on both sides (FamilySyncTest holds the same strings).
+  const OWN = 'این گوشی دیگه عضو این خانواده نیست. با پیوستن دوباره، دفتر مشترک روی این گوشی از نو شروع می‌شه. تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.';
+  const OTHER = 'این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.';
+  const link = (hid: string) => `#hid=${hid}&pair=code&scope=family:${hid}&k=${'A'.repeat(43)}`;
+  beforeEach(async () => {
+    const crypt = await import('../src/crypto');
+    const { key, raw } = await crypt.generateKey();
+    await db.setMeta('session', { base: 'https://sync.test', token: `${HID}.${'b'.repeat(64)}`, issuedAt: NOW, device: DEVICE, member: ME, scope: `family:${HID}`, key, raw: crypt.toBase64Url(raw) });
+  });
+
+  it('does not call her own household another family when it no longer answers to this browser', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })));
+    await family.acceptPairing(link(HID));
+    expect(family.familyState().pendingRejoin?.hid).toBe(HID);
+    expect(family.familyState().rejoinSameHousehold).toBe(true);
+    expect(family.rejoinLead(true)).toBe(OWN);
+  });
+
+  it('says another household is another family', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await family.acceptPairing(link('c'.repeat(32)));
+    expect(family.familyState().rejoinSameHousehold).toBe(false);
+    expect(family.rejoinLead(false)).toBe(OTHER);
+  });
+});
+
 describe('what the family screen reads', () => {
   it('counts each member\'s rows, leaving duplicates out', () => {
     const e = (owner: string, duplicate = false) => ({ ownerMemberId: owner, duplicate }) as import('../src/model').LedgerEntry;

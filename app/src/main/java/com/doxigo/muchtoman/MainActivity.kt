@@ -1497,9 +1497,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             var case = pairingCase(session?.token, pairing.hid)
             // Her own family's QR on a phone the household no longer answers to is the way back
             // in, through the same confirmed replace a different household's would take.
-            if (case == PairingCase.SAME_HOUSEHOLD && session != null && sessionRejected(session, durable)) {
-                case = PairingCase.REJOIN
-            }
+            val rejected = case == PairingCase.SAME_HOUSEHOLD && session != null && sessionRejected(session, durable)
+            if (rejected) case = PairingCase.REJOIN
             _state.update {
                 it.copy(
                     family = when (case) {
@@ -1507,8 +1506,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                             it.family.copy(pendingPairing = link, error = null, pairingUrl = null)
                         PairingCase.SAME_HOUSEHOLD ->
                             it.family.copy(error = "این گوشی از قبل عضو یک خانواده است.")
-                        PairingCase.REJOIN ->
-                            it.family.copy(pendingRejoin = link, error = null, pairingUrl = null)
+                        PairingCase.REJOIN -> it.family.copy(
+                            pendingRejoin = link, rejoinSameHousehold = rejected, error = null, pairingUrl = null,
+                        )
                     },
                 )
             }

@@ -66,6 +66,24 @@ class FamilySyncTest {
         assertEquals("family:member-a:SAMAN", row.accountId)
     }
 
+    /**
+     * Her own household's QR on a phone it no longer answers to rides the rejoin confirm, which
+     * must not call it another family. Pinned word for word on both sides (pwa/test/family.test.ts).
+     */
+    @Test
+    fun `the rejoin confirm tells her own household from another`() {
+        assertEquals(
+            "این گوشی دیگه عضو این خانواده نیست. با پیوستن دوباره، دفتر مشترک روی این گوشی از نو شروع می‌شه. " +
+                "تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
+            rejoinLead(sameHousehold = true),
+        )
+        assertEquals(
+            "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: موارد مشترک اعضای قبلی " +
+                "دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
+            rejoinLead(sameHousehold = false),
+        )
+    }
+
     /** A row a sync stored before it clamped: a day the Jalali arithmetic cannot place is repaired on derive. */
     @Test
     fun `a family row's stamp is clamped and its day recomputed`() {

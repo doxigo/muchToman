@@ -249,6 +249,7 @@ fun CompanionScreen(
                 Lead(FAMILY_LEAD)
                 RejoinBlock(
                     working = state.working,
+                    sameHousehold = state.rejoinSameHousehold,
                     onConfirm = onRejoin,
                     onDismiss = onDismissRejoin,
                 )
@@ -649,14 +650,13 @@ private fun InviteCode(url: String) {
 @Composable
 private fun RejoinBlock(
     working: Boolean,
+    sameHousehold: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     SectionHeading("پیوستن به خانواده جدید")
     Text(
-        "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: " +
-            "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. " +
-            "تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.",
+        rejoinLead(sameHousehold),
         fontSize = 13.sp,
         lineHeight = 22.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -680,6 +680,21 @@ private fun RejoinBlock(
         enabled = !working,
         block = true,
     )
+}
+
+/**
+ * What the rejoin confirm says. Her own household's QR on a phone it no longer answers to —
+ * removed, or a leave whose answer was lost — takes the same confirm, but it is no other family.
+ * The PWA's `rejoinLead`, word for word.
+ */
+internal fun rejoinLead(sameHousehold: Boolean): String {
+    val opening = if (sameHousehold) {
+        "این گوشی دیگه عضو این خانواده نیست. با پیوستن دوباره، دفتر مشترک روی این گوشی از نو شروع می‌شه."
+    } else {
+        "این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: " +
+            "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه."
+    }
+    return "$opening تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی."
 }
 
 /**
@@ -1306,8 +1321,12 @@ private fun MeSheet(
 data class FamilyState(
     val paired: Boolean = false,
     val pendingPairing: String? = null,
-    /** A scanned link for a *different* household than this phone's, waiting on the confirm. */
+    /**
+     * A scanned link for a *different* household than this phone's, waiting on the confirm — or
+     * for her own, when the household no longer answers to this phone ([rejoinSameHousehold]).
+     */
     val pendingRejoin: String? = null,
+    val rejoinSameHousehold: Boolean = false,
     val memberId: String = "",
     val memberName: String = "",
     val members: List<FamilyMember> = emptyList(),

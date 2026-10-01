@@ -14,7 +14,7 @@ import './settings.css';
 import { CategoryIcon } from './categoryIcon';
 import { useLedger } from './derived';
 import {
-  avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, removeMember,
+  avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, rejoinLead, removeMember,
   renewFamily, setFamilyAssetSharing, setFamilyAvatar, setFamilyName, setFamilySmsSharing, startFamily, syncFamily,
   toggleFamilyExcludedBank, useFamily,
 } from './family';
@@ -142,13 +142,11 @@ function DangerRow({ title, armedTitle, subtitle, detail, enabled, onConfirmed }
  * A pairing link on a browser that already has a household — the other side of «نو کردن
  * خانواده». Nothing replaces anything silently; the words say what stops, and the confirm is armed.
  */
-function RejoinBlock({ working }: { working: boolean }) {
+function RejoinBlock({ working, sameHousehold }: { working: boolean; sameHousehold: boolean }) {
   return (
     <>
       <SectionHeading title="پیوستن به خانواده جدید" />
-      <p class="set-note" style={{ paddingTop: 0, lineHeight: '22px' }}>
-        این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه. تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.
-      </p>
+      <p class="set-note" style={{ paddingTop: 0, lineHeight: '22px' }}>{rejoinLead(sameHousehold)}</p>
       <div style={{ height: 'var(--m)' }} />
       <ArmedAction label={working ? 'در حال پیوستن...' : 'پیوستن به خانواده جدید'} armedLabel="مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن"
         enabled={!working} onConfirmed={() => void confirmRejoin()} />
@@ -205,7 +203,7 @@ function Family() {
     <SettingsPage title="خانواده">
       {state.pendingRejoin ? (
         // Before the plain join: a link on a browser that already belongs somewhere is this question.
-        <><p class="set-lead">{FAMILY_LEAD}</p><RejoinBlock working={state.working} /></>
+        <><p class="set-lead">{FAMILY_LEAD}</p><RejoinBlock working={state.working} sameHousehold={state.rejoinSameHousehold} /></>
       ) : state.pendingPairing ? (
         <>
           <Welcome heading="پیوستن به خانواده" />

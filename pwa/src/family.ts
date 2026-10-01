@@ -31,8 +31,12 @@ export interface FamilyState {
   paired: boolean;
   /** A scanned invite, waiting on her name. */
   pendingPairing: Pairing | null;
-  /** A scanned invite for a *different* household than this browser's, waiting on the confirm. */
+  /**
+   * A scanned invite for a *different* household than this browser's, waiting on the confirm — or
+   * for her own, when the household no longer answers to this browser (`rejoinSameHousehold`).
+   */
   pendingRejoin: Pairing | null;
+  rejoinSameHousehold: boolean;
   memberId: string;
   memberName: string;
   /** Everyone in the household, her own row included, by name. */
@@ -62,6 +66,7 @@ let session: Session | null = null;
 const ui = {
   pendingPairing: null as Pairing | null,
   pendingRejoin: null as Pairing | null,
+  rejoinSameHousehold: false,
   pairingUrl: null as string | null,
   lastSync: null as string | null,
   working: false,
@@ -88,6 +93,7 @@ export function familyState(): FamilyState {
     paired: session != null,
     pendingPairing: ui.pendingPairing,
     pendingRejoin: ui.pendingRejoin,
+    rejoinSameHousehold: ui.rejoinSameHousehold,
     memberId: session?.member ?? '',
     memberName: me?.name ?? '',
     members: session ? rows('familyMembers').filter((m) => !m.deleted).sort(byNameThenId) : [],
@@ -206,12 +212,24 @@ export async function acceptPairing(hash: string): Promise<void> {
   let kind = pairingCase(current?.token, pairing.hid);
   // Her own family's QR on a browser the household no longer answers to is the way back in,
   // through the same confirmed replace a different household's would take.
-  if (kind === 'SAME_HOUSEHOLD' && current && await sessionRejected(current)) kind = 'REJOIN';
+  const rejected = kind === 'SAME_HOUSEHOLD' && !!current && await sessionRejected(current);
+  if (rejected) kind = 'REJOIN';
   switch (kind) {
     case 'JOIN': set({ pendingPairing: pairing, error: null, pairingUrl: null }); break;
     case 'SAME_HOUSEHOLD': set({ error: 'این گوشی از قبل عضو یک خانواده است.' }); break;
-    case 'REJOIN': set({ pendingRejoin: pairing, error: null, pairingUrl: null }); break;
+    case 'REJOIN': set({ pendingRejoin: pairing, rejoinSameHousehold: rejected, error: null, pairingUrl: null }); break;
   }
+}
+
+/**
+ * Family.kt `rejoinLead`, word for word: what the rejoin confirm says. Her own household's QR on a
+ * browser it no longer answers to takes the same confirm, but it is no other family.
+ */
+export function rejoinLead(sameHousehold: boolean): string {
+  const opening = sameHousehold
+    ? 'این گوشی دیگه عضو این خانواده نیست. با پیوستن دوباره، دفتر مشترک روی این گوشی از نو شروع می‌شه.'
+    : 'این کد مال یک خانواده دیگه‌ست. با پیوستن، خانواده قبلی روی این گوشی کنار می‌ره: موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه.';
+  return `${opening} تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی.`;
 }
 
 /**
