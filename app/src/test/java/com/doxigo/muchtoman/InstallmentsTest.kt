@@ -314,6 +314,15 @@ class InstallmentsTest {
         assertNull(quiet.attentionInstallment)
         assertTrue(quiet.attention!!.text.contains("منتظر"))
     }
+
+    @Test
+    fun `a figure pre-filled into a Toman field saves back to the same Rial`() {
+        // Pre-filled as whole Toman, an installment made from a 4,567,891 Rial payment was stored
+        // at 4,567,890 and never matched the next identical payment.
+        for (rial in listOf(4_567_891L, 4_567_890L, 125_000L, 7L)) {
+            assertEquals(rial, tomanFieldToRial(rialToField(rial)))
+        }
+    }
 }
 
 /** The one read the screen takes, against a real database: a plan is a plan and nothing else. */

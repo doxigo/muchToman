@@ -17,6 +17,13 @@ import { DecisionKind } from './rules';
 import { MAX_PLAUSIBLE_RIAL } from './sms';
 
 /**
+ * A Rial figure as a Toman field is pre-filled with (EditsUi.kt): a tenth only when there is one.
+ * Whole Toman alone dropped the last Rial, so a re-saved installment never matched its payment again.
+ */
+export const rialToField = (rial: number): string =>
+  rial % 10 === 0 ? String(rial / 10) : `${Math.trunc(rial / 10)}.${rial % 10}`;
+
+/**
  * What she typed into a Toman field, as whole Rial — or null when it is not a figure this app will
  * store (BudgetUi.kt). The ceiling is the parser's own: a cap or target past it is a typo.
  */

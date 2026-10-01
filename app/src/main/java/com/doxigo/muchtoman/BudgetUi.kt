@@ -1118,10 +1118,11 @@ private fun BudgetSheet(
     var shared by remember { mutableStateOf(editing?.shared ?: false) }
     // A month, because that is what her salary, her rent and every bill she pays already run on.
     var period by remember { mutableStateOf(editing?.period ?: BudgetPeriod.MONTH) }
-    // Whole Toman, exactly what she typed to make it: a cap is stored in Rial but was never
-    // entered in Rial, and a field pre-filled with ten times the number she knows is a typo
-    // she has to notice before she can change anything else.
-    var amount by remember { mutableStateOf(editing?.let { (it.capRial / 10).toString() } ?: "") }
+    // Toman, exactly what she typed to make it: a cap is stored in Rial but was never entered in
+    // Rial, and a field pre-filled with ten times the number she knows is a typo she has to
+    // notice before she can change anything else. A tenth only when there is one — cut off, a
+    // re-save dropped that Rial.
+    var amount by remember { mutableStateOf(editing?.let { rialToField(it.capRial) } ?: "") }
     val capRial = remember(amount) { tomanFieldToRial(amount) }
     val candidate = Goal(
         id = editing?.goal?.id.orEmpty(), nameFa = "", targetRial = capRial ?: 0,
@@ -1350,8 +1351,8 @@ private fun GoalSheet(
 
     var shared by remember { mutableStateOf(editing?.shared ?: false) }
     var name by remember { mutableStateOf(editing?.goal?.nameFa ?: "") }
-    // Whole Toman, as in [BudgetSheet]: stored in Rial, never typed in it.
-    var amount by remember { mutableStateOf(editing?.let { (it.targetRial / 10).toString() } ?: "") }
+    // Toman, as in [BudgetSheet]: stored in Rial, never typed in it.
+    var amount by remember { mutableStateOf(editing?.let { rialToField(it.targetRial) } ?: "") }
     var horizon by remember { mutableStateOf(if (editing == null) GoalHorizon.HALF else null) }
     val targetRial = remember(amount) { tomanFieldToRial(amount) }
 
@@ -1485,7 +1486,7 @@ private fun InstallmentSheet(
 
     val today = remember { tehranDay(System.currentTimeMillis()) }
     var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf(fromPayment?.txn?.amountRial?.let { (it / 10).toString() } ?: "") }
+    var amount by remember { mutableStateOf(fromPayment?.txn?.amountRial?.let(::rialToField) ?: "") }
     var countText by remember { mutableStateOf("") }
     val firstDue = fromPayment?.txn?.day
     // Today's day, because the likeliest moment to add a plan is the day a payment has just gone.

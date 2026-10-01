@@ -5,7 +5,7 @@ import {
   MAX_INSTALLMENTS, encodeInstallmentLink, firstInstallmentDue, installmentCount, installmentDueOn, installmentInsight,
   installmentLeftFa, installmentLineFa, installmentLinks, installmentNews, installmentNoteFa, installmentPaidBy,
   installmentPayable, installmentProgress, installmentReminderBody, installmentReminderFa, installmentReminderTitle,
-  installmentSummary, installmentsByDue, newInstallment, pressingInstallment, tomanFieldToRial,
+  installmentSummary, installmentsByDue, newInstallment, pressingInstallment, rialToField, tomanFieldToRial,
 } from '../src/installments';
 import { buildStory } from '../src/reports';
 import type { InstallmentLink } from '../src/installments';
@@ -270,5 +270,10 @@ describe('installments', () => {
     expect(tomanFieldToRial('0')).toBeNull();
     expect(tomanFieldToRial('abc')).toBeNull();
     expect(tomanFieldToRial(String(MAX_PLAUSIBLE_RIAL))).toBeNull();
+  });
+
+  it('a figure pre-filled into a Toman field saves back to the same Rial', () => {
+    // Pre-filled as whole Toman, an installment made from a 4,567,891 Rial payment was stored at 4,567,890.
+    for (const rial of [4_567_891, 4_567_890, 125_000, 7]) expect(tomanFieldToRial(rialToField(rial))).toBe(rial);
   });
 });

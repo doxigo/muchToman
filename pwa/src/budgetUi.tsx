@@ -33,7 +33,7 @@ import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goa
 import type { GoalProgress } from './goals';
 import {
   MAX_INSTALLMENTS, firstInstallmentDue, installmentDueOn, installmentLeftFa, installmentLineFa, installmentNoteFa,
-  installmentPaidBy, installmentSummary, tomanFieldToRial,
+  installmentPaidBy, installmentSummary, rialToField, tomanFieldToRial,
 } from './installments';
 import type { InstallmentProgress, InstallmentSummary } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
@@ -443,9 +443,6 @@ function WhoseChoice({ shared, wasShared, onChange }: { shared: boolean; wasShar
 
 const UNREADABLE = 'این عدد قابل خوندن نیست. فقط عدد وارد کن.';
 
-/** Whole Toman, as she typed it to make it: a field pre-filled with ten times the number she knows is a typo. */
-const tomanField = (rial: number): string => String(Math.trunc(rial / 10));
-
 /** A whole number within [lo, hi] in whatever digits she typed, or null. */
 function wholeIn(text: string, lo: number, hi: number): number | null {
   const n = parseAmount(text);
@@ -473,7 +470,7 @@ function BudgetSheet({ id }: { id?: string }) {
   const [shared, setShared] = useState(editing?.shared ?? false);
   // A month: what her salary, her rent and every bill already run on.
   const [period, setPeriod] = useState<BudgetPeriod>(editing?.period ?? BudgetPeriod.MONTH);
-  const [amount, setAmount] = useState(editing ? tomanField(editing.capRial) : '');
+  const [amount, setAmount] = useState(editing ? rialToField(editing.capRial) : '');
   if (id != null && editing == null) return null;
 
   const capRial = tomanFieldToRial(amount);
@@ -574,7 +571,7 @@ function GoalSheet({ id }: { id?: string }) {
 
   const [shared, setShared] = useState(editing?.shared ?? false);
   const [name, setName] = useState(editing?.goal.nameFa ?? '');
-  const [amount, setAmount] = useState(editing ? tomanField(editing.targetRial) : '');
+  const [amount, setAmount] = useState(editing ? rialToField(editing.targetRial) : '');
   const [horizon, setHorizon] = useState<GoalHorizon | null>(editing ? null : GoalHorizon.HALF);
   if (id != null && editing == null) return null;
 
@@ -629,7 +626,7 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
   const firstDue = fromPayment?.txn.day ?? null;
   const paid = fromPayment?.txn.amountRial;
   const [name, setName] = useState('');
-  const [amount, setAmount] = useState(paid != null ? tomanField(paid) : '');
+  const [amount, setAmount] = useState(paid != null ? rialToField(paid) : '');
   const [countText, setCountText] = useState('');
   // Today's day: the likeliest moment to add a plan is the day a payment has just gone.
   const [dayText, setDayText] = useState(String(jalaliOf(firstDue ?? today).day));

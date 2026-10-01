@@ -12,7 +12,7 @@ import { MAX_SPLIT_PARTS } from './edits';
 import type { SplitSpec } from './edits';
 import { useFamily } from './family';
 import { bidi, faCompact, faNumber, tomanOf } from './format';
-import { tomanFieldToRial } from './installments';
+import { rialToField, tomanFieldToRial } from './installments';
 import { editTxn, revertTxnEdits, splitTxn } from './ledger';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, categoryChoices } from './rules';
 import { closeSheet, registerSheet } from './nav';
@@ -21,10 +21,6 @@ import { MemberFace, useTehranDay } from './timeline';
 import { AmountField, PillButton, Sheet, SheetLabel, SheetTitle } from './ui';
 import { Chevron } from './icons';
 import type { LedgerEntry, SplitPart } from './model';
-
-/** A Rial figure as the amount field holds it: Toman digits, a tenth only when there is one. */
-export const rialToField = (rial: number): string =>
-  rial % 10 === 0 ? String(rial / 10) : `${Math.trunc(rial / 10)}.${rial % 10}`;
 
 /**
  * Nothing is saved until she says so, and what she leaves alone is not written: a sheet opened to
