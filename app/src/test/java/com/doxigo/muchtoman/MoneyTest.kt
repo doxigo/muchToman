@@ -1221,6 +1221,24 @@ class MoneyTest {
         assertEquals(7_000_000.0, bankTotal(accounts, emptySet()), 0.01)
     }
 
+    @Test
+    fun `a second copy of a message that states no balance is not counted twice`() {
+        // A carrier delivering it again stamps the copy afresh, so its content key is new.
+        val purchase = BankSms(
+            Bank.SAMAN, SAMAN_NUM, "", delta = -500_000.0, balance = null, at = 10, inferred = false, refNo = "771205",
+        )
+        var accounts = listOf(BankAccount("SAMAN", balance = 5_000_000.0, updatedAt = 1, anchored = true))
+        accounts = foldBankSms(accounts, purchase)
+        accounts = foldBankSms(accounts, purchase.copy(at = 70_000))
+        assertEquals(4_500_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // Another reference is another purchase, however alike…
+        accounts = foldBankSms(accounts, purchase.copy(at = 80_000, refNo = "771206"))
+        assertEquals(4_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // …and past the window the same one is a new movement: a contract number reprinted next month.
+        accounts = foldBankSms(accounts, purchase.copy(at = 10 + DUPLICATE_REFNO_WINDOW_MS + 1))
+        assertEquals(3_500_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
     // ────────── the fold's plausibility gate — the ledger's own rule, applied here too ──────────
 
     @Test

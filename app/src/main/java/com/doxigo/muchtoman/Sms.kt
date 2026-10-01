@@ -176,6 +176,8 @@ data class BankAccount(
     val sender: String = "",
     /** A stated balance [foldBankSms] refused as a hundred-fold jump, held until the next one agrees. */
     val pending: Double? = null,
+    /** `refNo|delta` → when, for the balance-less messages [foldBankSms] folded inside the duplicate window. */
+    val refs: Map<String, Long> = emptyMap(),
 ) {
     /** The bank alone: see [applyBankSms] for why the printed identifier cannot key an account. */
     val key: String get() = bank

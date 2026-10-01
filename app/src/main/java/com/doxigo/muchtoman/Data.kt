@@ -477,6 +477,12 @@ private const val SPOOF_FLOOR_TOMAN = 100_000_000.0 // 1e9 Rial
  * account an earlier build already parked out there holds no moment at all, so whatever arrives
  * next is not older than it. Not [clampAt]'s two days of slack: here that slack is two days of
  * messages refused.
+ *
+ * A message that states no balance is skipped when one with the same reference number and the same
+ * amount was folded inside [DUPLICATE_REFNO_WINDOW_MS] — the ledger's own refNo rule, see
+ * [findDuplicates]. A carrier delivering the same message twice stamps the copy afresh, so its
+ * [smsKey] is new and only this stops its amount being added a second time; a stated balance needs
+ * no such guard, since stating it again changes nothing.
  */
 fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.currentTimeMillis()): List<BankAccount> {
     if (sms.balance != null && abs(sms.balance) > MAX_PLAUSIBLE_TOMAN) return accounts
@@ -484,6 +490,9 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
     val at = sms.at.coerceIn(0L, now)
     val held = accounts.map { if (it.bank == sms.bank.name && it.updatedAt > now) it.copy(updatedAt = at) else it }
     val known = held.firstOrNull { it.bank == sms.bank.name }
+    val ref = if (sms.balance == null && sms.delta != null && sms.refNo.isNotEmpty()) "${sms.refNo}|${sms.delta}" else null
+    val folded = ref?.let { known?.refs?.get(it) }
+    if (folded != null && abs(at - folded) <= DUPLICATE_REFNO_WINDOW_MS) return held
     if (
         sms.balance != null && known != null && known.anchored && known.balance > 0.0 &&
         sms.balance > known.balance * 100 && sms.balance > SPOOF_FLOOR_TOMAN &&
@@ -495,7 +504,9 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
     if (next === held) return held
     // A stated balance that lands settles whatever was held; one that states none leaves it held.
     val pending = if (sms.balance == null) known?.pending else null
-    return next.map { if (it.bank == sms.bank.name) it.copy(pending = pending) else it }
+    val refs = (known?.refs.orEmpty() + listOfNotNull(ref?.to(at)))
+        .filterValues { at - it <= DUPLICATE_REFNO_WINDOW_MS }
+    return next.map { if (it.bank == sms.bank.name) it.copy(pending = pending, refs = refs) else it }
 }
 
 /**
