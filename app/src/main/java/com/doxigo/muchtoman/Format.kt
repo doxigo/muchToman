@@ -207,12 +207,13 @@ fun faHeld(amount: Double, dec: Int): String {
         amount >= 1 -> 4
         else -> dec
     }.coerceAtMost(dec)
-    if (d >= dec) return faDecimal(amount, dec)      // nothing to drop; leave it untouched
-    // Settled at the asset's own precision before anything is cut. 10709.13 is not exactly
-    // representable as a double — truncating the stored value directly takes off a cent that
-    // she really has, which is the one direction this function must never round.
+    if (!amount.isFinite()) return faDecimal(amount, d) // NaN/∞ cannot enter BigDecimal
+    // Settled before anything is cut. 10709.13 is not exactly representable as a double —
+    // truncating the stored value directly takes off a cent that she really has, which is the
+    // one direction this function must never round. Settled at SETTLE_SCALE, not at the
+    // asset's own precision: a stored 0.1234567 ETH settled at six places read «۰٫۱۲۳۴۵۷».
     return faDecimal(
-        BigDecimal(amount).setScale(dec, RoundingMode.HALF_UP).setScale(d, RoundingMode.DOWN).toDouble(),
+        BigDecimal(amount).setScale(SETTLE_SCALE, RoundingMode.HALF_UP).setScale(d, RoundingMode.DOWN).toDouble(),
         d,
     )
 }

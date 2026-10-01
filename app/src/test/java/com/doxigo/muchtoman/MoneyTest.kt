@@ -264,6 +264,9 @@ class MoneyTest {
         // Never more precision than the asset itself claims.
         assertEquals(faDecimal(1_234.0, 0), faHeld(1_234.0, 0))
         assertEquals(faDecimal(152.375, 3), faHeld(152.375, 3))
+        // More decimals stored than the asset shows are cut too, never rounded up.
+        assertEquals("۰٫۱۲۳۴۵۶", faHeld(0.1234567, 6))
+        assertEquals(faDecimal(1.9999, 4), faHeld(1.99999995, 6))
     }
 
     @Test

@@ -146,10 +146,9 @@ export function parseAmount(input: string): number | null {
 /** How much of a thing she holds, sized for a row; truncated at the asset's own precision. */
 export function faHeld(amount: number, dec: number): string {
   const d = Math.min(amount >= 1_000 ? 2 : amount >= 1 ? 4 : dec, dec);
-  if (d >= dec) return faDecimal(amount, dec);
-  const [int, frac = ''] = Math.abs(amount).toFixed(dec).split('.');
-  const cut = d > 0 ? `${int}.${frac.slice(0, d)}` : int;
-  return faPlain(amount < 0 ? `-${cut}` : cut);
+  if (!Number.isFinite(amount)) return faDecimal(amount, d);
+  // Settled at nine places, not the asset's own: a stored 0.1234567 ETH read «۰٫۱۲۳۴۵۷».
+  return faPlain(settleDown(amount, d));
 }
 
 export function faRate(rate: number): string {

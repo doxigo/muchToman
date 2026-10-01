@@ -18,6 +18,10 @@ describe('format', () => {
     expect(faCompact(999)).toBe('۹۹۹');
     expect(faHeld(10709.13, 2)).toBe('۱۰٬۷۰۹٫۱۳');
     expect(faHeld(12.123456, 6)).toBe('۱۲٫۱۲۳۴');
+    expect(faHeld(10709.135681, 6)).toBe('۱۰٬۷۰۹٫۱۳');
+    expect(faHeld(0.000425, 6)).toBe('۰٫۰۰۰۴۲۵');
+    expect(faHeld(0.1234567, 6)).toBe('۰٫۱۲۳۴۵۶');
+    expect(faHeld(1.99999995, 6)).toBe('۱٫۹۹۹۹');
   });
 
   it('spells amounts out', () => {
