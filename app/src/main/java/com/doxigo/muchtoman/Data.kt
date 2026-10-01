@@ -466,18 +466,28 @@ private const val SPOOF_FLOOR_TOMAN = 100_000_000.0 // 1e9 Rial
  * figure is *known*: an unanchored balance is a running sum of whatever transactions happened to
  * be read, not knowledge, and an anchored zero cannot scale — an emptied account refilling is the
  * ordinary case, not a hundred-fold jump.
+ *
+ * Nothing is folded at a moment past [now], as the scan's own watermark never is: [applyBankSms]
+ * refuses whatever is older than what it last folded, so one message stamped in 2030 — a restore
+ * that wrote DATE wrong, a skewed clock — parked the account there and every real message after it
+ * was refused as older, for good. Its money still counts and only its moment is pulled back. An
+ * account an earlier build already parked out there holds no moment at all, so whatever arrives
+ * next is not older than it. Not [clampAt]'s two days of slack: here that slack is two days of
+ * messages refused.
  */
-fun foldBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
+fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.currentTimeMillis()): List<BankAccount> {
     if (sms.balance != null && abs(sms.balance) > MAX_PLAUSIBLE_TOMAN) return accounts
     if (sms.delta != null && abs(sms.delta) > MAX_PLAUSIBLE_TOMAN) return accounts
+    val at = sms.at.coerceIn(0L, now)
+    val held = accounts.map { if (it.bank == sms.bank.name && it.updatedAt > now) it.copy(updatedAt = at) else it }
     if (sms.balance != null) {
-        val known = accounts.firstOrNull { it.bank == sms.bank.name }
+        val known = held.firstOrNull { it.bank == sms.bank.name }
         if (
             known != null && known.anchored && known.balance > 0.0 &&
             sms.balance > known.balance * 100 && sms.balance > SPOOF_FLOOR_TOMAN
-        ) return accounts
+        ) return held
     }
-    return applyBankSms(accounts, sms)
+    return applyBankSms(held, sms.copy(at = at))
 }
 
 /**

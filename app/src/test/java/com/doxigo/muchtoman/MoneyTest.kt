@@ -1205,6 +1205,22 @@ class MoneyTest {
         assertEquals(9_000_000.0, bankTotal(accounts, emptySet()), 0.01)
     }
 
+    @Test
+    fun `one message stamped years ahead does not freeze the balance behind it`() {
+        val now = 1_780_000_000_000L
+        val years = 5 * 365 * DAY_MS
+        // A restored row stamped in 2030 folds — its money is real — but at now, not in 2030…
+        var accounts = foldBankSms(emptyList(), stated(5_000_000.0, at = now + years), now)
+        assertEquals(now, accounts.single().updatedAt)
+        // …so the next real message is newer than it, and lands.
+        accounts = foldBankSms(accounts, stated(6_000_000.0, at = now + 60_000), now + 120_000)
+        assertEquals(6_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // An account an earlier build already parked in 2030 is pulled back the same way.
+        val parked = listOf(BankAccount("SAMAN", balance = 5_000_000.0, updatedAt = now + years, anchored = true))
+        accounts = foldBankSms(parked, stated(7_000_000.0, at = now - 60_000), now)
+        assertEquals(7_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
     // ────────── the fold's plausibility gate — the ledger's own rule, applied here too ──────────
 
     @Test
