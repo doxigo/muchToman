@@ -637,6 +637,9 @@ class ReportsTest {
         val past = quietWins(now, before, bufferDays = null, current = false)
         assertTrue(past.none { it.text.contains("این ماه") })
         assertTrue(past.any { it.text.contains("مرداد ۱۴۰۵") })
+
+        // Her first month: no window before it to have had nothing left over.
+        assertTrue(quietWins(now, null, bufferDays = null, current = true).isEmpty())
     }
 
     @Test

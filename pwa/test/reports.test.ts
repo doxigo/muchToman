@@ -382,6 +382,8 @@ describe('reports', () => {
     const past = quietWins(now, before, null, false);
     expect(past.some((w) => w.text.includes('این ماه'))).toBe(false);
     expect(past.some((w) => w.text.includes('مرداد ۱۴۰۵'))).toBe(true);
+    // Her first month: no window before it to have had nothing left over.
+    expect(quietWins(now, null, null, true)).toEqual([]);
   });
 
   // ─────────────────────────── categories she excludes ───────────────────────────

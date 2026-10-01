@@ -675,7 +675,8 @@ export function quietWins(
   const named = now.range.nameFa(current);
   const beforeNamed = now.range.beforeFa;
   const rate = now.savingsRate;
-  if (rate != null && rate > 0 && (before?.savingsRate ?? -1) <= 0) {
+  // Only against a window the ledger watched: with none, the «why» described a month it never saw.
+  if (rate != null && rate > 0 && before != null && (before.savingsRate ?? -1) <= 0) {
     wins.push({
       // Not «اولین ماهی که…»: the comparison reaches exactly one window back.
       text: current && now.range.count === 1

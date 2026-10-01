@@ -863,7 +863,9 @@ fun quietWins(
     val named = now.range.nameFa(current)
     val beforeNamed = now.range.beforeFa
     val rate = now.savingsRate
-    if (rate != null && rate > 0 && (before?.savingsRate ?: -1.0) <= 0) {
+    // Only against a window the ledger watched: with none, the "why" below described a month it
+    // had never seen.
+    if (rate != null && rate > 0 && before != null && (before.savingsRate ?: -1.0) <= 0) {
         wins += Insight(
             // Not «اولین ماهی که…»: the comparison behind this line reaches exactly one window
             // back, so "the first month ever" was a claim about a history it had never read.
