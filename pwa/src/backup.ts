@@ -274,5 +274,5 @@ export async function readBackupFile(file: Blob, passphrase: string): Promise<{ 
 
 /** The destructive step: one IndexedDB transaction, so a failure leaves the old ledger whole. */
 export async function applyRestore(payload: BrowserPayload): Promise<void> {
-  await replaceAll(restoredSnapshot(payload, snapshot()));
+  await replaceAll((current) => restoredSnapshot(payload, current));
 }

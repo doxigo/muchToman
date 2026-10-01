@@ -54,11 +54,13 @@ let flushing: Promise<void> | null = null;
 /** Failed flushes in a row; the first says so, the retries back off quietly. */
 let failures = 0;
 let retry: ReturnType<typeof setTimeout> | undefined;
+/** A restore has the disk: writes still land in memory and the queue, and wait for it. */
+let held = false;
 let onWriteError: (error: unknown) => void = (e) => console.error('write failed', e);
 export function setWriteErrorHandler(handler: (error: unknown) => void): void { onWriteError = handler; }
 
 function kick(): void {
-  if (queue.length) flushing ??= Promise.resolve().then(flush);
+  if (queue.length && !held) flushing ??= Promise.resolve().then(flush);
 }
 function schedule(op: Op): void {
   queue.push(op);
@@ -67,7 +69,7 @@ function schedule(op: Op): void {
 async function flush(): Promise<void> {
   let sending: Op[] = [];
   try {
-    while (queue.length) {
+    while (queue.length && !held) {
       sending = queue; queue = [];
       const db = await open();
       const tx = db.transaction([LOCAL, PREFS], 'readwrite');
@@ -179,12 +181,26 @@ export function snapshot(): Snapshot {
 /**
  * A restore: every table and pref replaced by the backup's, in one IndexedDB transaction, so a
  * failure half way leaves the old ledger rather than half of each. Unknown tables in the file are
- * ignored; which prefs travel is the backup writer's call. The household session lives outside
- * these stores and is not touched.
+ * ignored; which prefs travel is the backup writer's call, through [build], which is handed
+ * everything as it stands once the disk is the restore's alone. The household session lives
+ * outside these stores and is not touched.
+ *
+ * Writes made meanwhile (a wallet refresh, a sync landing) wait in the queue, and once the
+ * restore is down they are dropped: memory is replaced as well, so landing after it they would
+ * only put the old ledger back on disk under the restored one.
  */
-export async function replaceAll(next: Snapshot): Promise<void> {
-  await settled();
-  const db = await open();
+export async function replaceAll(build: (current: Snapshot) => Snapshot): Promise<void> {
+  held = true;
+  try {
+    await settled();
+    await restore(build, await open());
+  } finally {
+    held = false;
+    kick();
+  }
+}
+async function restore(build: (current: Snapshot) => Snapshot, db: IDBDatabase): Promise<void> {
+  const next = build(snapshot());
   const tx = db.transaction([LOCAL, PREFS], 'readwrite');
   try {
     tx.objectStore(LOCAL).clear();
@@ -200,6 +216,8 @@ export async function replaceAll(next: Snapshot): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('restore aborted'));
   });
+  queue = [];
+  failures = 0;
   for (const t of TABLES) {
     tables[t].clear();
     for (const value of next.tables[t] ?? []) (tables[t] as Map<string, unknown>).set(value.id, value);

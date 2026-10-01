@@ -70,12 +70,12 @@ it('lets one sync hold the lock at a time', async () => {
 });
 
 describe('the write queue', () => {
-  /** This browser's name as a fresh page would find it on disk. */
-  async function reloadedName(): Promise<string> {
+  /** This browser's state as a fresh page would find it on disk. */
+  async function reloaded(): Promise<typeof import('../src/state')> {
     vi.resetModules();
     const fresh = await import('../src/state');
     await fresh.load();
-    return fresh.pref('name');
+    return fresh;
   }
 
   it('keeps a failed write queued and lands it on a fresh connection', async () => {
@@ -94,7 +94,7 @@ describe('the write queue', () => {
       await vi.advanceTimersByTimeAsync(1000);
       await state.settled();
       expect(errors).toHaveLength(1);
-      expect(await reloadedName()).toBe('مریم');
+      expect((await reloaded()).pref('name')).toBe('مریم');
     } finally {
       vi.useRealTimers();
     }
@@ -109,7 +109,7 @@ describe('the write queue', () => {
     state.setPref('name', 'مریم');
     await state.settled();
     expect(errors).toHaveLength(1);
-    expect(await reloadedName()).toBe('مریم');
+    expect((await reloaded()).pref('name')).toBe('مریم');
   });
 
   it('leaves the old ledger on disk when a restore is refused half way', async () => {
@@ -117,16 +117,30 @@ describe('the write queue', () => {
     await state.load();
     state.setPref('name', 'مریم');
     await state.settled();
-    await expect(state.replaceAll({ prefs: {}, tables: { sources: [{} as never] } })).rejects.toThrow();
+    await expect(state.replaceAll(() => ({ prefs: {}, tables: { sources: [{} as never] } }))).rejects.toThrow();
     expect(state.pref('name')).toBe('مریم');
-    expect(await reloadedName()).toBe('مریم');
+    expect((await reloaded()).pref('name')).toBe('مریم');
   });
 
   it('keeps a __proto__ pref a key, never the prefs\' prototype', async () => {
     const state = await import('../src/state');
     await state.load();
-    await state.replaceAll({ prefs: JSON.parse('{"__proto__":{"name":"مریم"}}'), tables: {} });
+    await state.replaceAll(() => ({ prefs: JSON.parse('{"__proto__":{"name":"مریم"}}'), tables: {} }));
     expect(state.pref('name')).toBe('');
-    expect(await reloadedName()).toBe('');
+    expect((await reloaded()).pref('name')).toBe('');
+  });
+
+  it('lets nothing written while a restore waits land over it, and keeps what it keeps as it stands', async () => {
+    const state = await import('../src/state');
+    await state.load();
+    const restoring = state.replaceAll((current) => ({ prefs: { name: 'مریم', syncSeq: current.prefs.syncSeq }, tables: {} }));
+    // A wallet refresh and a sync page, landing while the restore waits for the disk.
+    state.setPref('name', 'قبلی');
+    state.setPref('syncSeq', 7);
+    await restoring;
+    await state.settled();
+    expect([state.pref('name'), state.pref('syncSeq')]).toEqual(['مریم', 7]);
+    const fresh = await reloaded();
+    expect([fresh.pref('name'), fresh.pref('syncSeq')]).toEqual(['مریم', 7]);
   });
 });
