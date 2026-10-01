@@ -67,10 +67,13 @@ describe('identity', () => {
   it("gives another member's row a compact ref of its own", () => {
     expect(familyLocalRef('txn:m1:abc')).toBe(`f:${sha256Hex('txn:m1:abc')}`);
     const f: FamilyTxn = { id: 'txn:m1:abc', ownerMemberId: 'm1', sourceKind: 'sms', at: 5, day: 0, amountRial: -700, bank: 'BLU', merchant: ' اسنپ ', updatedAt: 1, deleted: false, transfer: false };
-    expect(familyToRow(f)).toMatchObject({
+    expect(familyToRow(f, 1000)).toMatchObject({
       ref: familyLocalRef(f.id), srcHash: f.id, accountId: 'family:m1:BLU', direction: 'out', amountRial: 700, signedRial: -700,
       merchantNorm: 'اسنپ', familyRef: f.id, ownerMemberId: 'm1', sourceKind: 'sms',
     });
+    // A row a sync stored before it clamped: a stamp the Jalali arithmetic cannot place is repaired here.
+    const poison = { ...f, at: 6e13, day: tehranDay(6e13) };
+    expect(familyToRow(poison, 1000)).toMatchObject({ at: 1000 + 48 * 3_600_000, day: tehranDay(1000 + 48 * 3_600_000) });
     const m: ManualTxn = { id: 'u1', at: 5, day: 0, amountRial: 900, accountId: null, categoryId: null, merchant: '', note: '', createdAt: 0, updatedAt: 0, deleted: false };
     expect(manualToRow(m)).toMatchObject({ ref: 'm:u1', bank: 'MANUAL', accountId: 'MANUAL', direction: 'in', signedRial: 900, sourceKind: 'manual' });
   });

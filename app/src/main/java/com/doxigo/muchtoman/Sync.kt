@@ -1618,13 +1618,16 @@ private suspend fun applyTransaction(
     ensureMemberPlaceholder(durable, owner, record.updatedAt)
     val sourceKind = payload.sourceKind.takeIf { it == "sms" || it == "manual" }
         ?: if (record.id.startsWith("s:")) "sms" else "manual"
+    // Clamped as a message's stamp is ([clampAt]): a poison `at` derives a day the Jalali
+    // arithmetic throws on, and the ledger would stop publishing on every member's phone.
+    val at = clampAt(payload.at, now)
     durable.familyTxns().put(
         FamilyTxn(
             id = familyRef,
             ownerMemberId = owner,
             sourceKind = sourceKind,
-            at = payload.at,
-            day = tehranDay(payload.at),
+            at = at,
+            day = tehranDay(at),
             amountRial = if (payload.direction == "in") payload.amountRial else -payload.amountRial,
             bank = safeSyncedText(payload.bank, 40, "MANUAL"),
             merchant = safeSyncedText(payload.merchant, 120),

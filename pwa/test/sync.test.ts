@@ -74,6 +74,14 @@ describe('reading what a phone sends', () => {
     expect(entry).toMatchObject({ ownerMemberId: THEM, categoryId: 'cat_food' });
   });
 
+  it('clamps a transaction stamp the ledger cannot place, and repairs one stored before the clamp', async () => {
+    const id = sync.familyTxnId(THEM, 'm:far');
+    expect(await apply(await record(id, 'transaction', JSON.stringify({ ownerMemberId: THEM, at: 6e13, amountRial: 1000, direction: 'out' })))).toBe(true);
+    expect(state.row('familyTxns', id)).toMatchObject({ at: NOW + 48 * 3_600_000 });
+    state.put('familyTxns', { ...state.row('familyTxns', id)!, id: sync.familyTxnId(THEM, 'm:old'), at: -6e13, day: -1e9 });
+    expect(derived.ledger().allEntries.filter((e) => e.txn.familyRef).map((e) => e.txn.at)).toContain(0);
+  });
+
   it('lands somebody else\'s note on my own row, and a blank one as taken back', async () => {
     const mine = sync.familyTxnId(ME, 'm:abc');
     const note = (text: string, at: number) => record(`note:${crypt.hexOf(new Uint8Array([1]))}`, 'note',

@@ -26,7 +26,7 @@ import { familyLocalRef, ledger } from './derived';
 import { MAX_SPLIT_PARTS, parseSplit, splitValue } from './edits';
 import { tehranDay } from './jalali';
 import { MAX_NOTE_CHARS } from './rules';
-import { MAX_PLAUSIBLE_RIAL, sha256Hex } from './sms';
+import { MAX_PLAUSIBLE_RIAL, clampAt, sha256Hex } from './sms';
 import type { Category, CategoryKindId, Decision, FamilyMember, Goal, GoalKindId, GoalPeriodId, LedgerEntry, Prefs, Publication, Txn } from './model';
 import { batch, erase, pref, put, putAll, row, rows, setPref, settled } from './state';
 
@@ -846,8 +846,11 @@ function applyTransaction(session: Session, record: WireRecord, payload: SyncEnt
   if (row('familyMembers', owner)?.deleted) return false;
   ensureMemberPlaceholder(owner, record.updatedAt);
   const sourceKind = payload.sourceKind === 'sms' || payload.sourceKind === 'manual' ? payload.sourceKind : record.id.startsWith('s:') ? 'sms' : 'manual';
+  // Clamped as a message's stamp is: a poison `at` derives a day the Jalali arithmetic throws on,
+  // and the ledger would stop publishing on every member's device.
+  const at = clampAt(payload.at, now);
   put('familyTxns', {
-    id: familyRef, ownerMemberId: owner, sourceKind, at: payload.at, day: tehranDay(payload.at),
+    id: familyRef, ownerMemberId: owner, sourceKind, at, day: tehranDay(at),
     amountRial: payload.direction === 'in' ? payload.amountRial : -payload.amountRial || 0,
     bank: safeSyncedText(payload.bank, 40, 'MANUAL'), merchant: safeSyncedText(payload.merchant, 120),
     updatedAt: record.updatedAt, deleted: false, transfer: payload.transfer,

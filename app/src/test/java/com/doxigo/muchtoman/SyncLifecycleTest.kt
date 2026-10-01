@@ -723,6 +723,22 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `a transaction stamp the ledger cannot place lands clamped`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val them = "b".repeat(32)
+        val far = sealedRecord(
+            session, familyTxnId(them, "m:far"), "transaction", them, 1000,
+            JSONObject().put("ownerMemberId", them).put("at", 60_000_000_000_000L).put("amountRial", 1000).put("direction", "out"),
+        )
+
+        pullOnce(server, durable, session, memberRecord(session, them, "رضا", 1000), far)
+
+        val stored = durable.familyTxns().get(familyTxnId(them, "m:far"))!!
+        assertTrue(stored.at <= System.currentTimeMillis() + AT_FUTURE_SLACK_MS)
+        assertEquals(tehranDay(stored.at), stored.day)
+    }
+
+    @Test
     fun `what goes out is sealed under the record's own name`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         val member = pushedBy(server, durable, session).single { it.getString("kind") == "member" }

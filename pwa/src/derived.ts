@@ -20,7 +20,7 @@ import type { LoanLink } from './loans';
 import { editedTxn, splitOf } from './edits';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify } from './rules';
 import type { TxnClass } from './rules';
-import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
+import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, clampAt, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
 import { dataVersion, pref, rows, useData } from './state';
 import type {
   BalanceAnchor, Category, Decision, FamilyMember, FamilyTxn, LedgerEntry, LinkDecision, ManualTxn, Rule, Source, Txn,
@@ -67,11 +67,16 @@ export function manualToRow(row: ManualTxn): Txn {
   };
 }
 
-/** A row another member published, without pretending it was entered by hand on this browser. */
-export function familyToRow(row: FamilyTxn): Txn {
+/**
+ * A row another member published, without pretending it was entered by hand on this browser.
+ * Its stamp clamped again, as parseToRows clamps a message's: a row a sync stored before it
+ * learned to clamp is repaired here.
+ */
+export function familyToRow(row: FamilyTxn, now: number): Txn {
+  const at = clampAt(row.at, now);
   return {
     ...manualToRow({
-      id: row.id, at: row.at, day: row.day, amountRial: row.amountRial, accountId: null, categoryId: null,
+      id: row.id, at, day: tehranDay(at), amountRial: row.amountRial, accountId: null, categoryId: null,
       merchant: row.merchant, note: '', createdAt: 0, updatedAt: 0, deleted: false,
     }),
     ref: familyLocalRef(row.id),
@@ -331,7 +336,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
 
   const family = input.familyTxns.filter((f) => !f.deleted);
   const hers = [...input.sources.flatMap((s) => parseToRows(s, now)), ...input.manual.filter((m) => !m.deleted).map(manualToRow)];
-  const familyRows = family.map(familyToRow);
+  const familyRows = family.map((f) => familyToRow(f, now));
   // Linked with the rows she deleted still in, and only then are they dropped: dropped first, the
   // echo of a message she deleted came back as a spend of its own, and deleting one leg of a
   // transfer turned the other into income. The echo goes with the row she deleted.

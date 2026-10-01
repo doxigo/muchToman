@@ -66,6 +66,19 @@ class FamilySyncTest {
         assertEquals("family:member-a:SAMAN", row.accountId)
     }
 
+    /** A row a sync stored before it clamped: a day the Jalali arithmetic cannot place is repaired on derive. */
+    @Test
+    fun `a family row's stamp is clamped and its day recomputed`() {
+        val now = 1_700_000_000_000L
+        val poison = FamilyTxn("txn:member-a:6d", "member-a", "manual", at = 60_000_000_000_000L, day = -1_000_000_000L, amountRial = -1, updatedAt = 1)
+
+        val row = familyToRow(poison, now)
+
+        assertEquals(clampAt(poison.at, now), row.at)
+        assertEquals(tehranDay(row.at), row.day)
+        assertEquals(0L, familyToRow(poison.copy(at = -60_000_000_000_000L), now).at)
+    }
+
     /**
      * A note is words, and words about a row the family cannot see are the leak this gate exists
      * to stop. It is the same gate the transaction itself rides, which is the point: the answer

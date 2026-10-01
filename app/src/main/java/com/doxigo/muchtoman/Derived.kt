@@ -349,13 +349,18 @@ fun manualToRow(row: ManualTxn): Txn = Txn(
     sourceKind = "manual",
 )
 
-/** A remote parsed transaction, without pretending it was entered manually on this phone. */
-fun familyToRow(row: FamilyTxn): Txn = Txn(
+/**
+ * A remote parsed transaction, without pretending it was entered manually on this phone.
+ *
+ * Its stamp clamped again, as [parseToRows] clamps a message's: rows a sync stored before it
+ * learned to clamp re-derive through here, and this is what repairs their day.
+ */
+fun familyToRow(row: FamilyTxn, now: Long = System.currentTimeMillis()): Txn = Txn(
     ref = familyLocalRef(row.id),
     srcHash = row.id,
     seq = 0,
-    at = row.at,
-    day = row.day,
+    at = clampAt(row.at, now),
+    day = tehranDay(clampAt(row.at, now)),
     bank = row.bank,
     accountId = "family:${row.ownerMemberId}:${row.bank}",
     direction = if (row.amountRial > 0) "in" else "out",
