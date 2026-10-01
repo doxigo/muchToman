@@ -769,13 +769,23 @@ async function tronBalance(address: string, contract: string): Promise<number> {
   if (!TRON_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
   if (contract && !TRON_ADDRESS.test(contract)) throw new WalletInputError('invalid_contract');
 
+  // Every zero below is one the chain said, never one an error body defaulted to: trongrid
+  // answers 200 with an `Error` field, and a 0 here is persisted over a real holding.
   if (!contract) {
-    const account = asRecord(await getJson('https://api.trongrid.io/wallet/getaccount', {
+    const value = await getJson('https://api.trongrid.io/wallet/getaccount', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ address, visible: true }),
-    }, WALLET_UPSTREAM_TIMEOUT_MS));
-    return Number(account.balance ?? 0) / 1_000_000;
+    }, WALLET_UPSTREAM_TIMEOUT_MS);
+    const account = asRecord(value);
+    if (value !== account || account.Error != null) throw new Error('Tron account unavailable');
+    // An account never activated is `{}`, and one holding no TRX omits `balance` (protobuf
+    // drops a zero) but still names its address. Any other shape is not an account.
+    if (account.balance == null) {
+      if (Object.keys(account).length === 0 || account.address != null) return 0;
+      throw new Error('Tron account has no balance field');
+    }
+    return scaledAmount(account.balance, 6);
   }
 
   const [balancesValue, tokenValue] = await Promise.all([
@@ -798,7 +808,11 @@ async function tronBalance(address: string, contract: string): Promise<number> {
   ]);
   const balances = asRecord(balancesValue);
   const token = asRecord(tokenValue);
-  const raw = asRecord(asArray(balances.data)[0])[contract] ?? '0';
+  if (balances.success !== true || !Array.isArray(balances.data)) {
+    throw new Error('TRC-20 balance unavailable');
+  }
+  // An empty list is the chain's own "holds none of this token".
+  const raw = asRecord(balances.data[0])[contract] ?? '0';
   const decimalsHex = asArray(token.constant_result)[0];
   if (!decimalsHex) throw new Error('TRC-20 decimals unavailable');
   return scaledAmount(raw, tokenDecimals(`0x${decimalsHex}`));
@@ -822,7 +836,10 @@ async function bitcoinBalance(address: string, contract: string): Promise<number
     undefined,
     WALLET_UPSTREAM_TIMEOUT_MS,
   ));
+  // A body without chain_stats is an error page, not an empty address: defaulting it to zero
+  // would be persisted over a real holding.
   const chain = asRecord(data.chain_stats);
+  if (chain !== data.chain_stats) throw new Error('Bitcoin address stats unavailable');
   const mempool = asRecord(data.mempool_stats);
   const confirmed = Number(chain.funded_txo_sum ?? 0) - Number(chain.spent_txo_sum ?? 0);
   const pending = Number(mempool.funded_txo_sum ?? 0) - Number(mempool.spent_txo_sum ?? 0);
