@@ -315,6 +315,20 @@ export class Household extends DurableObject<Env> {
     return member;
   }
 
+  /**
+   * Whether this member id has ever been someone here: the founder, a profile live or buried, or
+   * the author of any row. Handed to a newcomer it would let them rewrite that person's rows —
+   * and, as the founder's, never be removed.
+   */
+  private memberTaken(memberId: string): boolean {
+    if (memberId === this.primaryMember()) return true;
+    return [...this.sql.exec(
+      'SELECT 1 FROM record WHERE id = ? OR author_member = ? LIMIT 1',
+      `member:${memberId}`,
+      memberId,
+    )].length > 0;
+  }
+
   private device(secretHash: string): AuthorisedDevice | null {
     for (const row of this.sql.exec<{
       id: string; member_id: string; identity_locked: number; token_hash: string; scopes: string;
@@ -440,7 +454,9 @@ export class Household extends DurableObject<Env> {
       deviceId,
       memberId,
     )][0];
-    if (identityCollision && identityCollision.n > 0) throw new SyncError('identity_exists', 409);
+    if ((identityCollision && identityCollision.n > 0) || this.memberTaken(memberId)) {
+      throw new SyncError('identity_exists', 409);
+    }
     const devices = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
     if (devices && devices.n >= MAX_DEVICES) throw new SyncError('too_many_devices', 409);
     this.sql.exec(
@@ -501,7 +517,9 @@ export class Household extends DurableObject<Env> {
       memberId,
       auth.tokenHash,
     )][0];
-    if (memberCollision && memberCollision.n > 0) throw new SyncError('member_exists', 409);
+    if ((memberCollision && memberCollision.n > 0) || (memberId !== auth.memberId && this.memberTaken(memberId))) {
+      throw new SyncError('member_exists', 409);
+    }
     this.sql.exec(
       'UPDATE device SET id = ?, member_id = ?, identity_locked = 1, last_seen = ? WHERE token_hash = ?',
       deviceId,

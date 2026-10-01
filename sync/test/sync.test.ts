@@ -478,6 +478,44 @@ describe('privacy between households and members', () => {
     expect(rebound.status).toBe(409);
     expect(await rebound.json()).toEqual({ code: 'identity_locked' });
   });
+
+  it('never hands a departed member\'s id, or the founder\'s, to someone new', async () => {
+    const hid = '7a'.repeat(16);
+    const scope = 'family:7a';
+    const founder = await claimDevice(hid, [scope], { memberId: '7b'.repeat(16), deviceId: '7c'.repeat(16) });
+    const removed = await pairDevice(founder.token, '7d'.repeat(16), '7e'.repeat(16));
+    const stays = await pairDevice(founder.token, '8a'.repeat(16), '8b'.repeat(16));
+    expect((await removeMember(founder.token, removed.memberId, scope)).status).toBe(200);
+    expect((await leave(founder.token, founder.memberId, scope)).status).toBe(200);
+
+    const pairAs = async (memberId: string) => {
+      const invite = await SELF.fetch('https://sync.test/v1/invite', {
+        method: 'POST', headers: { authorization: `Bearer ${stays.token}` }, body: '{}',
+      });
+      const { code } = (await invite.json()) as { code: string };
+      return SELF.fetch('https://sync.test/v1/pair', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${stays.token}` },
+        body: JSON.stringify({ code, memberId, deviceId: '8c'.repeat(16) }),
+      });
+    };
+    expect((await pairAs(removed.memberId)).status).toBe(409);
+    expect((await pairAs(founder.memberId)).status).toBe(409);
+
+    // The same door through an identity upgrade: an unlocked token may not claim them either,
+    // while confirming its own id stays fine.
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+      state.storage.sql.exec('UPDATE device SET identity_locked = 0');
+    });
+    const claimAs = (memberId: string) => SELF.fetch('https://sync.test/v1/identity', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${stays.token}` },
+      body: JSON.stringify({ memberId, deviceId: stays.deviceId }),
+    });
+    expect((await claimAs(removed.memberId)).status).toBe(409);
+    expect((await claimAs(founder.memberId)).status).toBe(409);
+    expect((await claimAs(stays.memberId)).status).toBe(200);
+  });
 });
 
 describe('revocation', () => {
