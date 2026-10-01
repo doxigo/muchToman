@@ -174,6 +174,17 @@ test('a one-time code is refused on the paste sheet', async ({ page }) => {
   await expect(page.getByText('هنوز هیچ تراکنشی نیست')).toBeVisible();
 });
 
+test('two messages pasted as one are refused on the paste sheet', async ({ page }) => {
+  const pair = `${corpus('saderat.json', 'saderat-paya-deposit-trailing-plus')}\n${corpus('saderat.json', 'saderat-pos-purchase-trailing-minus')}`;
+  await onboard(page, `/#paste=${encodeURIComponent(pair)}`);
+  const sheet = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await expect(sheet.getByRole('textbox', { name: 'متن پیامک' })).toHaveAttribute('aria-invalid', 'true');
+  await expect(sheet).toContainText('این بیشتر از یک پیامکه. هر بار فقط یکی رو بچسبون.');
+  await sheet.getByRole('radio', { name: 'بانک صادرات' }).click();
+  await sheet.getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(sheet).toBeVisible();
+});
+
 test('a budget counts this month against its cap', async ({ page }) => {
   await onboard(page);
   await addManual(page, '250000', 'میوه‌فروشی', 'خواربار');

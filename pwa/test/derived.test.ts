@@ -383,9 +383,14 @@ describe('ledger actions', () => {
 
   it('folds two pasted messages by when the bank stamped them, not the order they were pasted', async () => {
     // صادرات's pair the wrong way round: the later purchase's مانده is what the account holds.
-    await ledger.addPastedSms('پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06', 'SADERAT');
-    await ledger.addPastedSms('پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04', 'SADERAT');
+    const pos = 'پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06';
+    const paya = 'پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04';
+    await ledger.addPastedSms(pos, 'SADERAT');
+    await ledger.addPastedSms(paya, 'SADERAT');
     expect(derived.ledger().bankTotalRial).toBe(28_103_090);
+    // Both at once is refused rather than read as one row.
+    expect(await ledger.addPastedSms(`${pos}\n${paya}`, 'SADERAT')).toBeNull();
+    expect(state.rows('sources')).toHaveLength(2);
   });
 
   it('files one row, and «همیشه» files every one like it', async () => {

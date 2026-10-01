@@ -12,7 +12,7 @@ import './timeline.css';
 import './pasteUi.css';
 import { ledger } from './derived';
 import { addPastedSms } from './ledger';
-import { bodyToStore, parsePasted } from './paste';
+import { bodyToStore, parsePasted, severalMessages } from './paste';
 import { PICKABLE_BANKS, isBank } from './sms';
 import { BankLogo } from './logos';
 import { bidi, faCompact, faSignedCompact, faWordsToman, tomanOf } from './format';
@@ -31,15 +31,18 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
   const [saving, setSaving] = useState(false);
 
   const blank = !text.trim();
-  // Refused live, the same test the store applies: a one-time code, or a body naming no money.
-  const refused = !blank && bodyToStore(text) == null;
-  const read = blank || refused ? null : parsePasted(text);
+  // Refused live, the same tests the store applies: several messages at once, a one-time code, or
+  // a body naming no money. Several is asked first, so a huge paste is never parsed per keystroke.
+  const several = !blank && severalMessages(text);
+  const refused = !blank && !several && bodyToStore(text) == null;
+  const ok = !blank && !several && !refused;
+  const read = ok ? parsePasted(text) : null;
 
   const save = async (): Promise<void> => {
     if (saving) return;
     setMissingText(blank);
     setMissingBank(!isBank(bank));
-    if (blank || refused || !isBank(bank)) return;
+    if (!ok || !isBank(bank)) return;
     setSaving(true);
     const source = await addPastedSms(text, bank);
     setSaving(false);
@@ -54,7 +57,9 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
       <SheetTitle>پیامک بانک</SheetTitle>
       <div class="paste-text">
         <TextField label="متن پیامک" value={text} multiline autoFocus={blank} onInput={setText}
-          error={missingText && blank ? 'متن پیامک رو اینجا بچسبون.' : refused ? 'این پیامک تراکنش بانکی نیست، یا رمز یک‌بارمصرفه.' : null} />
+          error={missingText && blank ? 'متن پیامک رو اینجا بچسبون.'
+            : several ? 'این بیشتر از یک پیامکه. هر بار فقط یکی رو بچسبون.'
+            : refused ? 'این پیامک تراکنش بانکی نیست، یا رمز یک‌بارمصرفه.' : null} />
       </div>
       {read && <PastePreview read={read} />}
 
@@ -63,7 +68,7 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
       {missingBank && !isBank(bank) && <p class="grid-error" role="status">بانکش رو انتخاب کن.</p>}
 
       <div class="sheet-actions">
-        <button type="button" class={`pill wide${!blank && !refused && isBank(bank) ? ' primary' : ''}`} style={{ minHeight: '56px', fontSize: '16px' }}
+        <button type="button" class={`pill wide${ok && isBank(bank) ? ' primary' : ''}`} style={{ minHeight: '56px', fontSize: '16px' }}
           disabled={saving} onClick={() => void save()}>ثبت</button>
         <button type="button" class="pill wide" onClick={closeSheet}>انصراف</button>
       </div>

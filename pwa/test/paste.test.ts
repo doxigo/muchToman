@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bodyToStore, parsePasted } from '../src/paste';
+import { MAX_PASTE_CHARS, bodyToStore, parsePasted, severalMessages } from '../src/paste';
 import { nextStamp, uuid7 } from '../src/sync';
 
 /**
@@ -127,6 +127,24 @@ describe('quick paste', () => {
     const got = parsePasted('بانک سامان\nموجودی کیف پول شما: 200,000 ریال\nهمین حالا از همراه‌بانک شارژش کن!');
     expect(got.balanceRial).toBeNull();
     expect(got.amountRial).toBeNull();
+  });
+});
+
+describe('one message at a time', () => {
+  it('takes every corpus message as one, with its loan balance or its «قابل برداشت» beside it', () => {
+    for (const c of cases()) expect(severalMessages(c.body.join('\n')), c.id).toBe(false);
+    expect(severalMessages('برداشت مبلغ 3,000,000 ریال\nمانده 8,000,000 ریال\nمانده بدهی 2,400,000,000 ریال')).toBe(false);
+    expect(severalMessages('مانده 8,000,000 ریال\nموجودی قابل برداشت 7,000,000 ریال')).toBe(false);
+  });
+
+  it('refuses two messages pasted as one, and a paste longer than any message', () => {
+    // صادرات's pair: one in, one out — read as one it named no direction at all.
+    const pair = 'پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04\n'
+      + 'پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06';
+    expect(severalMessages(pair)).toBe(true);
+    expect(severalMessages('واریز مبلغ 5,000,000 ریال\n1405/5/1 11:26\nبرداشت مبلغ 2,000,000 ریال\n1405/5/2 09:10')).toBe(true);
+    expect(severalMessages('واریز 5,000,000\nمانده 9,000,000\nبرداشت 2,000,000\nمانده 7,000,000')).toBe(true);
+    expect(severalMessages(`برداشت مبلغ 2,000,000 ریال\n${' '.repeat(MAX_PASTE_CHARS)}`)).toBe(true);
   });
 });
 

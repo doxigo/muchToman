@@ -13,7 +13,7 @@ import { LinkKind, Verdict, linkDecision } from './links';
 import { CAT_TRANSFER, DecisionKind, MAX_NOTE_CHARS, customCategory, ruleFrom } from './rules';
 import { MAX_PLAUSIBLE_RIAL } from './sms';
 import { forgetMarkId, ledger, manualRef, mineId } from './derived';
-import { bodyToStore } from './paste';
+import { bodyToStore, severalMessages } from './paste';
 import { pastedMoment, sourceId } from './sms';
 import { batch, pref, put, row, rows, setPref } from './state';
 import { familyTxnId, uuid7 } from './sync';
@@ -264,10 +264,12 @@ export function toggleBankDisabled(bank: string): void {
 
 /**
  * A message she pasted, stored as the phone stores an inbox row: only what `bodyToStore` keeps —
- * a one-time code, or a body that names no money, is refused with null. [at] defaults to the time
- * the bank printed, else now. The same message pasted twice is the same id and is not stored twice.
+ * a one-time code, or a body that names no money, is refused with null, and so is a paste of
+ * several messages at once. [at] defaults to the time the bank printed, else now. The same message
+ * pasted twice is the same id and is not stored twice.
  */
 export async function addPastedSms(text: string, bank: string, at?: number): Promise<Source | null> {
+  if (severalMessages(text)) return null;
   const body = bodyToStore(text);
   if (body == null) return null;
   const now = Date.now();

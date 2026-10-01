@@ -112,6 +112,14 @@ function boxMove(text: string): boolean | null {
 const PRINTED_AT =
   /(?<![0-9۰-۹٠-٩.\/\-_])[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?(?![0-9۰-۹٠-٩])/;
 
+/**
+ * ملی's and صادرات's stamp, month and day run together beside the clock: «0425-01:15», «0503 -
+ * 13:04». The corpus keeps it out of «زمان ثبت» on both sides — four bare digits are a date
+ * nowhere else — so only the paste flow reads it, for when the money moved.
+ */
+export const RUN_TOGETHER =
+  /(?<![0-9۰-۹٠-٩./\-_])([0-9۰-۹٠-٩]{2})([0-9۰-۹٠-٩]{2})[ _-]{1,3}([0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)(?![0-9۰-۹٠-٩])/;
+
 /** A clock time, hours to optional seconds, in either set of digits. */
 const CLOCK = '[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?';
 
@@ -389,6 +397,32 @@ export function bodyToStore(body: string): string | null {
     n++;
     return codes.has(n) && run === runs[n]?.[0] ? '•'.repeat(run.length) : run;
   });
+}
+
+/** Longer than any bank message: a paste this size is several of them, or none. */
+export const MAX_PASTE_CHARS = 2000;
+const PRINTED_AT_ALL = new RegExp(PRINTED_AT.source, 'g');
+const RUN_TOGETHER_ALL = new RegExp(RUN_TOGETHER.source, 'g');
+
+/**
+ * Whether a paste is more than one message: too long for one, or two stamps, or two مانده. The
+ * phone reads each message apart; read as one, two of them made one row — the first مبلغ, the first
+ * مانده, and no direction at all when one was in and one out. A مانده a veto word or «قابل» follows
+ * is not counted: «مانده بدهی» and «موجودی قابل برداشت» sit beside the real one in one message.
+ */
+export function severalMessages(text: string): boolean {
+  if (text.length > MAX_PASTE_CHARS) return true;
+  const stamps = (text.match(PRINTED_AT_ALL)?.length ?? 0) + (text.match(RUN_TOGETHER_ALL)?.length ?? 0);
+  if (stamps > 1) return true;
+  const t = normalise(text);
+  let balances = 0;
+  for (const word of BALANCE_WORDS) {
+    for (let i = t.indexOf(word); i >= 0; i = t.indexOf(word, i + 1)) {
+      const ahead = t.slice(i + word.length, i + word.length + 16);
+      if (!BALANCE_VETO.some((v) => ahead.includes(v)) && !/^\s*قابل/.test(ahead)) balances++;
+    }
+  }
+  return balances > 1;
 }
 
 // ---- enrichment: nothing below feeds the money above ----------------------------------------
