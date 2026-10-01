@@ -48,7 +48,12 @@ const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully f
 // v4: entries now carry an ETag; older cached bodies without one must miss after deploy.
 const RATES_CACHE_VERSION = 'checked-rates-v4';
 const PUBLIC_ORIGIN = 'https://rates.muchtoman.com';
-const UPSTREAM_TIMEOUT_MS = 8_000;
+// Per source, not per build: a chain runs at most two sources back to back (bonbast's token
+// dance shares one deadline, and Binance starts the moment CoinGecko fails), so a cold build
+// answers inside ~6 s, under the sync proxy's 8 s abort and the app's 10 s. At 8 s each, a
+// hanging fiat chain alone ran 24 s and every caller gave up on it.
+// ponytail: fixed budgets sized to two-deep chains; a shared build deadline if one grows a third.
+const UPSTREAM_TIMEOUT_MS = 3_000;
 const WALLET_UPSTREAM_TIMEOUT_MS = 5_000;
 // APK downloads are bounded on time-to-headers only. A whole-body deadline here used to cut
 // slow Iranian connections off mid-file — 30 MB at 2 Mbit/s is about two minutes, and the
@@ -100,7 +105,7 @@ async function fetchWithTimeout(
   init?: RequestInit,
   timeoutMs = UPSTREAM_TIMEOUT_MS,
 ): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  return fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(timeoutMs) });
 }
 
 async function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
@@ -284,9 +289,12 @@ const RESERVED_TOMAN_IDS = reservedTomanIds(Object.keys(BONBAST_MAP));
 type FiatQuote = { prices: Record<string, number>; stampMs: number | null };
 
 async function fetchBonbast(): Promise<FiatQuote> {
-  // The JSON endpoint only answers with a token minted into the homepage HTML.
+  // The JSON endpoint only answers with a token minted into the homepage HTML. Both requests
+  // share one deadline, so bonbast costs one source's time before tgju gets its turn.
+  const signal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
   const home = await fetchWithTimeout('https://bonbast.com/', {
     headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
+    signal,
   });
   if (!home.ok) {
     await cancelBody(home.body);
@@ -307,6 +315,7 @@ async function fetchBonbast(): Promise<FiatQuote> {
       ...(setCookie ? { cookie: setCookie.split(';')[0] } : {}),
     },
     body: new URLSearchParams({ param: token }).toString(),
+    signal,
   }));
 
   const out: Record<string, number> = {};
@@ -1164,7 +1173,8 @@ function mutableDownload(response: Response): Response {
 }
 
 async function buildRates(): Promise<BuiltRates> {
-  const [fiat, cryptoToman, gecko, release, silver, parsian] = await Promise.allSettled([
+  const geckoRun = fetchCoinGecko();
+  const [fiat, cryptoToman, gecko, release, silver, parsian, binance] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
       [
@@ -1173,10 +1183,13 @@ async function buildRates(): Promise<BuiltRates> {
       ],
       hasPrices,
     ),
-    fetchCoinGecko(),
+    geckoRun,
     fetchLatestRelease(),
     fetchSilver(),
     fetchParsian(),
+    // The moment the catalogue fails, not once everything else has settled: waiting on the
+    // slowest chain first put a whole third source on the build's critical path.
+    geckoRun.then((): Record<string, number> => ({}), () => fetchBinanceUsd()),
   ]);
 
   const toman: Record<string, number> = {};
@@ -1247,7 +1260,7 @@ async function buildRates(): Promise<BuiltRates> {
   // already has, which, unlike a price, have not gone stale.
   let usdVia = 'coingecko';
   if (gecko.status !== 'fulfilled') {
-    usdPrices = await fetchBinanceUsd().catch(() => ({}));
+    usdPrices = binance.status === 'fulfilled' ? binance.value : {};
     usdVia = Object.keys(usdPrices).length ? 'binance' : 'nothing';
   }
 

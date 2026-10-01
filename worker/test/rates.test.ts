@@ -340,6 +340,31 @@ describe('GET /rates', () => {
     expect(b.body.toman.usd).toBe(187_000);
   });
 
+  it('asks Binance the moment CoinGecko fails, not after the slowest chain', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let binanceAsked = false;
+    const { rates } = setup({
+      'https://bonbast.com/': async () => {
+        await held;
+        return unavailable();
+      },
+      'https://api.coingecko.com/api/v3/coins/markets': unavailable,
+      'https://api.binance.com/api/v3/ticker/price': () => {
+        binanceAsked = true;
+        return Response.json([{ symbol: 'ETHUSDT', price: '3300' }]);
+      },
+    });
+    const answer = rates();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(binanceAsked).toBe(true); // while the fiat chain is still out
+
+    release();
+    const { body } = await answer;
+    expect(body.toman.eth).toBe(3_300 * 187_000);
+    expect(body.sources.crypto_pricing).toContain('via binance');
+  });
+
   it('runs the build under waitUntil, so a caller giving up does not cancel it', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
