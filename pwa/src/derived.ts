@@ -314,7 +314,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const ofKind = (kind: string): Decision[] => input.decisions.filter((d) => d.kind === kind && !d.deleted);
 
   // A message she deleted stays stored — evidence is kept — and the row it derives is dropped here,
-  // at the one gate every screen, total, link and family publication reads through.
+  // at the one gate every screen, total and family publication reads through.
   const hiddenByHer = new Set(ofKind(DecisionKind.HIDE).map((d) => d.ref));
   const pinned = new Map(ofKind(DecisionKind.CATEGORY).filter((d) => d.value != null).map((d) => [d.ref, d.value!]));
   // The sender key a sender-keyed rule holds a row against: for a pasted message, the bank she picked.
@@ -322,12 +322,14 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const rules = input.rules.filter((r) => !r.deleted);
 
   const family = input.familyTxns.filter((f) => !f.deleted);
-  const all: Txn[] = [
-    ...input.sources.flatMap((s) => parseToRows(s, now)).filter((t) => !hiddenByHer.has(t.ref)),
-    ...input.manual.filter((m) => !m.deleted).map(manualToRow).filter((t) => !hiddenByHer.has(t.ref)),
-    ...family.map(familyToRow),
-  ];
-  const links = findLinks(all, input.links);
+  const hers = [...input.sources.flatMap((s) => parseToRows(s, now)), ...input.manual.filter((m) => !m.deleted).map(manualToRow)];
+  const familyRows = family.map(familyToRow);
+  // Linked with the rows she deleted still in, and only then are they dropped: dropped first, the
+  // echo of a message she deleted came back as a spend of its own, and deleting one leg of a
+  // transfer turned the other into income. The echo goes with the row she deleted.
+  const links = findLinks([...hers, ...familyRows], input.links);
+  const dropped = new Set([...hiddenByHer, ...hiddenRefs(links.filter((l) => hiddenByHer.has(l.aRef) || hiddenByHer.has(l.bRef)))]);
+  const all: Txn[] = [...hers.filter((t) => !dropped.has(t.ref)), ...familyRows];
   const transfers = transferRefs(links);
   for (const f of family) if (f.transfer) transfers.add(familyLocalRef(f.id));
   const classes = new Map<string, TxnClass>(

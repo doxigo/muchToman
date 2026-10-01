@@ -344,6 +344,24 @@ describe('the ledger view', () => {
     expect(view.links).toHaveLength(1);
   });
 
+  it('keeps a deleted row\'s echo hidden and its transfer partner a transfer', () => {
+    const body = 'برداشت مبلغ 1,000,000 ریال\nشماره پیگیری 771205';
+    const purchase = source('SAMAN', body, 10);
+    const echo = source('SAMAN', body, 60_010);
+    const sent = source('SAMAN', 'برداشت مبلغ 50,000,000 ریال', 100_000);
+    const received = source('BLU', 'واریز مبلغ 50,000,000 ریال', 130_000);
+    const sources = [purchase, echo, sent, received];
+    const byId = (view: ReturnType<typeof ledgerView>) => new Map(view.entries.map((e) => [e.txn.srcHash, e]));
+    const before = byId(ledgerView(input({ sources })));
+    expect(before.get(echo.id)!.duplicate).toBe(true);
+    expect(before.get(received.id)!.transfer).toBe(true);
+    const after = byId(ledgerView(input({
+      sources, decisions: [decided(`s:${purchase.id}:0`, 'hide', '1'), decided(`s:${sent.id}:0`, 'hide', '1')],
+    })));
+    expect([...after.keys()]).toEqual([received.id]);
+    expect(after.get(received.id)!.transfer).toBe(true);
+  });
+
   it('files a pasted message by the channel it names', () => {
     const view = ledgerView(input({ sources: [source('MELLAT', 'برداشت از خودپرداز مبلغ 2,000,000 ریال', 10)] }));
     expect(view.entries[0]).toMatchObject({ categoryId: 'cat_cash', needsReview: true });

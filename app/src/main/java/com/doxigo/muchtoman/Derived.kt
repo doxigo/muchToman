@@ -82,7 +82,10 @@ import kotlinx.coroutines.sync.withLock
 // 17: a bare «رمز» beside a stated مانده is a security footer, not a one-time code — the same
 // escape «کد» has had since 11. A debit warning her to keep her «رمز» to herself was refused at
 // ingest; [sweepSources] now keeps such rows rather than deleting them.
-const val PARSER_VERSION = 17
+// 18: links are found with the rows she deleted still in. The echo of a deleted message had come
+// back as a spend of its own, and the other leg of a deleted transfer as income, in every ledger
+// derived since; only linking again puts them right.
+const val PARSER_VERSION = 18
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
@@ -402,7 +405,7 @@ suspend fun derive(
     // point of them being two files — so the join happens here, in a map, keyed by the message.
     val pinned = durable.decisions().ofKind(DecisionKind.CATEGORY).associate { it.ref to it.value }
     // A transaction she deleted. The message stays in sms_source — evidence is kept — but the
-    // row it derives is dropped here, at the one gate every screen, total, link and family
+    // row it derives is dropped here, at the one gate every screen, total and family
     // publication reads through, so the delete also tombstones the family's copy on its own.
     val hiddenByHer = durable.decisions().ofKind(DecisionKind.HIDE).mapTo(HashSet()) { it.ref }
     val rules = durable.rules().active()
@@ -414,27 +417,23 @@ suspend fun derive(
         derived.classes().deleteAll()
         derived.links().deleteAll()
 
-        val all = mutableListOf<Txn>()
-        for (chunk in sources.chunked(500)) {
-            val rows = chunk.flatMap { parseToRows(it, extra, now) }.filterNot { it.ref in hiddenByHer }
-            derived.txn().insertAll(rows)
-            all += rows
-            written += rows.size
-        }
+        val parsed = sources.flatMap { parseToRows(it, extra, now) }
         // Typed in here, or on the iPhone and synced across. From this line down nothing
         // distinguishes them from a message — they classify, link and report identically.
-        val manual = durable.manual().all().map(::manualToRow).filterNot { it.ref in hiddenByHer }
-        derived.txn().insertAll(manual)
-        all += manual
-        written += manual.size
-
+        val manual = durable.manual().all().map(::manualToRow)
         val familyRecords = durable.familyTxns().all()
         val family = familyRecords.map(::familyToRow)
-        derived.txn().insertAll(family)
-        all += family
-        written += family.size
 
-        val links = findLinks(all, verdicts)
+        // Linked with the rows she deleted still in, and only then are they dropped. Dropped
+        // first, the pair a deleted row belonged to was never found: the echo of a message she
+        // deleted came back as a second spend of its own, and deleting one leg of a transfer
+        // turned the other into income. The echo goes with the row she deleted — it was only
+        // ever a copy of it.
+        val links = findLinks(parsed + manual + family, verdicts)
+        val dropped = hiddenByHer + hiddenRefs(links.filter { it.aRef in hiddenByHer || it.bRef in hiddenByHer })
+        val all = (parsed + manual).filterNot { it.ref in dropped } + family
+        for (chunk in all.chunked(500)) derived.txn().insertAll(chunk)
+        written = all.size
         derived.links().putAll(links)
 
         val transfers = transferRefs(links) + familyRecords.filter { it.transfer }.map { familyLocalRef(it.id) }
