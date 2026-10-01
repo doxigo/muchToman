@@ -455,18 +455,34 @@ async function fetchParsian(): Promise<Record<string, number>> {
   return prices;
 }
 
-const fetchFiat = () =>
+async function fetchFiat() {
   // The absolute dollar band sits inside the gate, so an implausible source counts as a
   // failed one and the chain advances instead of aborting (the relational checks — USDT
   // agreement and everything hanging off gold — run once at assembly, where both chains
   // are in hand).
-  firstOf(
+  const chosen = await firstOf(
     [
       { name: 'bonbast', run: fetchBonbast },
       { name: 'tgju', run: fetchTgju },
     ],
     (v) => usdBandVerdict(v.prices.usd),
   );
+  // The gate only asks for the dollar, so bonbast answering with it and without gold, or
+  // with a سکه field it can no longer parse, used to leave those out while tgju sat unasked.
+  // Its rows fill the gaps; what neither has stays missing.
+  let filled = 0;
+  const missing = Object.keys(BONBAST_MAP).filter((id) => chosen.value.prices[id] == null);
+  if (chosen.via === 'bonbast' && missing.length > 0) {
+    const tgju = await fetchTgju().catch(() => null);
+    for (const id of missing) {
+      if (tgju?.prices[id] == null) continue;
+      chosen.value.prices[id] = tgju.prices[id];
+      filled++;
+    }
+    if (filled > 0) chosen.value.stampMs = tgju?.stampMs ?? null; // bonbast stamps nothing
+  }
+  return { ...chosen, filled };
+}
 
 // ───────────────────────── crypto ─────────────────────────
 
@@ -1223,7 +1239,13 @@ async function buildRates(): Promise<BuiltRates> {
   };
 
   if (fiat.status === 'fulfilled') Object.assign(toman, fiat.value.value.prices);
-  note('fiat_gold_coins', fiat, 'ok');
+  // Counted against what was asked for, like silver and پارسیان below: a dollar alone is
+  // not the same answer as all fourteen rows.
+  const fiatRows = fiat.status === 'fulfilled' ? Object.keys(fiat.value.value.prices).length : 0;
+  note('fiat_gold_coins', fiat, `ok, ${fiatRows}/${Object.keys(BONBAST_MAP).length} rows`);
+  if (fiat.status === 'fulfilled' && fiat.value.filled > 0) {
+    sources.fiat_gold_coins += `, ${fiat.value.filled} of them filled in from tgju`;
+  }
   if (fiat.status === 'fulfilled') {
     // Words, not a timestamp swap: updatedAt stays "when this worker answered", which the
     // phone depends on. If the source's own freshest stamp is over a day old, say so.

@@ -208,7 +208,7 @@ describe('GET /rates', () => {
     expect(body.toman.btc).toBe(12_062_000_000);
     expect(body.toman.eth).toBe(3_300 * 187_000);
 
-    expect(body.sources.fiat_gold_coins).toBe('ok via bonbast');
+    expect(body.sources.fiat_gold_coins).toBe('ok, 14/14 rows via bonbast');
     expect(body.sources.silver.startsWith('ok via tgju, 2/2')).toBe(true);
     expect(body.sources.crypto_toman.startsWith('ok via bitpin')).toBe(true);
     expect(body.sources.plausibility).not.toContain('btc');
@@ -228,7 +228,27 @@ describe('GET /rates', () => {
     const { body } = await rates();
 
     expect(body.toman.usd).toBe(187_000); // from the 1,870,000 Rial fixture
-    expect(body.sources.fiat_gold_coins).toMatch(/^ok via tgju \(tried first: bonbast/);
+    expect(body.sources.fiat_gold_coins).toMatch(/^ok, 14\/14 rows via tgju \(tried first: bonbast/);
+  });
+
+  it('fills what bonbast left out from tgju and counts it, keeping bonbast for the rest', async () => {
+    const { rates } = setup({
+      'https://bonbast.com/json': () => {
+        const json: Record<string, string> = bonbastJson();
+        delete json.gol18;
+        delete json.mithqal;
+        json.emami1 = '—'; // garbled
+        json.usd1 = '187,100'; // a bonbast-only number, to show which source each row came from
+        return Response.json(json);
+      },
+    });
+    const { body } = await rates();
+
+    expect(body.toman.usd).toBe(187_100);
+    expect(body.toman.gold18).toBe(17_800_000);
+    expect(body.toman.gold_mesghal).toBe(77_100_000);
+    expect(body.toman.coin_emami).toBe(210_000_000);
+    expect(body.sources.fiat_gold_coins).toBe('ok, 14/14 rows via bonbast, 3 of them filled in from tgju');
   });
 
   it('records an implausible bonbast dollar as failed and advances to tgju', async () => {
@@ -238,7 +258,7 @@ describe('GET /rates', () => {
     const { body } = await rates();
 
     expect(body.toman.usd).toBe(187_000);
-    expect(body.sources.fiat_gold_coins).toMatch(/^ok via tgju \(tried first: bonbast/);
+    expect(body.sources.fiat_gold_coins).toMatch(/^ok, 14\/14 rows via tgju \(tried first: bonbast/);
     expect(body.sources.fiat_gold_coins).toContain('implausible');
   });
 
