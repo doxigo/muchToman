@@ -786,6 +786,10 @@ fun familyLocalRef(familyRef: String): String = "f:${sha256Hex(familyRef)}"
  * parser's job, and a parser fix can only re-read what was kept. The manifest's
  * `allowBackup="false"` keeps what is stored off Google's servers.
  *
+ * Her switch is checked here, beside the permission, because it is the one every caller must
+ * honour: turning «خواندن پیامک‌های بانک» off with the grant still in place went on storing,
+ * deriving and publishing every bank message from both the app and the watch worker.
+ *
  * Returns how many new rows were stored.
  */
 suspend fun ingestBankSms(
@@ -794,7 +798,7 @@ suspend fun ingestBankSms(
     extra: Map<String, Bank>,
     now: Long = System.currentTimeMillis(),
 ): Int {
-    if (!canReadSms(context)) return 0
+    if (!canReadSms(context) || !Store(context).smsEnabled) return 0
     return ingestBankSms(db, extra, now) { since -> readSmsInbox(context, since) }
 }
 
