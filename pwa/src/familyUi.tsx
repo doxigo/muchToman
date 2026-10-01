@@ -277,7 +277,7 @@ function Family() {
         <div class="set-band" style={{ marginTop: 'var(--xxl)' }}>
           <DangerRow title="خروج از خانواده" armedTitle="مطمئنی؟ برای خروج دوباره بزن"
             subtitle="دسترسی همین گوشی قطع می‌شه و دفتر مشترک از روش پاک می‌شه؛ تراکنش‌های خودت سر جاشون می‌مونن."
-            detail="چیزی که بقیه قبلاً دیدن پس گرفته نمی‌شه." enabled={!state.working} onConfirmed={() => void leaveFamily()} />
+            detail="تراکنش‌هات از دفتر بقیه هم پاک می‌شن، ولی چیزی که قبلاً دیدن پس گرفته نمی‌شه." enabled={!state.working} onConfirmed={() => void leaveFamily()} />
           <DangerRow title="نو کردن خانواده" armedTitle="مطمئنی؟ برای نو کردن دوباره بزن"
             subtitle="برای وقتی که کسی رو حذف کردی و می‌خوای مطمئن باشی چیز تازه‌ای بهش نمی‌رسه."
             detail="یک خانواده تازه با کلید تازه ساخته می‌شه و فقط تراکنش‌های همین گوشی دوباره فرستاده می‌شن. بقیه اعضا باید کد تازه رو دوباره اسکن کنن؛ خانواده قبلی دیگه به‌روز نمی‌شه و دفتر مشترک از نو شروع می‌شه."
@@ -315,7 +315,7 @@ function MemberSheet({ id }: { id: string }) {
         </div>
         <ShareStatus sharing={member.sharesSms} />
       </div>
-      <p class="sheet-body" style={{ marginTop: 'var(--xl)' }}>همگام‌سازی گوشی این عضو قطع می‌شه، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.</p>
+      <p class="sheet-body" style={{ marginTop: 'var(--xl)' }}>همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.</p>
       <div style={{ height: 'var(--s)' }} />
       <ArmedAction label="حذف از خانواده" armedLabel="مطمئنی؟ برای حذف دوباره بزن" enabled={!state.working && !acting} onConfirmed={() => void remove()} />
       {error && <Note tone="error">{error}</Note>}

@@ -803,6 +803,9 @@ function applyTransaction(session: Session, record: WireRecord, payload: SyncEnt
   if (payload.direction !== 'in' && payload.direction !== 'out') return false;
   if (payload.amountRial < 0 || payload.amountRial > MAX_PLAUSIBLE_RIAL) return false;
   if (existing && existing.updatedAt > record.updatedAt) return false;
+  // Somebody who has left or been removed: their rows went with them, and an older copy arriving
+  // behind the tombstone must not bring them back.
+  if (row('familyMembers', owner)?.deleted) return false;
   ensureMemberPlaceholder(owner, record.updatedAt);
   const sourceKind = payload.sourceKind === 'sms' || payload.sourceKind === 'manual' ? payload.sourceKind : record.id.startsWith('s:') ? 'sms' : 'manual';
   put('familyTxns', {
@@ -911,6 +914,8 @@ function applyAsset(session: Session, record: WireRecord, payload: SyncAssetPayl
   if (record.ownerMemberId !== memberId || payload.memberId !== memberId) return false;
   const existing = row('familyAssets', memberId);
   if (existing && existing.updatedAt > record.updatedAt) return false;
+  // Gone from the household, gone from here — see applyTransaction.
+  if (row('familyMembers', memberId)?.deleted) return false;
   const items = payload.items.slice(0, 64)
     .map((i) => ({ name: safeSyncedText(i.name, 60, 'دارایی'), toman: i.toman }))
     .filter((i) => Number.isFinite(i.toman) && i.toman >= 0 && i.toman <= MAX_PLAUSIBLE_RIAL);
@@ -1008,14 +1013,29 @@ function applyTransactionTombstone(session: Session, record: WireRecord): boolea
   return true;
 }
 
-/** How the household learns someone was removed. Never applied to this device's own member. */
+/**
+ * How the household learns someone left or was removed, and their rows go with them. Never
+ * applied to this device's own member.
+ */
 function applyMemberTombstone(session: Session, record: WireRecord): boolean {
   const memberId = removePrefix(record.id, 'member:');
   if (!isValidSyncIdentity(memberId) || memberId === session.member) return false;
   const existing = row('familyMembers', memberId);
   if (existing && existing.updatedAt > record.updatedAt) return false;
   put('familyMembers', { ...(existing ?? { id: memberId, name: MEMBER_FALLBACK, sharesSms: false, avatar: '' }), updatedAt: record.updatedAt, deleted: true });
+  dropMemberRows(memberId);
   return true;
+}
+
+/**
+ * A member who is gone takes their transactions and دارایی with them, on every device the same
+ * way: erased, since nobody will publish them again, and kept they would double the day the same
+ * person pairs again under a fresh member id. Shared budgets stay — keyed by the goal, a re-pair
+ * cannot double them, and the household that is left keeps the figure.
+ */
+function dropMemberRows(memberId: string): void {
+  for (const t of rows('familyTxns')) if (t.ownerMemberId === memberId) erase('familyTxns', t.id);
+  erase('familyAssets', memberId);
 }
 
 /**
@@ -1313,8 +1333,9 @@ export function rejoinHousehold(pairing: PairingInvite, memberName: string): Pro
 
 /**
  * Cuts a member's devices off the household. The server publishes the sealed tombstone and
- * revokes in one transaction; only after that is the local row buried. It does not re-key —
- * `renewHousehold` is the answer to that.
+ * revokes in one transaction; only after that is the local row buried and their rows dropped —
+ * here, because the tombstone carries this device's id and its pull skips it. It does not
+ * re-key — `renewHousehold` is the answer to that.
  */
 export function removeFamilyMember(session: Session, memberId: string): Promise<void> {
   return withFamilySync(async () => {
@@ -1325,7 +1346,10 @@ export function removeFamilyMember(session: Session, memberId: string): Promise<
     const recordId = memberRecordId(memberId);
     const tombstone = await wireRecord(active, recordId, 'member', memberId, stamp, tombstonePayload(recordId), true);
     await request(`${active.base}/v1/remove`, 'POST', active.token, JSON.stringify({ member: memberId, record: tombstone }));
-    put('familyMembers', { ...(member ?? { id: memberId, name: MEMBER_FALLBACK, sharesSms: false, avatar: '' }), updatedAt: stamp, deleted: true });
+    batch(() => {
+      put('familyMembers', { ...(member ?? { id: memberId, name: MEMBER_FALLBACK, sharesSms: false, avatar: '' }), updatedAt: stamp, deleted: true });
+      dropMemberRows(memberId);
+    });
   });
 }
 

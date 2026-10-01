@@ -767,12 +767,12 @@ suspend fun rejoinHousehold(
  * Cuts a member's devices off the household, effective on their very next request.
  *
  * The server publishes the sealed tombstone and revokes every device in one transaction. Only
- * after that succeeds does this phone bury its local member row.
+ * after that succeeds does this phone bury its local member row and drop their rows, as every
+ * other phone does when the tombstone reaches it ([dropMemberRows]). This phone has to do it
+ * here: the tombstone carries its own device id, so its pull skips it.
  *
- * What this does not do, on purpose: it does not touch their past transactions here or anywhere,
- * because they were already seen — the same honesty as the privacy sentence on the screen. And it
- * does not re-key: an ex-member who somehow keeps reading ciphertext still holds the scope key.
- * [renewHousehold] is the answer to that.
+ * What this does not do: take back what they have already seen, and re-key — an ex-member who
+ * somehow keeps reading ciphertext still holds the scope key. [renewHousehold] is the answer to that.
  */
 suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberId: String): Unit =
     withFamilySync {
@@ -796,11 +796,31 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
             active.token,
             SYNC_JSON.encodeToString(RemoveMemberBody(memberId, tombstone)),
         )
-        durable.familyMembers().put(
-            (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
-                .copy(updatedAt = stamp, deleted = true)
-        )
+        durable.withTransaction {
+            durable.familyMembers().put(
+                (member ?: FamilyMember(memberId, "عضو خانواده", updatedAt = stamp))
+                    .copy(updatedAt = stamp, deleted = true)
+            )
+            dropMemberRows(durable, memberId)
+            // The re-derive a pulled tombstone would have asked for, since this one is never pulled.
+            val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)?.toLongOrNull() ?: 0L
+            durable.meta().put(DurableMeta(META_SYNC_DERIVE_REVISION, (revision + 1).toString()))
+        }
     }
+
+/**
+ * A member who is gone takes their rows with them — on every phone, the same way.
+ *
+ * Their transactions and دارایی are erased: this phone only ever held a copy of somebody else's,
+ * nobody will publish them again, and kept they would double the day the same person pairs again,
+ * because a pairing mints a fresh member id and everything they own is re-published under it.
+ * Shared budgets stay: a goal's record is keyed by the goal rather than by who made it, so a
+ * re-pair cannot double it, and the household that is left keeps that figure.
+ */
+private suspend fun dropMemberRows(durable: DurableDb, memberId: String) {
+    durable.familyTxns().eraseOwnedBy(memberId)
+    durable.familyAssets().erase(memberId)
+}
 
 /**
  * This phone walks out on its own feet — the other side of [removeFamilyMember].
@@ -808,8 +828,9 @@ suspend fun removeFamilyMember(session: SyncSession, durable: DurableDb, memberI
  * The goodbye and token revocation are one server operation. Only after it succeeds is the local
  * household buried and the session erased in one Room transaction.
  *
- * The same honesty as removal: nothing already seen is taken back, and the key this phone holds
- * is not un-held. «نو کردن خانواده» on a remaining phone is the answer to that.
+ * The same as removal: the other phones drop her rows when the tombstone reaches them, but
+ * nothing they have already seen is taken back, and the key this phone holds is not un-held.
+ * «نو کردن خانواده» on a remaining phone is the answer to that.
  */
 suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFamilySync {
     val active = activeSession(durable, session)
@@ -1529,6 +1550,9 @@ private suspend fun applyTransaction(
     if (payload.direction !in setOf("in", "out")) return false
     if (payload.amountRial !in 0..MAX_PLAUSIBLE_RIAL) return false
     if (existing != null && existing.updatedAt > record.updatedAt) return false
+    // Somebody who has left or been removed: their rows went with them, and an older copy
+    // arriving behind the tombstone must not bring them back.
+    if (durable.familyMembers().get(owner)?.deleted == true) return false
     ensureMemberPlaceholder(durable, owner, record.updatedAt)
     val sourceKind = payload.sourceKind.takeIf { it == "sms" || it == "manual" }
         ?: if (record.id.startsWith("s:")) "sms" else "manual"
@@ -1751,6 +1775,8 @@ private suspend fun applyAsset(
     if (record.ownerMemberId != memberId || payload.memberId != memberId) return false
     val existing = durable.familyAssets().get(memberId)
     if (existing != null && existing.updatedAt > record.updatedAt) return false
+    // Gone from the household, gone from here — see [applyTransaction].
+    if (durable.familyMembers().get(memberId)?.deleted == true) return false
     val items = payload.items.take(64)
         .map { AssetShareItem(safeSyncedText(it.name, 60, "دارایی"), it.toman) }
         .filter { it.toman.isFinite() && it.toman in 0.0..MAX_PLAUSIBLE_RIAL.toDouble() }
@@ -1972,9 +1998,10 @@ private suspend fun applyTransactionTombstone(
 
 /**
  * A verified tombstone for a member record: this is how the rest of the household learns someone
- * was removed, since the removed person's own device can no longer say anything. Never applied to
- * this device's own member — if that ever arrives, the next request will be a 401 and honest
- * about it, and a phone should not erase its owner from her own screen on a server's word.
+ * left or was removed, since their own device can no longer say anything — and their rows go with
+ * them ([dropMemberRows]). Never applied to this device's own member — if that ever arrives, the
+ * next request will be a 401 and honest about it, and a phone should not erase its owner from her
+ * own screen on a server's word.
  */
 private suspend fun applyMemberTombstone(
     durable: DurableDb,
@@ -1989,6 +2016,7 @@ private suspend fun applyMemberTombstone(
         (existing ?: FamilyMember(memberId, "عضو خانواده", updatedAt = record.updatedAt))
             .copy(updatedAt = record.updatedAt, deleted = true)
     )
+    dropMemberRows(durable, memberId)
     return true
 }
 

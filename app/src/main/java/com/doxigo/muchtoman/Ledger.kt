@@ -493,6 +493,9 @@ interface FamilyTxnDao {
     /** Erased, not tombstoned: every row here is another phone's, and the server still has it. */
     @Query("DELETE FROM family_txn")
     suspend fun eraseAll()
+
+    @Query("DELETE FROM family_txn WHERE owner_member_id = :member")
+    suspend fun eraseOwnedBy(member: String)
 }
 
 @Dao
@@ -518,6 +521,9 @@ interface FamilyAssetDao {
     /** Erased, not tombstoned, for the reason [FamilyTxnDao.eraseAll] is. */
     @Query("DELETE FROM family_asset")
     suspend fun eraseAll()
+
+    @Query("DELETE FROM family_asset WHERE member_id = :member")
+    suspend fun erase(member: String)
 }
 
 @Dao

@@ -427,6 +427,42 @@ class SyncLifecycleTest {
         assertFalse(durable.familyMembers().get(session.member)!!.deleted)
     }
 
+    /**
+     * A re-paired member re-publishes everything under a fresh id, so the copies under the old one
+     * have to go wherever the tombstone lands — including on the remover's own phone, which never
+     * pulls its own tombstone back.
+     */
+    @Test
+    fun `a member who is gone takes their rows, and an older copy cannot bring them back`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val left = "b".repeat(32)
+        val removed = "c".repeat(32)
+        val asset = { member: String -> sealedRecord(
+            session, "asset:$member", "asset", member, 1000,
+            JSONObject().put("memberId", member).put("totalToman", 100.0).put("items", JSONArray()),
+        ) }
+        pullOnce(
+            server, durable, session,
+            memberRecord(session, left, "رضا", 1000), txnRecord(session, left, "m:1", 1000), asset(left),
+            memberRecord(session, removed, "سارا", 1000), txnRecord(session, removed, "m:1", 1000), asset(removed),
+            tombstoneRecord(session, "member:$left", "member", left, 2000),
+        )
+        val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)
+        removeFamilyMember(session, durable, removed)
+
+        for (member in listOf(left, removed)) {
+            assertTrue(durable.familyMembers().get(member)!!.deleted)
+            assertNull(durable.familyTxns().get(familyTxnId(member, "m:1")))
+            assertNull(durable.familyAssets().get(member))
+        }
+        // The remover's phone asks for the re-derive its own pull will never ask for.
+        assertNotEquals(revision, durable.meta().get(META_SYNC_DERIVE_REVISION))
+
+        pullOnce(server, durable, session, txnRecord(session, left, "m:2", 3000), asset(left))
+        assertNull(durable.familyTxns().get(familyTxnId(left, "m:2")))
+        assertNull(durable.familyAssets().get(left))
+    }
+
     @Test
     fun `a failed remove leaves the local member row alive`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")

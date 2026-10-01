@@ -417,7 +417,7 @@ fun CompanionScreen(
                 title = "خروج از خانواده",
                 armedTitle = "مطمئنی؟ برای خروج دوباره بزن",
                 subtitle = "دسترسی همین گوشی قطع می‌شه و دفتر مشترک از روش پاک می‌شه؛ تراکنش‌های خودت سر جاشون می‌مونن.",
-                detail = "چیزی که بقیه قبلاً دیدن پس گرفته نمی‌شه.",
+                detail = "تراکنش‌هات از دفتر بقیه هم پاک می‌شن، ولی چیزی که قبلاً دیدن پس گرفته نمی‌شه.",
                 shape = bandShape(0, 2),
                 divided = true,
                 enabled = !state.working && !acting,
@@ -1115,7 +1115,7 @@ private fun DangerRow(
  * Removal used to sit on every row as a red line of its own, so a household of four was a list
  * with three warnings in it. It is here now, one tap in, behind the same two-tap confirm as
  * every other destructive thing on the page, with the honest sentence above it: it cuts their
- * phone's sync, and it cannot un-see anything.
+ * phone's sync and takes their rows off the shared ledger, and it cannot un-see anything.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1155,7 +1155,7 @@ private fun MemberSheet(
             }
             Spacer(Modifier.height(Space.xl))
             Text(
-                "همگام‌سازی گوشی این عضو قطع می‌شه، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
+                "همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
                 fontSize = 13.sp,
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

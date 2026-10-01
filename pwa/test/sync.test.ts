@@ -138,6 +138,30 @@ describe('deletes', () => {
     expect(state.row('familyTxns', id)?.deleted).toBe(true);
   });
 
+  it('drops a departed member\'s rows on their tombstone, and refuses an older copy after it', async () => {
+    const asset = (at: number) => record(`asset:${THEM}`, 'asset', JSON.stringify({ memberId: THEM, totalToman: 100, items: [] }), { updatedAt: at });
+    const txnOf = (ref: string, at: number) => record(sync.familyTxnId(THEM, ref), 'transaction', JSON.stringify({ ownerMemberId: THEM, at: 1, amountRial: 1, direction: 'out' }), { updatedAt: at });
+    await apply(await txnOf('m:1', NOW - 5000));
+    await apply(await asset(NOW - 5000));
+    expect(await apply(await record(`member:${THEM}`, 'member', JSON.stringify({ v: 1, id: `member:${THEM}`, deleted: true }), { deleted: true, updatedAt: NOW - 100 }))).toBe(true);
+    expect(state.row('familyMembers', THEM)?.deleted).toBe(true);
+    expect(state.row('familyTxns', sync.familyTxnId(THEM, 'm:1'))).toBeUndefined();
+    expect(state.row('familyAssets', THEM)).toBeUndefined();
+    expect(await apply(await txnOf('m:2', NOW))).toBe(false);
+    expect(await apply(await asset(NOW))).toBe(false);
+  });
+
+  it('drops a removed member\'s rows on the remover\'s own device, which never pulls its tombstone', async () => {
+    state.put('familyMembers', { id: THEM, name: 'علی', sharesSms: false, avatar: '', updatedAt: 1, deleted: false });
+    state.put('familyTxns', { id: sync.familyTxnId(THEM, 'm:1'), ownerMemberId: THEM, sourceKind: 'manual', at: 1, day: 1, amountRial: -1, bank: 'MANUAL', merchant: '', updatedAt: 1, deleted: false, transfer: false });
+    state.put('familyAssets', { id: THEM, items: [], totalToman: 0, updatedAt: 1, deleted: false });
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
+    await sync.removeFamilyMember(session, THEM);
+    expect(state.row('familyMembers', THEM)?.deleted).toBe(true);
+    expect(state.rows('familyTxns')).toEqual([]);
+    expect(state.row('familyAssets', THEM)).toBeUndefined();
+  });
+
   it('never erases this device\'s own member on a server\'s word', async () => {
     const id = `member:${ME}`;
     expect(await apply(await record(id, 'member', JSON.stringify({ v: 1, id, deleted: true }), { deleted: true, ownerMemberId: ME }))).toBe(false);

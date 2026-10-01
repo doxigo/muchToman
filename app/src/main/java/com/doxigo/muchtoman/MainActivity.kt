@@ -1400,7 +1400,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val members = if (session == null) emptyList() else durable.familyMembers().all()
         val memberById = members.associateBy { it.id }
         // دارایی rows ride the member list: one whose member is gone — removed, left, buried —
-        // simply stops being shown, which is the whole cleanup a removal needs.
+        // simply stops being shown.
         val familyAssets = if (session == null) emptyList() else durable.familyAssets().all()
             .mapNotNull { row ->
                 val member = memberById[row.memberId] ?: return@mapNotNull null
