@@ -167,21 +167,27 @@ export interface BankAccountView {
 /** A stated balance under this is pocket money; over it, a hundred-fold jump stops being believable. */
 const SPOOF_FLOOR_RIAL = 1_000_000_000;
 
-type Account = Omit<BankAccountView, 'bankFa' | 'trusted' | 'disabled'>;
+/** [pending]: a stated balance the hundred-fold gate refused, held until the next one agrees. */
+type Account = Omit<BankAccountView, 'bankFa' | 'trusted' | 'disabled'> & { pending?: number | null };
 
 /**
  * Sms.kt `applyBankSms` behind Data.kt `foldBankSms`'s gates, over one message. The bank's own مانده
  * replaces what was held and anchors it; a message carrying none accumulates; nothing older than
  * what is known may change it. Refused outright: a figure past the plausibility bound, and one
  * stated balance claiming over a hundred times a known anchored one past pocket-money size —
- * likelier a misread figure than a windfall, and a real windfall keeps stating itself.
+ * likelier a misread figure than a windfall. A real windfall keeps stating itself, so the refused
+ * figure is held and the next stated balance that agrees with it lands; refused for good, a loan
+ * into a small account left it stuck at the old figure.
  */
 function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined {
   const delta = t.signedRial;
   if (t.balanceRial != null && Math.abs(t.balanceRial) > MAX_PLAUSIBLE_RIAL) return existing;
   if (delta != null && Math.abs(delta) > MAX_PLAUSIBLE_RIAL) return existing;
   if (t.balanceRial != null && existing?.anchored && existing.balanceRial > 0 &&
-    t.balanceRial > existing.balanceRial * 100 && t.balanceRial > SPOOF_FLOOR_RIAL) return existing;
+    t.balanceRial > existing.balanceRial * 100 && t.balanceRial > SPOOF_FLOOR_RIAL &&
+    (existing.pending == null || t.balanceRial > existing.pending * 100)) {
+    return t.at < existing.updatedAt ? existing : { ...existing, pending: t.balanceRial };
+  }
   if (existing && t.at < existing.updatedAt) return existing;
   const mask = t.mask.trim() ? t.mask : existing?.mask ?? '';
   if (t.balanceRial != null) {
@@ -195,6 +201,7 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
     // Accumulating never un-marks a guess, and never turns a running total into an anchored one.
     inferred: t.inferred || existing?.inferred === true,
     anchored: existing?.anchored === true,
+    pending: existing?.pending,
   };
 }
 
@@ -235,7 +242,7 @@ export function bankAccountsOf(
   }
   const disabled = new Set(disabledBanks);
   return [...accounts.values()]
-    .map((a) => ({ ...a, bankFa: bankFa(a.bank), trusted: a.anchored && !a.inferred, disabled: disabled.has(a.bank) }))
+    .map(({ pending: _, ...a }) => ({ ...a, bankFa: bankFa(a.bank), trusted: a.anchored && !a.inferred, disabled: disabled.has(a.bank) }))
     .sort((a, b) => bankOrder(a.bank) - bankOrder(b.bank));
 }
 const BANK_ORDER = new Map(BANKS.map((b, i) => [b.name, i]));

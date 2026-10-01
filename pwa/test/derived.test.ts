@@ -209,6 +209,18 @@ describe('the accounts sheet', () => {
     expect(bankTotal(bankAccountsOf([stated(1, 500_000), stated(2, 60_000_000)], [], []))).toBe(60_000_000);
     expect(bankTotal(bankAccountsOf([txn({ at: 1, signed: 100_000_000 }), stated(2, 1_500_000_000)], [], []))).toBe(1_500_000_000);
     expect(bankTotal(bankAccountsOf([txn({ at: 1, signed: -500_000_000, balance: 0 }), stated(2, 1_500_000_000)], [], []))).toBe(1_500_000_000);
+    // The figure put right in between settles the refused one: another lone jump is refused afresh.
+    accounts = bankAccountsOf([stated(1, 50_000_000), stated(2, 6_000_000_000), stated(3, 51_000_000), stated(4, 6_000_000_000)], [], []);
+    expect(bankTotal(accounts)).toBe(51_000_000);
+  });
+
+  it('lets a real windfall land once the next stated balance agrees with it', () => {
+    // A one-million-Toman account, a 300-million loan, a purchase stating no balance, then the loan's مانده again.
+    const rows = [stated(1, 10_000_000), stated(2, 3_010_000_000), txn({ at: 3, signed: -5_000_000 }), stated(4, 3_005_000_000)];
+    expect(bankTotal(bankAccountsOf(rows.slice(0, 3), [], []))).toBe(5_000_000);
+    const accounts = bankAccountsOf(rows, [], []);
+    expect(bankTotal(accounts)).toBe(3_005_000_000);
+    expect(accounts[0]).not.toHaveProperty('pending');
   });
 
   it('refuses a figure past the plausibility bound, balance and all', () => {

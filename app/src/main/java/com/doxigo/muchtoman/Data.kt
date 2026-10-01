@@ -461,11 +461,14 @@ private const val SPOOF_FLOOR_TOMAN = 100_000_000.0 // 1e9 Rial
  * The second refusal is about spoofing and parse slips rather than garbling. A stated balance is
  * an anchor — it overwrites outright — so a single message asserting more than a hundred times
  * what the account was last known to hold, and past pocket-money size, is far likelier a spoofed
- * sender or a misread figure than a windfall; a real windfall keeps stating itself, and the next
- * message consistent with what the account holds wins normally. The gate only speaks when the old
- * figure is *known*: an unanchored balance is a running sum of whatever transactions happened to
- * be read, not knowledge, and an anchored zero cannot scale — an emptied account refilling is the
- * ordinary case, not a hundred-fold jump.
+ * sender or a misread figure than a windfall; the next message consistent with what the account
+ * holds wins normally. A real windfall keeps stating itself, so the refused figure is held
+ * ([BankAccount.pending]) and the next stated balance that agrees with it — would pass this same
+ * gate measured against it — lands: a 300-million loan into a one-million account used to be
+ * refused on every message after it too, leaving the account stuck at one million and «trusted».
+ * The gate only speaks when the old figure is *known*: an unanchored balance is a running sum of
+ * whatever transactions happened to be read, not knowledge, and an anchored zero cannot scale — an
+ * emptied account refilling is the ordinary case, not a hundred-fold jump.
  *
  * Nothing is folded at a moment past [now], as the scan's own watermark never is: [applyBankSms]
  * refuses whatever is older than what it last folded, so one message stamped in 2030 — a restore
@@ -480,14 +483,19 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
     if (sms.delta != null && abs(sms.delta) > MAX_PLAUSIBLE_TOMAN) return accounts
     val at = sms.at.coerceIn(0L, now)
     val held = accounts.map { if (it.bank == sms.bank.name && it.updatedAt > now) it.copy(updatedAt = at) else it }
-    if (sms.balance != null) {
-        val known = held.firstOrNull { it.bank == sms.bank.name }
-        if (
-            known != null && known.anchored && known.balance > 0.0 &&
-            sms.balance > known.balance * 100 && sms.balance > SPOOF_FLOOR_TOMAN
-        ) return held
+    val known = held.firstOrNull { it.bank == sms.bank.name }
+    if (
+        sms.balance != null && known != null && known.anchored && known.balance > 0.0 &&
+        sms.balance > known.balance * 100 && sms.balance > SPOOF_FLOOR_TOMAN &&
+        (known.pending == null || sms.balance > known.pending * 100)
+    ) {
+        return if (at < known.updatedAt) held else held.map { if (it === known) it.copy(pending = sms.balance) else it }
     }
-    return applyBankSms(held, sms.copy(at = at))
+    val next = applyBankSms(held, sms.copy(at = at))
+    if (next === held) return held
+    // A stated balance that lands settles whatever was held; one that states none leaves it held.
+    val pending = if (sms.balance == null) known?.pending else null
+    return next.map { if (it.bank == sms.bank.name) it.copy(pending = pending) else it }
 }
 
 /**

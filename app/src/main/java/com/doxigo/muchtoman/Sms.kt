@@ -174,6 +174,8 @@ data class BankAccount(
     val inferred: Boolean = false,
     val anchored: Boolean = false,
     val sender: String = "",
+    /** A stated balance [foldBankSms] refused as a hundred-fold jump, held until the next one agrees. */
+    val pending: Double? = null,
 ) {
     /** The bank alone: see [applyBankSms] for why the printed identifier cannot key an account. */
     val key: String get() = bank
@@ -1157,7 +1159,7 @@ fun rebuildBankAccounts(previous: List<BankAccount>, messages: List<BankSms>): L
  */
 fun anchorAccount(accounts: List<BankAccount>, key: String, balance: Double, at: Long) =
     accounts.map {
-        if (it.key == key) it.copy(balance = balance, updatedAt = at, inferred = false, anchored = true)
+        if (it.key == key) it.copy(balance = balance, updatedAt = at, inferred = false, anchored = true, pending = null)
         else it
     }
 

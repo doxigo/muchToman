@@ -1253,6 +1253,25 @@ class MoneyTest {
         // The next message consistent with what the account holds wins normally.
         accounts = foldBankSms(accounts, stated(5_100_000.0, at = 3))
         assertEquals(5_100_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // And it settled the refused figure: one more lone jump is refused afresh.
+        accounts = foldBankSms(accounts, stated(600_000_000.0, at = 4))
+        assertEquals(5_100_000.0, bankTotal(accounts, emptySet()), 0.01)
+    }
+
+    @Test
+    fun `a real windfall lands once the next stated balance agrees with it`() {
+        // A one-million account, then a 300-million loan: 300×, refused the first time…
+        var accounts = foldBankSms(emptyList(), stated(1_000_000.0, at = 1))
+        accounts = foldBankSms(accounts, stated(301_000_000.0, at = 2))
+        assertEquals(1_000_000.0, bankTotal(accounts, emptySet()), 0.01)
+        // …a purchase that states no balance in between leaves the refused figure held…
+        val purchase = BankSms(Bank.SAMAN, SAMAN_NUM, "", delta = -500_000.0, balance = null, at = 3, inferred = false)
+        accounts = foldBankSms(accounts, purchase)
+        // …and the next مانده says the same again, so it stands, rather than every message after
+        // the loan being refused and the account stuck at one million.
+        accounts = foldBankSms(accounts, stated(300_500_000.0, at = 4))
+        assertEquals(300_500_000.0, bankTotal(accounts, emptySet()), 0.01)
+        assertEquals(null, accounts.single().pending)
     }
 
     @Test
