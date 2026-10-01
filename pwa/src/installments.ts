@@ -25,11 +25,13 @@ export const rialToField = (rial: number): string =>
 
 /**
  * What she typed into a Toman field, as whole Rial — or null when it is not a figure this app will
- * store (BudgetUi.kt). The ceiling is the parser's own: a cap or target past it is a typo.
+ * store (BudgetUi.kt). The ceiling is the parser's own: a cap or target past it is a typo. Checked
+ * against zero only once it is whole Rial: «0.04» passed as positive and rounded to nothing.
  */
 export function tomanFieldToRial(text: string): number | null {
   const toman = parseAmount(text);
-  return toman != null && toman > 0 && toman <= MAX_PLAUSIBLE_RIAL / 10 ? Math.round(toman * 10) : null;
+  const rial = toman != null && toman <= MAX_PLAUSIBLE_RIAL / 10 ? Math.round(toman * 10) : 0;
+  return rial > 0 ? rial : null;
 }
 
 /** Ten years of monthly payments. Past that it is a mortgage, and a typo is likelier. */

@@ -323,6 +323,17 @@ class InstallmentsTest {
             assertEquals(rial, tomanFieldToRial(rialToField(rial)))
         }
     }
+
+    @Test
+    fun `a Toman field is whole Rial, or nothing this app would store`() {
+        assertEquals(125_000L, tomanFieldToRial("۱۲٬۵۰۰"))
+        assertNull(tomanFieldToRial("0"))
+        // Positive as typed, nothing once it is whole Rial: it was a manual row of 0 dropped unsaid.
+        assertNull(tomanFieldToRial("0.04"))
+        assertEquals(1L, tomanFieldToRial("0.05"))
+        assertNull(tomanFieldToRial("abc"))
+        assertNull(tomanFieldToRial(MAX_PLAUSIBLE_RIAL.toString()))
+    }
 }
 
 /** The one read the screen takes, against a real database: a plan is a plan and nothing else. */

@@ -268,6 +268,8 @@ describe('installments', () => {
   it('a Toman field is whole Rial, or nothing this app would store', () => {
     expect(tomanFieldToRial('۱۲٬۵۰۰')).toBe(125_000);
     expect(tomanFieldToRial('0')).toBeNull();
+    expect(tomanFieldToRial('0.04')).toBeNull(); // positive, but nothing once it is whole Rial
+    expect(tomanFieldToRial('0.05')).toBe(1);
     expect(tomanFieldToRial('abc')).toBeNull();
     expect(tomanFieldToRial(String(MAX_PLAUSIBLE_RIAL))).toBeNull();
   });

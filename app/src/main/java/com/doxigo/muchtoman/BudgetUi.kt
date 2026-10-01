@@ -1975,11 +1975,14 @@ internal fun InstallmentLinkRow(current: InstallmentProgress?, onOpen: () -> Uni
  * The ceiling is not decoration. `parseAmount` returns a Double, and a twenty-digit run of digits
  * multiplied by ten saturates `Long` on the way in; [MAX_PLAUSIBLE_RIAL] is the same bound the
  * parser applies to a bank message, and a cap or a target beyond it is a typo rather than money.
+ * Nothing is checked against zero until it is whole Rial: «0.04» passed as positive, rounded to
+ * 0, and a manual row or a split part of nothing was dropped further down without a word.
  */
 internal fun tomanFieldToRial(text: String): Long? =
     parseAmount(text)
-        ?.takeIf { it > 0.0 && it <= MAX_PLAUSIBLE_RIAL / 10.0 }
+        ?.takeIf { it <= MAX_PLAUSIBLE_RIAL / 10.0 }
         ?.let { (it * 10.0).roundToLong() }
+        ?.takeIf { it > 0 }
 
 // ─────────────────────────── «آیا ارزشش را داشت؟» ───────────────────────────
 
