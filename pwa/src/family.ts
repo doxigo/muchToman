@@ -23,7 +23,7 @@ import { batch, pref, put, putAll, row, rows, setPref, settled, subscribe, useDa
 import {
   AVATAR_B64_MAX, AVATAR_PHOTO_PREFIX, AVATAR_PX, NoInviteKeyError, SyncHttpError, claimHousehold, invite, joinHousehold,
   leaveFamily as leaveHousehold, loadSession, localRefOfFamilyTxn, pairingCase, pairingUrl, rejoinHousehold,
-  removeFamilyMember, renewHousehold, safeExcludedCategoryIds, setSyncPref, syncErrorFa, syncNow, syncPref,
+  removeFamilyMember, renewHousehold, safeExcludedCategoryIds, sessionRejected, setSyncPref, syncErrorFa, syncNow, syncPref,
 } from './sync';
 import type { PairingInvite, Session } from './sync';
 
@@ -203,7 +203,11 @@ export async function acceptPairing(hash: string): Promise<void> {
     return;
   }
   const current = await loadSession();
-  switch (pairingCase(current?.token, pairing.hid)) {
+  let kind = pairingCase(current?.token, pairing.hid);
+  // Her own family's QR on a browser the household no longer answers to is the way back in,
+  // through the same confirmed replace a different household's would take.
+  if (kind === 'SAME_HOUSEHOLD' && current && await sessionRejected(current)) kind = 'REJOIN';
+  switch (kind) {
     case 'JOIN': set({ pendingPairing: pairing, error: null, pairingUrl: null }); break;
     case 'SAME_HOUSEHOLD': set({ error: 'این گوشی از قبل عضو یک خانواده است.' }); break;
     case 'REJOIN': set({ pendingRejoin: pairing, error: null, pairingUrl: null }); break;

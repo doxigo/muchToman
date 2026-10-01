@@ -1282,6 +1282,24 @@ export function pairingCase(sessionToken: string | null | undefined, linkHid: st
   return sessionToken.split('.')[0] === linkHid ? 'SAME_HOUSEHOLD' : 'REJOIN';
 }
 
+/**
+ * Whether the server has stopped answering to this browser's token: it was removed, or its leave
+ * went through and the answer was lost — and then her own household's QR is the way back in. Only
+ * a 401 or 403 says so; a failed connection says nothing either way.
+ */
+export function sessionRejected(session: Session): Promise<boolean> {
+  return withFamilySync(async () => {
+    try {
+      const active = await activeSession(session);
+      // Asked past every record there is, so the answer is empty whatever the household holds.
+      await request(`${active.base}/v1/sync?since=${Number.MAX_SAFE_INTEGER}&limit=1`, 'GET', active.token);
+      return false;
+    } catch (error) {
+      return error instanceof SyncHttpError && (error.status === 401 || error.status === 403);
+    }
+  });
+}
+
 export interface PairingInvite { base: string; hid: string; code: string; scope: string; key: Uint8Array<ArrayBuffer> }
 
 /** The network half of a join: redeem the one-time code for a session. Persists nothing. */
@@ -1353,16 +1371,24 @@ export function removeFamilyMember(session: Session, memberId: string): Promise<
   });
 }
 
-/** This device walks out: the goodbye and the revocation are one server call, then the burial. */
+/**
+ * This device walks out: the goodbye and the revocation are one server call, then the burial. A
+ * token the server no longer knows counts as that call's success — the device is already out,
+ * removed or a leave whose answer was lost, and keeping the session would fail every sync after.
+ */
 export function leaveFamily(session: Session): Promise<void> {
   return withFamilySync(async () => {
-    const active = await activeSession(session);
-    const recordId = memberRecordId(active.member);
-    const stamp = nextStamp(row('familyMembers', active.member)?.updatedAt, Date.now());
-    const tombstone = await wireRecord(active, recordId, 'member', active.member, stamp, tombstonePayload(recordId), true);
-    await request(`${active.base}/v1/leave`, 'POST', active.token, JSON.stringify({ record: tombstone }));
+    try {
+      const active = await activeSession(session);
+      const recordId = memberRecordId(active.member);
+      const stamp = nextStamp(row('familyMembers', active.member)?.updatedAt, Date.now());
+      const tombstone = await wireRecord(active, recordId, 'member', active.member, stamp, tombstonePayload(recordId), true);
+      await request(`${active.base}/v1/leave`, 'POST', active.token, JSON.stringify({ record: tombstone }));
+    } catch (error) {
+      if (!(error instanceof SyncHttpError) || (error.status !== 401 && error.status !== 403)) throw error;
+    }
     batch(() => {
-      buryHousehold(null, active.member);
+      buryHousehold(null, session.member);
       setSyncPref('syncPrimaryMember', '');
     });
     await settled();

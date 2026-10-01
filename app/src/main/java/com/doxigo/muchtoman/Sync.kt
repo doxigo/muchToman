@@ -745,6 +745,20 @@ fun pairingCase(sessionToken: String?, linkHid: String): PairingCase = when {
 }
 
 /**
+ * Whether the server has stopped answering to this phone's token: it was removed, or its leave
+ * went through and the answer was lost. Then her own household's QR is the way back in rather
+ * than nothing to do. Only a 401 or 403 says so — a failed connection says nothing either way.
+ */
+suspend fun sessionRejected(session: SyncSession, durable: DurableDb): Boolean = withFamilySync {
+    val failure = runCatching {
+        val active = activeSession(durable, session)
+        // Asked past every record there is, so the answer is empty whatever the household holds.
+        request("${active.base}/v1/sync?since=${Long.MAX_VALUE}&limit=1", "GET", active.token, null)
+    }.exceptionOrNull()
+    failure is SyncHttpException && failure.status in setOf(401, 403)
+}
+
+/**
  * A confirmed replace: the same join, from a phone that already belongs somewhere. The network
  * pair runs first so a dead code costs nothing — the old household is untouched until the new
  * one has said yes — and then [commitJoin] buries the old household exactly as [renewHousehold]
@@ -826,31 +840,37 @@ private suspend fun dropMemberRows(durable: DurableDb, memberId: String) {
  * This phone walks out on its own feet — the other side of [removeFamilyMember].
  *
  * The goodbye and token revocation are one server operation. Only after it succeeds is the local
- * household buried and the session erased in one Room transaction.
+ * household buried and the session erased in one Room transaction. A token the server no longer
+ * knows counts as that success: the phone is already out — removed, or a leave whose answer was
+ * lost — and refusing to forget the session would leave every sync and every «خروج» failing.
  *
  * The same as removal: the other phones drop her rows when the tombstone reaches them, but
  * nothing they have already seen is taken back, and the key this phone holds is not un-held.
  * «نو کردن خانواده» on a remaining phone is the answer to that.
  */
 suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFamilySync {
-    val active = activeSession(durable, session)
-    val recordId = memberRecordId(active.member)
-    val stamp = nextStamp(durable.familyMembers().get(active.member)?.updatedAt, System.currentTimeMillis())
-    val tombstone = wireRecord(
-        active,
-        recordId,
-        "member",
-        active.member,
-        stamp,
-        SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
-        deleted = true,
-    )
-    request(
-        "${active.base}/v1/leave",
-        "POST",
-        active.token,
-        SYNC_JSON.encodeToString(LeaveBody(tombstone)),
-    )
+    try {
+        val active = activeSession(durable, session)
+        val recordId = memberRecordId(active.member)
+        val stamp = nextStamp(durable.familyMembers().get(active.member)?.updatedAt, System.currentTimeMillis())
+        val tombstone = wireRecord(
+            active,
+            recordId,
+            "member",
+            active.member,
+            stamp,
+            SYNC_JSON.encodeToString(SyncTombstonePayload(v = 1, id = recordId, deleted = true)),
+            deleted = true,
+        )
+        request(
+            "${active.base}/v1/leave",
+            "POST",
+            active.token,
+            SYNC_JSON.encodeToString(LeaveBody(tombstone)),
+        )
+    } catch (error: SyncHttpException) {
+        if (error.status != 401 && error.status != 403) throw error
+    }
     durable.withTransaction {
         buryHousehold(durable, keepMember = null)
         // loadSession treats any stored base as a session to resume, so the keys must go, not blank.

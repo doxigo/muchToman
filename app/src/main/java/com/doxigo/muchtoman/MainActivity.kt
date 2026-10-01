@@ -1464,10 +1464,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // The stored session, not the state's paired flag: at a cold start through the
             // link the flag has not been read yet, and the answer decides which question she
             // is asked — join, nothing (her own family's QR), or replace.
-            val session = loadSession(DurableDb.get(app))
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable)
+            var case = pairingCase(session?.token, pairing.hid)
+            // Her own family's QR on a phone the household no longer answers to is the way back
+            // in, through the same confirmed replace a different household's would take.
+            if (case == PairingCase.SAME_HOUSEHOLD && session != null && sessionRejected(session, durable)) {
+                case = PairingCase.REJOIN
+            }
             _state.update {
                 it.copy(
-                    family = when (pairingCase(session?.token, pairing.hid)) {
+                    family = when (case) {
                         PairingCase.JOIN ->
                             it.family.copy(pendingPairing = link, error = null, pairingUrl = null)
                         PairingCase.SAME_HOUSEHOLD ->

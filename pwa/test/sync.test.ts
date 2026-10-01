@@ -559,6 +559,27 @@ describe('the household', () => {
     expect(JSON.parse((await crypt.openSealed(session.key, tombstone.nonce, tombstone.body))!)).toEqual({ v: 1, id: `member:${ME}`, deleted: true });
     expect(await sync.loadSession()).toBeNull();
   });
+
+  it('takes a token the server no longer knows as a device already out', async () => {
+    const answer = (status: number) => vi.stubGlobal('fetch', vi.fn(async () => (status ? new Response('{}', { status }) : Promise.reject(new TypeError('offline')))));
+    answer(200);
+    expect(await sync.sessionRejected(session)).toBe(false);
+    answer(0);
+    expect(await sync.sessionRejected(session)).toBe(false);
+    answer(401);
+    expect(await sync.sessionRejected(session)).toBe(true);
+
+    state.put('familyMembers', { id: ME, name: 'مریم', sharesSms: false, avatar: '', updatedAt: 1, deleted: false });
+    await sync.leaveFamily(session);
+    expect(await sync.loadSession()).toBeNull();
+    expect(state.row('familyMembers', ME)?.deleted).toBe(true);
+  });
+
+  it('keeps the session when a leave fails for any other reason', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })));
+    await expect(sync.leaveFamily(session)).rejects.toThrow(sync.SyncHttpError);
+    expect((await sync.loadSession())?.token).toBe(session.token);
+  });
 });
 
 it('hashes UTF-8 the way the phone does', async () => {

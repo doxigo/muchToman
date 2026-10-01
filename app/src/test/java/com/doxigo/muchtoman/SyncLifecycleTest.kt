@@ -387,6 +387,26 @@ class SyncLifecycleTest {
         assertTrue(durable.familyMembers().get(session.member)!!.deleted)
     }
 
+    /**
+     * Removed, or a leave whose answer was lost: the server no longer knows the token, and every
+     * sync and every «خروج» would fail for ever if the phone refused to believe it.
+     */
+    @Test
+    fun `a token the server no longer knows is a phone already out`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        assertFalse(sessionRejected(session, durable))
+        server.script("/v1/sync", 503)
+        assertFalse(sessionRejected(session, durable))
+        server.script("/v1/sync", 401)
+        assertTrue(sessionRejected(session, durable))
+
+        server.script("/v1/leave", 401)
+        leaveFamily(session, durable)
+
+        assertNull(loadSession(durable))
+        assertTrue(durable.familyMembers().get(session.member)!!.deleted)
+    }
+
     @Test
     fun `a failed leave keeps the session`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
