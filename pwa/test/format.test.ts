@@ -26,6 +26,10 @@ describe('format', () => {
     expect(faWords(1_000)).toBe('هزار'); expect(faWords(1_000_000)).toBe('یک میلیون');
     expect(faWords(999)).toBe('نهصد و نود و نه');
     expect(faWordsToman(3_054_100_221)).toBe('سه میلیارد و پنجاه و چهار میلیون و صد هزار و دویست و بیست و یک تومان');
+    // Truncated like the digits above it, never rounded up.
+    expect(faWordsToman(999_999.6)).toBe(`${faWords(999_999)} تومان`);
+    expect(faWordsToman(12_345 / 10)).toBe(`${faWords(1_234)} تومان`);
+    expect(faWordsToman(2.9999999999)).toBe(`${faWords(3)} تومان`);
   });
 
   it('which one of a run is said the way it is out loud', () => {

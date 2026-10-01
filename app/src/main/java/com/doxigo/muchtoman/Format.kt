@@ -160,7 +160,11 @@ fun faOrdinal(n: Int): String {
 /** Words for a Toman figure, or null when spelling it out would not help. */
 fun faWordsToman(value: Double): String? {
     if (value <= 0 || value >= 1e15) return null
-    val words = faWords(value.roundToLong())
+    // Settled, then cut — the words sit under digits that truncate, and rounding here spelled
+    // 999,999.6 as «یک میلیون» above «۹۹۹٬۹۹۹».
+    val words = faWords(
+        BigDecimal(value).setScale(SETTLE_SCALE, RoundingMode.HALF_UP).setScale(0, RoundingMode.DOWN).toLong(),
+    )
     return if (words.isBlank()) null else "$words تومان"
 }
 

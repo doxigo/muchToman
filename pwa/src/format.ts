@@ -121,7 +121,8 @@ export function faOrdinal(n: number): string {
 
 export function faWordsToman(value: number): string | null {
   if (value <= 0 || value >= 1e15) return null;
-  const words = faWords(Math.round(value));
+  // Settled, then cut, like the digits above it: rounding spelled 999,999.6 as «یک میلیون».
+  const words = faWords(Number(settleDown(value, 0)));
   return words.trim() ? `${words} تومان` : null;
 }
 

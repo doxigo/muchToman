@@ -235,6 +235,15 @@ class MoneyTest {
     }
 
     @Test
+    fun `spelled out amounts truncate like the digits above them`() {
+        // Rounded, a hero of 999,999.6 Toman read «یک میلیون» over «۹۹۹٬۹۹۹».
+        assertEquals("${faWords(999_999)} تومان", faWordsToman(999_999.6))
+        assertEquals("${faWords(1_234)} تومان", faWordsToman(tomanOf(12_345)))
+        // …while a binary hair under a whole Toman she has is settled, not eaten.
+        assertEquals("${faWords(3)} تومان", faWordsToman(2.9999999999))
+    }
+
+    @Test
     fun `rates are shown full when small and compact when huge`() {
         assertTrue(faRate(187_000.0).contains("۱۸۷"))
         assertTrue(!faRate(187_000.0).contains("هزار"))
