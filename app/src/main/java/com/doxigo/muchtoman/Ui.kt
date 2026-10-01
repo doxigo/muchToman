@@ -572,10 +572,11 @@ private fun AppScreens(
     }
 
     if (state.locked) {
+        val open = { promptUnlock(activity, onNothingToCheck = { vm.setLockEnabled(false) }) { vm.unlock() } }
         // Prompt immediately; the button is there for when it is dismissed.
-        LaunchedEffect(Unit) { promptUnlock(activity) { vm.unlock() } }
+        LaunchedEffect(Unit) { open() }
         Surface(color = MaterialTheme.colorScheme.background) {
-            LockScreen(onUnlock = { promptUnlock(activity) { vm.unlock() } })
+            LockScreen(onUnlock = open)
         }
         return
     }

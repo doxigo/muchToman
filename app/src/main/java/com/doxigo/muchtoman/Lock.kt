@@ -60,14 +60,26 @@ fun canLock(context: Context): Boolean =
  * DEVICE_CREDENTIAL is always in the allowed set on purpose: a fingerprint that will not
  * read must never leave her locked out of her own balance. It also means no negative button
  * may be set — the framework rejects that combination.
+ *
+ * [onNothingToCheck] is the same promise for a phone whose screen lock was removed after the
+ * app lock went on: the prompt then fails on every tap, and the only other way past it — clearing
+ * the app's data — deletes the ledger. A phone with no PIN and no fingerprint has nothing left
+ * for the lock to ask for, so the caller turns it off, as [applyRestoredPrefs] does for a restore.
  */
-fun promptUnlock(activity: FragmentActivity, onSuccess: () -> Unit) {
+fun promptUnlock(activity: FragmentActivity, onNothingToCheck: () -> Unit = {}, onSuccess: () -> Unit) {
     val prompt = BiometricPrompt(
         activity,
         ContextCompat.getMainExecutor(activity),
         object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 onSuccess()
+            }
+
+            // Any code, gated on canLock rather than on the codes themselves: which one a phone
+            // with no screen lock reports differs by API level (NO_DEVICE_CREDENTIAL, NONE_ENROLLED,
+            // HW_*), while a cancel or a lockout on a secured phone leaves canLock true.
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (!canLock(activity)) onNothingToCheck()
             }
         },
     )

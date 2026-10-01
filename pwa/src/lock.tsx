@@ -78,6 +78,17 @@ function setLocked(next: boolean): void {
   batch(() => {});
 }
 
+/**
+ * The phone's passcode was removed after the lock went on: every prompt now fails, and the only
+ * other way past it — clearing the site's data — deletes the ledger. Nothing is left for the lock
+ * to ask for, so it goes off, as on the phone (promptUnlock's onNothingToCheck).
+ */
+async function nothingToCheck(): Promise<void> {
+  if (await lockAvailable()) return;
+  disableLock();
+  setLocked(false);
+}
+
 async function unlock(tapped = false): Promise<void> {
   const id = pref('lockCredential');
   if (prompting || !id) {
@@ -91,6 +102,7 @@ async function unlock(tapped = false): Promise<void> {
     // still asks for the face or the passcode, so this is the same door, never a way round it;
     // without it a missing passkey would lock her out of her own ledger for good.
     if (await enableLock()) { refused = 0; setLocked(false); }
+    else await nothingToCheck();
     return;
   }
   prompting = true;
@@ -110,6 +122,7 @@ async function unlock(tapped = false): Promise<void> {
     // arrival can be refused for want of a gesture alone.
     if (tapped) refused++;
     console.warn('unlock refused', error);
+    await nothingToCheck();
   } finally {
     prompting = false;
   }
