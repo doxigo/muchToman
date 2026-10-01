@@ -20,15 +20,16 @@ const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()])) as { [K in 
 const prefs: Partial<Prefs> = Object.create(null);
 let version = 0;
 let loaded = false;
-const listeners = new Set<() => void>();
+const listeners = new Set<(external: boolean) => void>();
 
-export function subscribe(listener: () => void): () => void {
+/** [external] is a change another tab wrote, here reloaded: that tab answers for it (sync, notes). */
+export function subscribe(listener: (external: boolean) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
-function changed(): void {
+function changed(external = false): void {
   version++;
-  for (const l of listeners) l();
+  for (const l of listeners) l(external);
 }
 export const dataVersion = (): number => version;
 
@@ -47,9 +48,11 @@ export function row<K extends TableName>(table: K, id: string): Tables[K] | unde
 
 // ---- writes ------------------------------------------------------------------------------
 
-type Op = { store: typeof LOCAL; value: unknown } | { store: typeof PREFS; key: string; value: unknown }
-  | { store: typeof LOCAL; delete: [string, string] };
+type Op = { store: typeof LOCAL; value: { t: TableName; id: string } } | { store: typeof PREFS; key: string; value: unknown }
+  | { store: typeof LOCAL; delete: [TableName, string] };
 let queue: Op[] = [];
+/** The batch on its way to disk: like the queue, not there yet as far as a reload is concerned. */
+let sending: Op[] = [];
 let flushing: Promise<void> | null = null;
 /** Failed flushes in a row; the first says so, the retries back off quietly. */
 let failures = 0;
@@ -67,7 +70,6 @@ function schedule(op: Op): void {
   kick();
 }
 async function flush(): Promise<void> {
-  let sending: Op[] = [];
   try {
     while (queue.length && !held) {
       sending = queue; queue = [];
@@ -93,11 +95,13 @@ async function flush(): Promise<void> {
       });
       sending = [];
       failures = 0;
+      tabs?.postMessage(null);
     }
   } catch (error) {
     // Back at the front, in order: memory already shows these writes, and dropped here they
     // would be gone at the next reload with nothing on screen to say so.
     queue = [...sending, ...queue];
+    sending = [];
     reopen();
     if (failures++ === 0) onWriteError(error);
     clearTimeout(retry);
@@ -152,6 +156,37 @@ export function batch(action: () => void): void {
 
 export async function load(): Promise<void> {
   if (loaded) return;
+  await readDisk();
+  loaded = true;
+  if (!tabs && typeof BroadcastChannel === 'function') {
+    tabs = new BroadcastChannel('muchtoman-state');
+    tabs.onmessage = reload;
+  }
+  changed();
+}
+
+/**
+ * The app's other tabs, told after every write lands here, so each reloads from disk rather than
+ * writing its stale copy — whole lists of holdings, loans, switches — back over this one's.
+ *
+ * ponytail: the whole ledger re-read for any write elsewhere, a few milliseconds at a household's
+ * size; per-row messages are the upgrade if a profile ever shows it.
+ */
+let tabs: BroadcastChannel | null = null;
+let reloading: Promise<void> | null = null;
+/** Another tab wrote while this one was reading or restoring: read again after. */
+let stale = false;
+function reload(): void {
+  if (held || reloading) { stale = true; return; }
+  // Loaded rather than written, so nothing goes back out on the channel: no echo between tabs.
+  reloading = readDisk().then(() => changed(true), (error: unknown) => console.error('reload failed', error)).finally(() => {
+    reloading = null;
+    if (stale) { stale = false; reload(); }
+  });
+}
+
+/** The disk as it stands, with this tab's own writes not yet on it laid back over the top. */
+async function readDisk(): Promise<void> {
   const db = await open();
   const tx = db.transaction([LOCAL, PREFS]);
   const [all, keys, values] = await Promise.all([
@@ -159,13 +194,18 @@ export async function load(): Promise<void> {
     request<IDBValidKey[]>(tx.objectStore(PREFS).getAllKeys()),
     request<unknown[]>(tx.objectStore(PREFS).getAll()),
   ]);
+  for (const t of TABLES) tables[t].clear();
+  for (const key of Object.keys(prefs)) delete (prefs as Record<string, unknown>)[key];
   for (const stored of all) {
     const { t, ...value } = stored;
     (tables[t] as Map<string, unknown> | undefined)?.set(value.id, value);
   }
   keys.forEach((key, i) => { (prefs as Record<string, unknown>)[String(key)] = values[i]; });
-  loaded = true;
-  changed();
+  for (const op of [...sending, ...queue]) {
+    if (op.store === PREFS) (prefs as Record<string, unknown>)[op.key] = op.value;
+    else if ('delete' in op) tables[op.delete[0]].delete(op.delete[1]);
+    else { const { t, ...value } = op.value; (tables[t] as Map<string, unknown>).set(value.id, value); }
+  }
 }
 function request<T>(req: IDBRequest): Promise<T> {
   return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result as T); req.onerror = () => reject(req.error); });
@@ -193,10 +233,12 @@ export async function replaceAll(build: (current: Snapshot) => Snapshot): Promis
   held = true;
   try {
     await settled();
+    await reloading;
     await restore(build, await open());
   } finally {
     held = false;
     kick();
+    if (stale) { stale = false; reload(); }
   }
 }
 async function restore(build: (current: Snapshot) => Snapshot, db: IDBDatabase): Promise<void> {
@@ -224,6 +266,7 @@ async function restore(build: (current: Snapshot) => Snapshot, db: IDBDatabase):
   }
   for (const key of Object.keys(prefs)) delete (prefs as Record<string, unknown>)[key];
   Object.assign(prefs, next.prefs);
+  tabs?.postMessage(null);
   changed();
 }
 

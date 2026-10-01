@@ -143,4 +143,34 @@ describe('the write queue', () => {
     const fresh = await reloaded();
     expect([fresh.pref('name'), fresh.pref('syncSeq')]).toEqual(['مریم', 7]);
   });
+
+  it('reloads another tab once a write lands, keeping that tab\'s own writes not yet on disk', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const a = await import('../src/state');
+      await a.load();
+      vi.resetModules();
+      const otherDb = await import('../src/db');
+      const b = await import('../src/state');
+      await b.load();
+      // Tab b's own write, still waiting: its connection is lost and the retry is not due yet.
+      (await otherDb.open()).transaction = () => { throw new DOMException('lost', 'UnknownError'); };
+      b.setWriteErrorHandler(() => {});
+      b.setPref('lastPasteBank', 'MELLAT');
+      await b.settled();
+
+      const heard = new Promise<void>((resolve) => b.subscribe((external) => { if (external) resolve(); }));
+      let echoes = 0;
+      a.subscribe((external) => { if (external) echoes++; });
+      a.setPref('name', 'مریم');
+      await a.settled();
+      await heard;
+      expect([b.pref('name'), b.pref('lastPasteBank')]).toEqual(['مریم', 'MELLAT']);
+      // Loaded, not written: nothing goes back to the tab that wrote it.
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+      expect(echoes).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

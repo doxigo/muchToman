@@ -63,7 +63,9 @@ async function start(): Promise<void> {
 
   let announcing: ReturnType<typeof setTimeout> | undefined;
   let publishing: ReturnType<typeof setTimeout> | undefined;
-  subscribe(() => {
+  subscribe((external) => {
+    // Another tab's write, reloaded here: that tab announces and syncs it.
+    if (external) return;
     // publishLedger's announce step: budget and instalment notes on every change, coalesced.
     clearTimeout(announcing);
     announcing = setTimeout(() => void announce(ledger().allEntries, rows('goals')), 1500);
