@@ -81,7 +81,7 @@ const parsianPage = (sizes: readonly number[]) =>
 
 const PARSIAN_URL = `https://www.tgju.org/${encodeURIComponent('قیمت-سکه-پارسیان')}`;
 
-type Routes = Record<string, () => Response>;
+type Routes = Record<string, () => Response | Promise<Response>>;
 
 // Keys are the fetched URL with its query string stripped; every URL the Worker can reach
 // during /rates must be here, and an unmatched one throws so no test can touch the network.
@@ -184,7 +184,10 @@ function setup(overrides: Routes = {}) {
   return { cache, pending, request, rates };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('GET /rates', () => {
   it('assembles the happy path via bonbast, tgju pages, bitpin, and CoinGecko', async () => {
@@ -315,5 +318,44 @@ describe('GET /rates', () => {
     await Promise.all(pending.splice(0));
     expect(cache.size).toBe(1);
     expect([...cache.keys()][0]).toContain('__cache/rates/');
+  });
+
+  it('builds once for simultaneous misses and never clones a Response across callers', async () => {
+    // workerd refuses I/O on a Response from another request's context, and a waiter cloning
+    // the first caller's Response is exactly that.
+    vi.spyOn(Response.prototype, 'clone').mockImplementation(() => {
+      throw new Error('Cannot perform I/O on behalf of a different request');
+    });
+    let tokenDances = 0;
+    const { rates } = setup({
+      'https://bonbast.com/': () => {
+        tokenDances++;
+        return new Response('<html>$.post({ param: "tok123" })</html>');
+      },
+    });
+    const [a, b] = await Promise.all([rates(), rates()]);
+
+    expect(tokenDances).toBe(1);
+    expect(a.body.toman.usd).toBe(187_000);
+    expect(b.body.toman.usd).toBe(187_000);
+  });
+
+  it('runs the build under waitUntil, so a caller giving up does not cancel it', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { cache, pending, rates } = setup({
+      'https://www.tgju.org/gold-chart': async () => {
+        await held;
+        return new Response(silverPage());
+      },
+    });
+    const answer = rates();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pending.length).toBe(1); // registered before any upstream has finished
+
+    release();
+    expect((await answer).res.status).toBe(200);
+    await Promise.all(pending.splice(0));
+    expect(cache.size).toBe(1);
   });
 });

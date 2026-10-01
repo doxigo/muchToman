@@ -1163,7 +1163,7 @@ function mutableDownload(response: Response): Response {
   return new Response(response.body, { status: response.status, headers });
 }
 
-async function buildRates(): Promise<Response> {
+async function buildRates(): Promise<BuiltRates> {
   const [fiat, cryptoToman, gecko, release, silver, parsian] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
@@ -1349,16 +1349,23 @@ async function buildRates(): Promise<Response> {
   // A strong ETag so a phone that already has this exact body pays for headers, not for the
   // coin catalogue again — Iranian mobile data is metered and the catalogue is the bulk.
   const body = JSON.stringify(payload);
-  return new Response(body, {
+  return {
+    body,
     status: ok ? 200 : 502,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': ok ? `public, max-age=${TTL_SECONDS}` : 'no-store',
-      'x-content-type-options': 'nosniff',
-      ...(ok ? { etag: await bodyEtag(body) } : {}),
-    },
-  });
+    headers: [
+      ['content-type', 'application/json; charset=utf-8'],
+      ['cache-control', ok ? `public, max-age=${TTL_SECONDS}` : 'no-store'],
+      ['x-content-type-options', 'nosniff'],
+      ...(ok ? [['etag', await bodyEtag(body)] as [string, string]] : []),
+    ],
+  };
 }
+
+/** A built /rates answer as plain data, which unlike a Response may cross request contexts. */
+type BuiltRates = { body: string; status: number; headers: [string, string][] };
+
+const builtResponse = (built: BuiltRates) =>
+  new Response(built.body, { status: built.status, headers: built.headers });
 
 /**
  * One in-flight build per isolate: N requests that miss the cache in the same instant become
@@ -1367,10 +1374,15 @@ async function buildRates(): Promise<Response> {
  * exactly the shape it punishes. Per-isolate, like every module-scoped thing on Workers, so
  * it is coalescing rather than a global lock; that is all it needs to be.
  *
- * Nobody consumes the shared Response itself — every caller (and the cache) gets a clone, so
- * the original's body is never disturbed and stays cloneable for the next waiter.
+ * What is shared is data, never a Response: a Response (and its body stream) belongs to the
+ * request that made it, and workerd refuses I/O on it from any other — a waiter cloning the
+ * first caller's Response fails outright. Each caller builds its own from the same string.
+ *
+ * The build and its cache write ride the first caller's waitUntil, so a client that gives up
+ * (the sync proxy aborts at 8 s) no longer cancels the fan-out half-way: it finishes, lands
+ * in the cache, and the next request in this colo gets prices instead of starting over.
  */
-let ratesInFlight: Promise<Response> | null = null;
+let ratesInFlight: Promise<BuiltRates> | null = null;
 
 async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext): Promise<Response> {
   if (ratesInFlight == null) {
@@ -1378,15 +1390,13 @@ async function coalescedRates(cache: Cache, key: Request, ctx: ExecutionContext)
       ratesInFlight = null;
     });
     ratesInFlight = building;
-    const res = await building;
-    if (res.status === 200) {
-      ctx.waitUntil(cache.put(key, res.clone()).catch((error) => {
-        console.error(JSON.stringify({ message: 'rates cache write failed', error: errorMessage(error) }));
-      }));
-    }
-    return res.clone();
+    ctx.waitUntil(building.then(async (built) => {
+      if (built.status === 200) await cache.put(key, builtResponse(built));
+    }).catch((error) => {
+      console.error(JSON.stringify({ message: 'rates build or cache write failed', error: errorMessage(error) }));
+    }));
   }
-  return (await ratesInFlight).clone();
+  return builtResponse(await ratesInFlight);
 }
 
 // ───────────────────────── usage ─────────────────────────
