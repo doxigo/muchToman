@@ -1116,7 +1116,10 @@ private suspend fun outgoingRecords(
         )
     )
 
-    val ledger = ledgerEntries(derived, durable, limit = SOURCE_HARD_CAP)
+    // Every row, not the newest so many: the sweep below tombstones whatever of hers is missing
+    // here, and a window counted over the family's rows as well pushed her oldest ones out —
+    // gone from every other phone while still on hers. derive already holds every row at once.
+    val ledger = ledgerEntries(derived, durable, limit = Int.MAX_VALUE)
     val categoryById = ledger.categories.associateBy { it.id }
     val categoryDecisions = ledger.categoryDecisions.values.toList()
     val categoryDecisionByRef = ledger.categoryDecisions

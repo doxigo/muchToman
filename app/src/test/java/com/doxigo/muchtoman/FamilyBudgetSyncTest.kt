@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
@@ -321,6 +322,27 @@ class FamilyBudgetSyncTest {
             a.durable.manual().put(a.durable.manual().all().single().copy(deleted = true, updatedAt = now + 1))
             a.sync()
             assertTrue(home.rows.getValue(id).optBoolean("deleted"))
+        }
+    }
+
+    @Test
+    fun `her oldest shared row stays shared however many family rows are newer`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val now = System.currentTimeMillis()
+            a.durable.manual().put(ManualTxn("old", now - 1_000_000, tehranDay(now - 1_000_000), -1_000, createdAt = now, updatedAt = now))
+            a.sync()
+            val id = familyTxnId(a.session.member, manualRef("old"))
+            val them = "c".repeat(32)
+            a.durable.withTransaction {
+                repeat(SOURCE_HARD_CAP) { i ->
+                    a.durable.familyTxns().put(FamilyTxn(familyTxnId(them, "m:$i"), them, "manual", now - i, tehranDay(now), -(i + 2L) * 1_000, updatedAt = now))
+                }
+            }
+            // One derive, not [Phone.sync]'s two: fifty thousand rows make each one count.
+            derive(a.durable, a.derived, emptyMap())
+            syncNow(a.durable, a.derived, a.session)
+            assertFalse(home.rows.getValue(id).optBoolean("deleted"))
         }
     }
 
