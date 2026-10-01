@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -1315,6 +1316,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     it.copy(working = false, failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.")
                 }
             }
+        }
+    }
+
+    /**
+     * The picker answered after the process died in it: the passphrase, kept out of saved state on
+     * purpose, went with the process, so the file the picker made is empty. Deleted rather than left
+     * as a 0-byte «backup» she may trust; a provider that will not delete still gets the words.
+     */
+    fun dropEmptyBackup(uri: Uri) {
+        _backup.update { it.copy(failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.") }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { DocumentsContract.deleteDocument(app.contentResolver, uri) }
+                .onFailure { android.util.Log.w("muchtoman", "empty backup not deleted: $it") }
         }
     }
 

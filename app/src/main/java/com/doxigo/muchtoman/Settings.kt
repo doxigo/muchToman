@@ -1124,7 +1124,8 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     val backup by vm.backup.collectAsStateWithLifecycle()
 
     var exportSheet by remember { mutableStateOf(false) }
-    // Held only across the file-picker round trip, then cleared. Never written anywhere.
+    // Held only across the file-picker round trip, then cleared. Never written anywhere — not
+    // even to saved state, so a process death in the picker loses it (the dropEmptyBackup case).
     var exportPass by remember { mutableStateOf("") }
     var importUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -1133,7 +1134,11 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
     ) { uri ->
         val pass = exportPass
         exportPass = ""
-        if (uri != null && pass.isNotEmpty()) vm.exportBackup(uri, pass)
+        when {
+            uri == null -> Unit
+            pass.isNotEmpty() -> vm.exportBackup(uri, pass)
+            else -> vm.dropEmptyBackup(uri)
+        }
     }
     val openFile = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
