@@ -62,6 +62,15 @@ describe('POST /crash', () => {
     expect(crashes.points).toEqual([{ blobs: ['1.2.5 · Android 34\njava.lang.IllegalStateException'] }]);
   });
 
+  it('refuses a POST a browser sent, which is never the app', async () => {
+    const crashes = dataset();
+    const res = await worker.fetch(new Request('https://rates.muchtoman.com/crash', {
+      method: 'POST', body: 'trace', headers: { 'content-type': 'text/plain', origin: 'https://elsewhere.example' },
+    }), { ASSETS: {} as Fetcher, CRASHES: crashes.binding } as never, ctx);
+    expect(res.status).toBe(403);
+    expect(crashes.points).toEqual([]);
+  });
+
   it('throttles one address', async () => {
     const env = { ASSETS: {} as Fetcher, CRASHES: dataset().binding };
     const codes = [];
@@ -107,6 +116,15 @@ describe('POST /feedback', () => {
     expect((await post(env, 'not json', 'f2')).status).toBe(400);
     expect((await post(env, 'x'.repeat(9 * 1024), 'f2')).status).toBe(413);
     expect((await worker.fetch(new Request('https://rates.muchtoman.com/feedback'), env as never, ctx)).status).toBe(405);
+    expect(mail.sent).toEqual([]);
+  });
+
+  it('refuses the simple POST any other site could make its visitors send', async () => {
+    const mail = mailbox();
+    const res = await worker.fetch(new Request('https://rates.muchtoman.com/feedback', {
+      method: 'POST', body: JSON.stringify({ message: 'spam' }), headers: { 'content-type': 'text/plain' },
+    }), { ASSETS: {} as Fetcher, FEEDBACK: mail.binding } as never, ctx);
+    expect(res.status).toBe(415);
     expect(mail.sent).toEqual([]);
   });
 

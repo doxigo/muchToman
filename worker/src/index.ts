@@ -1810,6 +1810,11 @@ export default {
       if (request.method !== 'POST') {
         return textResponse('Method not allowed', 405, 'POST');
       }
+      // Any web page can make its visitors' browsers send a text/plain POST here, and every
+      // browser stamps a POST with Origin; the app never does. Builds already installed send
+      // text/plain, so the content type cannot be the line. Refused before the limiter, so a
+      // flood does not spend her own ten an hour either.
+      if (request.headers.has('origin')) return textResponse('Not from a browser', 403);
       if (!crashLimiter.take(request.headers.get('cf-connecting-ip') ?? 'unknown', Date.now()).ok) {
         return textResponse('Too many reports', 429);
       }
@@ -1832,6 +1837,12 @@ export default {
       if (request.method !== 'POST') {
         return textResponse('Method not allowed', 405, 'POST');
       }
+      // JSON only: a cross-site page can send a "simple" POST without asking, but not one
+      // marked application/json, so this is what keeps other sites from mailing hey@ through
+      // their visitors. The app and the PWA (via the sync proxy, which passes the type on) both
+      // send it. Before the limiter, so a flood does not spend a visitor's own ten an hour.
+      const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+      if (contentType !== 'application/json') return textResponse('Not JSON', 415);
       if (!feedbackLimiter.take(request.headers.get('cf-connecting-ip') ?? 'unknown', Date.now()).ok) {
         return textResponse('Too many messages', 429);
       }
