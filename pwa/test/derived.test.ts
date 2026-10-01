@@ -365,6 +365,16 @@ describe('the ledger view', () => {
     expect(after.get(received.id)!.transfer).toBe(true);
   });
 
+  it('folds two messages at one moment in the order she pasted them, not by hash', () => {
+    // A purchase and its fee under the same printed minute: whichever came in last is what the account holds.
+    const purchase = source('SAMAN', 'خرید مبلغ 2,000,000 ریال\nمانده 50,000,000 ریال', 1_000);
+    const fee = source('SAMAN', 'کارمزد مبلغ 5,000 ریال\nمانده 49,995,000 ریال', 1_000);
+    const pasted = (first: Source, second: Source) =>
+      ledgerView(input({ sources: [{ ...first, ingestedAt: 10 }, { ...second, ingestedAt: 20 }] })).bankTotalRial;
+    expect(pasted(purchase, fee)).toBe(49_995_000);
+    expect(pasted(fee, purchase)).toBe(50_000_000);
+  });
+
   it('files a pasted message by the channel it names', () => {
     const view = ledgerView(input({ sources: [source('MELLAT', 'برداشت از خودپرداز مبلغ 2,000,000 ریال', 10)] }));
     expect(view.entries[0]).toMatchObject({ categoryId: 'cat_cash', needsReview: true });

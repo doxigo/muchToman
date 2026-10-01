@@ -213,7 +213,10 @@ export const forgetMarkId = (bank: string): string => `forget:${bank}`;
  * fold, rebuilt from scratch each time rather than carried, since here the messages are all kept.
  *
  * Folded oldest first, a typed figure ahead of a message at the same millisecond so the bank takes
- * the tie as it does in [deriveBalance]. The later leg of a settled duplicate is left out when it
+ * the tie as it does in [deriveBalance]. Two messages at one moment — a purchase and its fee under
+ * one printed minute, or a bare date — go in the order she pasted them ([pastedAt], srcHash → when),
+ * as the phone folds a tie in inbox order; by ref alone the account took whichever hashed last.
+ * The later leg of a settled duplicate is left out when it
  * states no balance: pasting one message twice must not count its money twice, which the phone's
  * fold guards by reference number. One that states a balance is folded as the phone folds it —
  * stating it again changes nothing, and skipping it left this sheet on an older figure than the
@@ -225,15 +228,17 @@ export function bankAccountsOf(
   anchors: readonly BalanceAnchor[],
   disabledBanks: readonly string[],
   hidden: ReadonlySet<string> = new Set(),
+  pastedAt: ReadonlyMap<string, number> = new Map(),
 ): BankAccountView[] {
   const floors = new Map(anchors.filter((a) => a.id === forgetMarkId(a.accountId)).map((a) => [a.accountId, a.at]));
-  type Event = { at: number; order: number; txn?: Txn; anchor?: BalanceAnchor; bank: string };
+  type Event = { at: number; order: number; pasted: number; txn?: Txn; anchor?: BalanceAnchor; bank: string };
   const events = [
-    ...anchors.filter((a) => !a.deleted).map((a): Event => ({ at: a.at, order: 0, anchor: a, bank: a.accountId })),
+    ...anchors.filter((a) => !a.deleted).map((a): Event => ({ at: a.at, order: 0, pasted: 0, anchor: a, bank: a.accountId })),
     ...txns.filter((t) => t.sourceKind === 'sms' && t.ref.startsWith('s:') && !(hidden.has(t.ref) && t.balanceRial == null))
-      .map((t): Event => ({ at: t.at, order: 1, txn: t, bank: t.bank })),
+      .map((t): Event => ({ at: t.at, order: 1, pasted: pastedAt.get(t.srcHash) ?? 0, txn: t, bank: t.bank })),
   ].filter((e) => isBank(e.bank) && e.bank !== 'OTHER' && e.at > (floors.get(e.bank) ?? -Infinity))
-    .sort((a, b) => a.at - b.at || a.order - b.order || ((a.txn?.ref ?? '') < (b.txn?.ref ?? '') ? -1 : 1));
+    .sort((a, b) => a.at - b.at || a.order - b.order || a.pasted - b.pasted ||
+      ((a.txn?.ref ?? '') < (b.txn?.ref ?? '') ? -1 : 1));
   const accounts = new Map<string, Account>();
   for (const e of events) {
     const existing = accounts.get(e.bank);
@@ -386,7 +391,8 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
 
   // Set aside here, at the view, and nowhere earlier: every balance still reads every message.
   const kept = startingFrom(entries, startsOn);
-  const bankAccounts = bankAccountsOf(all, input.anchors, input.disabledBanks, hidden);
+  const bankAccounts = bankAccountsOf(all, input.anchors, input.disabledBanks, hidden,
+    new Map(input.sources.map((s) => [s.id, s.ingestedAt])));
   const marks: Record<string, string> = {};
   for (const c of everyCategory) if (c.glyph.trim()) marks[c.nameFa] = c.glyph;
   const least = (xs: number[]): number | null => (xs.length ? xs.reduce((a, b) => Math.min(a, b)) : null);
