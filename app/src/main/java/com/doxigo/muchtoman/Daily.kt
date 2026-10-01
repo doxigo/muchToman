@@ -33,12 +33,18 @@ import java.util.concurrent.TimeUnit
  * not looking is a week of chart, not a hole. Runs the exact code path the app runs —
  * [snapshotDay] guards against stale rates, and [recordDay] overwrites the same day, so
  * this and an app open on the same day converge on one entry instead of arguing.
+ *
+ * Bar one: a day whose bank balances are behind her messages ([foldIsBehind]) is skipped, as a
+ * day with stale rates is. Only the app's own scan moves those balances, so a week of not opening
+ * it charted a flat bank line and then the whole week's spending as one step on the day she did.
+ * ponytail: skips rather than folds — folding here would race the app's scan over the same prefs.
  */
 class DailySnapshotWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val store = Store(applicationContext)
+        val behind = foldIsBehind(applicationContext, store)
         val holdings = store.holdings
         val (rates, stocks) = coroutineScope {
             val rates = async { fetchRates(BuildConfig.RATES_URL, cached = store.cachedRates) }
@@ -67,7 +73,7 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         // Under [ledgerGate]: the history write is a read-modify-write on one prefs blob, and
         // the app's own recordSnapshot does the same under the same gate — this worker landing
         // between its read and its write silently dropped the day it had just recorded.
-        ledgerGate.withLock {
+        if (!behind) ledgerGate.withLock {
             snapshotDay(
                 store.history,
                 store.rateHistory,
@@ -90,6 +96,20 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         updateTotalWidgetAndWait(applicationContext)
         return Result.success()
     }
+}
+
+/**
+ * Whether a bank message, or a Blu notification, has landed since the app last folded them into
+ * the balances the total counts — strictly after each watermark, which the scan itself has read.
+ */
+suspend fun foldIsBehind(context: Context, store: Store): Boolean {
+    val extra = extraLookup(store.extraBankNumbers)
+    if (store.smsEnabled && canReadSms(context) &&
+        readSmsInbox(context, store.smsScannedTo + 1).any { bankOf(it.from, extra) != null }
+    ) return true
+    return canReadNotifications(context) &&
+        runCatching { DurableDb.get(context).smsSource().fromSince(BLU_APP, store.notifyScannedTo + 1) }
+            .getOrDefault(emptyList()).isNotEmpty()
 }
 
 /** Idempotent; KEEP means calling this on every app start never resets the schedule. */

@@ -11,6 +11,8 @@ import android.provider.Telephony
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,5 +67,21 @@ class SmsInboxTest {
         } finally {
             db.close()
         }
+    }
+
+    @Test
+    fun `a bank message since the app last folded holds the day's snapshot back`() = runBlocking {
+        val store = Store(app)
+        store.smsEnabled = true
+        store.smsScannedTo = now
+        val debit = "بانک سامان\nخرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال"
+        // The one the scan stopped at is already in the balances, and a friend's message is not a bank's.
+        inbox = listOf(RawSms("0999 992 0000", debit, now), RawSms("+98 912 000 0000", "سلام", now + 5))
+        assertFalse(foldIsBehind(app, store))
+        inbox = inbox + RawSms("0999 992 0000", debit, now + 10)
+        assertTrue(foldIsBehind(app, store))
+        // Not reading bank messages at all, the bank row is not in the total to be behind.
+        store.smsEnabled = false
+        assertFalse(foldIsBehind(app, store))
     }
 }
