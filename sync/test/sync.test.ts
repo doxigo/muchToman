@@ -459,6 +459,25 @@ describe('privacy between households and members', () => {
     });
     expect(rebound.status).toBe(409);
   });
+
+  it('locks a device paired into a household older than the lock', async () => {
+    // The column arrived by ALTER with a default of 0 — the one upgrade owed to tokens that
+    // predate identity. A device paired there today must not inherit it.
+    const hid = '6a'.repeat(16);
+    const founder = await claimDevice(hid, ['family:6a'], { memberId: '6b'.repeat(16), deviceId: '6c'.repeat(16) });
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+      state.storage.sql.exec('ALTER TABLE device DROP COLUMN identity_locked');
+      state.storage.sql.exec('ALTER TABLE device ADD COLUMN identity_locked INTEGER NOT NULL DEFAULT 0');
+    });
+    const joined = await pairDevice(founder.token, '6d'.repeat(16), '6e'.repeat(16));
+    const rebound = await SELF.fetch('https://sync.test/v1/identity', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${joined.token}` },
+      body: JSON.stringify({ memberId: '6f'.repeat(16), deviceId: joined.deviceId }),
+    });
+    expect(rebound.status).toBe(409);
+    expect(await rebound.json()).toEqual({ code: 'identity_locked' });
+  });
 });
 
 describe('revocation', () => {

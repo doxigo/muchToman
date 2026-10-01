@@ -377,7 +377,10 @@ export class Household extends DurableObject<Env> {
     if (existing && existing.n > 0) throw new SyncError('already_claimed', 409);
     const now = Date.now();
     this.sql.exec(
-      'INSERT INTO device (id, member_id, token_hash, scopes, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
+      // Locked by name: in a household older than the column its default is 0, the one free
+      // rebinding meant for tokens that predate identity — never for a device made today.
+      'INSERT INTO device (id, member_id, identity_locked, token_hash, scopes, added_at, last_seen) ' +
+        'VALUES (?, ?, 1, ?, ?, ?, ?)',
       deviceId,
       memberId,
       secretHash,
@@ -441,7 +444,8 @@ export class Household extends DurableObject<Env> {
     const devices = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
     if (devices && devices.n >= MAX_DEVICES) throw new SyncError('too_many_devices', 409);
     this.sql.exec(
-      'INSERT INTO device (id, member_id, token_hash, scopes, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO device (id, member_id, identity_locked, token_hash, scopes, added_at, last_seen) ' +
+        'VALUES (?, ?, 1, ?, ?, ?, ?)',
       deviceId,
       memberId,
       secretHash,
