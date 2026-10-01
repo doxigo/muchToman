@@ -16,7 +16,8 @@ import { PREF_DEFAULTS, TABLES } from './model';
 import type { Prefs, TableName, Tables } from './model';
 
 const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()])) as { [K in TableName]: Map<string, Tables[K]> };
-const prefs: Partial<Prefs> = {};
+/** No prototype, so a `__proto__` key from a file or the disk is a key like any other. */
+const prefs: Partial<Prefs> = Object.create(null);
 let version = 0;
 let loaded = false;
 const listeners = new Set<() => void>();
@@ -185,15 +186,20 @@ export async function replaceAll(next: Snapshot): Promise<void> {
   await settled();
   const db = await open();
   const tx = db.transaction([LOCAL, PREFS], 'readwrite');
-  const done = new Promise<void>((resolve, reject) => {
+  try {
+    tx.objectStore(LOCAL).clear();
+    tx.objectStore(PREFS).clear();
+    for (const t of TABLES) for (const value of next.tables[t] ?? []) tx.objectStore(LOCAL).put({ ...value, t });
+    for (const [key, value] of Object.entries(next.prefs)) tx.objectStore(PREFS).put(value, key);
+  } catch (error) {
+    // A put refused as it is queued does not abort the transaction, and the clears would commit.
+    tx.abort();
+    throw error;
+  }
+  await new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('restore aborted'));
   });
-  tx.objectStore(LOCAL).clear();
-  tx.objectStore(PREFS).clear();
-  for (const t of TABLES) for (const value of next.tables[t] ?? []) tx.objectStore(LOCAL).put({ ...value, t });
-  for (const [key, value] of Object.entries(next.prefs)) tx.objectStore(PREFS).put(value, key);
-  await done;
   for (const t of TABLES) {
     tables[t].clear();
     for (const value of next.tables[t] ?? []) (tables[t] as Map<string, unknown>).set(value.id, value);

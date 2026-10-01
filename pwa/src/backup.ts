@@ -18,6 +18,7 @@
 import { fromBase64, toBase64 } from './crypto';
 import { faDate } from './format';
 import { tehranDay } from './jalali';
+import { TABLES } from './model';
 import type { Prefs, TableName } from './model';
 import { setPref, snapshot, replaceAll, settled } from './state';
 import type { Snapshot } from './state';
@@ -185,9 +186,26 @@ export async function openBackup(bytes: Uint8Array<ArrayBuffer>, passphrase: str
   } catch { return fail('WRONG_PASSPHRASE_OR_CORRUPT', 'auth failed'); }
 
   if (typeof payload.durableDbB64 === 'string' && payload.durableDbB64 && payload.pwa == null) fail('ANDROID_BACKUP', 'sqlite payload');
-  if (typeof payload.pwa !== 'number' || typeof payload.tables !== 'object' || typeof payload.prefs !== 'object') fail('NOT_A_BACKUP', 'not a browser payload');
+  if (typeof payload.pwa !== 'number') fail('NOT_A_BACKUP', 'not a browser payload');
   if ((payload.pwa as number) > PWA_PAYLOAD_VERSION) fail('NEWER_FORMAT', `payload ${payload.pwa}`);
+  if (!restorable(payload)) fail('NOT_A_BACKUP', 'not a browser payload');
   return { header, payload: payload as unknown as BrowserPayload };
+}
+
+const plainObject = (v: unknown): v is Record<string, unknown> => v != null && typeof v === 'object' && !Array.isArray(v);
+/** Keys that, assigned rather than defined, re-prototype the object they land on. */
+const UNSAFE_KEYS = ['__proto__', 'constructor', 'prototype'];
+
+/**
+ * Judged before the armed confirm rather than met half way through the restore: prefs a plain
+ * object of ordinary keys, and every table a list of rows with a string id to be stored under.
+ */
+function restorable({ prefs, tables }: Record<string, unknown>): boolean {
+  if (!plainObject(prefs) || Object.keys(prefs).some((k) => UNSAFE_KEYS.includes(k)) || !plainObject(tables)) return false;
+  return TABLES.every((t) => {
+    const list = tables[t];
+    return list === undefined || (Array.isArray(list) && list.every((r) => plainObject(r) && typeof r.id === 'string'));
+  });
 }
 
 // ---- the browser's side: what goes in, what comes back -------------------------------------

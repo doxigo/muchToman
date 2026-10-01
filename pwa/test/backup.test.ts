@@ -85,6 +85,19 @@ describe('the .mtbak envelope', () => {
     await expect(gunzip(packed, 4095)).rejects.toThrow('payload too large');
   });
 
+  it('refuses a payload a restore could not write whole, before anything is touched', async () => {
+    const shapes: object[] = [
+      { pwa: 1, prefs: {}, tables: null },
+      { pwa: 1, prefs: {}, tables: { sources: {} } },
+      { pwa: 1, prefs: {}, tables: { sources: [{ bank: 'MELLAT' }] } },
+      { pwa: 1, prefs: [], tables: {} },
+      JSON.parse('{"pwa":1,"prefs":{"__proto__":{"lockEnabled":true}},"tables":{}}'),
+    ];
+    for (const shape of shapes) {
+      expect(await fault(openBackup(await sealBackup(shape, 'secret-1', 1, 0, ROUNDS), 'secret-1'))).toBe('NOT_A_BACKUP');
+    }
+  });
+
   it('names a phone\'s backup instead of failing mute', async () => {
     const phone = await sealBackup({ prefs: {}, durableDbB64: 'U1FMaXRlIGZvcm1hdCAz' }, 'secret-1', 1, 1020500, ROUNDS);
     expect(headerOf(phone)).toContain('"appVersionCode":1020500');

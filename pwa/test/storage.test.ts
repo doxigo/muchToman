@@ -111,4 +111,22 @@ describe('the write queue', () => {
     expect(errors).toHaveLength(1);
     expect(await reloadedName()).toBe('مریم');
   });
+
+  it('leaves the old ledger on disk when a restore is refused half way', async () => {
+    const state = await import('../src/state');
+    await state.load();
+    state.setPref('name', 'مریم');
+    await state.settled();
+    await expect(state.replaceAll({ prefs: {}, tables: { sources: [{} as never] } })).rejects.toThrow();
+    expect(state.pref('name')).toBe('مریم');
+    expect(await reloadedName()).toBe('مریم');
+  });
+
+  it('keeps a __proto__ pref a key, never the prefs\' prototype', async () => {
+    const state = await import('../src/state');
+    await state.load();
+    await state.replaceAll({ prefs: JSON.parse('{"__proto__":{"name":"مریم"}}'), tables: {} });
+    expect(state.pref('name')).toBe('');
+    expect(await reloadedName()).toBe('');
+  });
 });
