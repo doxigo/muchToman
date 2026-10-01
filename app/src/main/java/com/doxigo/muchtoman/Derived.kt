@@ -79,7 +79,10 @@ import kotlinx.coroutines.sync.withLock
 // stored as five million in hand.
 // 16: a تومان decides the unit of bare figures only when it sits on a money figure. An advert's
 // «۲۰۰ میلیون تومان» under a bare-Rial message had every figure in it stored ten times high.
-const val PARSER_VERSION = 16
+// 17: a bare «رمز» beside a stated مانده is a security footer, not a one-time code — the same
+// escape «کد» has had since 11. A debit warning her to keep her «رمز» to herself was refused at
+// ingest; [sweepSources] now keeps such rows rather than deleting them.
+const val PARSER_VERSION = 17
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

@@ -243,29 +243,33 @@ private val AMOUNT_WORDS = listOf("مبلغ", "مقدار")
  * lets it through and it read as a spend. If she approves, the real debit arrives as its own
  * message, and if she walks away nothing moved at all.
  *
- * «رمز» as a word of its own, never the one inside «کارمزد» or «رمزارز». Glued to «پویا» or
- * «دوم» counts too, because [normalise] strips the ZWNJ that «رمز‌پویا» is often written with.
+ * Glued to «پویا» or «دوم» counts too, because [normalise] strips the ZWNJ that «رمز‌پویا» is
+ * often written with.
  */
-private val OTP = Regex("(?<!\\p{L})رمز(?!\\p{L})|رمز ?(?:پویا|دوم)")
+private val OTP = Regex("رمز ?(?:پویا|دوم)")
 
 /**
- * The same code worded with «کد»: «کد تایید», «کد یکبار مصرف», «کد فعالسازی», «کد ورود», «کد پویا».
+ * The same code worded more loosely: «رمز» as a word of its own — «رمز یکبار مصرف», «رمز ورود» —
+ * never the one inside «کارمزد» or «رمزارز»; or «کد» from a closed list: «کد تایید», «کد یکبار
+ * مصرف», «کد فعالسازی», «کد ورود», «کد پویا». Never «کد» alone, because a transaction is full of
+ * codes that are not one: «کد پیگیری», «کد رهگیری», «کد پایانه».
  *
- * A closed list, never «کد» alone, because a transaction is full of codes that are not one:
- * «کد پیگیری», «کد رهگیری», «کد پایانه». And unlike «رمز» it only counts in a message that states
- * no balance — see [isOneTimeCode] for why.
+ * Unlike [OTP] these only count in a message that states no balance — see [isOneTimeCode] for
+ * why. A bare «رمز» is also what a debit's security footer says, «رمز خود را در اختیار دیگران
+ * قرار ندهید», and reading that as a code dropped the debit at ingest and swept away ones stored.
  */
-private val OTP_CODE = Regex("(?<!\\p{L})کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا)")
+private val OTP_CODE = Regex("(?<!\\p{L})(?:رمز(?!\\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))")
 
 /**
  * Whether a body is a one-time code — the one test for it. [ingestBankSms] refuses to store what
  * this matches and [parseBankSms] declines it, and sharing it is what makes the refusal free: a
  * body ingest drops is one the ledger would never have read.
  *
- * A «کد» wording is let through when the message states a مانده. The two mistakes are not the
- * same size: a debit that prints its bank's authorisation code as «کد تایید» and was dropped here
- * is gone for good, balance and all, while a code that states a balance and is kept costs one
- * spend she can hide — and the next مانده puts the account right regardless.
+ * A «کد» wording or a bare «رمز» is let through when the message states a مانده. The two mistakes
+ * are not the same size: a debit that prints its bank's authorisation code as «کد تایید», or warns
+ * her to keep her «رمز» to herself, and was dropped here is gone for good, balance and all, while a
+ * code that states a balance and is kept costs one spend she can hide — and the next مانده puts the
+ * account right regardless.
  */
 internal fun isOneTimeCode(body: String): Boolean {
     val text = normalise(body)
@@ -282,8 +286,8 @@ internal fun isOneTimeCode(body: String): Boolean {
  *   reads a balance, an amount or a direction by, no unit, no figure grouped the way banks print
  *   money. A login code, an activation code, a welcome, a security notice all land here. The
  *   parser cannot read money out of such a body, and no fix to it could without inventing some.
- * - A «کد» code set beside a stated مانده is kept for the money, and only the money: the code's
- *   own digits are blanked and everything else stays verbatim.
+ * - A «کد» or bare «رمز» code set beside a stated مانده is kept for the money, and only the money:
+ *   the code's own digits are blanked and everything else stays verbatim.
  *
  * Changing what this keeps changes what the ledger can ever read, so it bumps [PARSER_VERSION]
  * like any parser change — which is also what makes [sweepSources] apply it to what is stored.
@@ -309,16 +313,16 @@ private fun carriesMoney(text: String): Boolean =
         GROUPED_FIGURE.containsMatchIn(text)
 
 /**
- * The code a «کد» wording introduces: four to ten digits a few characters after it on the same
- * line, glued to no separator — which keeps a grouped amount, a date, a clock time or an account
- * number from ever being taken for one. It never looks past a code already blanked, so blanking
- * twice changes nothing.
+ * The code a «کد» or «رمز» wording introduces: four to ten digits a few characters after it on the
+ * same line, glued to no separator and no mask star — which keeps a grouped amount, a date, a clock
+ * time, an account number or a card's masked digits from ever being taken for one. It never looks
+ * past a code already blanked, so blanking twice changes nothing.
  */
-private val CODE_AFTER = Regex("^[^0-9۰-۹٠-٩\\n•]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\\-])")
+private val CODE_AFTER = Regex("^[^0-9۰-۹٠-٩\\n•*]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\\-*])")
 private val DIGIT_RUN = Regex("[0-9۰-۹٠-٩]+")
 
 /**
- * [body] with the code each «کد» wording in [text] introduces blanked, digit for digit.
+ * [body] with the code each «کد» or «رمز» wording in [text] introduces blanked, digit for digit.
  *
  * Found in the normalised text and blanked in the raw body by its place among the digit runs:
  * normalising never adds, drops or reorders a digit, so the n-th run is the same run in both —

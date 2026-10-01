@@ -148,6 +148,18 @@ describe('what a pasted body keeps', () => {
     expect(bodyToStore('مانده ۸٬۰۰۰٬۰۰۰ ریال\nکد‌تایید: ۴۸۲۱۳۹')).toBe('مانده ۸٬۰۰۰٬۰۰۰ ریال\nکد‌تایید: ••••••');
   });
 
+  it('keeps a debit whose «رمز» is a security footer beside a balance', () => {
+    const body = 'برداشت مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال\nرمز خود را در اختیار دیگران قرار ندهید';
+    expect(bodyToStore(body)).toBe(body);
+    expect(parsePasted(body)).toMatchObject({ amountRial: 1_250_000, direction: 'out' });
+    // A code beside a balance keeps the money and loses its digits, never a card's.
+    expect(bodyToStore('مانده 8,000,000 ریال\nرمز ورود: 482139\nرمز کارت ****1234'))
+      .toBe('مانده 8,000,000 ریال\nرمز ورود: ••••••\nرمز کارت ****1234');
+    // With no balance it is still a code, and «رمز پویا» is one whatever else it says.
+    expect(bodyToStore('رمز یکبار مصرف شما: 48213\nخرید مبلغ 1,250,000 ریال')).toBeNull();
+    expect(bodyToStore('رمز پویا: 482139\nخرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال')).toBeNull();
+  });
+
   it('keeps every corpus message the parser reads, and reads the same off what it kept', () => {
     let read = 0;
     for (const c of cases()) {

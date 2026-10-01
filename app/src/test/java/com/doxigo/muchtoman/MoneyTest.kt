@@ -1116,6 +1116,21 @@ class MoneyTest {
     }
 
     @Test
+    fun `a bare «رمز» beside a balance is a security footer, not a code`() {
+        val body = "برداشت مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال\nرمز خود را در اختیار دیگران قرار ندهید"
+        assertEquals(-125_000.0, sms(body)!!.delta!!, 0.01)
+        assertEquals(body, bodyToStore(body))
+        // A code beside a balance keeps the money and loses its digits, never a card's.
+        assertEquals(
+            "مانده 8,000,000 ریال\nرمز ورود: ••••••\nرمز کارت ****1234",
+            bodyToStore("مانده 8,000,000 ریال\nرمز ورود: 482139\nرمز کارت ****1234"),
+        )
+        // With no balance it is still a code, and «رمز پویا» is one whatever else it says.
+        assertNull(sms("رمز یکبار مصرف شما: 48213\nخرید مبلغ 1,250,000 ریال"))
+        assertNull(sms("رمز پویا: 482139\nخرید مبلغ 1,250,000 ریال\nمانده 8,000,000 ریال"))
+    }
+
+    @Test
     fun `a stated balance wins over accumulating, so a missed message self-corrects`() {
         var accounts = listOf<BankAccount>()
         accounts = applyBankSms(accounts, sms("واریز 1,000,000 ریال\nمانده 5,000,000 ریال", at = 1)!!)

@@ -320,13 +320,15 @@ function rialOf(figure: { value: number; divisor: number | null }, fallback: num
  */
 const MIN_MONEY_FIGURE = 1000;
 
+/** A رمز پویا asks her to approve a purchase; it does not report one, whatever else it says. */
+const OTP = /رمز ?(?:پویا|دوم)/u;
 /**
- * A رمز پویا asks her to approve a purchase; it does not report one. «رمز» as a word of its own,
- * never the one inside «کارمزد» or «رمزارز».
+ * The same code worded more loosely: «رمز» as a word of its own — never the one inside «کارمزد»
+ * or «رمزارز» — or «کد» from a closed list, never alone, which is «کد پیگیری» too. These count only
+ * where no balance is stated: a bare «رمز» is also a debit's security footer, «رمز خود را در اختیار
+ * دیگران قرار ندهید».
  */
-const OTP = /(?<!\p{L})رمز(?!\p{L})|رمز ?(?:پویا|دوم)/u;
-/** The same code worded with «کد» — a closed list, never «کد» alone, which is «کد پیگیری» too. */
-const OTP_CODE = /(?<!\p{L})کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا)/gu;
+const OTP_CODE = /(?<!\p{L})(?:رمز(?!\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))/gu;
 
 /**
  * The مانده, zero and below included: an overdrawn account states «مانده: -5,000,000», or
@@ -339,9 +341,10 @@ function statedBalance(text: string): { value: number; divisor: number | null } 
 }
 
 /**
- * Whether a body is a one-time code. A «کد» wording is let through when the message states a
- * مانده: a debit that prints its authorisation code as «کد تایید» and was dropped would be gone
- * for good, balance and all, while a code kept beside a balance costs one row she can hide.
+ * Whether a body is a one-time code. A «کد» wording or a bare «رمز» is let through when the message
+ * states a مانده: a debit that prints its authorisation code as «کد تایید», or warns her to keep
+ * her «رمز» to herself, and was dropped would be gone for good, balance and all, while a code kept
+ * beside a balance costs one row she can hide.
  */
 export function isOneTimeCode(body: string): boolean {
   const text = normalise(body);
@@ -355,14 +358,15 @@ const carriesMoney = (text: string): boolean =>
   [...BALANCE_WORDS, ...AMOUNT_WORDS, ...IN_WORDS, ...OUT_WORDS, ...UNIT_WORDS].some((w) => text.includes(w)) ||
   GROUPED_FIGURE.test(text);
 
-const CODE_AFTER = /^[^0-9۰-۹٠-٩\n•]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\-])/;
+/** A code's digits: never glued to a separator or a mask star, so never an amount, a date or a card. */
+const CODE_AFTER = /^[^0-9۰-۹٠-٩\n•*]{0,24}([0-9۰-۹٠-٩]{4,10})(?![0-9۰-۹٠-٩,،٬.٫/:\-*])/;
 const DIGIT_RUN = /[0-9۰-۹٠-٩]+/g;
 
 /**
  * What is kept of a pasted body, or null for none of it — Sms.kt `bodyToStore`. A one-time code
- * is refused, a body that says nothing about money is refused, and a «کد» code set beside a
- * stated مانده is kept for the money with only the code's own digits blanked. Nothing is refused
- * that the ledger reads, so a body is never worth less stored than it was pasted.
+ * is refused, a body that says nothing about money is refused, and a «کد» or «رمز» code set
+ * beside a stated مانده is kept for the money with only the code's own digits blanked. Nothing is
+ * refused that the ledger reads, so a body is never worth less stored than it was pasted.
  */
 export function bodyToStore(body: string): string | null {
   if (isOneTimeCode(body)) return null;
