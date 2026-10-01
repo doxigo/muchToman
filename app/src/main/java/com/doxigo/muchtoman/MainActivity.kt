@@ -35,6 +35,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
@@ -769,6 +770,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** One [categorise] at a time. Not [ledgerGate]: [publishLedger] takes that one inside. */
+    private val filing = Mutex()
+
     /**
      * File one transaction, and — if she says «همیشه» — teach the app to file everything like
      * it by itself, past and future both.
@@ -779,56 +783,63 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      */
     fun categorise(entry: LedgerEntry, categoryId: String, always: Boolean) {
         val app = getApplication<Application>()
-        viewModelScope.launch(Dispatchers.Default) {
-            val durable = DurableDb.get(app)
-            val derived = DerivedDb.get(app)
-            runCatching {
-                val session = loadSession(durable)
-                val previous = durable.decisions().forRef(entry.txn.ref)
-                    .firstOrNull { it.kind == DecisionKind.CATEGORY }
-                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
-                // Filing a leg under a real category is her saying the detector was wrong, so the
-                // pair dies. Filing it under انتقال is her saying it was right — rejecting then
-                // would throw the other leg back into income, which is the bug this guards.
-                if (entry.transfer && categoryId != CAT_TRANSFER) {
-                    derived.links().touching(entry.txn.ref)
-                        .filter { it.kind == LinkKind.TRANSFER && it.auto }
-                        .forEach { link ->
-                            durable.linkDecisions().put(
-                                linkDecision(
-                                    link.aRef,
-                                    link.bRef,
-                                    LinkKind.TRANSFER,
-                                    Verdict.REJECTED,
-                                    now,
-                                )
-                            )
+        // Queued on Main, in the order she tapped, before the hop off it: two quick picks each
+        // ran on their own thread, and the first one's write could land after the second's.
+        viewModelScope.launch {
+            filing.withLock {
+                withContext(Dispatchers.Default) {
+                    val durable = DurableDb.get(app)
+                    val derived = DerivedDb.get(app)
+                    runCatching {
+                        val session = loadSession(durable)
+                        val previous = durable.decisions().forRef(entry.txn.ref)
+                            .firstOrNull { it.kind == DecisionKind.CATEGORY }
+                        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                        // Filing a leg under a real category is her saying the detector was
+                        // wrong, so the pair dies. Filing it under انتقال is her saying it was
+                        // right — rejecting then would throw the other leg back into income,
+                        // which is the bug this guards.
+                        if (entry.transfer && categoryId != CAT_TRANSFER) {
+                            derived.links().touching(entry.txn.ref)
+                                .filter { it.kind == LinkKind.TRANSFER && it.auto }
+                                .forEach { link ->
+                                    durable.linkDecisions().put(
+                                        linkDecision(
+                                            link.aRef,
+                                            link.bRef,
+                                            LinkKind.TRANSFER,
+                                            Verdict.REJECTED,
+                                            now,
+                                        )
+                                    )
+                                }
                         }
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now),
+                                ref = entry.txn.ref,
+                                kind = DecisionKind.CATEGORY,
+                                value = categoryId,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                                familyRef = entry.txn.familyRef.ifBlank {
+                                    session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                                },
+                            )
+                        )
+                        // One category is the row whole again.
+                        putAnswer(durable, entry.txn, DecisionKind.SPLIT, null, session?.member.orEmpty())
+                        if (always) {
+                            val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
+                            durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
+                        }
+                        derive(durable, derived, extraLookup(store.extraBankNumbers))
+                        publishLedger(durable, derived)
+                        requestFamilySync(silent = true)
+                    }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
                 }
-                durable.decisions().put(
-                    TxnDecision(
-                        id = uuid7(now),
-                        ref = entry.txn.ref,
-                        kind = DecisionKind.CATEGORY,
-                        value = categoryId,
-                        createdAt = now,
-                        updatedAt = now,
-                        memberId = session?.member.orEmpty(),
-                        familyRef = entry.txn.familyRef.ifBlank {
-                            session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
-                        },
-                    )
-                )
-                // One category is the row whole again.
-                putAnswer(durable, entry.txn, DecisionKind.SPLIT, null, session?.member.orEmpty())
-                if (always) {
-                    val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
-                    durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
-                }
-                derive(durable, derived, extraLookup(store.extraBankNumbers))
-                publishLedger(durable, derived)
-                requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
+            }
         }
     }
 

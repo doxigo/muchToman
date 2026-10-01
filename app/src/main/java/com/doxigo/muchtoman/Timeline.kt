@@ -2130,6 +2130,10 @@ fun ReviewDeck(
     // back, so the tile she chose holds the app's «this one» for that beat. Keyed by card, so
     // the highlight can never survive onto a transaction she has not read.
     var picked by remember(entry?.txn?.ref) { mutableStateOf<String?>(null) }
+    // When this card came up. A pick moves the deck on, so the second half of a double-tap
+    // landed on the card that replaced it and filed a transaction she had not read; nobody
+    // reads a card and answers it inside half a second.
+    val shownAt = remember(entry?.txn?.ref) { android.os.SystemClock.uptimeMillis() }
 
     // Read off the database per card rather than carried in [LedgerView]: the deck holds one
     // card at a time and the view holds three hundred rows, so keeping every message body in
@@ -2229,6 +2233,7 @@ fun ReviewDeck(
                     choices = choices,
                     selectedId = picked,
                     onPick = { category ->
+                        if (android.os.SystemClock.uptimeMillis() - shownAt < 500) return@CategoryGrid
                         picked = category.id
                         onDecide(entry, category.id, learnSimilar)
                         if (category.id == CAT_INSTALMENT && onInstallmentPayment != null &&

@@ -787,6 +787,9 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
   // Off on every card: a switch that stayed on across cards would write rules she never read.
   const [learnSimilar, setLearnSimilar] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
+  // When this card came up. A pick moves the deck on, so a double-click's second half landed on the
+  // card that replaced it and filed one she had not read; nobody answers a card inside half a second.
+  const [shownAt] = useState(() => performance.now());
   const choices = useChoices(entry, view);
   // A new card starts at its own top, instantly: a replacement, not a movement.
   useEffect(() => { scrollTo(0, 0); }, []);
@@ -800,6 +803,7 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       <div style={{ marginTop: 'var(--m)' }} />
       <CategoryGrid categories={choices} selected={picked} selectedLabel="انتخاب‌شده"
         onSelect={(category) => {
+          if (performance.now() - shownAt < 500) return;
           setPicked(category.id);
           categorise(entry, category.id, learnSimilar);
           if (category.id === CAT_INSTALMENT && installmentPayable(entry, view.mineId) &&
