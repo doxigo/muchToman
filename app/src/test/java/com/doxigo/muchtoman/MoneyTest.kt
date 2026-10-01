@@ -1018,6 +1018,15 @@ class MoneyTest {
     }
 
     @Test
+    fun `an overdrawn balance reads below zero, whichever side the bank signs it`() {
+        val lead = sms("برداشت مبلغ 1,000,000 ریال\nمانده: -5,000,000 ریال")!!
+        assertEquals(-500_000.0, lead.balance!!, 0.01)
+        assertEquals(-5_000_000L, lead.balanceRial)
+        assertEquals(-100_000.0, lead.delta!!, 0.01)
+        assertEquals(-500_000.0, sms("برداشت مبلغ 1,000,000 ریال\nمانده:5,000,000-")!!.balance!!, 0.01)
+    }
+
+    @Test
     fun `an emptied account is allowed to read zero`() {
         var accounts = applyBankSms(emptyList(), sms("مانده 50,000,000 ریال", at = 1)!!)
         assertEquals(5_000_000.0, bankTotal(accounts, emptySet()), 0.01)

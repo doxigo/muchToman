@@ -75,7 +75,9 @@ import kotlinx.coroutines.sync.withLock
 // 14: a starred مانده states no balance, and a date, a clock or a zero-led account number is never
 // one. خاورمیانه's «مانده **********» had been read as the 07 of the date under it — a balance of
 // 0.7 Toman, stored on every such row and anchoring the account there until the rebuild.
-const val PARSER_VERSION = 14
+// 15: a sign glued to a stated مانده is kept. An overdrawn account's «مانده: -5,000,000» had been
+// stored as five million in hand.
+const val PARSER_VERSION = 15
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

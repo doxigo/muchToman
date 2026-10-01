@@ -455,8 +455,12 @@ private fun boxMove(text: String): Boolean? {
  * Every separator is dropped, the dot included. Bank SMS quote whole Rial and never a fraction
  * of one, so "500.000" is five hundred thousand; reading its dot as a decimal point would
  * report five hundred, which is the same figure a thousand times too small.
+ *
+ * [minus] is a dash glued to the figure that [isIdentifierPart] did not take for part of a
+ * number, which makes it a sign. Only [statedBalance] reads it: an amount's direction is the
+ * words' or [signedAmount]'s to say.
  */
-private class Figure(val value: Double, val divisor: Double?)
+private class Figure(val value: Double, val divisor: Double?, val minus: Boolean = false)
 
 private fun moneyOf(run: String): Double? =
     digitsOf(run).takeIf { it.isNotEmpty() }?.toDoubleOrNull()
@@ -584,7 +588,8 @@ private fun figureAfter(
                 if (isIdentifierPart(text, m.range)) continue
                 val v = moneyOf(m.value) ?: continue
                 if (v == 0.0 && !allowZero) continue
-                return Figure(v, unitAfter(text, m.range.last + 1))
+                val minus = text.getOrNull(m.range.first - 1) == '-' || text.getOrNull(m.range.last + 1) == '-'
+                return Figure(v, unitAfter(text, m.range.last + 1), minus)
             }
         }
     }
@@ -596,9 +601,14 @@ private fun figureAfter(
  *
  * Zero is allowed here and nowhere else: an emptied account really does have a balance of
  * nought, and refusing to read it would leave the old figure standing for ever.
+ *
+ * So is below it. An overdrawn account states «مانده: -5,000,000», or «مانده:5,000,000-» from a
+ * bank that signs behind the figure as صادرات does its amounts, and dropping the sign anchored
+ * her at five million in hand when she owed it.
  */
 private fun statedBalance(text: String): Figure? =
     figureAfter(text, BALANCE_WORDS, allowZero = true, veto = BALANCE_VETO)
+        ?.let { if (it.minus) Figure(-it.value, it.divisor) else it }
 
 /**
  * The last money figure *before* any of [labels], never crossing a line break.

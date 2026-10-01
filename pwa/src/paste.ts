@@ -218,7 +218,7 @@ function figureAfter(
   text: string,
   labels: string[],
   opts: { allowZero?: boolean; veto?: string[]; window?: number; stopAt?: string[] } = {},
-): { value: number; divisor: number | null } | null {
+): { value: number; divisor: number | null; minus: boolean } | null {
   const window = opts.window ?? 48;
   for (const label of labels) {
     let from = 0;
@@ -250,7 +250,10 @@ function figureAfter(
         if (!digits) continue;
         const value = Number(digits);
         if (value === 0 && !opts.allowZero) continue;
-        return { value, divisor: unitAfter(text, index + m[0].length) };
+        // A dash glued on that isIdentifierPart let through is a sign. Only statedBalance reads it:
+        // an amount's direction is the words' or signedAmount's to say.
+        const end = index + m[0].length;
+        return { value, divisor: unitAfter(text, end), minus: text[index - 1] === '-' || text[end] === '-' };
       }
     }
   }
@@ -315,8 +318,15 @@ const OTP = /(?<!\p{L})رمز(?!\p{L})|رمز ?(?:پویا|دوم)/u;
 /** The same code worded with «کد» — a closed list, never «کد» alone, which is «کد پیگیری» too. */
 const OTP_CODE = /(?<!\p{L})کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا)/gu;
 
-const statedBalance = (text: string) =>
-  figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: BALANCE_VETO });
+/**
+ * The مانده, zero and below included: an overdrawn account states «مانده: -5,000,000», or
+ * «مانده:5,000,000-» from a bank that signs behind the figure, and dropping the sign anchored her
+ * at five million in hand when she owed it.
+ */
+function statedBalance(text: string): { value: number; divisor: number | null } | null {
+  const f = figureAfter(text, BALANCE_WORDS, { allowZero: true, veto: BALANCE_VETO });
+  return f?.minus ? { value: -f.value, divisor: f.divisor } : f;
+}
 
 /**
  * Whether a body is a one-time code. A «کد» wording is let through when the message states a

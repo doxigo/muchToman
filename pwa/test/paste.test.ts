@@ -107,6 +107,12 @@ describe('quick paste', () => {
     expect(parsePasted('مانده:5,000,000').balanceRial).toBe(5_000_000);
   });
 
+  it('reads an overdrawn balance below zero, whichever side the bank signs it', () => {
+    const lead = parsePasted('برداشت مبلغ 1,000,000 ریال\nمانده: -5,000,000 ریال');
+    expect(lead).toMatchObject({ balanceRial: -5_000_000, amountRial: 1_000_000, direction: 'out' });
+    expect(parsePasted('برداشت مبلغ 1,000,000 ریال\nمانده:5,000,000-').balanceRial).toBe(-5_000_000);
+  });
+
   it('never reads a wallet promo as the bank balance', () => {
     // The corpus pins this as a declined message, which this side skips — declining is about
     // who sent it. The veto itself still has to hold here, or a pasted promo states a balance.
