@@ -287,14 +287,22 @@ private fun openLedgerTab(context: Context): PendingIntent = destination(context
 }
 
 /**
- * One activity, reached two ways.
+ * The widget's tap: the app as she left it. Its own request code and the same CLEAR_TOP|SINGLE_TOP
+ * as the notes — on code 0 a widget redraw rewrote the budget note's extras (and the other way
+ * round), and without SINGLE_TOP a tap with the app in the background stacked a second activity
+ * and a second AppVm scanning and syncing beside the first.
+ */
+fun openFromWidget(context: Context): PendingIntent = destination(context, 3) {}
+
+/**
+ * One activity, reached four ways.
  *
  * [requestCode] is the whole reason this is a function. Two PendingIntents are the same
  * PendingIntent as far as the platform is concerned when their intents match on component, action,
- * data and flags — and **extras are not compared**. Both of these differ in nothing but their
- * extra, so with one request code the second `FLAG_UPDATE_CURRENT` would silently rewrite the
- * first: tapping a budget alert would open the review deck, and no test on a JVM could ever
- * catch it.
+ * data, type and categories — and **neither extras nor launch flags are compared**. These differ in
+ * nothing but their extra, so with one request code the second `FLAG_UPDATE_CURRENT` would silently
+ * rewrite the first's extras (keeping the first's flags): tapping a budget alert would open the
+ * review deck, and no test on a JVM could ever catch it.
  */
 private fun destination(context: Context, requestCode: Int, extra: (Intent) -> Unit): PendingIntent {
     val intent = Intent(context, MainActivity::class.java)

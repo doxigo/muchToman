@@ -1,11 +1,9 @@
 package com.doxigo.muchtoman
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.LinearGradient
@@ -440,13 +438,7 @@ private fun renderFace(
         R.id.widget_label,
         textBitmap(context, "دارایی من", face.label, R.font.modam_medium, MUTED),
     )
-    views.setOnClickPendingIntent(
-        R.id.widget_root,
-        PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        ),
-    )
+    views.setOnClickPendingIntent(R.id.widget_root, openFromWidget(context))
     if (face != Face.COMPACT) {
         views.setImageViewBitmap(
             R.id.widget_ago,
