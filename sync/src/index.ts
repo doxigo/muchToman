@@ -953,18 +953,23 @@ export default {
       if (path === '/rates') {
         if (request.method !== 'GET') return textResponse('GET only\n', 405, 'GET');
         const origin = env.RATES_ORIGIN ?? DEFAULT_RATES_ORIGIN;
-        // The day's count (see "usage" in the rates Worker) is the one request header passed on.
-        const daily = request.headers.get('x-muchtoman-daily');
-        const upstream = await fetch(`${origin}/rates`, {
-          headers: daily == null ? {} : { 'x-muchtoman-daily': daily },
-          signal: AbortSignal.timeout(8_000),
-        });
+        // Two request headers are passed on: the day's count (see "usage" in the rates Worker),
+        // and the browser's If-None-Match, so the PWA's no-cache revalidation can come back as a
+        // 304 with headers instead of the whole coin catalogue over metered data.
+        const headers: Record<string, string> = {};
+        for (const name of ['x-muchtoman-daily', 'if-none-match']) {
+          const value = request.headers.get(name);
+          if (value != null) headers[name] = value;
+        }
+        const upstream = await fetch(`${origin}/rates`, { headers, signal: AbortSignal.timeout(8_000) });
+        const etag = upstream.headers.get('etag');
         return new Response(upstream.body, {
           status: upstream.status,
           headers: {
             'content-type': upstream.headers.get('content-type') ?? 'application/json',
             'cache-control': upstream.headers.get('cache-control') ?? 'no-store',
             'x-content-type-options': 'nosniff',
+            ...(etag == null ? {} : { etag }),
           },
         });
       }

@@ -271,7 +271,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val daily = if (!BuildConfig.DEBUG && store.countedDay != today) dailyPing(getApplication()) else null
         viewModelScope.launch {
             var failure: String? = null
-            fetchRates(BuildConfig.RATES_URL, daily).onSuccess { fetched ->
+            fetchRates(BuildConfig.RATES_URL, daily, store.cachedRates).onSuccess { fetched ->
                 if (daily != null) store.countedDay = today
                 // The merge reads the cached blob and the store write encodes ~80KB of JSON —
                 // that ran on Main and cost a frame after every fetch. The state update stays

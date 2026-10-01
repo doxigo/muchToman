@@ -41,7 +41,7 @@ class DailySnapshotWorker(context: Context, params: WorkerParameters) :
         val store = Store(applicationContext)
         val holdings = store.holdings
         val (rates, stocks) = coroutineScope {
-            val rates = async { fetchRates(BuildConfig.RATES_URL) }
+            val rates = async { fetchRates(BuildConfig.RATES_URL, cached = store.cachedRates) }
             val stocks = if (holdings.any { isStockId(it.typeId) }) async { fetchTse() } else null
             rates.await() to stocks?.await()
         }

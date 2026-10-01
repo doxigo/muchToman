@@ -113,6 +113,12 @@ data class Rates(
     /** Moment → the lines a note may carry — see `Quips.kt`. Null when the Worker sent none. */
     @Serializable(with = LenientQuips::class)
     val quips: Map<String, List<Quip>>? = null,
+    /**
+     * The Worker's ETag for the body these rates came from — a response header, not part of the
+     * body. Kept inside the cached copy rather than beside it, so the two can never disagree:
+     * clearing the rates clears the validator with them.
+     */
+    val etag: String? = null,
 )
 
 @Serializable
@@ -1194,8 +1200,12 @@ fun mergeRates(fresh: Rates, cached: Rates): Rates = fresh.copy(
     quips = fresh.quips ?: cached.quips,
 )
 
-/** [daily] is the day's one count ([dailyPing]); null on every other fetch. */
-suspend fun fetchRates(url: String, daily: String? = null): Result<Rates> = withContext(Dispatchers.IO) {
+/**
+ * [daily] is the day's one count ([dailyPing]); null on every other fetch. [cached] is what the
+ * phone already holds: its ETag goes out as If-None-Match, and a 304 hands it back as it is —
+ * the body is the bulk of a fetch (the coin catalogue), and her mobile data is metered.
+ */
+suspend fun fetchRates(url: String, daily: String? = null, cached: Rates = Rates()): Result<Rates> = withContext(Dispatchers.IO) {
     runCatching {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
@@ -1206,9 +1216,11 @@ suspend fun fetchRates(url: String, daily: String? = null): Result<Rates> = with
             // one — reusing it is where "unexpected end of stream" came from.
             setRequestProperty("Connection", "close")
             if (daily != null) setRequestProperty("X-MuchToman-Daily", daily)
+            cached.etag?.let { setRequestProperty("If-None-Match", it) }
         }
         try {
             val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_NOT_MODIFIED && cached.etag != null) return@runCatching cached
             if (code !in 200..299) error("HTTP $code")
             val body = conn.inputStream.use { it.readUtf8Limited(MAX_RATES_RESPONSE_BYTES) }
             val parsed = sanitizeRates(JSON.decodeFromString<Rates>(body), url)
@@ -1216,7 +1228,9 @@ suspend fun fetchRates(url: String, daily: String? = null): Result<Rates> = with
             if (parsed.updatedAt <= 0L) error("invalid rates timestamp")
             // updatedAt is when the Worker last pulled real prices, not when we asked — that
             // is the number worth showing, since a cached response is still old prices.
-            parsed
+            parsed.copy(
+                etag = conn.getHeaderField("ETag")?.takeIf { it.length <= 128 && it.none(Char::isISOControl) },
+            )
         } finally {
             conn.disconnect()
         }

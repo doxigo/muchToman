@@ -40,6 +40,16 @@ describe('rates proxies', () => {
     expect([...new Headers(init.headers)]).toEqual([['x-muchtoman-daily', '1.2.5 pwa']]);
   });
 
+  it('carries a /rates revalidation through both ways, so the browser can get a 304', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(null, { status: 304, headers: { etag: '"abc"', 'cache-control': 'public, max-age=600' } }));
+    const res = await SELF.fetch('https://sync.test/rates', { headers: { 'if-none-match': '"abc"' } });
+    expect(res.status).toBe(304);
+    expect(res.headers.get('etag')).toBe('"abc"');
+    const [, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get('if-none-match')).toBe('"abc"');
+  });
+
   it('refuses an oversized wallet body before asking upstream', async () => {
     const upstream = vi.spyOn(globalThis, 'fetch');
     const res = await SELF.fetch('https://sync.test/wallet-balance', {

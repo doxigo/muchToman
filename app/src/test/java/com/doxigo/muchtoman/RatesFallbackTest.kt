@@ -1,5 +1,8 @@
 package com.doxigo.muchtoman
 
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -191,5 +194,37 @@ class RatesFallbackTest {
         val now = 1_000_000L
         val raw = Rates(now + 5 * 60_000L + 1, mapOf("usd" to 1.0))
         assertEquals(0L, sanitizeRates(raw, "https://rates.muchtoman.com/rates", now).updatedAt)
+    }
+
+    @Test
+    fun `a rates body she already has costs a 304, and the cached copy comes back as it was`() {
+        val asked = mutableListOf<String?>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/rates") { exchange ->
+                val ifNoneMatch = exchange.requestHeaders.getFirst("If-None-Match")
+                asked += ifNoneMatch
+                exchange.responseHeaders.add("ETag", "\"v1\"")
+                if (ifNoneMatch == "\"v1\"") {
+                    exchange.sendResponseHeaders(304, -1)
+                } else {
+                    val body = """{"updatedAt":${System.currentTimeMillis()},"toman":{"usd":187000}}""".toByteArray()
+                    exchange.sendResponseHeaders(200, body.size.toLong())
+                    exchange.responseBody.use { it.write(body) }
+                }
+                exchange.close()
+            }
+            start()
+        }
+        try {
+            val url = "http://127.0.0.1:${server.address.port}/rates"
+            val first = runBlocking { fetchRates(url) }.getOrThrow()
+            assertEquals("\"v1\"", first.etag)
+
+            val again = runBlocking { fetchRates(url, cached = first) }.getOrThrow()
+            assertTrue(again === first)
+            assertEquals(listOf(null, "\"v1\""), asked)
+        } finally {
+            server.stop(0)
+        }
     }
 }
