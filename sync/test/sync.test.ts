@@ -262,6 +262,27 @@ describe('syncing', () => {
     expect(json.records[0].id).toBe(ref);
   });
 
+  it('refuses a stamp that is not a whole millisecond, on push and on leave alike', async () => {
+    // Stored, a fractional stamp is a REAL that both clients' Long parsers reject — the whole
+    // pull page with it, and so the household's cursor never moves past it.
+    const scope = 'family:a2';
+    const owner = await claimDevice('a2'.repeat(16), [scope], { memberId: 'a3'.repeat(16), deviceId: 'a4'.repeat(16) });
+    const fractional = 1759000000000.5;
+    const pushed = await push(owner.token, [record({ scope, updatedAt: fractional })]);
+    expect(pushed.status).toBe(400);
+    expect(await pushed.json()).toEqual({ code: 'invalid_updated_at' });
+
+    const member = await pairDevice(owner.token, 'a5'.repeat(16), 'a6'.repeat(16));
+    const left = await SELF.fetch('https://sync.test/v1/leave', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${member.token}` },
+      body: JSON.stringify({ record: memberTombstone(member.memberId, scope, fractional) }),
+    });
+    expect(left.status).toBe(400);
+    expect((await pull(member.token)).status).toBe(200);
+    expect((await pull(owner.token)).json.records).toHaveLength(0);
+  });
+
   it('caps what one request may carry', async () => {
     const token = await claim('9'.repeat(32), ['personal:her']);
     const many = Array.from({ length: 501 }, (_, i) => record({ id: `r${i}` }));

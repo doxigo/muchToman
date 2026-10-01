@@ -183,7 +183,9 @@ function asRecords(value: unknown): PushRecord[] {
       throw new SyncError('invalid_kind', 400);
     }
     if (ownerMemberId.length > MAX_MEMBER_CHARS) throw new SyncError('invalid_member', 400);
-    if (!Number.isFinite(updatedAt) || updatedAt < 0) throw new SyncError('invalid_updated_at', 400);
+    // A whole millisecond or nothing: both clients read the stamp as a Long, so one fractional
+    // value stored here would fail every pull page it lands on, for every device, for ever.
+    if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new SyncError('invalid_updated_at', 400);
     if (!nonce || nonce.length > 64) throw new SyncError('invalid_nonce', 400);
     if (body.length > MAX_BODY_BYTES) throw new SyncError('body_too_large', 413);
     return {
