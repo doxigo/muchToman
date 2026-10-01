@@ -2306,7 +2306,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * The same one-shot shape [FamilyState.pendingPairing] uses: the intent's extra becomes a piece
      * of state, the composition acts on it and then clears it — so a rotation does not send her back
      * to the budget tab, and neither does the activity being recreated at sunset when the theme
-     * follows the system.
+     * follows the system, nor (onCreate reads the intent only on a fresh launch) a reopen from
+     * recents after the process died.
      */
     fun openTab(name: String?) {
         val tab = name?.let { value -> tabs.firstOrNull { it.name == value } } ?: return
@@ -2918,9 +2919,16 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appVm = ViewModelProvider(this)[AppVm::class.java]
-        appVm.acceptPairing(intent?.dataString)
-        appVm.openTab(intent?.getStringExtra(EXTRA_OPEN_TAB))
-        appVm.openDeck(intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true)
+        // Only a fresh launch carries news. A restore after process death, or a relaunch from
+        // recents, hands back the intent that first opened the task — the budget note she tapped
+        // last week, or a pairing link already spent («این گوشی از قبل عضو یک خانواده است»).
+        val fresh = savedInstanceState == null &&
+            intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        if (fresh) {
+            appVm.acceptPairing(intent?.dataString)
+            appVm.openTab(intent?.getStringExtra(EXTRA_OPEN_TAB))
+            appVm.openDeck(intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true)
+        }
         // A phone that granted READ_SMS before RECEIVE_SMS existed: she already said yes to the
         // messages conversation, this completes it so [SmsReceiver] can hear them land. Both
         // permissions share the SMS group, so the platform grants this without showing anything.
