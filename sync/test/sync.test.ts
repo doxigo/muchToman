@@ -885,6 +885,25 @@ describe('abuse resistance', () => {
     expect(((await refused.json()) as { code: string }).code).toBe('too_many_devices');
   });
 
+  it('keeps only the newest sixteen invite codes open', async () => {
+    const owner = await claim('2f'.repeat(16), ['family:2f']);
+    const codes: string[] = [];
+    for (let i = 0; i < 17; i++) {
+      const invite = await SELF.fetch('https://sync.test/v1/invite', {
+        method: 'POST', headers: { authorization: `Bearer ${owner}` }, body: '{}',
+      });
+      codes.push(((await invite.json()) as { code: string }).code);
+    }
+    const stored = await runInDurableObject(env.HOUSEHOLD.getByName('2f'.repeat(16)), async (_instance, state) =>
+      [...state.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM pairing')][0].n);
+    expect(stored).toBe(16);
+    const pairWith = (code: string) => SELF.fetch('https://sync.test/v1/pair', {
+      method: 'POST', headers: { authorization: `Bearer ${owner}` }, body: JSON.stringify({ code }),
+    });
+    expect((await pairWith(codes[0])).status).toBe(403);
+    expect((await pairWith(codes[16])).status).toBe(200);
+  });
+
   it('clamps a far-future stamp and returns the value it stored', async () => {
     // Without the bound, one device with a wrong clock — or a griefer — pins a record for
     // ever: nothing honest could ever outbid a stamp from the year 3000.

@@ -49,6 +49,10 @@ const MAX_FEEDBACK_BYTES = 8 * 1024;
 
 /** How long a pairing token is good for. Long enough to walk to the other phone, no longer. */
 const PAIRING_TTL_MS = 10 * 60 * 1000;
+// A code is somebody about to join, and no household has room for more of them than it has for
+// devices. Past that the oldest gives way, so a token stuck in an invite loop cannot grow the
+// table without bound inside one TTL.
+const MAX_PAIRING_CODES = MAX_DEVICES;
 
 class SyncError extends Error {
   constructor(readonly code: string, readonly status: number) {
@@ -421,6 +425,10 @@ export class Household extends DurableObject<Env> {
       : auth.scopes;
     if (scopes.length === 0) throw new SyncError('invalid_scope', 400);
     this.sql.exec('DELETE FROM pairing WHERE expires_at < ?', Date.now());
+    this.sql.exec(
+      'DELETE FROM pairing WHERE rowid NOT IN (SELECT rowid FROM pairing ORDER BY rowid DESC LIMIT ?)',
+      MAX_PAIRING_CODES - 1,
+    );
     this.sql.exec(
       'INSERT OR REPLACE INTO pairing (code_hash, scopes, expires_at) VALUES (?, ?, ?)',
       codeHash,
