@@ -1040,6 +1040,9 @@ class MoneyTest {
         val m = sms("قسط تسهیلات پرداخت مبلغ 3,000,000 ریال\nمانده بدهی 2,400,000,000 ریال")
         assertTrue("a loan balance must not become a balance", m?.balance == null)
         assertEquals(-300_000.0, m!!.delta!!, 0.01)
+        // A loan advert on the line under a real balance is not that balance's qualifier.
+        val advert = sms("برداشت مبلغ 1,000,000 ریال\nمانده 20,000,000\nوام فوری با اقساط کم")!!
+        assertEquals(20_000_000L, advert.balanceRial)
     }
 
     @Test

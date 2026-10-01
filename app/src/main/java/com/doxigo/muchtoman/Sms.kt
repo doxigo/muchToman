@@ -587,9 +587,10 @@ private fun figureAfter(
             val start = at + label.length
             from = start
             if (qualifiedAt(text, at)) continue
-            // "مانده بدهی" is a different noun from "مانده".
+            // "مانده بدهی" is a different noun from "مانده". Read on this line only: an advert
+            // under the balance — «مانده 20,000,000» and then «وام تا …» — names no part of it.
             val ahead = text.substring(start, minOf(text.length, start + 16))
-            if (veto.any { ahead.contains(it) }) continue
+            if (veto.any { ahead.substringBefore('\n').contains(it) }) continue
             if (STARRED.containsMatchIn(ahead)) continue
             // Where this search must give up rather than keep walking. A figure on the far side
             // of «موجودی» is that balance being stated, and returning it as the amount reports

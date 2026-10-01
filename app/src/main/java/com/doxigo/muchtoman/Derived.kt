@@ -85,7 +85,9 @@ import kotlinx.coroutines.sync.withLock
 // 18: links are found with the rows she deleted still in. The echo of a deleted message had come
 // back as a spend of its own, and the other leg of a deleted transfer as income, in every ledger
 // derived since; only linking again puts them right. The same rebuild un-hides a payment repeated
-// after a refund: a shared balance settles a duplicate now only with nothing moved in between.
+// after a refund: a shared balance settles a duplicate now only with nothing moved in between. And
+// a مانده's veto reads its own line only: a «وام …» advert on the line under it had refused the
+// real balance, and those rows are stored with none until they are read again.
 const val PARSER_VERSION = 18
 
 private const val META_PARSER_VER = "parser_ver"

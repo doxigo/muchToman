@@ -95,6 +95,8 @@ describe('quick paste', () => {
     const got = parsePasted('قسط تسهیلات پرداخت مبلغ 3,000,000 ریال\nمانده بدهی 2,400,000,000 ریال');
     expect(got.balanceRial).toBeNull();
     expect(got.amountRial).toBe(3_000_000);
+    // A loan advert on the line under a real balance is not that balance's qualifier.
+    expect(parsePasted('برداشت مبلغ 1,000,000 ریال\nمانده 20,000,000\nوام فوری با اقساط کم').balanceRial).toBe(20_000_000);
   });
 
   it('reads no balance off a starred one, a date, a clock or an account number', () => {

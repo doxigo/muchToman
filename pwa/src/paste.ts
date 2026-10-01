@@ -247,7 +247,8 @@ function figureAfter(
       from = start;
       if (qualifiedAt(text, at)) continue;
       const ahead = text.slice(start, start + 16);
-      if (opts.veto?.some((v) => ahead.includes(v))) continue;
+      // This line only: an advert under the balance — «وام تا …» — names no part of it.
+      if (opts.veto?.some((v) => ahead.split('\n')[0].includes(v))) continue;
       if (STARRED.test(ahead)) continue;
       // Where this search must give up rather than keep walking. A figure on the far side of
       // «موجودی» is that balance being stated, and returning it as the amount reports everything
