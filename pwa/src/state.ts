@@ -11,7 +11,7 @@
  * versions are the upgrade if a profile ever shows it.
  */
 import { useEffect, useState } from 'preact/hooks';
-import { LOCAL, PREFS, open } from './db';
+import { LOCAL, PREFS, open, reopen } from './db';
 import { PREF_DEFAULTS, TABLES } from './model';
 import type { Prefs, TableName, Tables } from './model';
 
@@ -50,38 +50,63 @@ type Op = { store: typeof LOCAL; value: unknown } | { store: typeof PREFS; key: 
   | { store: typeof LOCAL; delete: [string, string] };
 let queue: Op[] = [];
 let flushing: Promise<void> | null = null;
+/** Failed flushes in a row; the first says so, the retries back off quietly. */
+let failures = 0;
+let retry: ReturnType<typeof setTimeout> | undefined;
 let onWriteError: (error: unknown) => void = (e) => console.error('write failed', e);
 export function setWriteErrorHandler(handler: (error: unknown) => void): void { onWriteError = handler; }
 
+function kick(): void {
+  if (queue.length) flushing ??= Promise.resolve().then(flush);
+}
 function schedule(op: Op): void {
   queue.push(op);
-  flushing ??= Promise.resolve().then(flush);
+  kick();
 }
 async function flush(): Promise<void> {
+  let sending: Op[] = [];
   try {
     while (queue.length) {
-      const batch = queue; queue = [];
+      sending = queue; queue = [];
       const db = await open();
       const tx = db.transaction([LOCAL, PREFS], 'readwrite');
-      const done = new Promise<void>((resolve, reject) => {
+      sending = sending.filter((op) => {
+        try {
+          if (op.store === PREFS) tx.objectStore(PREFS).put(op.value, op.key);
+          else if ('delete' in op) tx.objectStore(LOCAL).delete(op.delete);
+          else tx.objectStore(LOCAL).put(op.value);
+          return true;
+        } catch (error) {
+          // A key or value IndexedDB cannot hold never lands however often it is retried, and
+          // kept it would hold back every write behind it. Anything else is the connection's.
+          if (!(error instanceof DOMException && (error.name === 'DataError' || error.name === 'DataCloneError'))) throw error;
+          onWriteError(error);
+          return false;
+        }
+      });
+      await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('write aborted'));
       });
-      for (const op of batch) {
-        if (op.store === PREFS) tx.objectStore(PREFS).put(op.value, op.key);
-        else if ('delete' in op) tx.objectStore(LOCAL).delete(op.delete);
-        else tx.objectStore(LOCAL).put(op.value);
-      }
-      await done;
+      sending = [];
+      failures = 0;
     }
   } catch (error) {
-    onWriteError(error);
+    // Back at the front, in order: memory already shows these writes, and dropped here they
+    // would be gone at the next reload with nothing on screen to say so.
+    queue = [...sending, ...queue];
+    reopen();
+    if (failures++ === 0) onWriteError(error);
+    clearTimeout(retry);
+    retry = setTimeout(kick, Math.min(1000 * 2 ** (failures - 1), 30_000));
   } finally {
     flushing = null;
-    if (queue.length) flushing = Promise.resolve().then(flush);
   }
 }
-/** Resolves once everything written so far is on disk — for backup, and for tests. */
+/**
+ * Resolves once everything written so far is on disk — for backup, and for tests — or once a
+ * flush has failed, so nothing waits forever on a disk that is refusing; the retry goes on.
+ */
 export async function settled(): Promise<void> {
   while (flushing) await flushing;
 }

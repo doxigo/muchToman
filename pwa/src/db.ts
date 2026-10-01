@@ -71,6 +71,12 @@ export function open(): Promise<IDBDatabase> {
   void attempt.catch(() => { if (handle === attempt) handle = null; });
   return attempt;
 }
+/** The next `open()` starts afresh: Safari can lose a connection without a close event, and every transaction on it fails after. */
+export function reopen(): void {
+  const stale = handle;
+  handle = null;
+  void stale?.then((db) => db.close(), () => {});
+}
 function done<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);

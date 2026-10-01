@@ -68,3 +68,47 @@ it('lets one sync hold the lock at a time', async () => {
   await Promise.all([slow, fast]);
   expect(order).toEqual(['a:start', 'a:end', 'b']);
 });
+
+describe('the write queue', () => {
+  /** This browser's name as a fresh page would find it on disk. */
+  async function reloadedName(): Promise<string> {
+    vi.resetModules();
+    const fresh = await import('../src/state');
+    await fresh.load();
+    return fresh.pref('name');
+  }
+
+  it('keeps a failed write queued and lands it on a fresh connection', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const state = await import('../src/state');
+      await state.load();
+      const errors: unknown[] = [];
+      state.setWriteErrorHandler((e) => errors.push(e));
+      // Safari after "connection lost": no close event, and every transaction on it throws.
+      const lost = await db.open();
+      lost.transaction = () => { throw new DOMException('Connection to Indexed Database server lost.', 'UnknownError'); };
+      state.setPref('name', 'مریم');
+      await state.settled();
+      expect(errors).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      await state.settled();
+      expect(errors).toHaveLength(1);
+      expect(await reloadedName()).toBe('مریم');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops only a write IndexedDB can never hold, and lands the rest', async () => {
+    const state = await import('../src/state');
+    await state.load();
+    const errors: unknown[] = [];
+    state.setWriteErrorHandler((e) => errors.push(e));
+    state.put('sources', { id: undefined } as never);
+    state.setPref('name', 'مریم');
+    await state.settled();
+    expect(errors).toHaveLength(1);
+    expect(await reloadedName()).toBe('مریم');
+  });
+});
