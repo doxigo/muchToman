@@ -1167,6 +1167,10 @@ private suspend fun outgoingRecords(
         )
     }
 
+    // derived.db is the truth for what she shares only while it is current. After a derived-schema
+    // bump — destructive by design — or a derive that threw, it is empty or behind, and sweeping
+    // against it would tombstone every shared row on the family's phones. The sweep waits a sync.
+    val sweep = !needsDerive(derived, durable)
     for (publication in publications.values) {
         // Only transaction publications sweep here — their sourceKind is the transaction's own
         // "sms" or "manual". Everything else answers for itself: category and note records to
@@ -1175,7 +1179,7 @@ private suspend fun outgoingRecords(
         // record kind cannot forget to exempt itself and be swept as a "transaction" tombstone
         // the server would refuse as a kind mismatch — killing the whole transaction chunk.
         if (publication.sourceKind !in setOf("sms", "manual")) continue
-        if (publication.deleted || publication.id in activeIds) continue
+        if (!sweep || publication.deleted || publication.id in activeIds) continue
         val updatedAt = nextStamp(publication.updatedAt, now)
         val deleted = publication.copy(contentHash = "", updatedAt = updatedAt, deleted = true)
         outgoing += PreparedRecord(

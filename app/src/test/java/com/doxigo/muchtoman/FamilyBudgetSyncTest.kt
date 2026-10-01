@@ -300,6 +300,31 @@ class FamilyBudgetSyncTest {
     }
 
     @Test
+    fun `a derived db that is not current never tombstones what she shares`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val now = System.currentTimeMillis()
+            a.durable.manual().put(ManualTxn("meal", now, tehranDay(now), -113_000_000, createdAt = now, updatedAt = now))
+            a.sync()
+            val id = familyTxnId(a.session.member, manualRef("meal"))
+            assertFalse(home.rows.getValue(id).optBoolean("deleted"))
+
+            // A derived-schema bump dropped every table, and the derive that refills them has not run.
+            val rebuilt = Room.inMemoryDatabaseBuilder(home.context, DerivedDb::class.java).build()
+            try {
+                syncNow(a.durable, rebuilt, a.session)
+            } finally {
+                rebuilt.close()
+            }
+            assertFalse(home.rows.getValue(id).optBoolean("deleted"))
+            // A row she deleted still goes, once the ledger is current again.
+            a.durable.manual().put(a.durable.manual().all().single().copy(deleted = true, updatedAt = now + 1))
+            a.sync()
+            assertTrue(home.rows.getValue(id).optBoolean("deleted"))
+        }
+    }
+
+    @Test
     fun `server rejection is not reported as no internet`() {
         val error = SyncHttpException(400, "{\"code\":\"invalid_kind\"}")
         assertEquals("invalid_kind", error.code)
