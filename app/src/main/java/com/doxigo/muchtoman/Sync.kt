@@ -885,26 +885,23 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
         durable.syncPublications().putAll(publications.map { it.copy(deleted = true) })
     }
     val now = System.currentTimeMillis()
-    for (member in durable.familyMembers().all()) {
-        if (member.id == keepMember) {
-            if (member.sharesSms) {
-                durable.familyMembers().put(
-                    member.copy(sharesSms = false, updatedAt = nextStamp(member.updatedAt, now))
-                )
-            }
-            continue
-        }
-        durable.familyMembers().put(member.copy(updatedAt = nextStamp(member.updatedAt, now), deleted = true))
+    // Everybody else's rows here are a mirror of the server, and the cursor reset above pulls them
+    // again from the start — so they are erased, not buried. A tombstone stamped now outranks
+    // every record older than this moment, and a rejoin, or the household a renewal leads to,
+    // could then never land the same people's rows again until each of them was edited.
+    // Her own former ids are the exception: buried, so no copy of who she was lands back here
+    // as somebody else.
+    val formerSelves = formerMembers - setOfNotNull(keepMember)
+    durable.familyMembers().eraseAllBut(listOfNotNull(keepMember) + formerSelves)
+    for (id in formerSelves) {
+        val former = durable.familyMembers().get(id) ?: continue
+        durable.familyMembers().put(former.copy(updatedAt = nextStamp(former.updatedAt, now), deleted = true))
     }
-    // Their rows would double the moment they rejoin and re-push under a fresh member id,
-    // so the old copies go now, while the copy on screen is saying "از نو".
-    for (txn in durable.familyTxns().all()) {
-        durable.familyTxns().put(txn.copy(updatedAt = nextStamp(txn.updatedAt, now), deleted = true))
+    keepMember?.let { durable.familyMembers().get(it) }?.takeIf { it.sharesSms }?.let { member ->
+        durable.familyMembers().put(member.copy(sharesSms = false, updatedAt = nextStamp(member.updatedAt, now)))
     }
-    // Every shared دارایی row here belongs to somebody in the household being left.
-    for (asset in durable.familyAssets().all()) {
-        durable.familyAssets().put(asset.copy(updatedAt = nextStamp(asset.updatedAt, now), deleted = true))
-    }
+    durable.familyTxns().eraseAll()
+    durable.familyAssets().eraseAll()
     // Budgets and goals split by who made them, which is the only place this cleanup is not a
     // sweep. Somebody else's shared cap goes the way their transactions go — it was the
     // household's figure and there is no household. Hers stay, because they are hers, and land
@@ -919,17 +916,14 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
         // hers deleted is worse than a partner's old cap kept private.
         val hers = goal.ownerMemberId.isBlank() || goal.ownerMemberId == keepMember ||
             goal.ownerMemberId in formerMembers || formerMembers.isEmpty()
-        durable.goals().put(
-            if (hers) {
-                goal.copy(
-                    shared = false,
-                    ownerMemberId = keepMember.orEmpty(),
-                    updatedAt = nextStamp(goal.updatedAt, now),
-                )
-            } else {
-                goal.copy(updatedAt = nextStamp(goal.updatedAt, now), deleted = true)
-            }
-        )
+        if (hers) {
+            durable.goals().put(
+                goal.copy(shared = false, ownerMemberId = keepMember.orEmpty(), updatedAt = nextStamp(goal.updatedAt, now))
+            )
+        } else {
+            // Erased like their transactions, so the same figure can land again.
+            durable.goals().erase(goal.id)
+        }
     }
 }
 

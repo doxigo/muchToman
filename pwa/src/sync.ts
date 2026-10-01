@@ -27,8 +27,8 @@ import { MAX_SPLIT_PARTS, parseSplit, splitValue } from './edits';
 import { tehranDay } from './jalali';
 import { MAX_NOTE_CHARS } from './rules';
 import { MAX_PLAUSIBLE_RIAL, sha256Hex } from './sms';
-import type { Category, CategoryKindId, Decision, FamilyAsset, FamilyMember, Goal, GoalKindId, GoalPeriodId, LedgerEntry, Prefs, Publication, Txn } from './model';
-import { batch, pref, put, putAll, row, rows, setPref, settled } from './state';
+import type { Category, CategoryKindId, Decision, FamilyMember, Goal, GoalKindId, GoalPeriodId, LedgerEntry, Prefs, Publication, Txn } from './model';
+import { batch, erase, pref, put, putAll, row, rows, setPref, settled } from './state';
 
 // ---- constants (Sync.kt, Ledger.kt, Derived.kt, Rules.kt) ---------------------------------
 
@@ -1383,16 +1383,21 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
     resetFamilySharing();
     // Buried rather than deleted, so the same rows keep their monotonic stamps under the new key.
     putAll('publications', rows('publications').map((p) => ({ ...p, deleted: true })));
+    // Everybody else's rows are a mirror the reset cursor pulls again, so they are erased: a
+    // tombstone stamped now would outrank every older record, and a rejoin could never land the
+    // same people's rows again. Her own former ids stay buried, so no copy of who she was lands
+    // back here as somebody else.
     for (const member of rows('familyMembers')) {
-      if (member.deleted) continue;
       if (member.id === keepMember) {
         if (member.sharesSms) put('familyMembers', { ...member, sharesSms: false, updatedAt: nextStamp(member.updatedAt, now) });
-        continue;
+      } else if (former.has(member.id)) {
+        put('familyMembers', { ...member, updatedAt: nextStamp(member.updatedAt, now), deleted: true });
+      } else {
+        erase('familyMembers', member.id);
       }
-      put('familyMembers', { ...member, updatedAt: nextStamp(member.updatedAt, now), deleted: true });
     }
-    putAll('familyTxns', rows('familyTxns').filter((t) => !t.deleted).map((t) => ({ ...t, updatedAt: nextStamp(t.updatedAt, now), deleted: true })));
-    putAll('familyAssets', rows('familyAssets').filter((a) => !a.deleted).map((a): FamilyAsset => ({ ...a, updatedAt: nextStamp(a.updatedAt, now), deleted: true })));
+    for (const t of rows('familyTxns')) erase('familyTxns', t.id);
+    for (const a of rows('familyAssets')) erase('familyAssets', a.id);
     // Somebody else's shared cap goes the way their transactions go; hers stay, back on «مال خودم».
     for (const goal of rows('goals')) {
       if (goal.deleted) continue;
@@ -1401,9 +1406,9 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
       // With nothing to say who she was (a restore brings goals but neither session nor marks),
       // no goal is provably somebody else's, and a plan of hers deleted is worse than theirs kept.
       const hers = blank(goal.ownerMemberId) || goal.ownerMemberId === keepMember || former.has(goal.ownerMemberId) || former.size === 0;
-      put('goals', hers
-        ? { ...goal, shared: false, ownerMemberId: keepMember ?? '', updatedAt: nextStamp(goal.updatedAt, now) }
-        : { ...goal, updatedAt: nextStamp(goal.updatedAt, now), deleted: true });
+      if (hers) put('goals', { ...goal, shared: false, ownerMemberId: keepMember ?? '', updatedAt: nextStamp(goal.updatedAt, now) });
+      // Erased like their transactions, so the same figure can land again.
+      else erase('goals', goal.id);
     }
   });
 }

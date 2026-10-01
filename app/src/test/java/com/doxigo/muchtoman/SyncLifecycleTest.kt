@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,6 +44,8 @@ class SyncLifecycleTest {
         val inviteCode = "deadbeefdeadbeefdeadbeefdeadbeef"
         private val requests = mutableListOf<RecordedRequest>()
         private val scripted = mutableMapOf<String, ArrayDeque<Pair<Int, String>>>()
+        /** Pull pages, handed out one per `GET /v1/sync`; an empty pull once they run out. */
+        val pulls = ArrayDeque<String>()
         private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 
         init {
@@ -60,6 +63,8 @@ class SyncLifecycleTest {
                         )
                     )
                     scripted[path]?.removeFirstOrNull()
+                        ?: pulls.takeIf { path == "/v1/sync" && exchange.requestMethod == "GET" }
+                            ?.removeFirstOrNull()?.let { 200 to it }
                 } ?: when (path) {
                     "/v1/claim", "/v1/pair" -> 200 to JSONObject().put("secret", secret).toString()
                     "/v1/invite" -> 200 to JSONObject().put("code", inviteCode).toString()
@@ -143,6 +148,41 @@ class SyncLifecycleTest {
             .flatMap { request -> JSONObject(request.body).getJSONArray("records").let { a -> (0 until a.length()).map(a::getJSONObject) } }
     }
 
+    /** A record another phone pushed, sealed under [session]'s key, as a pull page carries it. */
+    private fun sealedRecord(
+        session: SyncSession,
+        id: String,
+        kind: String,
+        owner: String,
+        updatedAt: Long,
+        payload: JSONObject,
+        deleted: Boolean = false,
+    ): JSONObject {
+        val (nonce, body) = seal(session.key, payload.toString())
+        return JSONObject().put("id", id).put("scope", session.scope).put("updatedAt", updatedAt)
+            .put("device", "e".repeat(32)).put("kind", kind).put("ownerMemberId", owner)
+            .put("authorMemberId", owner).put("deleted", deleted).put("nonce", nonce).put("body", body)
+    }
+
+    private fun memberRecord(session: SyncSession, member: String, name: String, updatedAt: Long) = sealedRecord(
+        session, "member:$member", "member", member, updatedAt,
+        JSONObject().put("memberId", member).put("name", name).put("sharesSms", false),
+    )
+
+    private fun txnRecord(session: SyncSession, owner: String, localRef: String, updatedAt: Long) = sealedRecord(
+        session, familyTxnId(owner, localRef), "transaction", owner, updatedAt,
+        JSONObject().put("ownerMemberId", owner).put("at", 1000).put("amountRial", 50_000).put("direction", "out"),
+    )
+
+    private fun tombstoneRecord(session: SyncSession, id: String, kind: String, owner: String, updatedAt: Long) =
+        sealedRecord(session, id, kind, owner, updatedAt, JSONObject().put("v", 1).put("id", id).put("deleted", true), deleted = true)
+
+    /** One sync whose pull hands back [records], in that order. */
+    private suspend fun pullOnce(server: FakeSyncServer, durable: DurableDb, session: SyncSession, vararg records: JSONObject) {
+        server.pulls.add(JSONObject().put("seq", records.size).put("records", JSONArray(records.toList())).put("hasMore", false).toString())
+        pushedBy(server, durable, session)
+    }
+
     /** Only the new own member is left, nothing pushed names the old household, and her goals stayed. */
     private suspend fun assertOldHouseholdBuried(server: FakeSyncServer, durable: DurableDb, session: SyncSession) {
         assertEquals(listOf(session.member), durable.familyMembers().all().filterNot { it.deleted }.map { it.id })
@@ -176,7 +216,7 @@ class SyncLifecycleTest {
         val session = claimHousehold(server.base, durable, "سهیل")
 
         assertOldHouseholdBuried(server, durable, session)
-        assertTrue(durable.goals().anyById("theirs")!!.deleted)
+        assertNull(durable.goals().anyById("theirs"))
         assertTrue(durable.familyTxns().all().all { it.deleted })
         assertTrue(durable.familyAssets().all().all { it.deleted })
     }
@@ -193,7 +233,7 @@ class SyncLifecycleTest {
             val session = joinHousehold(link, durable, "سهیل", allowedBase = server.base)
 
             assertOldHouseholdBuried(server, durable, session)
-            assertTrue(durable.goals().anyById("theirs")!!.deleted)
+            assertNull(durable.goals().anyById("theirs"))
         } finally {
             durable2.close()
         }
@@ -318,7 +358,33 @@ class SyncLifecycleTest {
             assertFalse(kept.shared)
             assertEquals("", kept.ownerMemberId)
         }
-        assertTrue(durable.goals().anyById("theirs")!!.deleted)
+        assertNull(durable.goals().anyById("theirs"))
+    }
+
+    /**
+     * The pull starts again at zero after a rejoin, and everything the household wrote before the
+     * burial carries an older stamp. The buried copies must not outrank it, or the family view
+     * stays empty until each of them is edited.
+     */
+    @Test
+    fun `a rejoin lands the people its burial took away, older stamps and all`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val other = "b".repeat(32)
+        val ref = "m:1"
+        durable.familyMembers().put(FamilyMember(other, "رضا", updatedAt = 1000))
+        durable.familyTxns().put(
+            FamilyTxn(familyTxnId(other, ref), other, "manual", at = 1000, day = 1, amountRial = -50_000, updatedAt = 1000)
+        )
+        val link = pairingUrl(session, invite(session, durable))
+        leaveFamily(session, durable)
+
+        val rejoined = joinHousehold(link, durable, "مریم", allowedBase = server.base)
+        pullOnce(server, durable, rejoined, memberRecord(rejoined, other, "رضا", 1000), txnRecord(rejoined, other, ref, 1000))
+
+        assertFalse(durable.familyMembers().get(other)!!.deleted)
+        assertFalse(durable.familyTxns().get(familyTxnId(other, ref))!!.deleted)
+        // Her own old id stays buried: a copy of who she was must not land as somebody else.
+        assertTrue(durable.familyMembers().get(session.member)!!.deleted)
     }
 
     @Test
@@ -418,16 +484,16 @@ class SyncLifecycleTest {
         assertEquals(session.device, renewed.device)
         assertEquals(renewed.token, loadSession(durable)!!.token)
 
-        assertTrue(durable.familyMembers().get(other)!!.deleted)
+        assertNull(durable.familyMembers().get(other))
         val hers = durable.familyMembers().get(session.member)!!
         assertFalse(hers.deleted)
         assertFalse(hers.sharesSms)
-        assertTrue(durable.familyTxns().get(txnId)!!.deleted)
+        assertNull(durable.familyTxns().get(txnId))
         val herGoal = durable.goals().anyById("goal-hers")!!
         assertFalse(herGoal.deleted)
         assertFalse(herGoal.shared)
         assertEquals(session.member, herGoal.ownerMemberId)
-        assertTrue(durable.goals().anyById("goal-theirs")!!.deleted)
+        assertNull(durable.goals().anyById("goal-theirs"))
         assertEquals("false", durable.meta().get(META_SYNC_IDENTITY_OK))
     }
 

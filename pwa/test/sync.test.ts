@@ -425,11 +425,11 @@ describe('the household', () => {
     expect(renewed).toMatchObject({ member: ME, device: MY_DEVICE });
     expect(renewed.token.split('.')[0]).not.toBe(HID);
     expect(state.row('familyMembers', ME)).toMatchObject({ deleted: false, sharesSms: false });
-    expect(state.row('familyMembers', THEM)?.deleted).toBe(true);
-    expect(state.row('familyTxns', 'txn:x:y')?.deleted).toBe(true);
+    expect(state.row('familyMembers', THEM)).toBeUndefined();
+    expect(state.row('familyTxns', 'txn:x:y')).toBeUndefined();
     expect(state.row('publications', 'txn:1:2')).toMatchObject({ deleted: true, updatedAt: 9 });
     expect(state.row('goals', 'g')).toMatchObject({ shared: false, deleted: false });
-    expect(state.row('goals', 'h')?.deleted).toBe(true);
+    expect(state.row('goals', 'h')).toBeUndefined();
   });
 
   describe('after a restore', () => {
@@ -475,7 +475,7 @@ describe('the household', () => {
       ]);
       const pushed = serve();
       await expectBuried(await sync.claimHousehold('https://sync.test', 'سهیل'), pushed);
-      expect(state.row('goals', 'theirs')?.deleted).toBe(true);
+      expect(state.row('goals', 'theirs')).toBeUndefined();
     });
 
     it('joins a household with the old one buried, knowing her by her دارایی mark alone', async () => {
@@ -483,7 +483,7 @@ describe('the household', () => {
       const pushed = serve();
       const pairing = { base: 'https://sync.test', hid: HID, code: '0'.repeat(32), scope: `family:${HID}`, key: crypt.fromBase64Url(session.raw!) };
       await expectBuried(await sync.joinHousehold(pairing, 'سهیل'), pushed);
-      expect(state.row('goals', 'theirs')?.deleted).toBe(true);
+      expect(state.row('goals', 'theirs')).toBeUndefined();
     });
 
     it('keeps every goal a browser backup brings back, since nothing in it says which were hers', async () => {
@@ -500,6 +500,27 @@ describe('the household', () => {
       await sync.claimHousehold('https://sync.test', 'سهیل');
       for (const id of ['hers', 'theirs']) expect(state.row('goals', id)).toMatchObject({ deleted: false, shared: false, ownerMemberId: '' });
     });
+  });
+
+  it('lands the people a burial took away when a rejoin pulls them again, older stamps and all', async () => {
+    const id = sync.familyTxnId(THEM, 'm:1');
+    state.put('familyMembers', { id: THEM, name: 'علی', sharesSms: false, avatar: '', updatedAt: NOW - 1000, deleted: false });
+    state.put('familyTxns', { id, ownerMemberId: THEM, sourceKind: 'manual', at: 1, day: 1, amountRial: -1, bank: 'MANUAL', merchant: '', updatedAt: NOW - 1000, deleted: false, transfer: false });
+    const pages: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/v1/sync?')) return Response.json(pages.shift() ?? { seq: 0, records: [], hasMore: false });
+      return Response.json(url.endsWith('/v1/pair') ? { secret: 'c'.repeat(64) } : { clamped: [] });
+    }));
+    await sync.leaveFamily(session);
+    const pairing = { base: session.base, hid: HID, code: '0'.repeat(32), scope: session.scope, key: crypt.fromBase64Url(session.raw!) };
+    const rejoined = await sync.joinHousehold(pairing, 'مریم');
+    pages.push({ seq: 2, hasMore: false, records: [
+      await record(`member:${THEM}`, 'member', JSON.stringify({ memberId: THEM, name: 'علی', sharesSms: false })),
+      await record(id, 'transaction', JSON.stringify({ ownerMemberId: THEM, at: 1, amountRial: 1, direction: 'out' })),
+    ] });
+    await sync.syncNow(rejoined, NOW);
+    expect(state.row('familyMembers', THEM)?.deleted).toBe(false);
+    expect(state.row('familyTxns', id)?.deleted).toBe(false);
   });
 
   it('leaves through the server first, then buries the household and forgets the session', async () => {

@@ -153,6 +153,10 @@ interface GoalDao {
 
     @Query("UPDATE goal SET deleted = 1, updated_at = :now, edited_by_member_id = :by WHERE id = :id")
     suspend fun delete(id: String, now: Long, by: String = "")
+
+    /** Somebody else's shared figure, erased outright when the household it came from is buried. */
+    @Query("DELETE FROM goal WHERE id = :id")
+    suspend fun erase(id: String)
 }
 
 /**

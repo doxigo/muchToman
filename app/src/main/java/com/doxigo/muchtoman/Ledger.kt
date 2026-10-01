@@ -453,7 +453,7 @@ interface ManualTxnDao {
     suspend fun count(): Int
 
     /**
-     * Erased outright, not tombstoned — the one place in this file that is allowed to.
+     * Erased outright, not tombstoned — allowed only for rows nobody else was ever told about.
      *
      * `deleted = 1` is how a transaction *she* entered goes away: the row stays so the other
      * phones in the household learn it is gone. Nothing here was ever hers, so there is nobody to
@@ -473,6 +473,10 @@ interface FamilyMemberDao {
 
     @Query("SELECT * FROM family_member WHERE id = :id LIMIT 1")
     suspend fun get(id: String): FamilyMember?
+
+    /** Everybody but [kept], erased outright: a mirror of other phones, see `buryHousehold`. */
+    @Query("DELETE FROM family_member WHERE id NOT IN (:kept)")
+    suspend fun eraseAllBut(kept: List<String>)
 }
 
 @Dao
@@ -485,6 +489,10 @@ interface FamilyTxnDao {
 
     @Query("SELECT * FROM family_txn WHERE id = :id LIMIT 1")
     suspend fun get(id: String): FamilyTxn?
+
+    /** Erased, not tombstoned: every row here is another phone's, and the server still has it. */
+    @Query("DELETE FROM family_txn")
+    suspend fun eraseAll()
 }
 
 @Dao
@@ -506,6 +514,10 @@ interface FamilyAssetDao {
 
     @Query("SELECT * FROM family_asset WHERE member_id = :memberId LIMIT 1")
     suspend fun get(memberId: String): FamilyAsset?
+
+    /** Erased, not tombstoned, for the reason [FamilyTxnDao.eraseAll] is. */
+    @Query("DELETE FROM family_asset")
+    suspend fun eraseAll()
 }
 
 @Dao
