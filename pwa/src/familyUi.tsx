@@ -4,8 +4,8 @@
  * last, quiet until touched — the two ways out. My name and face open from my row (sheet 'me'); a
  * member's removal opens from theirs (sheet 'member'). The household itself is family.ts's.
  *
- * The one platform difference is the invite: a browser has no share-to-app intent, so beside the
- * QR sits the link itself and a way to send or copy it.
+ * The invite is the QR alone, as on the phone: the link carries the household's key, and a link
+ * that can be sent or copied is a key that can land in a chat history.
  */
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -23,7 +23,7 @@ import { faNumber } from './format';
 import { Chevron, PlusMark, TabIcon } from './icons';
 import { BankLogo } from './logos';
 import type { FamilyMember } from './model';
-import { closeSheet, openSheet, registerPage, registerSheet, showNotice } from './nav';
+import { closeSheet, openSheet, registerPage, registerSheet } from './nav';
 import { ArmedAction, Band, DoorRow, Note, QuietButton, SectionLabel, SettingCard, SettingsPage } from './settings';
 import { bankFa } from './sms';
 import { pref } from './state';
@@ -102,7 +102,7 @@ function NameForm({ name, caption, action, working, onName, onSubmit }: {
   );
 }
 
-/** The QR for a new member, on a white plate in both themes, and the link it carries. */
+/** The QR for a new member, on a white plate in both themes. */
 function InviteCode({ url }: { url: string }) {
   const path = useMemo(() => {
     // ZXing's settings on the phone: error correction M, a two-module quiet zone.
@@ -111,17 +111,6 @@ function InviteCode({ url }: { url: string }) {
     data.forEach((row, y) => row.forEach((dark, x) => { if (dark) d += `M${x} ${y}h1v1h-1z`; }));
     return { d, size: data.length };
   }, [url]);
-  const canShare = typeof navigator.share === 'function';
-  const send = async () => {
-    if (canShare) {
-      try { await navigator.share({ url }); } catch { /* she closed the share sheet */ }
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      showNotice('لینک کپی شد.');
-    } catch { /* the link is on screen to select by hand */ }
-  };
   return (
     <div class="invite">
       <h3>عضو جدید این کد رو اسکن کنه</h3>
@@ -131,8 +120,6 @@ function InviteCode({ url }: { url: string }) {
         </svg>
       </div>
       <p class="set-note" style={{ paddingTop: 'var(--l)', textAlign: 'center' }}>در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.</p>
-      <p class="link">{url}</p>
-      <PillButton label={canShare ? 'فرستادن لینک' : 'کپی لینک'} onClick={() => void send()} />
     </div>
   );
 }

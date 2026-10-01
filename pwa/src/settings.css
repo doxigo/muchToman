@@ -71,8 +71,6 @@ button.set-row:disabled { cursor: default; }
 /* White in both themes: a scanner reads dark modules on light. */
 .invite .qr { margin-top: var(--l); padding: var(--m); border-radius: var(--r-card); background: #fff; }
 .invite .qr svg { display: block; width: 232px; height: 232px; }
-.invite .link { margin-top: var(--l); max-width: 100%; direction: ltr; font-size: 12px; color: var(--on-surface-variant); overflow-wrap: anywhere; user-select: all; }
-.invite .pill { margin-top: var(--m); }
 
 .danger-row { display: block; width: 100%; padding: var(--l); border: 0; background: none; text-align: start; font: inherit; color: inherit; position: relative; }
 .danger-row .set-title { color: var(--error); }
