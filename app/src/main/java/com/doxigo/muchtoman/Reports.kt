@@ -517,7 +517,9 @@ fun bufferDays(
     countPassThrough: Boolean = false,
     excluded: Set<String> = emptySet(),
 ): Int? {
-    val from = today - over
+    // Watched from the ledger's first row, so one younger than [over] is not padded with days
+    // it never saw.
+    val from = maxOf(today - over, entries.minOfOrNull { it.txn.day } ?: today)
     val daily = spendable(entries)
         .filter {
             it.txn.day in from..today && (it.txn.signedRial ?: 0) < 0 &&
@@ -529,7 +531,12 @@ fun bufferDays(
     if (daily.size < 14) return null
     val median = daily.sorted()[daily.size / 2]
     if (median <= 0) return null
-    return (liquidRial.toDouble() / median).toInt().coerceAtMost(3650)
+    // A spending day's median, spread over every day watched — the ones she spent nothing on
+    // too. Alone, a household that spends one day in three read a «daily» figure three times its
+    // real one and a runway cut to a third. Not the median over every day: below half the days
+    // that is nothing at all, and just above half it is her cheapest days, a runway inflated.
+    val watched = today - from + 1
+    return (liquidRial.toDouble() * watched / (median.toDouble() * daily.size)).toInt().coerceAtMost(3650)
 }
 
 // ─────────────────────────── one category, taken apart ───────────────────────────

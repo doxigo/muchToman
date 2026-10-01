@@ -506,7 +506,9 @@ class ReportsTest {
         // this says, and handing money over is not a habit that eats a balance.
         val rows = (0 until 20).map { entry(first + it, -1_000_000) } +
             loan(first + 20, -500_000_000)
-        assertEquals(100, bufferDays(rows, liquidRial = 100_000_000, today = first + 25))
+        // The 500m day and the five quiet days after it are days of nothing ordinary: 26 days
+        // watched, 20m spent across them.
+        assertEquals(130, bufferDays(rows, liquidRial = 100_000_000, today = first + 25))
     }
 
     @Test
@@ -516,7 +518,19 @@ class ReportsTest {
         val rows = (0 until 20).map { entry(first + it, -1_000_000) } +
             entry(first + 20, -500_000_000)
         val days = bufferDays(rows, liquidRial = 100_000_000, today = first + 25)
-        assertEquals(100, days)
+        // 21 spending days of 26 watched, at the ordinary 1m: the repair moved nothing.
+        assertEquals(123, days)
+    }
+
+    @Test
+    fun `a day she spends nothing is a day of runway too`() {
+        // 3m on one day in three, for sixty days: 1m a day. Over spending days alone the figure
+        // was 3m a day, and the runway a third of what the money covers.
+        val sparse = (0 until 60 step 3).map { entry(first + it, -3_000_000) }
+        assertEquals(30, bufferDays(sparse, liquidRial = 30_000_000, today = first + 59))
+        // Days before the ledger's first row were never watched, so they are not days of nothing.
+        val young = (0 until 20).map { entry(first + it, -1_000_000) }
+        assertEquals(30, bufferDays(young, liquidRial = 30_000_000, today = first + 19))
     }
 
     @Test
@@ -701,7 +715,8 @@ class ReportsTest {
                 entry(first + i, -1_000_000L, category = "قهوه", categoryId = "cat_b"),
             )
         }
-        assertEquals(6, bufferDays(entries, 20_000_000L, today))
+        // Twenty spending days of the 21 watched — today has nothing yet.
+        assertEquals(7, bufferDays(entries, 20_000_000L, today))
         assertEquals(10, bufferDays(entries, 20_000_000L, today, excluded = setOf("cat_b")))
     }
 

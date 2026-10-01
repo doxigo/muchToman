@@ -299,12 +299,22 @@ describe('reports', () => {
 
   it('lending does not shorten the runway', () => {
     const rows = [...Array.from({ length: 20 }, (_, i) => entry(first + i, -1_000_000)), loan(first + 20, -500_000_000)];
-    expect(bufferDays(rows, 100_000_000, first + 25)).toBe(100);
+    // The loan's day and the five quiet days after it: 20m of ordinary spending over 26 days watched.
+    expect(bufferDays(rows, 100_000_000, first + 25)).toBe(130);
   });
 
   it('runway uses the median day so one big repair does not shorten it', () => {
     const rows = [...Array.from({ length: 20 }, (_, i) => entry(first + i, -1_000_000)), entry(first + 20, -500_000_000)];
-    expect(bufferDays(rows, 100_000_000, first + 25)).toBe(100);
+    expect(bufferDays(rows, 100_000_000, first + 25)).toBe(123);
+  });
+
+  it('a day she spends nothing is a day of runway too', () => {
+    // 3m on one day in three, for sixty days: 1m a day, not the 3m spending days alone said.
+    const sparse = Array.from({ length: 20 }, (_, i) => entry(first + 3 * i, -3_000_000));
+    expect(bufferDays(sparse, 30_000_000, first + 59)).toBe(30);
+    // Days before the ledger's first row were never watched, so they are not days of nothing.
+    const young = Array.from({ length: 20 }, (_, i) => entry(first + i, -1_000_000));
+    expect(bufferDays(young, 30_000_000, first + 19)).toBe(30);
   });
 
   it('too little history says nothing at all', () => {
@@ -417,7 +427,7 @@ describe('reports', () => {
       entry(first + i, -2_000_000, { categoryId: 'cat_a' }),
       entry(first + i, -1_000_000, { category: 'قهوه', categoryId: 'cat_b' }),
     ]).flat();
-    expect(bufferDays(entries, 20_000_000, today)).toBe(6);
+    expect(bufferDays(entries, 20_000_000, today)).toBe(7);
     expect(bufferDays(entries, 20_000_000, today, { excluded: set('cat_b') })).toBe(10);
   });
 

@@ -398,7 +398,10 @@ export function bufferDays(
   today: number,
   { over = 90, countPassThrough = false, excluded = NONE }: ReadingOptions & { over?: number } = {},
 ): number | null {
-  const from = today - over;
+  // Watched from the ledger's first row, so one younger than `over` is not padded with days it never saw.
+  let from = today;
+  for (const e of entries) if (e.txn.day < from) from = e.txn.day;
+  from = Math.max(from, today - over);
   const byDay = new Map<number, number>();
   for (const e of spendable(entries)) {
     const signed = e.txn.signedRial ?? 0;
@@ -411,7 +414,11 @@ export function bufferDays(
   if (daily.length < 14) return null;
   const median = daily.sort((a, b) => a - b)[div(daily.length, 2)];
   if (median <= 0) return null;
-  return Math.min(Math.trunc(liquidRial / median), 3650);
+  // A spending day's median, spread over every day watched — the ones she spent nothing on too.
+  // Alone, spending one day in three read a «daily» figure three times its real one. Not the median
+  // over every day: below half the days that is nothing, just above half it is her cheapest days.
+  const watched = today - from + 1;
+  return Math.min(Math.trunc((liquidRial * watched) / (median * daily.length)), 3650);
 }
 
 // ─────────────────────────── one category, taken apart ───────────────────────────
