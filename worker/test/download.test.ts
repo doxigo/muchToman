@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import LANDING from '../public/index.html?raw';
 import worker, { releaseAsset } from '../src/index';
 
 const origin = 'https://rates.muchtoman.com';
@@ -10,6 +11,13 @@ const asset = (name: string, tag = 'v2.0') => ({
 afterEach(() => vi.unstubAllGlobals());
 
 describe('APK downloads', () => {
+  it('links the landing page buttons through this origin, never github.com', () => {
+    // github.com does not load from Iran; /download streams the same file from here.
+    expect(LANDING).not.toMatch(/href="[^"]*\.apk"/);
+    expect(LANDING).toContain('href="/download"');
+    expect(LANDING).toContain('href="/download/lite"');
+  });
+
   it('selects exact editions regardless of asset order and never substitutes full for lite', () => {
     const assets = [asset('unrelated.apk'), asset('muchtoman-lite-v2.0.apk'), asset('muchtoman-v2.0.apk')];
     expect(releaseAsset(assets, 'v2.0', false)).toBe(assets[2].browser_download_url);
