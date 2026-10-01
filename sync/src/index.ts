@@ -31,6 +31,14 @@ const MAX_SCOPE_CHARS = 128;
 // records are an order of magnitude past any real household, and a bound that exists is what
 // keeps one hijacked token from growing a Durable Object without limit.
 const MAX_RECORD_ROWS = 120_000;
+// The cap counts live rows: a tombstone is history, not growth, and a household that deletes as
+// it goes must not fill up on its own deletions. Every row ever stored still meets this wider
+// backstop, so burying is not a way around the bound.
+// ponytail: tombstones are never compacted — this server keeps no device cursors, so it cannot
+// tell when every phone has pulled one. A household that buries 360k rows in its life hits
+// household_full for good; dropping tombstones older than every live device's cursor is the
+// upgrade. At 64 KiB a body, this many rows can outgrow the object's own storage limit first.
+const MAX_STORED_ROWS = 4 * MAX_RECORD_ROWS;
 const MAX_DEVICES = 16;
 // LWW griefing/skew bound: a stamp from the far future would win every merge for ever, so
 // nothing may claim to be written more than a day ahead of this server's clock. The clamped
@@ -618,8 +626,12 @@ export class Household extends DurableObject<Env> {
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
     const start = head ? Number(head.v) : 0;
     let seq = start;
-    // Replacing a row never grows the household; only a new id counts against the cap.
-    let rows = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM record')][0]?.n ?? 0;
+    // Replacing a row never grows the household; only a new live row counts against the cap.
+    const counted = [...this.sql.exec<{ stored: number; live: number }>(
+      'SELECT COUNT(*) AS stored, COUNT(*) FILTER (WHERE deleted = 0) AS live FROM record',
+    )][0];
+    let live = counted?.live ?? 0;
+    let stored = counted?.stored ?? 0;
     const maxStamp = Date.now() + MAX_STAMP_SKEW_MS;
     const clamped: { id: string; updatedAt: number }[] = [];
     try {
@@ -684,9 +696,9 @@ export class Household extends DurableObject<Env> {
           if (record.deleted) throw new SyncError('invalid_kind', 400);
         }
         const existing = [...this.sql.exec<{
-          updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string;
+          updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string; deleted: number;
         }>(
-          'SELECT updated_at, author_member, kind, owner_member FROM record WHERE id = ?',
+          'SELECT updated_at, author_member, kind, owner_member, deleted FROM record WHERE id = ?',
           record.id,
         )][0];
         if (
@@ -708,10 +720,11 @@ export class Household extends DurableObject<Env> {
         ) {
           continue;
         }
-        if (!existing) {
-          if (rows >= MAX_RECORD_ROWS) throw new SyncError('household_full', 409);
-          rows += 1;
-        }
+        const wasLive = existing?.deleted === 0;
+        if (!record.deleted && !wasLive && live >= MAX_RECORD_ROWS) throw new SyncError('household_full', 409);
+        if (!existing && stored >= MAX_STORED_ROWS) throw new SyncError('household_full', 409);
+        live += Number(!record.deleted) - Number(wasLive);
+        if (!existing) stored += 1;
         seq += 1;
         this.sql.exec(
           'INSERT OR REPLACE INTO record ' +

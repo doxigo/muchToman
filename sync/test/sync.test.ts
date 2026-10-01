@@ -858,6 +858,26 @@ describe('abuse resistance', () => {
     expect((await push(token, [record({ id: 'fits-1', updatedAt: 2000 })])).status).toBe(200);
   });
 
+  it('counts what a household still holds, not every row it ever buried', async () => {
+    const hid = '3b'.repeat(16);
+    const token = await claim(hid, ['personal:her']);
+    // A lifetime of deletes, one short of the backstop on every row ever stored: none of it
+    // counts against the cap on live rows, so the household keeps filing new ones.
+    const storedMinusOne = 4 * 120_000 - 1;
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+      state.storage.sql.exec(
+        `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${storedMinusOne})
+         INSERT INTO record (id, scope, seq, updated_at, device, kind, owner_member, author_member, deleted, nonce, body)
+         SELECT 'gone-' || i, 'personal:her', i, 1, 'seed', 'legacy', '', '', 1, 'n', 'b' FROM n`,
+      );
+    });
+    expect((await push(token, [record({ id: 'new-1' })])).status).toBe(200);
+    // The backstop still holds: burying is not a way around the bound.
+    const refused = await push(token, [record({ id: 'new-2' })]);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('household_full');
+  });
+
   it('caps a household at sixteen devices', async () => {
     const owner = await claimDevice('b2'.repeat(16), ['family:b2'], {
       memberId: 'b3'.repeat(16),
