@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import worker from '../src/index';
+import worker, { isTronAddress } from '../src/index';
 
 /**
  * /wallet-balance against canned chain answers. The amount the phone gets is persisted over
@@ -38,6 +38,16 @@ afterEach(() => vi.unstubAllGlobals());
 describe('Tron', () => {
   const account = (payload: unknown) => ({
     'https://api.trongrid.io/wallet/getaccount': () => Response.json(payload),
+  });
+
+  it('checks the base58check sum, so a one-letter typo is a wrong address, not an empty one', async () => {
+    expect(await isTronAddress(TRON)).toBe(true);
+    expect(await isTronAddress(USDT_TRC20)).toBe(true);
+    // No route: a typo must be refused before anything is asked of the chain.
+    expect(await lookup({}, { network: 'tron', address: `${TRON.slice(0, -1)}Y` }))
+      .toEqual({ status: 400, body: { code: 'invalid_address' } });
+    expect(await lookup({}, { network: 'tron', address: TRON, contract: `${USDT_TRC20.slice(0, -1)}u` }))
+      .toEqual({ status: 400, body: { code: 'invalid_contract' } });
   });
 
   it('reads TRX, and a zero only for an account the chain says is empty', async () => {

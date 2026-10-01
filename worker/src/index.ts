@@ -781,9 +781,29 @@ async function solanaBalance(address: string, mint: string): Promise<number> {
   return Number(result.value) / 1_000_000_000;
 }
 
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+/**
+ * Base58check, not just the shape: 0x41, twenty bytes, then the first four bytes of a double
+ * SHA-256 over those. The pattern alone passed a one-character typo through to the chain, which
+ * answers for an address nobody owns with a confident 0. (EVM's EIP-55 would need keccak, which
+ * WebCrypto does not have; those stay shape-checked.)
+ */
+export async function isTronAddress(text: string): Promise<boolean> {
+  if (!TRON_ADDRESS.test(text)) return false;
+  let n = 0n;
+  for (const c of text) n = n * 58n + BigInt(BASE58.indexOf(c));
+  const bytes = new Uint8Array(25);
+  for (let i = 24; i >= 0; i--, n >>= 8n) bytes[i] = Number(n & 0xffn);
+  if (n !== 0n || bytes[0] !== 0x41) return false;
+  const once = await crypto.subtle.digest('SHA-256', bytes.subarray(0, 21));
+  const twice = new Uint8Array(await crypto.subtle.digest('SHA-256', once));
+  return twice.subarray(0, 4).every((b, i) => b === bytes[21 + i]);
+}
+
 async function tronBalance(address: string, contract: string): Promise<number> {
-  if (!TRON_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
-  if (contract && !TRON_ADDRESS.test(contract)) throw new WalletInputError('invalid_contract');
+  if (!(await isTronAddress(address))) throw new WalletInputError('invalid_address');
+  if (contract && !(await isTronAddress(contract))) throw new WalletInputError('invalid_contract');
 
   // Every zero below is one the chain said, never one an error body defaulted to: trongrid
   // answers 200 with an `Error` field, and a 0 here is persisted over a real holding.
