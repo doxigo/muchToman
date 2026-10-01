@@ -387,8 +387,11 @@ export class Household extends DurableObject<Env> {
     if (!this.claimed) this.migrate();
     this.claimed = true;
     // After the last await, so two claims racing for one household cannot both find it empty.
+    // Anything in meta means a household lived here — one whose last device left before leaving
+    // cleared the records away — and its records are nobody's to claim.
     const existing = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
-    if (existing && existing.n > 0) throw new SyncError('already_claimed', 409);
+    const lived = [...this.sql.exec('SELECT 1 FROM meta LIMIT 1')].length > 0;
+    if ((existing && existing.n > 0) || lived) throw new SyncError('already_claimed', 409);
     const now = Date.now();
     this.sql.exec(
       // Locked by name: in a household older than the column its default is 0, the one free
@@ -798,7 +801,21 @@ export class Household extends DurableObject<Env> {
     const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
     const auth = this.authorise(secretHash);
     const record = this.memberTombstone(body.record, auth, auth.memberId);
-    return this.removeMember(auth, auth.memberId, record);
+    const response = this.removeMember(auth, auth.memberId, record);
+    await this.closeIfEmpty();
+    return response;
+  }
+
+  /**
+   * A household nobody holds a token for any more ends with its last device. Kept, it would wait
+   * for ever with every record in it for anyone who knows its id — which every token and every
+   * invite carries — to claim it again and pull the lot.
+   */
+  private async closeIfEmpty(): Promise<void> {
+    const devices = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
+    if (devices && devices.n > 0) return;
+    await this.ctx.storage.deleteAll();
+    this.claimed = false;
   }
 
   /**
@@ -832,6 +849,7 @@ export class Household extends DurableObject<Env> {
     // not be able to walk back in with it — the remaining members can mint a fresh code in one
     // tap, so sweeping them all costs nothing.
     this.sql.exec('DELETE FROM pairing');
+    await this.closeIfEmpty();
     return jsonResponse({ revoked: device || member });
   }
 

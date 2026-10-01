@@ -152,6 +152,35 @@ describe('a household', () => {
     // Unclaimed is still claimable.
     await claim(hid, ['personal:her']);
   });
+
+  it('goes with its last device, and is never handed over with its records', async () => {
+    const hid = '2b'.repeat(16);
+    const scope = 'family:2b';
+    const founder = await claimDevice(hid, [scope], { memberId: '2c'.repeat(16), deviceId: '2d'.repeat(16) });
+    await push(founder.token, [record({ scope })]);
+    expect((await leave(founder.token, founder.memberId, scope)).status).toBe(200);
+    const tables = await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) =>
+      [...state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        .map((row) => row.name).filter((name) => !name.startsWith('_cf_')));
+    expect(tables).toEqual([]);
+    // Claiming the id again finds nothing of the household that was there.
+    const fresh = await claim(hid, [scope]);
+    expect((await pull(fresh)).json.records).toEqual([]);
+
+    // A household emptied before closing existed — every device row gone, the records still
+    // there — stays shut to a new claim.
+    const orphan = '2e'.repeat(16);
+    const last = await claim(orphan, ['personal:her']);
+    await push(last, [record()]);
+    await runInDurableObject(env.HOUSEHOLD.getByName(orphan), async (_instance, state) => {
+      state.storage.sql.exec('DELETE FROM device');
+    });
+    const reclaimed = await SELF.fetch(`https://sync.test/v1/claim?hid=${orphan}`, {
+      method: 'POST',
+      body: JSON.stringify({ scopes: ['personal:her'] }),
+    });
+    expect(reclaimed.status).toBe(409);
+  });
 });
 
 describe('syncing', () => {
