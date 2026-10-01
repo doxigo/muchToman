@@ -1137,7 +1137,7 @@ function releaseNotesFa(body: unknown): string[] {
  * objects.githubusercontent.com, and a redirect only moves the unreachable half of the problem
  * onto the phone.
  */
-async function fetchApk(ctx: ExecutionContext, lite: boolean): Promise<Response> {
+async function fetchApk(request: Request, ctx: ExecutionContext, lite: boolean): Promise<Response> {
   const release = await fetchLatestRelease();
   const asset = lite ? release.assetLite : release.asset;
   if (asset == null) return textResponse('No APK for this edition in the latest release', 502);
@@ -1149,8 +1149,18 @@ async function fetchApk(ctx: ExecutionContext, lite: boolean): Promise<Response>
     `${PUBLIC_ORIGIN}/__cache/apk-v2/${lite ? 'lite' : 'full'}/${encodeURIComponent(release.name)}`,
     { method: 'GET' },
   );
-  const hit = await cache.match(key);
-  if (hit) return mutableDownload(hit);
+  // For the same reason the tag is a strong validator, and a browser only resumes a dropped
+  // download against one: it comes back with Range and If-Range, and 30 MB on a flaky link no
+  // longer starts again from zero. The Range goes on the lookup, where the cache answers with
+  // its own 206 slice, streamed — not byteRange, which would hold the whole APK in memory per
+  // request. An If-Range naming another build gets the whole file, as RFC 9110 says.
+  const etag = `"muchtoman-${lite ? 'lite-' : ''}${release.name}"`;
+  const range = request.headers.get('range');
+  const ifRange = request.headers.get('if-range');
+  const hit = await cache.match(range != null && (ifRange == null || ifRange === etag)
+    ? new Request(key.url, { headers: { range } })
+    : key);
+  if (hit) return mutableDownload(hit, etag);
 
   // The deadline covers time-to-headers only and is disarmed the moment GitHub answers. An
   // AbortSignal.timeout here used to run for the whole streamed body, which cut every slow
@@ -1196,12 +1206,17 @@ async function fetchApk(ctx: ExecutionContext, lite: boolean): Promise<Response>
   ctx.waitUntil(cache.put(key, new Response(cacheBody, { headers })).catch((error) => {
     console.error(JSON.stringify({ message: 'apk cache write failed', error: errorMessage(error) }));
   }));
-  return mutableDownload(new Response(clientBody, { headers }));
+  // A cold edge answers a Range with the whole file, which RFC 9110 allows; the resume after it
+  // finds the cache filled.
+  return mutableDownload(new Response(clientBody, { headers }), etag);
 }
 
-function mutableDownload(response: Response): Response {
+/** Set on the way out rather than stored, so the entries cached before them carry them too. */
+function mutableDownload(response: Response, etag: string): Response {
   const headers = new Headers(response.headers);
   headers.set('cache-control', 'no-store');
+  headers.set('accept-ranges', 'bytes');
+  headers.set('etag', etag);
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -1754,7 +1769,7 @@ export default {
         return textResponse('Method not allowed', 405, 'GET');
       }
       try {
-        return await fetchApk(ctx, url.pathname.endsWith('/lite'));
+        return await fetchApk(request, ctx, url.pathname.endsWith('/lite'));
       } catch (error) {
         console.error(JSON.stringify({ message: 'apk proxy failed', error: errorMessage(error) }));
         return textResponse('Download unavailable', 502);

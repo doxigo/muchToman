@@ -26,6 +26,28 @@ describe('APK downloads', () => {
     expect(releaseAsset([{ ...assets[2], browser_download_url: 'https://other.example/file.apk' }], 'v2.0', false)).toBeNull();
   });
 
+  it('resumes a dropped download: Range reaches the cache lookup, against this build only', async () => {
+    const asked: (string | null)[] = [];
+    vi.stubGlobal('caches', { default: {
+      match: async (request: Request) => {
+        asked.push(request.headers.get('range'));
+        return new Response('apk', { headers: { 'content-length': '3' } });
+      },
+    } });
+    vi.stubGlobal('fetch', async () => Response.json({ tag_name: 'v2.0', assets: [asset('muchtoman-v2.0.apk')] }));
+    const env = { ASSETS: {} as Fetcher };
+    const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
+    const get = (headers: Record<string, string>) =>
+      worker.fetch(new Request(`${origin}/download`, { headers }), env, ctx);
+
+    const first = await get({ range: 'bytes=10-' });
+    expect(first.headers.get('accept-ranges')).toBe('bytes');
+    expect(first.headers.get('etag')).toBe('"muchtoman-2.0"');
+    await get({ range: 'bytes=10-', 'if-range': '"muchtoman-2.0"' });
+    await get({ range: 'bytes=10-', 'if-range': '"muchtoman-1.9"' }); // another build: whole file
+    expect(asked).toEqual(['bytes=10-', 'bytes=10-', null]);
+  });
+
   it('keeps versioned edition caches separate and revalidates public downloads across releases', async () => {
     const cache = new Map<string, Response>();
     const pending: Promise<unknown>[] = [];
