@@ -1007,6 +1007,17 @@ class MoneyTest {
     }
 
     @Test
+    fun `a starred balance is none, and a date, a clock or an account number never is one`() {
+        // The figure the stars stand for is unknown; the 07 of the date under them is not it.
+        assertNull(sms("خرید مبلغ 1,000,000 ریال\nمانده **********\n07/01\n16:13")!!.balance)
+        assertNull(sms("خرید مبلغ 1,000,000 ریال\nمانده ****\nکارمزد 5,000 ریال")!!.balance)
+        assertNull(sms("برداشت مبلغ 1,000,000 ریال\nموجودی در تاریخ 1405/07/01 ساعت 10:30")!!.balance)
+        assertEquals(500_000.0, sms("موجودی حساب 0101234567 : 5,000,000 ریال")!!.balance!!, 0.01)
+        // A colon after the label is still the label's.
+        assertEquals(500_000.0, sms("مانده:5,000,000")!!.balance!!, 0.01)
+    }
+
+    @Test
     fun `an emptied account is allowed to read zero`() {
         var accounts = applyBankSms(emptyList(), sms("مانده 50,000,000 ریال", at = 1)!!)
         assertEquals(5_000_000.0, bankTotal(accounts, emptySet()), 0.01)

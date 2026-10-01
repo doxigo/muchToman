@@ -153,15 +153,28 @@ function isDigit(c: string | undefined): boolean {
   );
 }
 
-/** An account or card number rather than an amount — a dash between digit runs, or a mask star. */
+/**
+ * An account, card or reference number, a date or a clock rather than an amount: a dash or a colon
+ * between digit runs ("829-800-1092308-1", "16:59"), a slash or a mask star touching it ("07/01"),
+ * or a leading zero, which no amount is printed with. A colon after a label is not one —
+ * «مانده:2,271,325,358» is the balance — and neither is a minus after a space.
+ */
 function isIdentifierPart(text: string, start: number, end: number): boolean {
   const before = text[start - 1];
   const after = text[end];
-  if (before === '*' || after === '*') return true;
-  if (before === '-' && isDigit(text[start - 2])) return true;
-  if (after === '-' && isDigit(text[end + 1])) return true;
-  return false;
+  if (before === '*' || after === '*' || before === '/' || after === '/') return true;
+  if ((before === '-' || before === ':') && isDigit(text[start - 2])) return true;
+  if ((after === '-' || after === ':') && isDigit(text[end + 1])) return true;
+  const digits = digitsOf(text.slice(start, end));
+  return digits.length > 1 && digits[0] === '0';
 }
+
+/**
+ * A label whose figure the bank starred out. Whatever digits follow are something else — a date, a
+ * clock, a fee — and reading on to them is how خاورمیانه's «مانده **********» above «07/01» became
+ * a balance of 0.7 Toman that anchored the account.
+ */
+const STARRED = /^[\s:]*\S*\*/;
 
 /**
  * Whether the word found at [at] sits right after «قابل», which turns an event into an ability:
@@ -217,6 +230,7 @@ function figureAfter(
       if (qualifiedAt(text, at)) continue;
       const ahead = text.slice(start, start + 16);
       if (opts.veto?.some((v) => ahead.includes(v))) continue;
+      if (STARRED.test(ahead)) continue;
       // Where this search must give up rather than keep walking. A figure on the far side of
       // «موجودی» is that balance being stated, and returning it as the amount reports everything
       // she has as the sum that just moved.

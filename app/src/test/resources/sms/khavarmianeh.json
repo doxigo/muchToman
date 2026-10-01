@@ -73,11 +73,12 @@
         "07/01",
         "16:59"
       ],
-      "why": "Real message from issue #46; the stars are the reporter's redaction. Money arriving from another card, yet «انتقال» read it as a spend and the card's last four digits as the amount: the ledger showed a 929 Toman withdrawal. The signed line is the amount and its sign is the direction, whatever the words say.",
+      "why": "Real message from issue #46; the stars are the reporter's redaction. Money arriving from another card, yet «انتقال» read it as a spend and the card's last four digits as the amount: the ledger showed a 929 Toman withdrawal. The signed line is the amount and its sign is the direction, whatever the words say. The starred مانده states no balance: the 07 of the date under it was read as one, 0.7 Toman, and anchored the account there.",
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "in",
-        "amountRial": 6000000
+        "amountRial": 6000000,
+        "balanceRial": null
       }
     },
     {
@@ -94,11 +95,12 @@
         "07/01",
         "19:27"
       ],
-      "why": "Real message from issue #46; the stars are the reporter's redaction. The direction came out right and the amount was the destination card's last four digits, a 952 Toman spend.",
+      "why": "Real message from issue #46; the stars are the reporter's redaction. The direction came out right and the amount was the destination card's last four digits, a 952 Toman spend. The starred مانده is no balance either, not the date under it.",
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "out",
-        "amountRial": 5699000
+        "amountRial": 5699000,
+        "balanceRial": null
       }
     },
     {
@@ -114,11 +116,12 @@
         "07/01",
         "16:13"
       ],
-      "why": "Real message from issue #46; the stars are the reporter's redaction. The first figure after «خرید» is the card tail 0224, under the floor for money, so the amount was left unknown.",
+      "why": "Real message from issue #46; the stars are the reporter's redaction. The first figure after «خرید» is the card tail 0224, under the floor for money, so the amount was left unknown. The starred مانده is no balance, not the date under it.",
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "out",
-        "amountRial": 10000000
+        "amountRial": 10000000,
+        "balanceRial": null
       }
     },
     {
@@ -138,7 +141,8 @@
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "in",
-        "amountRial": 7000000
+        "amountRial": 7000000,
+        "balanceRial": null
       }
     },
     {
@@ -158,7 +162,8 @@
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "in",
-        "amountRial": 2436576
+        "amountRial": 2436576,
+        "balanceRial": null
       }
     },
     {
@@ -178,7 +183,8 @@
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "in",
-        "amountRial": 89580000
+        "amountRial": 89580000,
+        "balanceRial": null
       }
     },
     {
@@ -199,7 +205,8 @@
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "out",
-        "amountRial": 660000
+        "amountRial": 660000,
+        "balanceRial": null
       }
     }
   ]

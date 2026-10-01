@@ -498,20 +498,31 @@ private fun isDigit(c: Char?) =
     c != null && (c in '0'..'9' || c in '۰'..'۹' || c in '٠'..'٩')
 
 /**
- * Whether this run of digits is part of an account, card or reference number rather than an
- * amount. What marks one is a dash *between two digit runs* — "829-800-1092308-1" — or a mask
- * star. A dash after a space or a line break is not that: it is a minus sign, and خاورمیانه
- * writes its withdrawals exactly so, as a bare "-5,025,000" on its own line. Treating that as
- * an identifier skipped the real amount and read the reference number underneath it instead.
+ * Whether this run of digits is part of an account, card or reference number, a date or a clock,
+ * rather than an amount. What marks one is a dash or a colon *between two digit runs* —
+ * "829-800-1092308-1", "16:59" — a slash or a mask star touching it — "07/01", "020/000016703" —
+ * or a leading zero, which no amount is printed with and an account number often is. A dash
+ * after a space or a line break is not that: it is a minus sign, and خاورمیانه writes its
+ * withdrawals exactly so, as a bare "-5,025,000" on its own line. Treating that as an identifier
+ * skipped the real amount and read the reference number underneath it instead. Nor is a colon
+ * after a label: «مانده:2,271,325,358» is the balance.
  */
 private fun isIdentifierPart(text: String, at: IntRange): Boolean {
     val before = text.getOrNull(at.first - 1)
     val after = text.getOrNull(at.last + 1)
-    if (before == '*' || after == '*') return true
-    if (before == '-' && isDigit(text.getOrNull(at.first - 2))) return true
-    if (after == '-' && isDigit(text.getOrNull(at.last + 2))) return true
-    return false
+    if (before == '*' || after == '*' || before == '/' || after == '/') return true
+    if ((before == '-' || before == ':') && isDigit(text.getOrNull(at.first - 2))) return true
+    if ((after == '-' || after == ':') && isDigit(text.getOrNull(at.last + 2))) return true
+    val digits = digitsOf(text.substring(at.first, at.last + 1))
+    return digits.length > 1 && digits[0] == '0'
 }
+
+/**
+ * A label whose figure the bank starred out. Whatever digits follow are something else — a date,
+ * a clock, a fee — and reading on to them is how خاورمیانه's «مانده **********» above «07/01»
+ * became a balance of 0.7 Toman that anchored the account.
+ */
+private val STARRED = Regex("^[\\s:]*\\S*\\*")
 
 /**
  * Whether the word found at [at] sits right after «قابل», which turns an event into an
@@ -559,6 +570,7 @@ private fun figureAfter(
             // "مانده بدهی" is a different noun from "مانده".
             val ahead = text.substring(start, minOf(text.length, start + 16))
             if (veto.any { ahead.contains(it) }) continue
+            if (STARRED.containsMatchIn(ahead)) continue
             // Where this search must give up rather than keep walking. A figure on the far side
             // of «موجودی» is that balance being stated, and returning it as the amount reports
             // everything she has as the sum that just moved.

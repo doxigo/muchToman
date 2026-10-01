@@ -72,7 +72,10 @@ import kotlinx.coroutines.sync.withLock
 // «سود:2,472,328+». Those purchases, deposits and interest had been stored with no amount at all.
 // 13: a Blu box move goes the way the money left — «از حساب در باکس … نشست» is out of the
 // account, not the deposit «نشست» made it — and is filed as a transfer on channel «box».
-const val PARSER_VERSION = 13
+// 14: a starred مانده states no balance, and a date, a clock or a zero-led account number is never
+// one. خاورمیانه's «مانده **********» had been read as the 07 of the date under it — a balance of
+// 0.7 Toman, stored on every such row and anchoring the account there until the rebuild.
+const val PARSER_VERSION = 14
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

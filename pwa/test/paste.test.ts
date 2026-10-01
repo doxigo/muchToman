@@ -97,6 +97,16 @@ describe('quick paste', () => {
     expect(got.amountRial).toBe(3_000_000);
   });
 
+  it('reads no balance off a starred one, a date, a clock or an account number', () => {
+    // The figure the stars stand for is unknown; the 07 of the date under them is not it.
+    expect(parsePasted('خرید مبلغ 1,000,000 ریال\nمانده **********\n07/01\n16:13').balanceRial).toBeNull();
+    expect(parsePasted('خرید مبلغ 1,000,000 ریال\nمانده ****\nکارمزد 5,000 ریال').balanceRial).toBeNull();
+    expect(parsePasted('برداشت مبلغ 1,000,000 ریال\nموجودی در تاریخ 1405/07/01 ساعت 10:30').balanceRial).toBeNull();
+    expect(parsePasted('موجودی حساب 0101234567 : 5,000,000 ریال').balanceRial).toBe(5_000_000);
+    // A colon after the label is still the label's.
+    expect(parsePasted('مانده:5,000,000').balanceRial).toBe(5_000_000);
+  });
+
   it('never reads a wallet promo as the bank balance', () => {
     // The corpus pins this as a declined message, which this side skips — declining is about
     // who sent it. The veto itself still has to hold here, or a pasted promo states a balance.
