@@ -2549,19 +2549,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * counted message counted once. Unreferenced for now: the UI wave adds the settings row.
      */
     fun rescanInbox() {
-        val app = getApplication<Application>()
         viewModelScope.launch {
-            // Joined first, and rewound under the gate, so neither a pipeline mid-ingest nor the
-            // watch worker can write its watermark over the rewind.
-            ledgerJob?.join()
-            runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
-                .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
-            runLedger()
+            rewindLedger()
             restartScan {
                 store.smsScannedTo = 0L
                 store.notifyScannedTo = 0L
             }
         }
+    }
+
+    /** The ledger's half of a re-read: [rewindIngest], then the pipeline that reads from there. */
+    private suspend fun rewindLedger() {
+        val app = getApplication<Application>()
+        // Joined first, and rewound under the gate, so neither a pipeline mid-ingest nor the
+        // watch worker can write its watermark over the rewind.
+        ledgerJob?.join()
+        runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
+            .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
+        runLedger()
     }
 
     /**
@@ -2619,12 +2624,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * it is ever recorded as seen, so the only thing hiding these particular messages is how
      * far the inbox has been read; everything already counted is still in seenSms and stays
      * skipped.
+     *
+     * The ledger is wound back too, which is the case [rewindIngest] exists for: its ingest gate
+     * skipped this sender's messages just as the fold did, and without the rewind her balance
+     * came back while none of the transactions behind it ever reached the ledger.
      */
     fun addBankNumber(bank: String, sender: String) {
         if (runCatching { Bank.valueOf(bank) }.getOrNull() == null || sender.isBlank()) return
         val cur = store.extraBankNumbers
         store.extraBankNumbers = cur + (bank to ((cur[bank] ?: emptyList()) + sender).distinct())
         restartScan { store.smsScannedTo = 0L }
+        viewModelScope.launch { rewindLedger() }
     }
 
     /**
