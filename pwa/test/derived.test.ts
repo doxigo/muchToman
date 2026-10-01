@@ -12,7 +12,7 @@ import { autoFilePlan } from '../src/filing';
 import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/jalali';
 import type { BalanceAnchor, Decision, FamilyTxn, LedgerEntry, ManualTxn, Source, Txn } from '../src/model';
 import { BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_OTHER, CAT_SHOPPING_ID, CAT_UNCATEGORISED } from '../src/rules';
-import { AT_FUTURE_SLACK_MS, parseToRows, printedMoment, sha256Hex, sourceId } from '../src/sms';
+import { AT_FUTURE_SLACK_MS, parseToRows, pastedMoment, printedMoment, sha256Hex, sourceId } from '../src/sms';
 
 /** Derived.kt, as DeriveTest.kt, LedgerStartTest.kt and FilingTest.kt pin it, and AppVm's ledger actions. */
 
@@ -139,6 +139,21 @@ describe('reading pasted messages', () => {
     for (const nonsense of ['', '2026/09/26', '1405/13/1', '1405/12/31 10:00', '1405/5/1 25:00', '1406/1/1']) {
       expect(printedMoment(nonsense, now), nonsense).toBeNull();
     }
+  });
+
+  it('reads the moment off a body that runs month and day together', () => {
+    const now = tehranDayStart(jalaliDay(1405, 7, 4)) + 12 * 3600_000;
+    const at = (y: number, m: number, d: number, h = 0, min = 0): number =>
+      tehranDayStart(jalaliDay(y, m, d)) + (h * 60 + min) * 60_000;
+    // ملی's and صادرات's, off the corpus.
+    expect(pastedMoment('بانك ملي ايران\nسود:2,472,328+\nحساب:15102\nمانده:71,655,428\n0425-01:15', now)).toBe(at(1405, 4, 25, 1, 15));
+    expect(pastedMoment('پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04', now)).toBe(at(1405, 5, 3, 13, 4));
+    // Esfand's message pasted in Farvardin is last year's.
+    const farvardin = tehranDayStart(jalaliDay(1405, 1, 2)) + 12 * 3600_000;
+    expect(pastedMoment('برداشت 5,000,000\nمانده 20,000,000\n1229 - 10:00', farvardin)).toBe(at(1404, 12, 29, 10));
+    // A printed date still wins, and four digits with no clock are no date.
+    expect(pastedMoment('واریز 1,000,000\n1405/5/1 11:26', now)).toBe(at(1405, 5, 1, 11, 26));
+    expect(pastedMoment('خرید با کارت 0224\n-10,000,000', now)).toBeNull();
   });
 });
 
@@ -364,6 +379,13 @@ describe('ledger actions', () => {
     expect(state.pref('lastPasteBank')).toBe('SAMAN');
     expect(await ledger.addPastedSms('رمز پویا: 482139\nخرید مبلغ 1,250,000 ریال', 'SAMAN')).toBeNull();
     expect(derived.ledger().entries).toHaveLength(1);
+  });
+
+  it('folds two pasted messages by when the bank stamped them, not the order they were pasted', async () => {
+    // صادرات's pair the wrong way round: the later purchase's مانده is what the account holds.
+    await ledger.addPastedSms('پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06', 'SADERAT');
+    await ledger.addPastedSms('پايا: 1,479,680+ حساب: 27007 مانده: 32,203,090 0503 - 13:04', 'SADERAT');
+    expect(derived.ledger().bankTotalRial).toBe(28_103_090);
   });
 
   it('files one row, and «همیشه» files every one like it', async () => {

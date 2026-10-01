@@ -216,3 +216,20 @@ export function printedMoment(printedAt: string, now: number): number | null {
   const at = moment(year, second, third);
   return at != null && at > now + AT_FUTURE_SLACK_MS ? null : at;
 }
+
+/**
+ * ملی and صادرات run month and day together beside the clock: «0425-01:15», «0503 - 13:04». The
+ * corpus keeps that out of «زمان ثبت» on both sides — four bare digits are not a date anywhere
+ * else — but it is still when the money moved, and the phone has the network's stamp where a paste
+ * has only this. Read as paste time, two of them pasted out of order folded to the older balance.
+ */
+const RUN_TOGETHER =
+  /(?<![0-9۰-۹٠-٩./\-_])([0-9۰-۹٠-٩]{2})([0-9۰-۹٠-٩]{2})[ _-]{1,3}([0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)(?![0-9۰-۹٠-٩])/;
+
+/** When a pasted body says it happened — {@link printedMoment} of what the bank printed — or null. */
+export function pastedMoment(body: string, now: number): number | null {
+  const printed = printedMoment(parsePasted(body).printedAt, now);
+  if (printed != null) return printed;
+  const run = RUN_TOGETHER.exec(body);
+  return run ? printedMoment(`${run[1]}/${run[2]} ${run[3]}`, now) : null;
+}
