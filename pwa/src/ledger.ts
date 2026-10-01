@@ -266,7 +266,7 @@ export function toggleBankDisabled(bank: string): void {
  * A message she pasted, stored as the phone stores an inbox row: only what `bodyToStore` keeps —
  * a one-time code, or a body that names no money, is refused with null, and so is a paste of
  * several messages at once. [at] defaults to the time the bank printed, else now. The same message
- * pasted twice is the same id and is not stored twice.
+ * pasted twice, dated or not, is not stored twice: the one already there comes back.
  */
 export async function addPastedSms(text: string, bank: string, at?: number): Promise<Source | null> {
   if (severalMessages(text)) return null;
@@ -275,7 +275,10 @@ export async function addPastedSms(text: string, bank: string, at?: number): Pro
   const now = Date.now();
   const moment = at ?? pastedMoment(body, now) ?? now;
   const id = await sourceId(bank, body, moment);
-  const existing = row('sources', id);
+  // An undated body hashes with the moment it was pasted, so pasting it again — or the Shortcut
+  // handing it over again — made a second source, counted twice wherever no مانده or reference
+  // pairs the two. The same bank and the same words are the same message, whenever pasted.
+  const existing = row('sources', id) ?? rows('sources').find((s) => s.bank === bank && s.body.trim() === body.trim());
   const source = existing ?? { id, bank, body, at: moment, ingestedAt: now };
   batch(() => {
     if (!existing) put('sources', source);

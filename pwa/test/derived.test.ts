@@ -381,6 +381,18 @@ describe('ledger actions', () => {
     expect(derived.ledger().entries).toHaveLength(1);
   });
 
+  it('stores an undated message once however late it is pasted again', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000_000_000);
+    const first = await ledger.addPastedSms('برداشت مبلغ 3,000,000 ریال', 'SAMAN');
+    clock.mockReturnValue(1_000_090_000_000);
+    const again = await ledger.addPastedSms('  برداشت مبلغ 3,000,000 ریال\n', 'SAMAN');
+    clock.mockRestore();
+    expect(again).toEqual(first);
+    expect(state.rows('sources')).toHaveLength(1);
+    // The same words from another bank are another message.
+    expect((await ledger.addPastedSms('برداشت مبلغ 3,000,000 ریال', 'BLU'))!.id).not.toBe(first!.id);
+  });
+
   it('folds two pasted messages by when the bank stamped them, not the order they were pasted', async () => {
     // صادرات's pair the wrong way round: the later purchase's مانده is what the account holds.
     const pos = 'پايانه فروش: 4,100,000- حساب: 27007 مانده:28,103,090 0503 - 17:06';
