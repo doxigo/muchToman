@@ -423,6 +423,33 @@ describe('syncNow', () => {
     accountId: null, categoryId: null, merchant: `مورد ${i}`, note: '', createdAt: NOW, updatedAt: NOW, deleted: false,
   });
 
+  it('brings a fast clock\'s goal and note back to the server\'s clamp, so a later edit from the household wins', async () => {
+    const far = NOW + 30 * 86_400_000;
+    const horizon = NOW + 86_400_000;
+    const m = manual(1);
+    const ref = `m:${m.id}`;
+    state.put('manual', m);
+    state.put('goals', {
+      id: 'g', nameFa: 'خرج ماه', targetRial: 1, kind: 'cap', categoryId: null, period: 'jmonth', startsOn: 1, endsOn: null,
+      createdAt: 1, updatedAt: far, deleted: false, shared: true, ownerMemberId: ME, editedByMemberId: ME,
+    });
+    state.put('decisions', { id: `note:${ref}`, ref, kind: 'note', value: 'نهار', createdAt: far, updatedAt: far, deleted: false, memberId: ME, familyRef: sync.familyTxnId(ME, ref) });
+    const clampAll = (records: WireRecord[]) =>
+      Response.json({ clamped: records.filter((r) => r.updatedAt > horizon).map((r) => ({ id: r.id, updatedAt: horizon })) });
+    serve([], clampAll);
+    await sync.syncNow(session, NOW);
+    expect(state.row('goals', 'g')?.updatedAt).toBe(horizon);
+    expect(state.row('decisions', `note:${ref}`)?.updatedAt).toBe(horizon);
+    // Settled: the next sync does not send them again at a fresh clamp.
+    const again = serve([], clampAll);
+    await sync.syncNow(session, NOW + 1);
+    expect(again.pushes.flat().map((r) => r.kind)).toEqual(['member']);
+    // His edit a minute past the clamp lands here instead of being refused.
+    const his = JSON.stringify({ goalId: 'g', nameFa: 'خرج ماه', targetRial: 2, goalKind: 'cap', period: 'jmonth', startsOn: 1, createdAt: 1, ownerMemberId: ME, editedByMemberId: THEM });
+    expect(await apply(await record('goal:g', 'goal', his, { updatedAt: horizon + 60_000, ownerMemberId: ME }))).toBe(true);
+    expect(state.row('goals', 'g')?.targetRial).toBe(2);
+  });
+
   it('skips a record it cannot open instead of failing the pull, and moves the cursor on', async () => {
     const good = await record(`member:${THEM}`, 'member', JSON.stringify({ memberId: THEM, name: 'علی', sharesSms: true }));
     const foreign = { ...good, id: 'member:x', nonce: crypt.toBase64(new Uint8Array(12)), body: 'AAAA' };

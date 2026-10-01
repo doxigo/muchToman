@@ -1028,7 +1028,26 @@ data class SyncResult(val sent: Int, val received: Int, val unsupportedKinds: Se
 private data class PreparedRecord(
     val wire: WireRecord,
     val publication: SyncPublication? = null,
+    /**
+     * The local row taking the stamp the server clamped this record to. Left ahead — a clock
+     * running days fast — it would be republished at a fresh clamp every sync, talking over every
+     * later edit the household makes, and would refuse their newer copies on arrival.
+     */
+    val settle: (suspend (serverAt: Long) -> Unit)? = null,
 )
+
+/** [PreparedRecord.settle] for her answers about one row: never raised, only brought back to the server's stamp. */
+private suspend fun settleAnswers(durable: DurableDb, ref: String, serverAt: Long, vararg kinds: String) {
+    for (kind in kinds) {
+        val answer = durable.decisions().answerFor(ref, kind) ?: continue
+        if (answer.updatedAt > serverAt) durable.decisions().put(answer.copy(updatedAt = serverAt))
+    }
+}
+
+private suspend fun settleGoal(durable: DurableDb, id: String, serverAt: Long) {
+    val goal = durable.goals().anyById(id) ?: return
+    if (goal.updatedAt > serverAt) durable.goals().put(goal.copy(updatedAt = serverAt))
+}
 
 private fun nextStamp(previous: Long?, now: Long): Long = maxOf(now, (previous ?: 0L) + 1L)
 
@@ -1248,7 +1267,7 @@ private suspend fun outgoingRecords(
             outgoing += PreparedRecord(
                 wireRecord(session, goalId, "goal", goal.ownerMemberId.ifBlank { session.member }, updatedAt, payload),
                 SyncPublication(goalId, "goal", contentHash, updatedAt, deleted = false),
-            )
+            ) { serverAt -> settleGoal(durable, goal.id, serverAt) }
         } else {
             // Never shared, or already retracted: there is nothing out there to take back, and a
             // tombstone for a record the household has never seen is a row on the server for ever.
@@ -1265,7 +1284,7 @@ private suspend fun outgoingRecords(
                     deleted = true,
                 ),
                 previous.copy(contentHash = "", updatedAt = updatedAt, deleted = true),
-            )
+            ) { serverAt -> settleGoal(durable, goal.id, serverAt) }
         }
     }
 
@@ -1295,7 +1314,10 @@ private suspend fun outgoingRecords(
                     payload,
                 ),
                 SyncPublication(REPORT_EXCLUSIONS_RECORD_ID, "exclusion", contentHash, updatedAt, deleted = false),
-            )
+            ) { serverAt ->
+                val state = readReportExclusions(durable)
+                if (state != null && state.updatedAt > serverAt) writeReportExclusions(durable, state.copy(updatedAt = serverAt))
+            }
         }
     }
 
@@ -1342,7 +1364,7 @@ private suspend fun outgoingRecords(
                 payload,
             ),
             publication,
-        )
+        ) { serverAt -> settleAnswers(durable, decision.ref, serverAt, DecisionKind.CATEGORY, DecisionKind.SPLIT) }
     }
 
     // Notes go out the way categories do, on records of their own, because whoever is reading a
@@ -1378,7 +1400,7 @@ private suspend fun outgoingRecords(
                 payload,
             ),
             SyncPublication(id, "note", contentHash, updatedAt, deleted = false),
-        )
+        ) { serverAt -> settleAnswers(durable, decision.ref, serverAt, DecisionKind.NOTE) }
     }
     return outgoing
 }
@@ -2234,17 +2256,11 @@ suspend fun syncNow(
             prepared.publication?.let { pub -> clamped[pub.id]?.let { pub.copy(updatedAt = it) } ?: pub }
         }
         if (publications.isNotEmpty()) durable.syncPublications().putAll(publications)
-        // The exclusion state carries its own stamp, and it has to take the server's word too:
-        // left ahead of the clamped publication, outgoingRecords would read «state newer than
-        // publication» as an unsent edit and republish the record on every sync for as long as
-        // this clock stays ahead. Safe against a concurrent edit because the family-sync mutex
-        // is held for this whole run.
-        clamped[REPORT_EXCLUSIONS_RECORD_ID]?.let { serverAt ->
-            val state = readReportExclusions(durable)
-            if (state != null && state.updatedAt > serverAt) {
-                writeReportExclusions(durable, state.copy(updatedAt = serverAt))
-            }
-        }
+        // The rows that carry their own stamp — a goal, a filing or note, the exclusion state —
+        // take the server's word too, or outgoingRecords reads «row newer than publication» as an
+        // unsent edit for as long as this clock stays ahead. An edit landing meanwhile is not
+        // lost by it: its content no longer matches the publication's hash, so it still goes.
+        for (prepared in chunk) clamped[prepared.wire.id]?.let { prepared.settle?.invoke(it) }
         sent += chunk.size
     }
 

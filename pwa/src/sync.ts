@@ -188,7 +188,12 @@ export interface WireRecord {
   nonce: string;
   body: string;
 }
-export interface PreparedRecord { wire: WireRecord; publication?: Publication }
+/**
+ * `settle` brings the local row to the stamp the server clamped this record to (Sync.kt
+ * `PreparedRecord.settle`): left ahead, a clock running days fast republishes it at a fresh clamp
+ * every sync and refuses the household's newer copies on arrival.
+ */
+export interface PreparedRecord { wire: WireRecord; publication?: Publication; settle?: (serverAt: number) => void }
 export interface SyncResult { sent: number; received: number; unsupportedKinds: string[] }
 
 export class SyncHttpError extends Error {
@@ -563,7 +568,22 @@ export interface PublishInput {
   exclusions: ReportExclusionsState | null;
 }
 
-interface Draft { id: string; kind: string; owner: string; updatedAt: number; payload: string; deleted?: boolean; publication?: Publication }
+interface Draft {
+  id: string; kind: string; owner: string; updatedAt: number; payload: string; deleted?: boolean; publication?: Publication;
+  settle?: (serverAt: number) => void;
+}
+
+/** Sync.kt `settleAnswers`: her answers about one row, never raised, only brought back to the server's stamp. */
+const settleAnswers = (ref: string, ...kinds: string[]) => (serverAt: number): void => {
+  for (const kind of kinds) {
+    const answer = row('decisions', `${kind}:${ref}`);
+    if (answer && answer.updatedAt > serverAt) put('decisions', { ...answer, updatedAt: serverAt });
+  }
+};
+const settleGoal = (id: string) => (serverAt: number): void => {
+  const goal = row('goals', id);
+  if (goal && goal.updatedAt > serverAt) put('goals', { ...goal, updatedAt: serverAt });
+};
 
 /** Sync.kt `outgoingRecords`: everything this device owes the household, sealed and ready to push. */
 export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]> {
@@ -670,14 +690,17 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
       if (previous && !previous.deleted && previous.contentHash === contentHash && previous.updatedAt >= goal.updatedAt) continue;
       // Stamped from the edit, not from this moment: the stamp is what decides whose edit won.
       const updatedAt = nextStamp(previous?.updatedAt, goal.updatedAt);
-      out.push({ id: goalId, kind: 'goal', owner, updatedAt, payload, publication: { id: goalId, sourceKind: 'goal', contentHash, updatedAt, deleted: false } });
+      out.push({
+        id: goalId, kind: 'goal', owner, updatedAt, payload, publication: { id: goalId, sourceKind: 'goal', contentHash, updatedAt, deleted: false },
+        settle: settleGoal(goal.id),
+      });
     } else {
       // Never shared, or already retracted: nothing out there to take back.
       if (!previous || previous.deleted) continue;
       const updatedAt = nextStamp(previous.updatedAt, goal.updatedAt);
       out.push({
         id: goalId, kind: 'goal', owner, updatedAt, payload: tombstonePayload(goalId), deleted: true,
-        publication: { ...previous, contentHash: '', updatedAt, deleted: true },
+        publication: { ...previous, contentHash: '', updatedAt, deleted: true }, settle: settleGoal(goal.id),
       });
     }
   }
@@ -694,6 +717,10 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
       out.push({
         id: REPORT_EXCLUSIONS_RECORD_ID, kind: 'exclusion', owner: editor, updatedAt, payload,
         publication: { id: REPORT_EXCLUSIONS_RECORD_ID, sourceKind: 'exclusion', contentHash, updatedAt, deleted: false },
+        settle: (serverAt) => {
+          const state = syncPref('reportExclusions');
+          if (state && state.updatedAt > serverAt) setSyncPref('reportExclusions', { ...state, updatedAt: serverAt });
+        },
       });
     }
   }
@@ -727,7 +754,10 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
     const previous = publications.get(id);
     if (previous && !previous.deleted && previous.contentHash === contentHash) continue;
     const updatedAt = nextStamp(previous?.updatedAt, decision.updatedAt);
-    out.push({ id, kind: 'category', owner: ownerOfFamilyTxnId(target) ?? me, updatedAt, payload, publication: { id, sourceKind: 'category', contentHash, updatedAt, deleted: false } });
+    out.push({
+      id, kind: 'category', owner: ownerOfFamilyTxnId(target) ?? me, updatedAt, payload,
+      publication: { id, sourceKind: 'category', contentHash, updatedAt, deleted: false }, settle: settleAnswers(decision.ref, 'category', 'split'),
+    });
   }
 
   // Notes go out on records of their own; a retracted one is walked too, or her words stay put.
@@ -745,10 +775,15 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
     const contentHash = sha256Hex(payload);
     if (previous && !previous.deleted && previous.contentHash === contentHash) continue;
     const updatedAt = nextStamp(previous?.updatedAt, decision.updatedAt);
-    out.push({ id, kind: 'note', owner: ownerOfFamilyTxnId(target) ?? me, updatedAt, payload, publication: { id, sourceKind: 'note', contentHash, updatedAt, deleted: false } });
+    out.push({
+      id, kind: 'note', owner: ownerOfFamilyTxnId(target) ?? me, updatedAt, payload,
+      publication: { id, sourceKind: 'note', contentHash, updatedAt, deleted: false }, settle: settleAnswers(decision.ref, 'note'),
+    });
   }
 
-  return Promise.all(out.map(async (d) => ({ wire: await wireRecord(session, d.id, d.kind, d.owner, d.updatedAt, d.payload, d.deleted), publication: d.publication })));
+  return Promise.all(out.map(async (d) => ({
+    wire: await wireRecord(session, d.id, d.kind, d.owner, d.updatedAt, d.payload, d.deleted), publication: d.publication, settle: d.settle,
+  })));
 }
 
 async function wireRecord(session: Session, id: string, kind: string, ownerMemberId: string, updatedAt: number, payload: string, deleted = false): Promise<WireRecord> {
@@ -1213,9 +1248,13 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
         for (const c of ack ?? []) if (isString(c.id) && isLong(c.updatedAt)) clamped.set(c.id, c.updatedAt);
         const publications = chunk.flatMap((r) => (r.publication ? [{ ...r.publication, updatedAt: clamped.get(r.publication.id) ?? r.publication.updatedAt }] : []));
         putAll('publications', publications);
-        const serverAt = clamped.get(REPORT_EXCLUSIONS_RECORD_ID);
-        const state = syncPref('reportExclusions');
-        if (serverAt !== undefined && state && state.updatedAt > serverAt) setSyncPref('reportExclusions', { ...state, updatedAt: serverAt });
+        // The rows that carry their own stamp take the server's word too, or the publisher reads
+        // «row newer than publication» as an unsent edit for as long as this clock stays ahead. An
+        // edit landing meanwhile still goes: its content no longer matches the publication's hash.
+        for (const r of chunk) {
+          const serverAt = clamped.get(r.wire.id);
+          if (serverAt !== undefined) r.settle?.(serverAt);
+        }
         sent += chunk.length;
       }
     }

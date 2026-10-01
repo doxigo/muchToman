@@ -39,15 +39,22 @@ class FamilyBudgetSyncTest {
                             status = 400
                             JSONObject().put("code", "invalid_kind")
                         } else {
+                            // The production Worker's stamp clamp: a day past this server's clock, no further.
+                            val maxStamp = System.currentTimeMillis() + 24L * 60 * 60 * 1000
+                            val clamped = JSONArray()
                             for (i in 0 until records.length()) {
                                 val row = records.getJSONObject(i)
                                 val previous = rows[row.getString("id")]
-                                val at = row.getLong("updatedAt")
+                                val at = minOf(row.getLong("updatedAt"), maxStamp)
+                                if (at != row.getLong("updatedAt")) {
+                                    row.put("updatedAt", at)
+                                    clamped.put(JSONObject().put("id", row.getString("id")).put("updatedAt", at))
+                                }
                                 if (previous != null && (previous.getLong("updatedAt") > at ||
                                     (previous.getLong("updatedAt") == at && previous.getString("authorMemberId") >= member))) continue
                                 rows[row.getString("id")] = row.put("authorMemberId", member).put("seq", ++seq)
                             }
-                            JSONObject().put("seq", seq)
+                            JSONObject().put("seq", seq).put("clamped", clamped)
                         }
                     }
                     else -> {
@@ -251,6 +258,44 @@ class FamilyBudgetSyncTest {
             a.sync(); b.sync()
             assertEquals(0L, spent(a))
             assertEquals(spent(a), spent(b))
+        }
+    }
+
+    /**
+     * A phone whose clock runs days fast: the server clamps what it sends, and the goal and the
+     * note take that stamp back. Left ahead, they would be republished at a fresh clamp on every
+     * sync — talking over the household's later edits — and would refuse those edits on arrival.
+     */
+    @Test
+    fun `a fast clock's goal and note take the server's clamp, so a later edit from the family wins`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            val now = System.currentTimeMillis()
+            val farAhead = now + 30L * 24 * 60 * 60 * 1000
+            val day = 24L * 60 * 60 * 1000
+            a.durable.goals().put(a.budget("total", 200_000_000).copy(updatedAt = farAhead))
+            a.durable.manual().put(ManualTxn("meal", now, tehranDay(now), -113_000_000, createdAt = now, updatedAt = now))
+            val target = familyTxnId(a.session.member, manualRef("meal"))
+            a.durable.decisions().put(TxnDecision("note-a", manualRef("meal"), DecisionKind.NOTE, "نهار", farAhead, farAhead,
+                memberId = a.session.member, familyRef = target))
+            a.sync()
+            assertTrue(a.durable.goals().byId("total")!!.updatedAt < farAhead)
+            assertTrue(a.durable.decisions().answerFor(manualRef("meal"), DecisionKind.NOTE)!!.updatedAt < farAhead)
+            val settled = home.rows.getValue(goalRecordId("total")).getLong("seq")
+            a.sync()
+            assertEquals(settled, home.rows.getValue(goalRecordId("total")).getLong("seq"))
+
+            // His edits, made a day past the clamp: they have to stand on her phone too.
+            b.sync()
+            b.durable.goals().put(b.durable.goals().byId("total")!!.copy(targetRial = 300_000_000, updatedAt = now + day + 60_000,
+                editedByMemberId = b.session.member))
+            b.durable.decisions().put(TxnDecision("note-b", familyLocalRef(target), DecisionKind.NOTE, "شام", now + day + 60_000,
+                now + day + 60_000, memberId = b.session.member, familyRef = target))
+            b.sync(); a.sync(); b.sync()
+            assertEquals(300_000_000L, a.durable.goals().byId("total")!!.targetRial)
+            assertEquals(300_000_000L, b.durable.goals().byId("total")!!.targetRial)
+            assertEquals("شام", a.durable.decisions().answerFor(manualRef("meal"), DecisionKind.NOTE)!!.value)
         }
     }
 
