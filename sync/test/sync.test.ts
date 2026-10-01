@@ -136,6 +136,22 @@ describe('a household', () => {
     });
     expect(wellFormed.status).toBe(401);
   });
+
+  it('writes nothing for a household nobody claimed, so a made-up id leaves nothing behind', async () => {
+    const hid = '2a'.repeat(16);
+    const headers = { authorization: `Bearer ${hid}.${'f'.repeat(64)}` };
+    expect((await SELF.fetch('https://sync.test/v1/sync', { headers })).status).toBe(401);
+    for (const path of ['/v1/sync', '/v1/invite', '/v1/pair', '/v1/identity', '/v1/leave']) {
+      const res = await SELF.fetch(`https://sync.test${path}`, { method: 'POST', headers, body: '{}' });
+      expect(res.status).toBe(401);
+    }
+    const tables = await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) =>
+      [...state.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        .map((row) => row.name).filter((name) => !name.startsWith('_cf_')));
+    expect(tables).toEqual([]);
+    // Unclaimed is still claimable.
+    await claim(hid, ['personal:her']);
+  });
 });
 
 describe('syncing', () => {

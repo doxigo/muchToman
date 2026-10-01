@@ -217,11 +217,20 @@ interface AuthorisedDevice {
  */
 export class Household extends DurableObject<Env> {
   private sql: SqlStorage;
+  /** Whether a claim has made this household's tables; nothing else may make them. */
+  private claimed: boolean;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    ctx.blockConcurrencyWhile(async () => this.migrate());
+    // Any well-formed token routes here, made-up household id and all, and the object comes into
+    // being by being addressed. One that writes nothing is not kept, so until a claim makes the
+    // tables every request is answered without writing — otherwise each random id would leave a
+    // permanent, empty household behind.
+    this.claimed = [...this.sql.exec(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'device'",
+    )].length > 0;
+    if (this.claimed) ctx.blockConcurrencyWhile(async () => this.migrate());
   }
 
   private migrate(): void {
@@ -332,6 +341,7 @@ export class Household extends DurableObject<Env> {
 
     try {
       if (path === '/claim' && request.method === 'POST') return await this.claim(request);
+      if (!this.claimed) return jsonResponse({ code: 'unauthorised' }, 401);
       if (path === '/invite' && request.method === 'POST') return await this.invite(request);
       if (path === '/pair' && request.method === 'POST') return await this.pair(request);
       if (path === '/identity' && request.method === 'POST') return await this.setIdentity(request);
@@ -360,6 +370,8 @@ export class Household extends DurableObject<Env> {
     const deviceId = identity(body.deviceId, () => randomToken(16));
     const secret = randomToken();
     const secretHash = await sha256Hex(secret);
+    if (!this.claimed) this.migrate();
+    this.claimed = true;
     // After the last await, so two claims racing for one household cannot both find it empty.
     const existing = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
     if (existing && existing.n > 0) throw new SyncError('already_claimed', 409);
