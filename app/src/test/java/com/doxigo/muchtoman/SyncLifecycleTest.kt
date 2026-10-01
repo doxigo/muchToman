@@ -547,10 +547,13 @@ class SyncLifecycleTest {
     fun `renew claims a fresh household and keeps only the person`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         val other = "b".repeat(32)
-        // She shares SMS in the old household; renewal must land her in the new one not sharing.
+        // She shares SMS in the old household, one bank set aside; the renewal's copy promises her
+        // rows are sent again, so the new household gets them under the same switches.
         durable.familyMembers().put(
             durable.familyMembers().get(session.member)!!.copy(sharesSms = true, updatedAt = 2000)
         )
+        durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, "true"))
+        durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, "MELLAT"))
         durable.familyMembers().put(FamilyMember(other, "رضا", updatedAt = 1000))
         val txnId = familyTxnId(other, "m:1")
         durable.familyTxns().put(
@@ -589,7 +592,9 @@ class SyncLifecycleTest {
         assertNull(durable.familyMembers().get(other))
         val hers = durable.familyMembers().get(session.member)!!
         assertFalse(hers.deleted)
-        assertFalse(hers.sharesSms)
+        assertTrue(hers.sharesSms)
+        assertEquals("true", durable.meta().get(META_SYNC_SHARE_SMS))
+        assertEquals("MELLAT", durable.meta().get(META_SYNC_EXCLUDED_BANKS))
         assertNull(durable.familyTxns().get(txnId))
         val herGoal = durable.goals().anyById("goal-hers")!!
         assertFalse(herGoal.deleted)

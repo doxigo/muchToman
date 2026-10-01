@@ -894,10 +894,10 @@ suspend fun leaveFamily(session: SyncSession, durable: DurableDb): Unit = withFa
  * ever get their hands on.
  *
  * This device keeps its identity and walks alone into a new household: new id, new token, new
- * key, same person. The publication marks are buried so the next ordinary sync re-pushes every
- * record this device owns, and the old household's copy of everyone else is buried locally —
- * that ledger stops updating, and the shared one starts over. Everyone remaining has to scan a
- * fresh QR; the copy on the screen says so in as many words.
+ * key, same person, sharing what she shared. The publication marks are buried so the next
+ * ordinary sync re-pushes every record this device owns, and the old household's copy of
+ * everyone else is erased locally — that ledger stops updating, and the shared one starts over.
+ * Everyone remaining has to scan a fresh QR; the copy on the screen says so in as many words.
  */
 suspend fun renewHousehold(durable: DurableDb): SyncSession = withFamilySync {
     val old = loadSession(durable) ?: error("no household to renew")
@@ -927,7 +927,9 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     durable.meta().delete(META_SYNC_ROTATION)
     durable.meta().put(DurableMeta(META_SYNC_SEQ, "0"))
     durable.meta().put(DurableMeta(META_SYNC_IDENTITY_OK, "false"))
-    resetFamilySharing(durable)
+    // A renewal is the same person in a fresh household, and its copy promises her rows are
+    // sent again — so what she shares stays as she set it. Anybody else starts private.
+    if (keepMember == null) resetFamilySharing(durable)
     if (publications.isNotEmpty()) {
         durable.syncPublications().putAll(publications.map { it.copy(deleted = true) })
     }
@@ -943,9 +945,6 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     for (id in formerSelves) {
         val former = durable.familyMembers().get(id) ?: continue
         durable.familyMembers().put(former.copy(updatedAt = nextStamp(former.updatedAt, now), deleted = true))
-    }
-    keepMember?.let { durable.familyMembers().get(it) }?.takeIf { it.sharesSms }?.let { member ->
-        durable.familyMembers().put(member.copy(sharesSms = false, updatedAt = nextStamp(member.updatedAt, now)))
     }
     durable.familyTxns().eraseAll()
     durable.familyAssets().eraseAll()

@@ -1400,9 +1400,9 @@ export function leaveFamily(session: Session): Promise<void> {
 }
 
 /**
- * Cryptographic eviction: a fresh household under a fresh key. This device keeps its identity;
- * the publication marks are buried so the next sync re-pushes everything it owns under the new
- * key, and the old household's copy of everyone else is buried here.
+ * Cryptographic eviction: a fresh household under a fresh key. This device keeps its identity and
+ * what it shares; the publication marks are buried so the next sync re-pushes everything it owns
+ * under the new key, and the old household's copy of everyone else is erased here.
  */
 export function renewHousehold(): Promise<Session> {
   return withFamilySync(async () => {
@@ -1433,7 +1433,9 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
   }
   batch(() => {
     setSyncPref('syncSeq', 0);
-    resetFamilySharing();
+    // A renewal is the same person in a fresh household, and its copy promises her rows are sent
+    // again — so what she shares stays as she set it. Anybody else starts private.
+    if (keepMember == null) resetFamilySharing();
     // Buried rather than deleted, so the same rows keep their monotonic stamps under the new key.
     putAll('publications', rows('publications').map((p) => ({ ...p, deleted: true })));
     // Everybody else's rows are a mirror the reset cursor pulls again, so they are erased: a
@@ -1441,9 +1443,8 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
     // same people's rows again. Her own former ids stay buried, so no copy of who she was lands
     // back here as somebody else.
     for (const member of rows('familyMembers')) {
-      if (member.id === keepMember) {
-        if (member.sharesSms) put('familyMembers', { ...member, sharesSms: false, updatedAt: nextStamp(member.updatedAt, now) });
-      } else if (former.has(member.id)) {
+      if (member.id === keepMember) continue;
+      if (former.has(member.id)) {
         put('familyMembers', { ...member, updatedAt: nextStamp(member.updatedAt, now), deleted: true });
       } else {
         erase('familyMembers', member.id);

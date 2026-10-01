@@ -451,6 +451,9 @@ describe('the household', () => {
 
   it('renews into a new household, burying the old one\'s rows and keeping her own goals private', async () => {
     state.put('familyMembers', { id: ME, name: 'مریم', sharesSms: true, avatar: '', updatedAt: 1, deleted: false });
+    // The renewal's copy promises her rows are sent again, so her switches ride along.
+    sync.setSyncPref('syncShareSms', true);
+    sync.setSyncPref('syncExcludedBanks', ['MELLAT']);
     state.put('familyMembers', { id: THEM, name: 'علی', sharesSms: true, avatar: '', updatedAt: 1, deleted: false });
     state.put('familyTxns', { id: 'txn:x:y', ownerMemberId: THEM, sourceKind: 'manual', at: 1, day: 1, amountRial: -1, bank: 'MANUAL', merchant: '', updatedAt: 1, deleted: false, transfer: false });
     state.put('publications', { id: 'txn:1:2', sourceKind: 'manual', contentHash: 'h', updatedAt: 9, deleted: false });
@@ -460,7 +463,9 @@ describe('the household', () => {
     const renewed = await sync.renewHousehold();
     expect(renewed).toMatchObject({ member: ME, device: MY_DEVICE });
     expect(renewed.token.split('.')[0]).not.toBe(HID);
-    expect(state.row('familyMembers', ME)).toMatchObject({ deleted: false, sharesSms: false });
+    expect(state.row('familyMembers', ME)).toMatchObject({ deleted: false, sharesSms: true });
+    expect(sync.syncPref('syncShareSms')).toBe(true);
+    expect(sync.syncPref('syncExcludedBanks')).toEqual(['MELLAT']);
     expect(state.row('familyMembers', THEM)).toBeUndefined();
     expect(state.row('familyTxns', 'txn:x:y')).toBeUndefined();
     expect(state.row('publications', 'txn:1:2')).toMatchObject({ deleted: true, updatedAt: 9 });
