@@ -142,6 +142,21 @@ test('a manual transaction is filed, opened, deleted and brought back', async ({
   await expect(row).toContainText(signed('−۲۵۰', 'هزار'));
 });
 
+test('a tenth of a Toman is typed, kept and edited, never read as a tenfold amount', async ({ page }) => {
+  await onboard(page);
+  // A whole-number field dropped the ٫ and filed this as 123,456 Toman.
+  await addManual(page, '12345.6', 'نانوایی', 'خواربار');
+  await page.getByRole('tab', { name: 'دفتر' }).click();
+  await page.getByRole('button').filter({ hasText: 'نانوایی' }).click();
+  await page.getByRole('button', { name: 'ویرایش تراکنش' }).click();
+  const amount = page.getByRole('dialog', { name: 'ویرایش تراکنش' }).getByRole('textbox', { name: 'مبلغ به تومان' });
+  await expect(amount).toHaveValue('۱۲٬۳۴۵٫۶');
+  await amount.evaluate((el: HTMLInputElement) => { el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
+  await amount.press('Backspace');
+  await amount.pressSequentially('7');
+  await expect(amount).toHaveValue('۱۲٬۳۴۵٫۷');
+});
+
 test('a pasted bank message lands in دفتر and sets the account balance', async ({ page }) => {
   const message = corpus('mellat.json', 'mellat-6104-withdrawal-with-balance');
   await onboard(page, `/#paste=${encodeURIComponent(message)}`);

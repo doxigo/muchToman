@@ -52,7 +52,7 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
       <SheetTitle>ویرایش تراکنش</SheetTitle>
 
       <SheetLabel>چقدر، به تومان</SheetLabel>
-      <AmountField ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount}
+      <AmountField ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount} decimals={1}
         error={rial == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
 
       <SheetLabel>کِی؟</SheetLabel>
@@ -154,7 +154,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
               </p>
             ) : (
               <AmountField label="چقدر، به تومان" ariaLabel={`مبلغ بخش ${faNumber(i + 1)}`} raw={amounts[i]}
-                onRaw={(v) => setAmounts(setAt(amounts, i, v))} />
+                decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))} />
             )}
           </div>
         </div>

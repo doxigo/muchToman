@@ -99,7 +99,7 @@ function ManualTxnSheet() {
 
       <SheetLabel>چقدر، به تومان</SheetLabel>
       {/* Spelled out under it, like every amount field: digits are easy to misread by ten. */}
-      <AmountField label="مثلاً ۴۵۰ هزار" ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount}
+      <AmountField label="مثلاً ۴۵۰ هزار" ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount} decimals={1}
         error={!amount.trim() ? (missingAmount ? 'مبلغش رو بنویس.' : null)
           : rial == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
 
