@@ -2108,7 +2108,7 @@ fun ReviewDeck(
     onLoanLink: ((LedgerEntry, String?) -> Unit)? = null,
     onCreateLoanPerson: ((LedgerEntry, String) -> Unit)? = null,
 ) {
-    var skipped by remember { mutableStateOf(setOf<String>()) }
+    var skipped by rememberSaveable { mutableStateOf(setOf<String>()) }
     // The card she just filed as قرض, for the same reason [linking] outlives its card.
     var lending by remember { mutableStateOf<LedgerEntry?>(null) }
     // The card she just filed as a قسط, held here because the deck has already moved past it: the

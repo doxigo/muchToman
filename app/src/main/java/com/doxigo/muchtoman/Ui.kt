@@ -405,8 +405,9 @@ private fun AppScreens(
     var editing by remember { mutableStateOf<Editing?>(null) }
     // Saveable, like tab and transactionRef below: these four are *where she is standing*, and
     // a process death that threw her from دسته‌بندی‌ها back to the asset list read as the app
-    // restarting itself. (The manifest's ponytail about half-typed sheet text still stands —
-    // sheets and their drafts are the part that does not survive.)
+    // restarting itself. (The manifest's ponytail about half-typed sheet text still stands for a
+    // process death: the drafts are saveable now, for the lock — see `unlocked` — but the plain
+    // flags here that open their sheets are not, so the sheet does not come back to hold them.)
     var settings by rememberSaveable { mutableStateOf(false) }
     // A page of تنظیمات, not a peer of it: `companion` is only ever read while `settings` is
     // true, so closing it lands back on the settings page she opened it from rather than on
@@ -563,6 +564,8 @@ private fun AppScreens(
     // that had quietly widened to «همه», which reads as the app having lost her place. The holder
     // keeps each tab's saveable state while it is off screen and hands it back on the way in.
     val screens = rememberSaveableStateHolder()
+    // The other holder: what [AppScreens] drops while locked, keyed by the one thing it ever holds.
+    val unlocked = rememberSaveableStateHolder()
     val lightScheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     LaunchedEffect(state.locked, lightScheme) {
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
@@ -581,6 +584,13 @@ private fun AppScreens(
         return
     }
 
+    // Everything past the lock, saved as it leaves. relock() runs on every ON_STOP and the lock
+    // returns before any page or sheet, so every sheet she had open — reopened after the unlock by
+    // the plain flags above, which outlive the lock — used to come back blank, its half-typed figure
+    // gone. Not an overlay that keeps it all composed instead: a ModalBottomSheet is a window of its
+    // own and would stay readable over one. The drafts in the sheets are rememberSaveable for this;
+    // passphrases stay plain on purpose. The body keeps its indent so the wrap moves no lines.
+    unlocked.SaveableStateProvider("unlocked") {
     // Before anything else this app has to show, and exactly once in its life. Below the lock
     // rather than above it only for tidiness — a phone that has a lock on it has been used, and a
     // phone that has been used is already past this. No BackHandler: the way out is «الان نه»,
@@ -591,7 +601,7 @@ private fun AppScreens(
             onSmsGranted = vm::setSmsEnabled,
             onDone = vm::finishOnboarding,
         )
-        return
+        return@SaveableStateProvider
     }
 
     // Not a return: the sheet floats over whichever screen comes next. Below the lock, so a
@@ -608,7 +618,7 @@ private fun AppScreens(
             onArchive = vm::toggleCategoryArchived,
             onBack = { categoriesPage = false },
         )
-        return
+        return@SaveableStateProvider
     }
 
     if (companion) {
@@ -640,7 +650,7 @@ private fun AppScreens(
             },
             onBack = { companion = false },
         )
-        return
+        return@SaveableStateProvider
     }
 
     if (settings) {
@@ -691,7 +701,7 @@ private fun AppScreens(
             },
             onBack = { settings = false },
         )
-        return
+        return@SaveableStateProvider
     }
 
     transactionRef?.let { ref ->
@@ -726,7 +736,7 @@ private fun AppScreens(
                 onLoanLink = (vm::setLoanLink).takeIf { loanLinkable(entry, state.ledger.mineId) },
                 onCreateLoanPerson = (vm::addLoanPersonFrom).takeIf { loanLinkable(entry, state.ledger.mineId) },
             )
-            return
+            return@SaveableStateProvider
         }
     }
 
@@ -763,7 +773,7 @@ private fun AppScreens(
             onPerson = { loansPage = true; loanPerson = it },
             onPersonGone = { loanPerson = null },
         )
-        return
+        return@SaveableStateProvider
     }
 
     if (deck) {
@@ -786,7 +796,7 @@ private fun AppScreens(
             onLoanLink = vm::setLoanLink,
             onCreateLoanPerson = vm::addLoanPersonFrom,
         )
-        return
+        return@SaveableStateProvider
     }
 
     // Anywhere but home, back goes home. This is the whole reason the bar exists: before it,
@@ -1385,6 +1395,7 @@ private fun AppScreens(
         onPerson = { loansPage = true; loanPerson = it },
         onPersonGone = { loanPerson = null },
     )
+    }
 }
 
 /**
@@ -2291,7 +2302,7 @@ private fun BankSheet(
             delay(30_000)
         }
     }
-    var fixing by remember { mutableStateOf<String?>(null) }
+    var fixing by rememberSaveable { mutableStateOf<String?>(null) }
     // The picker reads the inbox only once she opens it; null afterwards means the app may not
     // read messages at all.
     var picking by remember { mutableStateOf(false) }
@@ -2596,7 +2607,7 @@ private fun BankAccountRow(
     onOpenSms: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    var draft by remember(account.key) { mutableStateOf("") }
+    var draft by rememberSaveable(account.key) { mutableStateOf("") }
 
     Card(
         shape = RoundedCornerShape(Radius.card),
@@ -3182,7 +3193,7 @@ private fun PickTypeSheet(
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim()
 
     val sections: List<Pair<String?, List<AssetType>>> = remember(q, all) {
@@ -3851,29 +3862,29 @@ private fun EditSheet(
         (linkedWallet != null || holding == null)
 
     // Raw digits live in state; grouping is purely visual so parsing stays exact.
-    var source by remember(key, linkedWallet != null, walletOptions.isNotEmpty()) {
+    var source by rememberSaveable(key, linkedWallet != null, walletOptions.isNotEmpty()) {
         mutableStateOf(if (startsWithWallet) AmountSource.WALLET else AmountSource.MANUAL)
     }
-    var text by remember(key) {
+    var text by rememberSaveable(key) {
         mutableStateOf(current?.let(::fieldNumber).orEmpty())
     }
     // Seeded from the rate each time she opens the field, and written only once she has typed
     // over the seed: «ذخیره نرخ» on an untouched field must not freeze the live rate as hers.
-    var rateSeed by remember { mutableStateOf("") }
-    var rateText by remember { mutableStateOf("") }
-    var editingRate by remember { mutableStateOf(false) }
-    var labelText by remember(key) { mutableStateOf(holding?.label.orEmpty()) }
-    var naming by remember(key) {
+    var rateSeed by rememberSaveable { mutableStateOf("") }
+    var rateText by rememberSaveable { mutableStateOf("") }
+    var editingRate by rememberSaveable { mutableStateOf(false) }
+    var labelText by rememberSaveable(key) { mutableStateOf(holding?.label.orEmpty()) }
+    var naming by rememberSaveable(key) {
         mutableStateOf(holding == null && type.kind == Kind.PROPERTY)
     }
     var nameFocusWanted by remember(key) { mutableStateOf(false) }
-    var adjusting by remember { mutableStateOf(false) }
-    var deltaText by remember { mutableStateOf("") }
+    var adjusting by rememberSaveable { mutableStateOf(false) }
+    var deltaText by rememberSaveable { mutableStateOf("") }
     var manualSubmitted by remember { mutableStateOf(false) }
-    var walletAddress by remember(key, linkedWallet?.address) {
+    var walletAddress by rememberSaveable(key, linkedWallet?.address) {
         mutableStateOf(linkedWallet?.address.orEmpty())
     }
-    var selectedNetwork by remember(key, linkedWallet?.network, walletOptions) {
+    var selectedNetwork by rememberSaveable(key, linkedWallet?.network, walletOptions) {
         mutableStateOf(linkedWallet?.network ?: walletOptions.firstOrNull()?.network.orEmpty())
     }
     var localWalletError by remember { mutableStateOf<String?>(null) }

@@ -159,16 +159,16 @@ fun BudgetScreen(
     onAskNotify: () -> Unit,
     bottomInset: Dp,
 ) {
-    var addingBudget by remember { mutableStateOf(false) }
-    var addingGoal by remember { mutableStateOf(false) }
+    var addingBudget by rememberSaveable { mutableStateOf(false) }
+    var addingGoal by rememberSaveable { mutableStateOf(false) }
     // The id, not the progress: the ledger can republish under an open sheet — a message
     // arriving, a receipt refiled on the other phone — and a held snapshot would pin the sheet
     // to figures the screen behind it no longer shows. Resolved fresh each pass; a budget
     // deleted elsewhere resolves to nothing and the sheet simply closes.
-    var editingBudget by remember { mutableStateOf<String?>(null) }
-    var editingGoal by remember { mutableStateOf<String?>(null) }
-    var addingInstallment by remember { mutableStateOf(false) }
-    var openInstallment by remember { mutableStateOf<String?>(null) }
+    var editingBudget by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingGoal by rememberSaveable { mutableStateOf<String?>(null) }
+    var addingInstallment by rememberSaveable { mutableStateOf(false) }
+    var openInstallment by rememberSaveable { mutableStateOf<String?>(null) }
     // Off the spending side alone, in the grid's own order: those are the only categories a roof
     // could have counted, so they are the only ones worth naming as left out of one. «پس‌گرفتن
     // قرض» is set aside on a fresh install too, and listing money coming back under a cap on
@@ -1107,21 +1107,22 @@ private fun BudgetSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    var picked by remember { mutableStateOf<Category?>(null) }
+    var pickedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val picked = choices.firstOrNull { it.id == pickedId }
     // «کل خرج», which is a choice about *what* rather than a category, so it is its own piece of
     // state and not a synthetic row in [choices]. Picking either clears the other: a budget caps
     // one thing.
-    var wantsTotal by remember { mutableStateOf(false) }
+    var wantsTotal by rememberSaveable { mutableStateOf(false) }
     // What she keeps now while editing, and «مال خودم» on a new one — a figure starts out hers
     // and becomes the household's by her saying so, never the other way round.
-    var shared by remember { mutableStateOf(editing?.shared ?: false) }
+    var shared by rememberSaveable { mutableStateOf(editing?.shared ?: false) }
     // A month, because that is what her salary, her rent and every bill she pays already run on.
-    var period by remember { mutableStateOf(editing?.period ?: BudgetPeriod.MONTH) }
+    var period by rememberSaveable { mutableStateOf(editing?.period ?: BudgetPeriod.MONTH) }
     // Toman, exactly what she typed to make it: a cap is stored in Rial but was never entered in
     // Rial, and a field pre-filled with ten times the number she knows is a typo she has to
     // notice before she can change anything else. A tenth only when there is one — cut off, a
     // re-save dropped that Rial.
-    var amount by remember { mutableStateOf(editing?.let { rialToField(it.capRial) } ?: "") }
+    var amount by rememberSaveable { mutableStateOf(editing?.let { rialToField(it.capRial) } ?: "") }
     val capRial = remember(amount) { tomanFieldToRial(amount) }
     val candidate = Goal(
         id = editing?.goal?.id.orEmpty(), nameFa = "", targetRial = capRial ?: 0,
@@ -1193,7 +1194,7 @@ private fun BudgetSheet(
                     selected = wantsTotal,
                     onClick = {
                         wantsTotal = !wantsTotal
-                        if (wantsTotal) picked = null
+                        if (wantsTotal) pickedId = null
                     },
                 )
                 // Only once she has picked it, and before she has typed a figure: what a roof
@@ -1214,7 +1215,7 @@ private fun BudgetSheet(
                         choices = choices,
                         selectedId = picked?.id,
                         onPick = {
-                            picked = it
+                            pickedId = it.id
                             wantsTotal = false
                         },
                         selectedLabel = "انتخاب‌شده",
@@ -1348,11 +1349,11 @@ private fun GoalSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    var shared by remember { mutableStateOf(editing?.shared ?: false) }
-    var name by remember { mutableStateOf(editing?.goal?.nameFa ?: "") }
+    var shared by rememberSaveable { mutableStateOf(editing?.shared ?: false) }
+    var name by rememberSaveable { mutableStateOf(editing?.goal?.nameFa ?: "") }
     // Toman, as in [BudgetSheet]: stored in Rial, never typed in it.
-    var amount by remember { mutableStateOf(editing?.let { rialToField(it.targetRial) } ?: "") }
-    var horizon by remember { mutableStateOf(if (editing == null) GoalHorizon.HALF else null) }
+    var amount by rememberSaveable { mutableStateOf(editing?.let { rialToField(it.targetRial) } ?: "") }
+    var horizon by rememberSaveable { mutableStateOf(if (editing == null) GoalHorizon.HALF else null) }
     val targetRial = remember(amount) { tomanFieldToRial(amount) }
 
     ModalBottomSheet(
@@ -1484,12 +1485,12 @@ private fun InstallmentSheet(
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
     val today = remember { tehranDay(System.currentTimeMillis()) }
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf(fromPayment?.txn?.amountRial?.let(::rialToField) ?: "") }
-    var countText by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    var amount by rememberSaveable { mutableStateOf(fromPayment?.txn?.amountRial?.let(::rialToField) ?: "") }
+    var countText by rememberSaveable { mutableStateOf("") }
     val firstDue = fromPayment?.txn?.day
     // Today's day, because the likeliest moment to add a plan is the day a payment has just gone.
-    var dayText by remember { mutableStateOf(jalaliOf(firstDue ?: today).day.toString()) }
+    var dayText by rememberSaveable { mutableStateOf(jalaliOf(firstDue ?: today).day.toString()) }
     val paymentRial = remember(amount) { tomanFieldToRial(amount) }
     val count = remember(countText) { wholeIn(countText, 1..MAX_INSTALLMENTS) }
     val dayOfMonth = remember(dayText) { wholeIn(dayText, 1..31) }

@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -200,7 +201,7 @@ fun CompanionScreen(
 ) {
     // The draft for the two forms that come before a household. Once there is one, the name is
     // edited in [MeSheet], which keeps a draft of its own.
-    var name by remember(state.memberId, state.memberName, state.pendingPairing, suggestedName) {
+    var name by rememberSaveable(state.memberId, state.memberName, state.pendingPairing, suggestedName) {
         mutableStateOf(state.memberName.ifBlank { suggestedName })
     }
 
@@ -236,8 +237,8 @@ fun CompanionScreen(
     val me = state.members.firstOrNull { it.id == state.memberId }
     val myName = state.memberName.ifBlank { me?.name.orEmpty() }
     val others = state.members.filterNot { it.id == state.memberId }
-    var editingMe by remember { mutableStateOf(false) }
-    var openMember by remember { mutableStateOf<String?>(null) }
+    var editingMe by rememberSaveable { mutableStateOf(false) }
+    var openMember by rememberSaveable { mutableStateOf<String?>(null) }
     val household = state.paired && state.pendingRejoin == null && state.pendingPairing == null
 
     SettingsPage("خانواده", onBack) {
@@ -1203,7 +1204,7 @@ private fun MeSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var draft by remember { mutableStateOf(name) }
+    var draft by rememberSaveable { mutableStateOf(name) }
     // Blank is not a name, so it keeps the old one rather than clearing it.
     val close = {
         val clean = draft.trim()

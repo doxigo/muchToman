@@ -85,8 +85,9 @@
             Compose republishes LocalConfiguration on onConfigurationChanged, so the theme and
             the font scale still follow the system without the activity dying for it.
 
-            ponytail: this does not survive process death or "Don't keep activities";
-            rememberSaveable would. Not worth eight of them and a Saver for one sheet's text.
+            ponytail: this does not survive process death or "Don't keep activities". The sheets'
+            drafts are rememberSaveable (the app lock needs that, see AppScreens), but the flags
+            in AppScreens that open them are plain remember, so the sheet itself does not return.
         -->
         <activity
             android:name=".MainActivity"

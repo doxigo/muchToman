@@ -47,8 +47,11 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -223,6 +226,12 @@ private fun MemberChip(member: FamilyMember, chosen: Boolean, onPick: () -> Unit
     }
 }
 
+/** A typed list that outlives the lock (AppScreens' `unlocked`): saved as a plain list, restored live. */
+private fun <T> draftListSaver() = listSaver<SnapshotStateList<T>, T>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
+
 /**
  * «تقسیم بین دسته‌ها» — one payment, several things bought.
  *
@@ -250,19 +259,19 @@ fun SplitSheet(
     }
     val names = remember(categories) { categories.associate { it.id to it.nameFa } }
     // The first part's figure is never typed, so it is never stored here — see [firstRial].
-    val ids = remember(entry.txn.ref) {
+    val ids = rememberSaveable(entry.txn.ref, saver = draftListSaver()) {
         mutableStateListOf<String?>().apply {
             if (entry.split.isNotEmpty()) addAll(entry.split.map { it.categoryId })
             else addAll(listOf(entry.categoryId.takeIf { it != CAT_UNCATEGORISED }, null))
         }
     }
-    val amounts = remember(entry.txn.ref) {
+    val amounts = rememberSaveable(entry.txn.ref, saver = draftListSaver()) {
         mutableStateListOf<String>().apply {
             if (entry.split.isNotEmpty()) addAll(entry.split.map { rialToField(it.rial) })
             else addAll(listOf("", ""))
         }
     }
-    var picking by remember(entry.txn.ref) { mutableStateOf<Int?>(null) }
+    var picking by rememberSaveable(entry.txn.ref) { mutableStateOf<Int?>(null) }
 
     val rest = (1 until amounts.size).map { tomanFieldToRial(amounts[it]) }
     val firstRial = total - rest.sumOf { it ?: 0L }

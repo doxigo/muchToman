@@ -267,7 +267,7 @@ private fun SettingsIndex(
     onOpen: (SettingsRoom) -> Unit,
     onBack: () -> Unit,
 ) {
-    var renaming by remember { mutableStateOf(false) }
+    var renaming by rememberSaveable { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
     var reminderSheet by remember { mutableStateOf(false) }
     var toneSheet by remember { mutableStateOf(false) }
@@ -672,7 +672,7 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var draft by remember { mutableStateOf(name) }
+    var draft by rememberSaveable { mutableStateOf(name) }
     val focus = remember { FocusRequester() }
     // She opened a sheet in order to type; asking for a second tap to start is the sheet
     // pretending it does not know that.
