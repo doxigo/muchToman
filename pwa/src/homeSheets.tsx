@@ -18,7 +18,7 @@ import {
 } from './data';
 import { useLedger } from './derived';
 import type { BankAccountView } from './derived';
-import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, parseAmount, tomanOf, trimNumber } from './format';
+import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber } from './format';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
 import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
@@ -273,8 +273,11 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
   const [source, setSource] = useSeeded<AmountSource>(() => (startsWithWallet ? 'WALLET' : 'MANUAL'),
     [linkedWallet != null, walletOptions.length > 0]);
-  const [text, setText] = useState(() => (current != null ? trimNumber(current, type.dec) : ''));
-  const [rateText, setRateText] = useState(() => (rate != null ? trimNumber(rate, 0) : ''));
+  const [text, setText] = useState(() => (current != null ? fieldNumber(current) : ''));
+  // Seeded from the rate each time she opens the field, and written only once she has typed over
+  // the seed: «ذخیره نرخ» on an untouched field must not freeze the live rate as hers.
+  const [rateSeed, setRateSeed] = useState('');
+  const [rateText, setRateText] = useState('');
   const [editingRate, setEditingRate] = useState(false);
   const [labelText, setLabelText] = useState(() => holding?.label ?? '');
   const [naming, setNaming] = useState(() => holding == null && type.kind === 'PROPERTY');
@@ -294,6 +297,13 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const typedRate = (() => { const r = parseAmount(rateText); return r != null && r > 0 ? r : null; })();
   // While she types a rate, the «یعنی …» preview follows it, so the override's effect shows first.
   const previewRate = editingRate ? typedRate ?? rate : rate;
+  const editRate = () => { const seed = rate != null ? fieldNumber(rate) : ''; setRateSeed(seed); setRateText(seed); setEditingRate(true); };
+  // Never with null: that removed the override, which is «برگشت به نرخ خودکار»'s job, said out loud.
+  const saveRate = () => {
+    if (typedRate == null) return;
+    if (rateText !== rateSeed) setOverride(typeId, typedRate);
+    setEditingRate(false);
+  };
   const valued = valuedInToman(type);
   const unit = bidi(type.unitFa);
 
@@ -412,7 +422,12 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
             )}
             {current != null && (
               <Adjust dec={type.dec} unitFa={type.unitFa} base={amount ?? current} open={adjusting} onOpen={setAdjusting}
-                onApply={(next) => setText(trimNumber(next, type.dec))} />
+                onApply={(next) => {
+                  // At the finer of the asset's places and the amount's own, which only erases binary
+                  // noise (0.1 + 0.2): a dust balance past `dec` is kept.
+                  const own = fieldNumber(amount ?? current).split('.')[1]?.length ?? 0;
+                  setText(trimNumber(next, Math.max(type.dec, own)));
+                }} />
             )}
           </>
         ) : (
@@ -449,18 +464,18 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
         {!valued && (!editingRate ? (
           <div class="edit-rate">
             <span>{rate == null ? 'نرخ پیدا نشد' : `هر ${unit}: ${faNumber(rate)} تومان${isOverridden ? '  (دستی وارد شده)' : ''}`}</span>
-            <PillButton label="تغییر نرخ" onClick={() => setEditingRate(true)} />
+            <PillButton label="تغییر نرخ" onClick={editRate} />
           </div>
         ) : (
           <div style={{ marginTop: 'var(--m)' }}>
             <p class="edit-caption" style={{ paddingTop: 0, marginBottom: 'var(--xs)' }}>{`هر ${unit} چند تومان؟`}</p>
             <div class="bare-label">
               <AmountField label={`هر ${type.unitFa} چند تومان؟`} raw={rateText} onRaw={setRateText} decimals={9} words={false} autoFocus
-                onEnter={() => { setOverride(typeId, typedRate); setEditingRate(false); }} />
+                onEnter={saveRate} />
             </div>
             <div class="btn-row">
-              <PillButton label="ذخیره نرخ" onClick={() => { setOverride(typeId, typedRate); setEditingRate(false); }} />
-              {isOverridden && <PillButton label="برگشت به نرخ خودکار" onClick={() => { setOverride(typeId, null); setRateText(''); setEditingRate(false); }} />}
+              <PillButton label="ذخیره نرخ" disabled={typedRate == null} onClick={saveRate} />
+              {isOverridden && <PillButton label="برگشت به نرخ خودکار" onClick={() => { setOverride(typeId, null); setEditingRate(false); }} />}
             </div>
           </div>
         ))}

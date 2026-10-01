@@ -41,6 +41,20 @@ class MoneyTest {
     }
 
     @Test
+    fun `an edit field is seeded with every digit and reads back exactly`() {
+        // Seeded at the asset's places, a rate of 1.43 was saved back as 1, a rate under half a
+        // Toman as «0», and 0.1234567 ETH as 0.123457.
+        assertEquals("1.43", fieldNumber(1.43))
+        assertEquals("0.1234567", fieldNumber(0.1234567))
+        assertEquals("180000000", fieldNumber(180_000_000.0))
+        assertEquals("0.0000001", fieldNumber(1e-7))
+        assertEquals("0", fieldNumber(0.0))
+        for (v in listOf(1.43, 0.4, 0.1234567, 10_709.13, 1e-7, 187_350.5)) {
+            assertEquals(v, parseAmount(fieldNumber(v))!!, 0.0)
+        }
+    }
+
+    @Test
     fun `rejects nonsense instead of guessing`() {
         assertNull(parseAmount("abc"))
         assertNull(parseAmount("۱۲۳x"))

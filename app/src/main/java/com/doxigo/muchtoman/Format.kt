@@ -299,6 +299,14 @@ fun trimNumber(value: Double, dec: Int): String {
 }
 
 /**
+ * A stored figure as an edit field is seeded with: every digit it has — the shortest decimal
+ * that reads back through [parseAmount] as exactly [value]. A seed rounded to the asset's places
+ * (or a rate's whole Toman) was saved back rounded, revaluing what she never touched.
+ */
+fun fieldNumber(value: Double): String =
+    if (!value.isFinite()) "" else BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
+
+/**
  * Digits grouped for reading while she types, so "85000000" is never a column of zeroes she
  * has to count. Carries the index maps the text field needs to keep the caret in the right
  * place across the separators we inject.

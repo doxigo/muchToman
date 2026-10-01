@@ -3854,9 +3854,12 @@ private fun EditSheet(
         mutableStateOf(if (startsWithWallet) AmountSource.WALLET else AmountSource.MANUAL)
     }
     var text by remember(key) {
-        mutableStateOf(current?.let { trimNumber(it, type.dec) } ?: "")
+        mutableStateOf(current?.let(::fieldNumber).orEmpty())
     }
-    var rateText by remember { mutableStateOf(rate?.let { trimNumber(it, 0) } ?: "") }
+    // Seeded from the rate each time she opens the field, and written only once she has typed
+    // over the seed: «ذخیره نرخ» on an untouched field must not freeze the live rate as hers.
+    var rateSeed by remember { mutableStateOf("") }
+    var rateText by remember { mutableStateOf("") }
     var editingRate by remember { mutableStateOf(false) }
     var labelText by remember(key) { mutableStateOf(holding?.label.orEmpty()) }
     var naming by remember(key) {
@@ -4159,7 +4162,9 @@ private fun EditSheet(
                     )
                     val base = amount ?: current
                     fun apply(next: Double) {
-                        text = trimNumber(next, type.dec)
+                        // At the finer of the asset's places and the amount's own, which only
+                        // erases binary noise (0.1 + 0.2): a dust balance past `dec` is kept.
+                        text = trimNumber(next, maxOf(type.dec, fieldNumber(base).substringAfter('.', "").length))
                         deltaText = ""
                         adjusting = false
                     }
@@ -4363,7 +4368,11 @@ private fun EditSheet(
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(Space.s))
-                        PillButton("تغییر نرخ", { editingRate = true })
+                        PillButton("تغییر نرخ", {
+                            rateSeed = rate?.let(::fieldNumber).orEmpty()
+                            rateText = rateSeed
+                            editingRate = true
+                        })
                     }
                 } else {
                     // She tapped "تغییر نرخ" to type a rate; typing must land in this field,
@@ -4388,10 +4397,19 @@ private fun EditSheet(
                         horizontalArrangement = Arrangement.spacedBy(Space.s),
                         modifier = Modifier.padding(top = Space.m),
                     ) {
-                        PillButton("ذخیره نرخ", { onRate(typedRate); editingRate = false })
+                        // Off while the field does not read as a rate: saving null removed the
+                        // override, and that is «برگشت به نرخ خودکار»'s job, said out loud.
+                        PillButton(
+                            "ذخیره نرخ",
+                            {
+                                if (rateText != rateSeed) typedRate?.let(onRate)
+                                editingRate = false
+                            },
+                            enabled = typedRate != null,
+                        )
                         if (isOverridden) {
                             PillButton("برگشت به نرخ خودکار", {
-                                onRate(null); rateText = ""; editingRate = false
+                                onRate(null); editingRate = false
                             })
                         }
                     }

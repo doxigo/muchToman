@@ -183,6 +183,13 @@ export function trimNumber(value: number, dec: number): string {
   return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s;
 }
 
+/** A stored figure as an edit field is seeded with: every digit it has, never rounded to the asset's places. */
+export function fieldNumber(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  const s = String(value);
+  return s.includes('e') ? trimNumber(value, 20) : s; // «1e-7» is not something a field can read
+}
+
 /** Persian digits grouped from the right while she types; decimals left alone. */
 export function groupDigits(raw: string): string {
   const persian = (c: string): string | null => {

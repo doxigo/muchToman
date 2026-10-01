@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faWords, faWordsToman, groupDigits, parseAmount } from '../src/format';
+import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faWords, faWordsToman, fieldNumber, groupDigits, parseAmount } from '../src/format';
 
 /** The phone's own FormatTest expectations, verbatim where they are literal. */
 describe('format', () => {
@@ -45,6 +45,15 @@ describe('format', () => {
     expect(parseAmount('۱۲٬۳۴۵')).toBe(12345); expect(parseAmount('١٢.٥')).toBe(12.5);
     expect(parseAmount('12abc')).toBeNull(); expect(parseAmount('')).toBeNull();
     expect(groupDigits('85000000')).toBe('۸۵٬۰۰۰٬۰۰۰'); expect(groupDigits('1234.5')).toBe('۱٬۲۳۴٫۵');
+  });
+
+  it('seeds an edit field with every digit, so saving it back changes nothing', () => {
+    expect(fieldNumber(1.43)).toBe('1.43');
+    expect(fieldNumber(0.1234567)).toBe('0.1234567');
+    expect(fieldNumber(180_000_000)).toBe('180000000');
+    expect(fieldNumber(1e-7)).toBe('0.0000001');
+    expect(fieldNumber(0)).toBe('0');
+    for (const v of [1.43, 0.4, 0.1234567, 10_709.13, 1e-7, 187_350.5]) expect(parseAmount(fieldNumber(v))).toBe(v);
   });
 
   it('keeps the sign on the digits', () => {
