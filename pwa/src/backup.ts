@@ -50,7 +50,7 @@ export const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
  */
 const LOCAL_PREFS: string[] = [
   'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncShareSms', 'syncPrimaryMember',
-  'lockEnabled', 'lockCredential', 'onboarded',
+  'syncPullFirst', 'lockEnabled', 'lockCredential', 'onboarded',
 ];
 /**
  * Kept as this browser's too while it is in a household. The phone's restore drops its session
@@ -240,6 +240,13 @@ export function restoredSnapshot(payload: BrowserPayload, current: Snapshot, pai
   for (const key of paired ? [...LOCAL_PREFS, ...HOUSEHOLD_PREFS] : LOCAL_PREFS) {
     delete prefs[key];
     if (key in mine) prefs[key] = mine[key];
+  }
+  if (paired) {
+    // The session stays, but what its cursor covered is now the file's: decisions, categories
+    // and shared goals the household moved on since are pulled again from the start, and before
+    // the file's copies go out over them.
+    prefs.syncSeq = 0;
+    prefs.syncPullFirst = true;
   }
   const tables: Snapshot['tables'] = { ...payload.tables };
   for (const t of LOCAL_TABLES) (tables as Record<string, unknown>)[t] = current.tables[t] ?? [];

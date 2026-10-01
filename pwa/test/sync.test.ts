@@ -332,6 +332,25 @@ describe('syncNow', () => {
     expect((await sync.syncNow(session, NOW + 1)).sent).toBe(1);
   });
 
+  it('after a restore, pulls the household from the start before pushing the file\'s rows over it', async () => {
+    const goal = {
+      id: 'g', nameFa: 'خرج ماه', targetRial: 1, kind: 'cap' as const, categoryId: null, period: 'jmonth' as const, startsOn: 1, endsOn: null,
+      createdAt: 1, updatedAt: NOW - 5000, deleted: false, shared: true, ownerMemberId: ME, editedByMemberId: ME,
+    };
+    // A member deleted the shared goal after the backup was made, and this browser heard it.
+    state.put('goals', { ...goal, updatedAt: NOW - 1000, editedByMemberId: THEM, deleted: true });
+    state.put('publications', { id: 'goal:g', sourceKind: 'goal', contentHash: '', updatedAt: NOW - 1000, deleted: true });
+    sync.setSyncPref('syncSeq', 50);
+    await (await import('../src/backup')).applyRestore({ pwa: 1, prefs: {}, tables: { goals: [goal] } });
+    const tombstone = await record('goal:g', 'goal', JSON.stringify({ v: 1, id: 'goal:g', deleted: true }), { deleted: true, ownerMemberId: ME });
+    const server = serve([{ seq: 50, records: [tombstone], hasMore: false }]);
+    await sync.syncNow(session, NOW);
+    expect(server.pulls[0]).toBe('https://sync.test/v1/sync?since=0&limit=1000');
+    expect(server.pushes.flat().filter((r) => r.kind === 'goal')).toEqual([]);
+    expect(state.row('goals', 'g')?.deleted).toBe(true);
+    expect(sync.syncPref('syncPullFirst')).toBe(false);
+  });
+
   it('does nothing for a session that is no longer the stored household', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     expect(await sync.syncNow({ ...session, token: `${'c'.repeat(32)}.x` }, NOW)).toEqual({ sent: 0, received: 0, unsupportedKinds: [] });

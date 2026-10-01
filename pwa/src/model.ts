@@ -270,6 +270,7 @@ export interface Prefs {
   syncShareAssets: boolean;
   syncExcludedBanks: string[];
   syncPrimaryMember: string;
+  syncPullFirst: boolean;
 }
 
 export const PREF_DEFAULTS: Prefs = {
@@ -305,6 +306,7 @@ export const PREF_DEFAULTS: Prefs = {
   syncShareAssets: false,
   syncExcludedBanks: [],
   syncPrimaryMember: '',
+  syncPullFirst: false,
 };
 
 // ---- derived (derived.db, Derived.kt) --------------------------------------------------------

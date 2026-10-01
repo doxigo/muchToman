@@ -160,9 +160,12 @@ export interface SyncPrefs {
   syncPrimaryMember: string;
   /** META_REPORT_EXCLUSIONS: the LWW state behind `reportExcluded`. Null is a set nobody touched. */
   reportExclusions: ReportExclusionsState | null;
+  /** A restore's ask, the browser's own: the next sync pulls everything before it pushes. */
+  syncPullFirst: boolean;
 }
 const SYNC_PREF_DEFAULTS: SyncPrefs = {
   syncSeq: 0, syncShareSms: false, syncShareAssets: false, syncExcludedBanks: [], syncPrimaryMember: '', reportExclusions: null,
+  syncPullFirst: false,
 };
 export function syncPref<K extends keyof SyncPrefs>(key: K): SyncPrefs[K] {
   return pref(key) ?? SYNC_PREF_DEFAULTS[key];
@@ -1086,6 +1089,28 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
     if (!stored || !sameHouseholdSession(session, stored)) return { sent: 0, received: 0, unsupportedKinds: [] };
     const active = await recoverTokenRotation(stored);
     await registerIdentity(active);
+    let received = 0;
+    let canRotate = false;
+    const pull = async (): Promise<void> => {
+      let cursor = syncPref('syncSeq');
+      let more: boolean;
+      do {
+        const pulled = parsePull(await request(`${active.base}/v1/sync?since=${cursor}&limit=${PULL_LIMIT}`, 'GET', active.token));
+        const previous = cursor;
+        canRotate = pulled.rotationClientSecret;
+        const nextCursor = Math.max(cursor, pulled.seq);
+        received += await applyPage(active, pulled, nextCursor, now);
+        cursor = nextCursor;
+        more = (pulled.hasMore ?? pulled.records.length >= PULL_LIMIT) && cursor > previous;
+      } while (more);
+    };
+    // After a restore the cursor is back at zero and her rows are the file's: whatever the
+    // household moved on since lands first, or the push would stamp the file's copy over it.
+    // Cleared only once the whole pull is in, so a pull cut short asks again next time.
+    if (syncPref('syncPullFirst')) {
+      await pull();
+      setSyncPref('syncPullFirst', false);
+    }
     const shareSms = syncPref('syncShareSms');
     const outgoing = await outgoingRecords({
       session: active, now, entries: ledger().allEntries, member: ownMemberRow(active, shareSms, now),
@@ -1125,19 +1150,7 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
       }
     }
 
-    let cursor = syncPref('syncSeq');
-    let received = 0;
-    let canRotate = false;
-    let more: boolean;
-    do {
-      const pulled = parsePull(await request(`${active.base}/v1/sync?since=${cursor}&limit=${PULL_LIMIT}`, 'GET', active.token));
-      const previous = cursor;
-      canRotate = pulled.rotationClientSecret;
-      const nextCursor = Math.max(cursor, pulled.seq);
-      received += await applyPage(active, pulled, nextCursor, now);
-      cursor = nextCursor;
-      more = (pulled.hasMore ?? pulled.records.length >= PULL_LIMIT) && cursor > previous;
-    } while (more);
+    await pull();
     if (canRotate) await rotateTokenIfStale(active, now);
     return { sent, received, unsupportedKinds: [...unsupportedKinds] };
   });
