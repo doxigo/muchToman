@@ -1434,6 +1434,11 @@ class MoneyTest {
         // grew fifteen coins and two metals at once; this is the cheap guard on that.
         val ids = STATIC_CATALOG.map { it.id }
         assertEquals(ids.size, ids.toSet().size)
+        // Nor once the network's coins join them: the picker keys rows by id, and the Worker
+        // reserves none of «car», «house» or «land».
+        val picker = catalog(listOf(Coin("car", "Car Coin"), Coin("btc", "بیت‌کوین")))
+        assertEquals(picker.size, picker.map { it.id }.toSet().size)
+        assertEquals(Kind.PROPERTY, picker.single { it.id == "car" }.kind)
     }
 
     /** The list she reads, banded by kind. Same holdings, same order, same total. */

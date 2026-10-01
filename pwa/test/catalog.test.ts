@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { AssetGlyph, assetGlyph } from '../src/assetGlyph';
 import {
-  BANK_TYPE, STATIC_CATALOG, TOMAN_ID, coinType, compositionByKind, holdingsByKind, matchesSearch, resolveType,
+  BANK_TYPE, STATIC_CATALOG, TOMAN_ID, catalog, coinType, compositionByKind, holdingsByKind, matchesSearch, resolveType,
 } from '../src/catalog';
 import {
   CATEGORY_GLYPHS, LUCIDE, PICKABLE_GLYPHS, categoryGlyph, customGlyphs, glyphNamed, hueCss, hueOf,
@@ -94,6 +94,10 @@ describe('catalogue', () => {
   it('no two assets in the catalogue share an id', () => {
     const ids = STATIC_CATALOG.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
+    // Nor once the network's coins join them: the picker keys rows by id.
+    const picker = catalog([coin('car', 'Car Coin'), coin('btc', 'بیت‌کوین')]);
+    expect(new Set(picker.map((t) => t.id)).size).toBe(picker.length);
+    expect(picker.find((t) => t.id === 'car')!.kind).toBe('PROPERTY');
   });
 });
 

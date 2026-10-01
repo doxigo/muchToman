@@ -168,9 +168,13 @@ fun Stock.toAssetType() = AssetType(
     emoji = "📈",
 )
 
-/** The full picker list: fixed assets, then everything the network knows how to price. */
+/**
+ * The full picker list: fixed assets, then everything the network knows how to price. One row an
+ * id, the static one first, as in [resolveType]: the picker keys its rows by id, and a coin the
+ * Worker ever ships as «car» or «land» was a second row under one key — a crash, not a duplicate.
+ */
 fun catalog(coins: List<Coin>, stocks: List<Stock> = emptyList()): List<AssetType> =
-    STATIC_CATALOG + coins.map { it.toAssetType() } + stocks.map { it.toAssetType() }
+    (STATIC_CATALOG + coins.map { it.toAssetType() } + stocks.map { it.toAssetType() }).distinctBy { it.id }
 
 /**
  * Static entries win, so a coin that ever ships with a ticker like "nok" can never shadow the

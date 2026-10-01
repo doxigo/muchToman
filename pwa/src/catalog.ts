@@ -122,9 +122,18 @@ export const coinType = (c: Coin): AssetType =>
 export const stockType = (s: Stock): AssetType =>
   type(s.id, s.symbol, 'STOCK', 'سهم', { dec: 0, en: s.name, emoji: '📈' });
 
-/** The full picker list: fixed assets, then everything the network knows how to price. */
-export const catalog = (coins: Coin[], stocks: Stock[] = []): AssetType[] =>
-  [...STATIC_CATALOG, ...coins.map(coinType), ...stocks.map(stockType)];
+/**
+ * The full picker list: fixed assets, then everything the network knows how to price. One row an
+ * id, the static one first, as in `resolveType`: the picker keys its rows by id.
+ */
+export const catalog = (coins: Coin[], stocks: Stock[] = []): AssetType[] => {
+  const seen = new Set<string>();
+  return [...STATIC_CATALOG, ...coins.map(coinType), ...stocks.map(stockType)].filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+};
 
 /**
  * Static entries win, so a coin shipping as "nok" never shadows the currency; an id nothing
