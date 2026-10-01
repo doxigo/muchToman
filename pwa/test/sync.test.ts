@@ -575,6 +575,21 @@ describe('the household', () => {
     expect(state.row('familyMembers', ME)?.deleted).toBe(true);
   });
 
+  it('sends her note on her own row to the household she pairs into next', async () => {
+    state.put('manual', { id: 'one', at: NOW - 60_000, day: 0, amountRial: -60_000, accountId: null, categoryId: null, merchant: '', note: '', createdAt: NOW, updatedAt: NOW, deleted: false });
+    state.put('decisions', { id: 'note:m:one', ref: 'm:one', kind: 'note', value: 'قسط', createdAt: NOW, updatedAt: NOW, deleted: false, memberId: ME, familyRef: sync.familyTxnId(ME, 'm:one') });
+    const pushed: WireRecord[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/v1/sync?')) return Response.json({ seq: 0, records: [], hasMore: false });
+      if (url.endsWith('/v1/sync')) pushed.push(...(JSON.parse(String(init?.body)) as { records: WireRecord[] }).records);
+      return Response.json(url.endsWith('/v1/pair') ? { secret: 'c'.repeat(64) } : { clamped: [] });
+    }));
+    await sync.leaveFamily(session);
+    const rejoined = await sync.joinHousehold({ base: session.base, hid: HID, code: '0'.repeat(32), scope: session.scope, key: crypt.fromBase64Url(session.raw!) }, 'مریم');
+    await sync.syncNow(rejoined, NOW);
+    expect(pushed.filter((r) => r.kind === 'note').map((r) => r.ownerMemberId)).toEqual([rejoined.member]);
+  });
+
   it('keeps the session when a leave fails for any other reason', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })));
     await expect(sync.leaveFamily(session)).rejects.toThrow(sync.SyncHttpError);

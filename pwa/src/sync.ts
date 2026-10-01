@@ -1448,6 +1448,12 @@ function buryHousehold(keepMember: string | null, formerMember: string | null): 
     }
     for (const t of rows('familyTxns')) erase('familyTxns', t.id);
     for (const a of rows('familyAssets')) erase('familyAssets', a.id);
+    // Her answers about her own rows name the id she is leaving, and only her own answers are
+    // pushed: left so, a note or a split she wrote before a re-pair never reaches the next
+    // household. Blank reads as a decision from before any household — hers, under whoever she is next.
+    putAll('decisions', rows('decisions')
+      .filter((d) => (d.ref.startsWith('s:') || d.ref.startsWith('m:')) && d.memberId !== keepMember && former.has(d.memberId))
+      .map((d) => ({ ...d, memberId: '', familyRef: '' })));
     // Somebody else's shared cap goes the way their transactions go; hers stay, back on «مال خودم».
     for (const goal of rows('goals')) {
       if (goal.deleted) continue;

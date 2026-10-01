@@ -943,6 +943,10 @@ private suspend fun buryHousehold(durable: DurableDb, keepMember: String?) {
     }
     durable.familyTxns().eraseAll()
     durable.familyAssets().eraseAll()
+    // Her answers about her own rows name the id she is leaving, and only her own answers are
+    // pushed: left so, a note or a split she wrote before a re-pair would never reach the next
+    // household.
+    durable.decisions().reown(formerSelves.toList())
     // Budgets and goals split by who made them, which is the only place this cleanup is not a
     // sweep. Somebody else's shared cap goes the way their transactions go — it was the
     // household's figure and there is no household. Hers stay, because they are hers, and land

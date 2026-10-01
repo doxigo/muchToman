@@ -762,6 +762,17 @@ interface TxnDecisionDao {
     @Query("SELECT * FROM txn_decision WHERE kind = :kind")
     suspend fun ofKindWithRetracted(kind: String): List<TxnDecision>
 
+    /**
+     * Her answers about her own rows, made «hers» again after a re-pair — see `buryHousehold`.
+     * Blank is how a decision from before any household reads, and the push names it under
+     * whoever she is next.
+     */
+    @Query(
+        "UPDATE txn_decision SET member_id = '', family_ref = '' " +
+            "WHERE member_id IN (:members) AND (ref LIKE 's:%' OR ref LIKE 'm:%')"
+    )
+    suspend fun reown(members: List<String>)
+
     /** The answers to transactions nobody ever made. See [ManualTxnDao.deleteWithIdPrefix]. */
     @Query("DELETE FROM txn_decision WHERE ref LIKE :prefix || '%'")
     suspend fun deleteForRefPrefix(prefix: String)

@@ -408,6 +408,27 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `her note on her own row reaches the household she pairs into next`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val now = System.currentTimeMillis()
+        durable.manual().put(ManualTxn("one", now, tehranDay(now), -60_000L, createdAt = now, updatedAt = now))
+        val ref = manualRef("one")
+        durable.decisions().put(
+            TxnDecision(
+                "n1", ref, DecisionKind.NOTE, "قسط", now, now,
+                memberId = session.member, familyRef = familyTxnId(session.member, ref),
+            )
+        )
+        val link = pairingUrl(session, invite(session, durable))
+        leaveFamily(session, durable)
+
+        val rejoined = joinHousehold(link, durable, "مریم", allowedBase = server.base)
+
+        val notes = pushedBy(server, durable, rejoined).filter { it.getString("kind") == "note" }
+        assertEquals(listOf(rejoined.member), notes.map { it.getString("ownerMemberId") })
+    }
+
+    @Test
     fun `a failed leave keeps the session`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         server.script("/v1/leave", 503)
