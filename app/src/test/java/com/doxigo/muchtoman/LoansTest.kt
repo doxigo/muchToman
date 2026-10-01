@@ -43,6 +43,9 @@ class LoansTest {
         assertNull(LoanLink.decode("p1:lots"))
         assertNull(LoanLink.decode(":5"))
         assertNull(LoanLink.decode("p1:${MAX_PLAUSIBLE_RIAL + 1}"))
+        assertNull(LoanLink.decode("p1:-${MAX_PLAUSIBLE_RIAL + 1}"))
+        // abs() of this one is still negative, and it slipped past the bound.
+        assertNull(LoanLink.decode("p1:${Long.MIN_VALUE}"))
         assertNull(LoanLink.decode(null))
     }
 

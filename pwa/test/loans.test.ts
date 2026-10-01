@@ -40,6 +40,8 @@ describe('loans', () => {
     expect(decodeLoanLink('p1:lots')).toBeNull();
     expect(decodeLoanLink(':5')).toBeNull();
     expect(decodeLoanLink(`p1:${MAX_PLAUSIBLE_RIAL + 1}`)).toBeNull();
+    expect(decodeLoanLink(`p1:-${MAX_PLAUSIBLE_RIAL + 1}`)).toBeNull();
+    expect(decodeLoanLink('p1:-9223372036854775808')).toBeNull();
     expect(decodeLoanLink(null)).toBeNull();
   });
 

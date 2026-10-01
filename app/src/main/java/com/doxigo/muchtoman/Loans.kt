@@ -96,7 +96,8 @@ data class LoanLink(val personId: String, val rial: Long) {
             val raw = value ?: return null
             val personId = raw.substringBeforeLast(':', "")
             val rial = raw.substringAfterLast(':').toLongOrNull()
-            if (personId.isEmpty() || rial == null || rial == 0L || abs(rial) > MAX_PLAUSIBLE_RIAL) return null
+            // A range, not abs(): abs(Long.MIN_VALUE) is itself negative and passed the bound.
+            if (personId.isEmpty() || rial == null || rial == 0L || rial !in -MAX_PLAUSIBLE_RIAL..MAX_PLAUSIBLE_RIAL) return null
             return LoanLink(personId, rial)
         }
     }
