@@ -155,7 +155,11 @@ class SyncLifecycleTest {
             .flatMap { request -> JSONObject(request.body).getJSONArray("records").let { a -> (0 until a.length()).map(a::getJSONObject) } }
     }
 
-    /** A record another phone pushed, sealed under [session]'s key, as a pull page carries it. */
+    /**
+     * A record another phone pushed, sealed under [session]'s key and bound to its id and kind as
+     * a phone binds it now, as a pull page carries it. [legacy] seals it the way every record
+     * before the binding was.
+     */
     private fun sealedRecord(
         session: SyncSession,
         id: String,
@@ -164,8 +168,9 @@ class SyncLifecycleTest {
         updatedAt: Long,
         payload: JSONObject,
         deleted: Boolean = false,
+        legacy: Boolean = false,
     ): JSONObject {
-        val (nonce, body) = seal(session.key, payload.toString())
+        val (nonce, body) = seal(session.key, payload.toString(), recordAad(session.scope, kind, id).takeUnless { legacy })
         return JSONObject().put("id", id).put("scope", session.scope).put("updatedAt", updatedAt)
             .put("device", "e".repeat(32)).put("kind", kind).put("ownerMemberId", owner)
             .put("authorMemberId", owner).put("deleted", deleted).put("nonce", nonce).put("body", body)
@@ -638,5 +643,58 @@ class SyncLifecycleTest {
         } finally {
             durable2.close()
         }
+    }
+
+    /**
+     * Sealed once by hand and pinned on both sides (pwa/test/sync.test.ts holds the same bytes):
+     * the AAD each client builds has to be the same string, or the phones and browsers in one
+     * household stop reading each other.
+     */
+    @Test
+    fun `the pinned vector opens only under its own scope, kind and id`() {
+        val key = java.util.Base64.getDecoder().decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+        val nonce = "oKGio6Slpqeoqaqr"
+        val body = "nToKD3/6Lp0LAaXpJQ64sEqfaiOhhHFfrz0VtUyYRjLhRXTMnBFgDmyvN/s6SbDKdCFwLFGxKU9jcik6wRzgxNHYp1VE15GFicVMP+n0d667i33AIUM6EO0="
+        val scope = "family:${"a".repeat(32)}"
+        val id = "txn:${"3".repeat(32)}:6d3a31"
+        val aad = recordAad(scope, "transaction", id)
+
+        assertEquals("mt1|family:${"a".repeat(32)}|transaction|txn:${"3".repeat(32)}:6d3a31", aad)
+        assertEquals("""{"v":1,"id":"$id","deleted":true}""", openSealed(key, nonce, body, aad))
+        assertNull(openSealed(key, nonce, body))
+        assertNull(openSealed(key, nonce, body, recordAad(scope, "note", id)))
+    }
+
+    @Test
+    fun `a body served under another id is refused, and one sealed before the binding still lands`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val them = "b".repeat(32)
+        val real = txnRecord(session, them, "m:1", 1000)
+        // The same owner, so every envelope check passes: only the seal can tell.
+        val cloned = JSONObject(real.toString()).put("id", familyTxnId(them, "m:2"))
+        val legacy = sealedRecord(
+            session, familyTxnId(them, "m:3"), "transaction", them, 1000,
+            JSONObject().put("ownerMemberId", them).put("at", 1000).put("amountRial", 50_000).put("direction", "out"),
+            legacy = true,
+        )
+
+        pullOnce(server, durable, session, memberRecord(session, them, "رضا", 1000), cloned, real, legacy)
+
+        assertNull(durable.familyTxns().get(familyTxnId(them, "m:2")))
+        assertEquals(
+            setOf(familyTxnId(them, "m:1"), familyTxnId(them, "m:3")),
+            durable.familyTxns().all().map { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun `what goes out is sealed under the record's own name`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val member = pushedBy(server, durable, session).single { it.getString("kind") == "member" }
+        val nonce = member.getString("nonce")
+        val body = member.getString("body")
+
+        assertTrue(openSealed(session.key, nonce, body, recordAad(session.scope, "member", "member:${session.member}")) != null)
+        assertNull(openSealed(session.key, nonce, body))
     }
 }

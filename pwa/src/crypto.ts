@@ -54,11 +54,15 @@ export async function generateKey(): Promise<{ key: CryptoKey; raw: Uint8Array<A
   return { key: await importKey(raw), raw };
 }
 
-export async function seal(key: CryptoKey, plaintext: string): Promise<{ nonce: string; body: string }> {
+/** AES-GCM's parameters, with the additional data the seal is bound to when there is any. */
+const gcm = (iv: Uint8Array<ArrayBuffer>, aad?: string): AesGcmParams =>
+  aad == null ? { name: ALGO, iv } : { name: ALGO, iv, additionalData: new TextEncoder().encode(aad) };
+
+export async function seal(key: CryptoKey, plaintext: string, aad?: string): Promise<{ nonce: string; body: string }> {
   // A fresh nonce per record, never a counter: AES-GCM loses all its guarantees the moment one
   // is reused with the same key, and a counter has to survive a reinstall to stay unique.
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
-  const sealed = await crypto.subtle.encrypt({ name: ALGO, iv: nonce }, key, new TextEncoder().encode(plaintext));
+  const sealed = await crypto.subtle.encrypt(gcm(nonce, aad), key, new TextEncoder().encode(plaintext));
   return { nonce: toBase64(nonce), body: toBase64(new Uint8Array(sealed)) };
 }
 
@@ -66,9 +70,9 @@ export async function seal(key: CryptoKey, plaintext: string): Promise<{ nonce: 
  * Null when the key cannot open it — which is the ordinary case for a record from a scope this
  * device is not in, or one sealed under a household's previous key, not an error worth surfacing.
  */
-export async function openSealed(key: CryptoKey, nonce: string, body: string): Promise<string | null> {
+export async function openSealed(key: CryptoKey, nonce: string, body: string, aad?: string): Promise<string | null> {
   try {
-    const plain = await crypto.subtle.decrypt({ name: ALGO, iv: fromBase64(nonce) }, key, fromBase64(body));
+    const plain = await crypto.subtle.decrypt(gcm(fromBase64(nonce), aad), key, fromBase64(body));
     return new TextDecoder().decode(plain);
   } catch {
     return null;

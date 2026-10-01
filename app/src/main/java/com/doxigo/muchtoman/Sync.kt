@@ -79,22 +79,47 @@ private fun unb64Url(value: String): ByteArray =
 
 fun newScopeKey(): ByteArray = ByteArray(32).also { SYNC_RANDOM.nextBytes(it) }
 
-fun seal(key: ByteArray, plaintext: String): Pair<String, String> {
+fun seal(key: ByteArray, plaintext: String, aad: String? = null): Pair<String, String> {
     val nonce = ByteArray(NONCE_BYTES).also { SYNC_RANDOM.nextBytes(it) }
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(GCM_TAG_BITS, nonce))
+    aad?.let { cipher.updateAAD(it.toByteArray(Charsets.UTF_8)) }
     return b64(nonce) to b64(cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8)))
 }
 
-fun openSealed(key: ByteArray, nonce: String, body: String): String? = runCatching {
+fun openSealed(key: ByteArray, nonce: String, body: String, aad: String? = null): String? = runCatching {
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.DECRYPT_MODE,
         SecretKeySpec(key, "AES"),
         GCMParameterSpec(GCM_TAG_BITS, unb64(nonce)),
     )
+    aad?.let { cipher.updateAAD(it.toByteArray(Charsets.UTF_8)) }
     String(cipher.doFinal(unb64(body)), Charsets.UTF_8)
 }.getOrNull()
+
+/**
+ * What a record's ciphertext is bound to, sealed in as AES-GCM additional data: the scope, kind
+ * and id it travels under. Without it a server could serve one sealed transaction under a fresh
+ * `txn:<same owner>:<x>` id — every owner check passes, every phone's totals grow — or move a
+ * body from one kind to another. Versioned and byte for byte the PWA's `recordAad`; the id goes
+ * last, so a `|` inside one cannot shift a field. Never the stamp: the server clamps that.
+ */
+internal fun recordAad(scope: String, kind: String, id: String): String = "mt1|$scope|$kind|$id"
+
+/**
+ * A pulled record opened under the name it arrived with, falling back to the unbound seal every
+ * record before [recordAad] wore.
+ *
+ * ponytail: the fallback keeps those legacy ciphertexts clonable under any id until their owner
+ * rewrites them — an unchanged record is never resent — and with the stamp outside the seal a
+ * stale body replayed under its own id at a higher envelope stamp still opens. The upgrade is a
+ * release that re-seals everything (forgetting the publication hashes resends every record),
+ * then one that drops the fallback once every household has run it.
+ */
+private fun openRecord(session: SyncSession, record: WireRecord): String? =
+    openSealed(session.key, record.nonce, record.body, recordAad(session.scope, record.kind, record.id))
+        ?: openSealed(session.key, record.nonce, record.body)
 
 @Serializable
 data class SyncEntry(
@@ -1013,7 +1038,7 @@ private fun wireRecord(
     payload: String,
     deleted: Boolean = false,
 ): WireRecord {
-    val (nonce, body) = seal(session.key, payload)
+    val (nonce, body) = seal(session.key, payload, recordAad(session.scope, kind, id))
     return WireRecord(
         id = id,
         scope = session.scope,
@@ -2061,7 +2086,7 @@ private suspend fun applyRecord(
     now: Long,
 ): Boolean {
     if (record.device == session.device) return false
-    val plain = openSealed(session.key, record.nonce, record.body) ?: return false
+    val plain = openRecord(session, record) ?: return false
     if (record.deleted) {
         // A delete is only a delete when the sealed body says so and names this very record.
         // The flag, the stamp and the owner all ride in plaintext, so honouring them alone would

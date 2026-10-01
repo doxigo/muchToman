@@ -36,12 +36,13 @@ beforeEach(async () => {
   derived.setMineId(ME);
 });
 
-async function record(id: string, kind: string, plain: string, extra: Partial<WireRecord> = {}): Promise<WireRecord> {
-  const { nonce, body } = await crypt.seal(session.key, plain);
+/** Sealed as a phone seals it now — bound to the id and kind it travels under (`legacy` drops the binding). */
+async function record(id: string, kind: string, plain: string, extra: Partial<WireRecord> = {}, legacy = false): Promise<WireRecord> {
+  const { nonce, body } = await crypt.seal(session.key, plain, legacy ? undefined : sync.recordAad(session.scope, kind, id));
   return { id, scope: session.scope, updatedAt: NOW - 1000, device: THEIR_DEVICE, kind, ownerMemberId: THEM, authorMemberId: THEM, deleted: false, nonce, body, ...extra };
 }
 async function apply(r: WireRecord): Promise<boolean> {
-  return sync.applyRecord(session, r, await crypt.openSealed(session.key, r.nonce, r.body), NOW);
+  return sync.applyRecord(session, r, await sync.openRecord(session, r), NOW);
 }
 
 describe('reading what a phone sends', () => {
@@ -125,6 +126,51 @@ describe('last write wins', () => {
   });
 });
 
+describe('the seal names its record', () => {
+  // Sealed once by hand and pinned on both sides (SyncLifecycleTest holds the same bytes): the
+  // AAD each client builds has to be the same string, or the phones and browsers in one
+  // household stop reading each other.
+  const VECTOR = {
+    key: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+    nonce: 'oKGio6Slpqeoqaqr',
+    scope: `family:${'a'.repeat(32)}`,
+    id: `txn:${'3'.repeat(32)}:6d3a31`,
+    body: 'nToKD3/6Lp0LAaXpJQ64sEqfaiOhhHFfrz0VtUyYRjLhRXTMnBFgDmyvN/s6SbDKdCFwLFGxKU9jcik6wRzgxNHYp1VE15GFicVMP+n0d667i33AIUM6EO0=',
+  };
+
+  it('opens the pinned vector only under its own scope, kind and id', async () => {
+    const key = await crypt.importKey(crypt.fromBase64(VECTOR.key));
+    const aad = sync.recordAad(VECTOR.scope, 'transaction', VECTOR.id);
+    expect(aad).toBe(`mt1|family:${'a'.repeat(32)}|transaction|txn:${'3'.repeat(32)}:6d3a31`);
+    expect(await crypt.openSealed(key, VECTOR.nonce, VECTOR.body, aad)).toBe(JSON.stringify({ v: 1, id: VECTOR.id, deleted: true }));
+    expect(await crypt.openSealed(key, VECTOR.nonce, VECTOR.body)).toBeNull();
+    expect(await crypt.openSealed(key, VECTOR.nonce, VECTOR.body, sync.recordAad(VECTOR.scope, 'note', VECTOR.id))).toBeNull();
+  });
+
+  it('refuses a body served under another id or kind, and still reads one sealed before the binding', async () => {
+    const plain = JSON.stringify({ ownerMemberId: THEM, at: NOW - 5000, amountRial: 125000, direction: 'out' });
+    const real = await record(sync.familyTxnId(THEM, 'm:1'), 'transaction', plain);
+    // The same owner, so every envelope check passes: only the seal can tell.
+    const cloned = { ...real, id: sync.familyTxnId(THEM, 'm:2') };
+    expect(await sync.openRecord(session, cloned)).toBeNull();
+    expect(await apply(cloned)).toBe(false);
+    expect(await sync.openRecord(session, { ...real, kind: 'legacy' })).toBeNull();
+    expect(await apply(real)).toBe(true);
+    expect(state.rows('familyTxns').map((t) => t.id)).toEqual([real.id]);
+    expect(await apply(await record(sync.familyTxnId(THEM, 'm:3'), 'transaction', plain, {}, true))).toBe(true);
+  });
+
+  it('seals what it sends under the record\'s own name', async () => {
+    const [member] = await sync.outgoingRecords({
+      session, now: NOW, entries: [], member: { id: ME, name: 'مریم', sharesSms: false, avatar: '', updatedAt: NOW - 1, deleted: false },
+      publications: [], goals: [], decisions: [], categories: [], shareSms: false, shareAssets: false, excludedBanks: [], assets: null, exclusions: null,
+    });
+    const { nonce, body } = member.wire;
+    expect(await crypt.openSealed(session.key, nonce, body, sync.recordAad(session.scope, 'member', `member:${ME}`))).not.toBeNull();
+    expect(await crypt.openSealed(session.key, nonce, body)).toBeNull();
+  });
+});
+
 describe('deletes', () => {
   it('believes a tombstone only when the sealed body names the record it arrived on', async () => {
     const id = sync.familyTxnId(THEM, 'm:1');
@@ -183,7 +229,7 @@ describe('publishing', () => {
     member: { id: ME, name: 'مریم', sharesSms: false, avatar: '', updatedAt: NOW - 1, deleted: false },
     publications: [], goals: [], decisions: [], categories: [], shareSms: false, shareAssets: false, excludedBanks: [], assets: null, exclusions: null, ...over,
   });
-  const plainOf = async (r: { wire: WireRecord }) => JSON.parse((await crypt.openSealed(session.key, r.wire.nonce, r.wire.body))!);
+  const plainOf = async (r: { wire: WireRecord }) => JSON.parse((await sync.openRecord(session, r.wire))!);
 
   it('sends the member, her own shareable rows, and nothing already published unchanged', async () => {
     const own = entry(txn('m:one', -50_000));
@@ -573,7 +619,7 @@ describe('the household', () => {
     await sync.leaveFamily(session);
     const tombstone = (bodies[0] as { record: WireRecord }).record;
     expect(tombstone).toMatchObject({ id: `member:${ME}`, kind: 'member', ownerMemberId: ME, deleted: true });
-    expect(JSON.parse((await crypt.openSealed(session.key, tombstone.nonce, tombstone.body))!)).toEqual({ v: 1, id: `member:${ME}`, deleted: true });
+    expect(JSON.parse((await sync.openRecord(session, tombstone))!)).toEqual({ v: 1, id: `member:${ME}`, deleted: true });
     expect(await sync.loadSession()).toBeNull();
   });
 

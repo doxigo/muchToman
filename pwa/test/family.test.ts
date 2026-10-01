@@ -104,7 +104,7 @@ describe('the first load after the upgrade', () => {
     const live = byId.get(sync.familyTxnId(ME, `m:${LIVE}`))!;
     expect(live).toMatchObject({ kind: 'transaction', deleted: false });
     expect(live.updatedAt).toBeGreaterThan(NOW - 5000);
-    const plain = JSON.parse((await (await import('../src/crypto')).openSealed(key, live.nonce, live.body))!);
+    const plain = JSON.parse((await (await import('../src/crypto')).openSealed(key, live.nonce, live.body, sync.recordAad(`family:${HID}`, live.kind, live.id)))!);
     expect(plain).toMatchObject({ amountRial: 12340, direction: 'out', merchant: 'نانوایی', sourceKind: 'manual' });
     expect(byId.get(sync.familyTxnId(ME, `m:${DELETED_UNSENT}`))).toMatchObject({ deleted: true });
     expect(byId.get(`member:${ME}`)).toMatchObject({ kind: 'member', ownerMemberId: ME });

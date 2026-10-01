@@ -738,8 +738,29 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
 }
 
 async function wireRecord(session: Session, id: string, kind: string, ownerMemberId: string, updatedAt: number, payload: string, deleted = false): Promise<WireRecord> {
-  const { nonce, body } = await seal(session.key, payload);
+  const { nonce, body } = await seal(session.key, payload, recordAad(session.scope, kind, id));
   return { id, scope: session.scope, updatedAt, device: session.device, kind, ownerMemberId, authorMemberId: '', deleted, nonce, body };
+}
+
+/**
+ * Sync.kt `recordAad`, byte for byte: the scope, kind and id a record's ciphertext is bound to as
+ * AES-GCM additional data, so a server cannot serve one sealed body under another id or kind.
+ * The id goes last, so a `|` inside one cannot shift a field; never the stamp, which the server clamps.
+ */
+export const recordAad = (scope: string, kind: string, id: string): string => `mt1|${scope}|${kind}|${id}`;
+
+/**
+ * Sync.kt `openRecord`: opened under the name it arrived with, else as the unbound seal every
+ * record before `recordAad` wore.
+ *
+ * ponytail: the fallback keeps those legacy ciphertexts clonable under any id until their owner
+ * rewrites them — an unchanged record is never resent — and with the stamp outside the seal a
+ * stale body replayed under its own id at a higher envelope stamp still opens. The upgrade is a
+ * release that re-seals everything, then one that drops the fallback once every household has run it.
+ */
+export async function openRecord(session: Session, record: WireRecord): Promise<string | null> {
+  return (await openSealed(session.key, record.nonce, record.body, recordAad(session.scope, record.kind, record.id))) ??
+    openSealed(session.key, record.nonce, record.body);
 }
 
 // ---- applying: applyRecord ------------------------------------------------------------------
@@ -1078,7 +1099,7 @@ export function applyRecord(session: Session, record: WireRecord, plain: string 
 async function applyPage(session: Session, pulled: PullBody, nextCursor: number, now: number): Promise<number> {
   // The client half of the skew bound, in one choke point: everything downstream sees the clamp.
   const bounded = pulled.records.map((r) => ({ ...r, updatedAt: clampSyncStamp(r.updatedAt, now) }));
-  const plains = await Promise.all(bounded.map((r) => (r.device === session.device ? null : openSealed(session.key, r.nonce, r.body))));
+  const plains = await Promise.all(bounded.map((r) => (r.device === session.device ? null : openRecord(session, r))));
   let applied = 0;
   batch(() => {
     bounded.forEach((record, i) => { if (applyRecord(session, record, plains[i], now)) applied++; });
