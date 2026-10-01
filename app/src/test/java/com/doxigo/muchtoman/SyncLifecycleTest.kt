@@ -701,6 +701,28 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `a refused push still hears the household, then says why`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val them = "b".repeat(32)
+        server.script("/v1/sync", 409, """{"code":"household_full"}""")
+
+        val failure = runCatching {
+            pullOnce(server, durable, session, memberRecord(session, them, "رضا", 1000), txnRecord(session, them, "m:1", 1000))
+        }.exceptionOrNull()
+
+        assertEquals(409, (failure as SyncHttpException).status)
+        assertTrue(durable.familyTxns().get(familyTxnId(them, "m:1")) != null)
+
+        // A 401 is the session's: nothing is pulled on its back.
+        server.script("/v1/sync", 401)
+        val rejected = runCatching {
+            pullOnce(server, durable, session, txnRecord(session, them, "m:2", 1000))
+        }.exceptionOrNull()
+        assertEquals(401, (rejected as SyncHttpException).status)
+        assertNull(durable.familyTxns().get(familyTxnId(them, "m:2")))
+    }
+
+    @Test
     fun `what goes out is sealed under the record's own name`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         val member = pushedBy(server, durable, session).single { it.getString("kind") == "member" }

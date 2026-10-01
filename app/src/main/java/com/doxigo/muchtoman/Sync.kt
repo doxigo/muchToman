@@ -2202,6 +2202,7 @@ suspend fun syncNow(
     val outgoing = outgoingRecords(durable, derived, active, now, assets)
     var sent = 0
     val unsupportedKinds = mutableSetOf<String>()
+    var refused: SyncHttpException? = null
     for (chunk in outgoing.groupBy { it.wire.kind }.values.flatMap { it.chunked(200) }) {
         if (chunk.first().wire.kind in unsupportedKinds) continue
         val response = try { request(
@@ -2210,8 +2211,16 @@ suspend fun syncNow(
             active.token,
             SYNC_JSON.encodeToString(PushBody(chunk.map { it.wire })),
         ) } catch (error: SyncHttpException) {
-            if (error.status != 400 || error.code != "invalid_kind") throw error
-            unsupportedKinds += chunk.first().wire.kind
+            if (error.status == 400 && error.code == "invalid_kind") {
+                unsupportedKinds += chunk.first().wire.kind
+                continue
+            }
+            // A 401 or 403 is the session's to answer, and a pull would only hear it again.
+            if (error.status == 401 || error.status == 403) throw error
+            // Anything else the server refuses — a full household, a body too big — is still no
+            // reason to stop hearing the household: the rest go, the pull runs, then it surfaces.
+            // The chunk's marks stay unwritten, so the next sync offers it again.
+            refused = refused ?: error
             continue
         }
         // The server clamps far-future stamps and answers with what it stored; the publication
@@ -2273,5 +2282,6 @@ suspend fun syncNow(
         val more = (pulled.hasMore ?: (pulled.records.size >= 1000)) && cursor > previous
     } while (more)
     if (canRotate) rotateTokenIfStale(durable, active, now)
+    refused?.let { throw it }
     SyncResult(sent, received, unsupportedKinds)
 }

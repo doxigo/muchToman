@@ -130,6 +130,23 @@ describe('last write wins', () => {
     warn.mockRestore();
   });
 
+  it('still hears the household when a push is refused, then says why; a 401 stops it', async () => {
+    const plain = JSON.stringify({ ownerMemberId: THEM, at: NOW - 5000, amountRial: 1000, direction: 'out' });
+    const page = async (ref: string) => Response.json({ seq: 1, records: [await record(sync.familyTxnId(THEM, ref), 'transaction', plain)], hasMore: false });
+    let pushStatus = 409;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/v1/sync?')) return page(pushStatus === 409 ? 'm:1' : 'm:2');
+      if (url.endsWith('/v1/sync')) return Response.json({ code: 'x' }, { status: pushStatus });
+      return Response.json({});
+    }));
+    await expect(sync.syncNow(session, NOW)).rejects.toMatchObject({ status: 409 });
+    expect(state.row('familyTxns', sync.familyTxnId(THEM, 'm:1'))).toBeDefined();
+
+    pushStatus = 401;
+    await expect(sync.syncNow(session, NOW)).rejects.toMatchObject({ status: 401 });
+    expect(state.row('familyTxns', sync.familyTxnId(THEM, 'm:2'))).toBeUndefined();
+  });
+
   it('clamps a stamp from the far future to two days ahead', async () => {
     const plain = JSON.stringify({ memberId: THEM, name: 'علی', sharesSms: false });
     expect(sync.clampSyncStamp(NOW + 10 * 86_400_000, NOW)).toBe(NOW + sync.MAX_SYNC_STAMP_SKEW_MS);

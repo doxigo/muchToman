@@ -1179,6 +1179,7 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
 
     let sent = 0;
     const unsupportedKinds = new Set<string>();
+    let refused: SyncHttpError | null = null;
     const byKind = new Map<string, PreparedRecord[]>();
     for (const r of outgoing) byKind.set(r.wire.kind, [...(byKind.get(r.wire.kind) ?? []), r]);
     for (const group of byKind.values()) {
@@ -1190,9 +1191,17 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
         try {
           response = await request(`${active.base}/v1/sync`, 'POST', active.token, JSON.stringify({ records: chunk.map((r) => r.wire) }));
         } catch (error) {
+          if (!(error instanceof SyncHttpError)) throw error;
           // An old server refuses a kind it does not know for the whole batch; the rest still go.
-          if (!(error instanceof SyncHttpError) || error.status !== 400 || error.code !== 'invalid_kind') throw error;
-          unsupportedKinds.add(kind);
+          if (error.status === 400 && error.code === 'invalid_kind') {
+            unsupportedKinds.add(kind);
+            continue;
+          }
+          // A 401 or 403 is the session's to answer, and a pull would only hear it again.
+          if (error.status === 401 || error.status === 403) throw error;
+          // Anything else refused is no reason to stop hearing the household: the rest go, the
+          // pull runs, then it surfaces. Its marks stay unwritten, so the next sync offers it again.
+          refused ??= error;
           continue;
         }
         // The server clamps far-future stamps and says what it stored; the marks take its word.
@@ -1210,6 +1219,7 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
 
     await pull();
     if (canRotate) await rotateTokenIfStale(active, now);
+    if (refused) throw refused;
     return { sent, received, unsupportedKinds: [...unsupportedKinds] };
   });
 }
