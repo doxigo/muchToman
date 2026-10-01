@@ -1073,6 +1073,13 @@ export default {
 
       // Anything else is the PWA's shell, at a path that is no file.
       const asset = await env.ASSETS.fetch(request);
+      // Except a build file that is not there: a page from another deploy asking for its own
+      // bundle. The shell fallback would answer index.html with a 200, which a service worker
+      // installing across a deploy caches as the script, and every launch then dies on a MIME
+      // error until the next release. A 404 fails that install instead, and the next one retries.
+      if (path.startsWith('/assets/') && asset.headers.get('content-type')?.startsWith('text/html')) {
+        return textResponse('not found\n', 404);
+      }
       const headers = new Headers(asset.headers);
       for (const [name, value] of Object.entries(ASSET_HEADERS)) headers.set(name, value);
       return new Response(asset.body, { status: asset.status, headers });

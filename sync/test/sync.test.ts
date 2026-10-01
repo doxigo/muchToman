@@ -988,6 +988,20 @@ describe('the PWA it serves', () => {
     expect(worker).toContain('const PRECACHE = [');
     expect(worker).not.toContain('"/_headers"');
   });
+
+  it('answers a build file that is not there with a 404, never the page', async () => {
+    // A service worker installing across a deploy asks for the other build's bundle; index.html
+    // with a 200 would be cached as its script and break every launch until the next release.
+    const missing = await SELF.fetch('https://sync.test/assets/index-gone.js');
+    expect(missing.status).toBe(404);
+    await missing.arrayBuffer();
+    const html = await (await SELF.fetch('https://sync.test/')).text();
+    const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)![1];
+    const present = await SELF.fetch(`https://sync.test${script}`);
+    expect(present.status).toBe(200);
+    expect(present.headers.get('content-type')).toContain('javascript');
+    await present.arrayBuffer();
+  });
 });
 
 describe('bounded resumable pulls', () => {

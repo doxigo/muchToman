@@ -1,8 +1,12 @@
 const SHELL = '__SHELL_VERSION__';
 const PRECACHE = __PRECACHE__;
 
+// From the network, never the HTTP cache, so the shell is this build's files and only them;
+// addAll fails the whole install on any answer that is not ok, so a file missing mid-deploy
+// leaves the previous shell in charge rather than caching half of the new one.
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(PRECACHE)));
+  event.waitUntil(caches.open(SHELL).then((cache) =>
+    cache.addAll(PRECACHE.map((path) => new Request(path, { cache: 'reload' })))));
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil(caches.keys()
