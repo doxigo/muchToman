@@ -26,8 +26,8 @@ export const PLAUSIBLE_USD_TOMAN = { min: 10_000, max: 10_000_000 };
  * When both the bonbast-chain dollar and a Tehran USDT-Toman market answered, they must
  * agree. The Tehran premium on USDT is real but bounded — a few percent in calm weeks,
  * low double digits in bad ones — so ×1.25 is headroom, and anything past it means one of
- * the two is broken with no way to tell which. Publish neither. (2026-08-22: bonbast USD
- * ≈187k, USDT ≈190–200k.)
+ * the two is broken. Gold breaks the tie when it can; when it cannot, the dollar goes.
+ * (2026-08-22: bonbast USD ≈187k, USDT ≈190–200k.)
  */
 export const USD_VS_USDT_MAX_RATIO = 1.25;
 
@@ -211,7 +211,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * wrong.
  *
  * `usdtToman` is the Tehran USDT price from the crypto chain, the one independent referee
- * the dollar has.
+ * the dollar has. When gold sides with the dollar against it, the drops name `usdt`: the
+ * crypto chain is the broken side, and the caller must not publish its prices on their own
+ * word.
  */
 export function applyPlausibility(
   toman: Record<string, number>,
@@ -223,6 +225,9 @@ export function applyPlausibility(
     delete toman[id];
     drops.push({ id, reason });
   };
+  // A gold18-per-gram Toman price over a dollar rate, held to the band.
+  const fitsGold = (perGram: number, dollar: number) =>
+    perGram / dollar >= GOLD18_PER_USD.min && perGram / dollar <= GOLD18_PER_USD.max;
 
   // The dollar first, because everything else cross-rates through it. The referee itself
   // must sit inside the absolute band to be trusted as one.
@@ -230,24 +235,38 @@ export function applyPlausibility(
     usdtToman >= PLAUSIBLE_USD_TOMAN.min && usdtToman <= PLAUSIBLE_USD_TOMAN.max
     ? usdtToman
     : null;
+  // The dollars gold is held to below: the surviving one, or with no bonbast-chain dollar at
+  // all, an undisputed USDT — it is a dollar too.
+  let dollars = toman.usd != null ? [toman.usd] : usdt != null ? [usdt] : [];
   if (toman.usd != null && usdt != null && !agreesWithin(toman.usd, usdt, USD_VS_USDT_MAX_RATIO)) {
-    // Prefer neither: there is no way to tell which of the two is broken, and a wrong
-    // dollar multiplies into every USD-cross-rated crypto price besides.
-    drop(
-      'usd',
-      `disagrees with the USDT-Toman market (${Math.round(usdt)}) beyond ×${USD_VS_USDT_MAX_RATIO}; ` +
-        'publishing neither a dollar rate nor USD-cross-rated crypto',
-    );
-  }
-
-  // Gold against whatever dollar reference survived. If the bonbast-chain dollar was just
-  // dropped, the (band-checked) USDT price stands in — it is a dollar too.
-  const dollarRef = toman.usd ?? usdt;
-  if (toman.gold18 != null && dollarRef != null) {
-    const ratio = toman.gold18 / dollarRef;
-    if (ratio < GOLD18_PER_USD.min || ratio > GOLD18_PER_USD.max) {
-      drop('gold18', `gold18/usd ratio ${round2(ratio)} outside [${GOLD18_PER_USD.min}, ${GOLD18_PER_USD.max}]`);
+    const gold18 = toman.gold18;
+    if (gold18 != null && fitsGold(gold18, toman.usd) && !fitsGold(gold18, usdt)) {
+      // Gold, off the dollar's own scrape, agrees with the dollar and not with USDT: the
+      // crypto chain is the broken side (bitpin quoting Rial, say, which still lands inside
+      // the band). The dollar and everything hanging off it stand.
+      drops.push({
+        id: 'usdt',
+        reason: `${Math.round(usdt)} disagrees with the dollar beyond ×${USD_VS_USDT_MAX_RATIO} ` +
+          'and gold sides with the dollar; no Tehran crypto price goes out on its own word',
+      });
+    } else {
+      // Gold cannot tell which of the two is broken, and a wrong dollar multiplies into every
+      // USD-cross-rated crypto price besides. One of the two is still right, so gold has to
+      // fit at least one of them: a disputed USDT is never the yardstick on its own.
+      dollars = [toman.usd, usdt];
+      drop(
+        'usd',
+        `disagrees with the USDT-Toman market (${Math.round(usdt)}) beyond ×${USD_VS_USDT_MAX_RATIO}; ` +
+          'publishing neither a dollar rate nor USD-cross-rated crypto',
+      );
     }
+  }
+  const fitsADollar = (perGram: number) =>
+    dollars.length === 0 || dollars.some((dollar) => fitsGold(perGram, dollar));
+  const ratios = (perGram: number) => dollars.map((dollar) => round2(perGram / dollar)).join(' and ');
+
+  if (toman.gold18 != null && !fitsADollar(toman.gold18)) {
+    drop('gold18', `gold18/usd ratio ${ratios(toman.gold18)} outside [${GOLD18_PER_USD.min}, ${GOLD18_PER_USD.max}]`);
   }
   const gold = toman.gold18 ?? null;
 
@@ -262,11 +281,12 @@ export function applyPlausibility(
           `mesghal/gold18 ratio ${round2(toman.gold_mesghal / gold)} not within 15% of ${MESGHAL_GRAMS}`,
         );
       }
-    } else if (dollarRef != null) {
-      const perGram = toman.gold_mesghal / MESGHAL_GRAMS / dollarRef;
-      if (perGram < GOLD18_PER_USD.min || perGram > GOLD18_PER_USD.max) {
-        drop('gold_mesghal', `mesghal-derived gold/usd ratio ${round2(perGram)} outside [${GOLD18_PER_USD.min}, ${GOLD18_PER_USD.max}]`);
-      }
+    } else if (!fitsADollar(toman.gold_mesghal / MESGHAL_GRAMS)) {
+      drop(
+        'gold_mesghal',
+        `mesghal-derived gold/usd ratio ${ratios(toman.gold_mesghal / MESGHAL_GRAMS)} ` +
+          `outside [${GOLD18_PER_USD.min}, ${GOLD18_PER_USD.max}]`,
+      );
     }
   }
 

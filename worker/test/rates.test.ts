@@ -254,6 +254,28 @@ describe('GET /rates', () => {
     expect(body.sources.fiat_gold_coins.startsWith('failed:')).toBe(true);
   });
 
+  it('sets the Tehran chain aside when gold sides with the dollar against its USDT', async () => {
+    const { rates } = setup({
+      'https://api.bitpin.ir/v1/mkt/markets/': () =>
+        Response.json({
+          results: [ // quoting Rial: every price 10x, USDT still inside the dollar band
+            { code: 'BTC_IRT', price: '120,620,000,000' },
+            { code: 'USDT_IRT', price: '1,875,000' },
+            { code: 'DOGE_IRT', price: '300,000' }, // Tehran-only: nothing referees it
+          ],
+        }),
+    });
+    const { body } = await rates();
+
+    expect(body.toman.usd).toBe(187_000);
+    expect(body.toman.gold18).toBe(17_800_000);
+    expect(body.toman.btc).toBe(64_500 * 187_000); // the USD side, as if bitpin were down
+    expect(body.toman.usdt).toBeUndefined();
+    expect(body.toman.doge).toBeUndefined();
+    expect(body.sources.plausibility).toContain('usdt');
+    expect(body.sources.crypto_toman).toContain('set aside');
+  });
+
   it('names a tgju page whose markup stopped matching without zeroing anything', async () => {
     const { rates } = setup({
       'https://www.tgju.org/gold-chart': () => new Response('<html><table></table></html>'),

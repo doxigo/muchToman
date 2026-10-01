@@ -1223,7 +1223,7 @@ async function buildRates(): Promise<Response> {
   // +1 for the derived per-سوت row the app's single سکه پارسیان multiplies by.
   alone('parsian_coins', parsian, PARSIAN_SOOT.length + 1, 'rows');
 
-  const tomanNative = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.prices : {};
+  let tomanNative = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.prices : {};
   const namesFa = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.namesFa : {};
   const coins = gecko.status === 'fulfilled' ? gecko.value.coins : [];
   let usdPrices: Record<string, number> = gecko.status === 'fulfilled' ? gecko.value.usd : {};
@@ -1233,6 +1233,11 @@ async function buildRates(): Promise<Response> {
   // and each other. Whatever fails is deleted — dropped, not zeroed — and named below, so
   // the phone's "missing rates are named" behaviour does its job.
   const drops: Drop[] = applyPlausibility(toman, tomanNative.usdt ?? null);
+  // Gold sided with the dollar against the Tehran USDT price, so the Tehran chain is the
+  // broken one: it is treated exactly as if it were down, and coins fall through to the USD
+  // side like they always have then. A Tehran-only coin goes out as "نرخ ندارد".
+  const tehranBroken = drops.some((d) => d.id === 'usdt');
+  if (tehranBroken) tomanNative = {};
 
   // The catalogue is a source like any other and fails on its own — and it used to take every
   // crypto price down with it, because pricing ran over `coins`: an empty catalogue published
@@ -1298,6 +1303,7 @@ async function buildRates(): Promise<Response> {
   }
 
   note('crypto_toman', cryptoToman, 'ok');
+  if (tehranBroken) sources.crypto_toman += ', set aside: its USDT failed the gold tie-break';
   sources.coin_catalog =
     gecko.status === 'fulfilled'
       ? `ok, ${coins.length} coins`

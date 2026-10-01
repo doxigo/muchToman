@@ -61,8 +61,22 @@ describe('applyPlausibility', () => {
     const drops = applyPlausibility(toman, USDT);
     expect(ids(drops)).toEqual(['usd']);
     expect(toman.usd).toBeUndefined();
-    // gold is then judged against the USDT dollar instead, and it is fine
+    // gold fits both dollars, so it cannot break the tie — and it is fine either way
     expect(toman.gold18).toBe(17_800_000);
+  });
+
+  it('keeps the dollar and names usdt when gold sides with the dollar (bitpin quoting Rial)', () => {
+    const toman = fixture();
+    const before = { ...toman };
+    const drops = applyPlausibility(toman, 1_875_000); // Rial, still inside the dollar band
+    expect(ids(drops)).toEqual(['usdt']);
+    expect(toman).toEqual(before);
+  });
+
+  it('holds gold to both disputed dollars, so a 10x gold still goes when the tie stands', () => {
+    const toman = fixture();
+    toman.gold18 = 1_780_000; // 10x low: fits neither the dollar nor a Rial-quoted USDT
+    expect(ids(applyPlausibility(toman, 1_875_000))).toEqual(['gold18', 'usd']);
   });
 
   it('keeps a lone in-band dollar when there is no USDT referee', () => {
