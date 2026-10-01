@@ -580,6 +580,40 @@ describe('revocation', () => {
     expect(founderView.json.records.find((r) => r.id === `member:${member.memberId}`).deleted).toBe(true);
   });
 
+  it('judges a request by who is still in the household once its body has arrived', async () => {
+    // The object takes other requests while one trickles its body in. A member removed in that
+    // gap must not land the invite or the profile write they started before it.
+    const scope = 'family:a7';
+    const founder = await claimDevice('a7'.repeat(16), [scope], { memberId: 'a8'.repeat(16), deviceId: 'a9'.repeat(16) });
+    const member = await pairDevice(founder.token, 'aa'.repeat(16), 'ac'.repeat(16));
+    const held = (path: string, body: unknown) => {
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const writer = writable.getWriter();
+      const text = new TextEncoder().encode(JSON.stringify(body));
+      const response = SELF.fetch(`https://sync.test${path}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${member.token}` },
+        body: readable,
+      });
+      return {
+        started: writer.write(text.slice(0, 1)),
+        finish: async () => { await writer.write(text.slice(1)); await writer.close(); return response; },
+      };
+    };
+    const invite = held('/v1/invite', {});
+    const profile = held('/v1/sync', {
+      records: [record({ id: `member:${member.memberId}`, scope, kind: 'member', ownerMemberId: member.memberId, updatedAt: 9000 })],
+    });
+    await invite.started;
+    await profile.started;
+
+    expect((await removeMember(founder.token, member.memberId, scope)).status).toBe(200);
+    expect((await invite.finish()).status).toBe(401);
+    expect((await profile.finish()).status).toBe(401);
+    const row = (await pull(founder.token)).json.records.find((r) => r.id === `member:${member.memberId}`);
+    expect(row.deleted).toBe(true);
+  });
+
   it('rejects ambiguous revoke selectors before deleting either target', async () => {
     const founder = await claimDevice('e4'.repeat(16), ['family:e4'], {
       memberId: 'e5'.repeat(16),

@@ -353,20 +353,22 @@ export class Household extends DurableObject<Env> {
 
   /** First device. Creates the household and takes the first token; refused ever after. */
   private async claim(request: Request): Promise<Response> {
-    const existing = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
-    if (existing && existing.n > 0) throw new SyncError('already_claimed', 409);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
     const scopes = Array.isArray(body.scopes) ? (body.scopes as string[]).slice(0, 16) : [];
     if (scopes.length === 0) throw new SyncError('invalid_scope', 400);
     const memberId = identity(body.memberId, () => randomToken(16));
     const deviceId = identity(body.deviceId, () => randomToken(16));
     const secret = randomToken();
+    const secretHash = await sha256Hex(secret);
+    // After the last await, so two claims racing for one household cannot both find it empty.
+    const existing = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
+    if (existing && existing.n > 0) throw new SyncError('already_claimed', 409);
     const now = Date.now();
     this.sql.exec(
       'INSERT INTO device (id, member_id, token_hash, scopes, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
       deviceId,
       memberId,
-      await sha256Hex(secret),
+      secretHash,
       JSON.stringify(scopes),
       now,
       now,
@@ -377,17 +379,19 @@ export class Household extends DurableObject<Env> {
 
   /** A one-time code an existing device shows, which the new one redeems for a token of its own. */
   private async invite(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const code = randomToken(16);
+    const codeHash = await sha256Hex(code);
+    const auth = this.authorise(secretHash);
     const scopes = Array.isArray(body.scopes)
       ? (body.scopes as string[]).filter((s) => auth.scopes.includes(s))
       : auth.scopes;
     if (scopes.length === 0) throw new SyncError('invalid_scope', 400);
-    const code = randomToken(16);
     this.sql.exec('DELETE FROM pairing WHERE expires_at < ?', Date.now());
     this.sql.exec(
       'INSERT OR REPLACE INTO pairing (code_hash, scopes, expires_at) VALUES (?, ?, ?)',
-      await sha256Hex(code),
+      codeHash,
       JSON.stringify(scopes),
       Date.now() + PAIRING_TTL_MS,
     );
@@ -401,6 +405,10 @@ export class Household extends DurableObject<Env> {
     const code = typeof body.code === 'string' ? body.code : '';
     if (!code) throw new SyncError('invalid_request', 400);
     const codeHash = await sha256Hex(code);
+    const secret = randomToken();
+    const secretHash = await sha256Hex(secret);
+    // Nothing below awaits: the code, the collision checks and the device cap are all read in
+    // the same turn that inserts the device, so no concurrent pair or revoke can slip between.
     const now = Date.now();
     this.sql.exec('DELETE FROM pairing WHERE expires_at < ?', now);
     const row = [...this.sql.exec<{ scopes: string }>(
@@ -420,12 +428,11 @@ export class Household extends DurableObject<Env> {
     if (identityCollision && identityCollision.n > 0) throw new SyncError('identity_exists', 409);
     const devices = [...this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM device')][0];
     if (devices && devices.n >= MAX_DEVICES) throw new SyncError('too_many_devices', 409);
-    const secret = randomToken();
     this.sql.exec(
       'INSERT INTO device (id, member_id, token_hash, scopes, added_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)',
       deviceId,
       memberId,
-      await sha256Hex(secret),
+      secretHash,
       row.scopes,
       now,
       now,
@@ -433,18 +440,31 @@ export class Household extends DurableObject<Env> {
     return jsonResponse({ secret, scopes: JSON.parse(row.scopes), memberId, deviceId });
   }
 
-  private async authorise(request: Request): Promise<AuthorisedDevice> {
+  /** The caller's secret, hashed before anything else is awaited — see `authorise`. */
+  private async credential(request: Request): Promise<string> {
     const secret = request.headers.get('x-device-secret');
     if (!secret) throw new SyncError('unauthorised', 401);
-    const found = this.device(await sha256Hex(secret));
+    return sha256Hex(secret);
+  }
+
+  /**
+   * Synchronous, and called only once a handler has nothing left to await. The object takes
+   * other requests while one waits on its body, so a check made before that wait goes stale: a
+   * member removed meanwhile would still mint an invite and walk back in, and a held push of
+   * their profile would land on top of its tombstone. Checked here, the check and every write
+   * after it run in one turn that no other request can enter.
+   */
+  private authorise(secretHash: string): AuthorisedDevice {
+    const found = this.device(secretHash);
     if (!found) throw new SyncError('unauthorised', 401);
     this.sql.exec('UPDATE device SET last_seen = ? WHERE id = ?', Date.now(), found.id);
     return found;
   }
 
   private async setIdentity(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const auth = this.authorise(secretHash);
     const memberId = identity(body.memberId, () => '');
     const deviceId = identity(body.deviceId, () => '');
     if (!memberId || !deviceId) throw new SyncError('invalid_identity', 400);
@@ -477,7 +497,7 @@ export class Household extends DurableObject<Env> {
   }
 
   private async pull(request: Request, url: URL): Promise<Response> {
-    const auth = await this.authorise(request);
+    const auth = this.authorise(await this.credential(request));
     const since = Number(url.searchParams.get('since') ?? '0');
     if (!Number.isFinite(since) || since < 0) throw new SyncError('invalid_since', 400);
     const requestedLimit = Number(url.searchParams.get('limit') ?? '500');
@@ -545,8 +565,9 @@ export class Household extends DurableObject<Env> {
   }
 
   private async push(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const parsed = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}');
+    const auth = this.authorise(secretHash);
     const records = asRecords((parsed as Record<string, unknown>).records);
 
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
@@ -726,8 +747,9 @@ export class Household extends DurableObject<Env> {
 
   /** Removes another member, including their profile, or changes nothing. */
   private async remove(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const auth = this.authorise(secretHash);
     const member = typeof body.member === 'string' ? body.member : '';
     if (!member || member === auth.memberId) throw new SyncError('invalid_request', 400);
     const primary = this.primaryMember();
@@ -738,8 +760,9 @@ export class Household extends DurableObject<Env> {
 
   /** Lets the caller leave and publishes that fact in the same transaction. */
   private async leave(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const auth = this.authorise(secretHash);
     const record = this.memberTombstone(body.record, auth, auth.memberId);
     return this.removeMember(auth, auth.memberId, record);
   }
@@ -752,8 +775,9 @@ export class Household extends DurableObject<Env> {
    * is the request they can actually make. Revoking by member cuts every device that person has.
    */
   private async revoke(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const auth = this.authorise(secretHash);
     const device = typeof body.device === 'string' ? body.device : '';
     const member = typeof body.member === 'string' ? body.member : '';
     if ((!device && !member) || (device && member)) throw new SyncError('invalid_request', 400);
@@ -783,13 +807,14 @@ export class Household extends DurableObject<Env> {
    * token lifted from a backup or a bus-shoulder photo has a bounded useful life.
    */
   private async rotate(request: Request): Promise<Response> {
-    const auth = await this.authorise(request);
+    const secretHash = await this.credential(request);
     const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
     if (body.secret !== undefined && (typeof body.secret !== 'string' || !/^[a-f0-9]{64}$/.test(body.secret))) {
       throw new SyncError('invalid_secret', 400);
     }
     const secret = typeof body.secret === 'string' ? body.secret : randomToken();
     const nextHash = await sha256Hex(secret);
+    const auth = this.authorise(secretHash);
     const changed = [...this.sql.exec<{ id: string }>(
       'UPDATE device SET token_hash = ?, last_seen = ? WHERE id = ? AND token_hash = ? RETURNING id',
       nextHash,
