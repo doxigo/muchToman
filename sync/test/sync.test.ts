@@ -964,10 +964,29 @@ describe('abuse resistance', () => {
 });
 
 describe('the PWA it serves', () => {
-  it('rides a content-security-policy header on asset responses', async () => {
-    const res = await SELF.fetch('https://sync.test/');
-    expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
-    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+  it('sends the page\'s own policy with every file the asset layer serves', async () => {
+    // In production a file that exists never reaches this Worker: the asset layer answers it, and
+    // its headers come from pwa/public/_headers. The ASSETS binding is that same layer.
+    const html = await (await env.ASSETS.fetch('https://sync.test/')).text();
+    const meta = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)![1];
+    const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)![1];
+    const policy = `${meta}; frame-ancestors 'none'`;
+    const served = [
+      ...await Promise.all(['/', '/sw.js', script].map((path) => env.ASSETS.fetch(`https://sync.test${path}`))),
+      // A page load at a path that is no file, from a browser too old to say it is one, does
+      // reach this Worker — and leaves with the same headers.
+      await SELF.fetch('https://sync.test/join'),
+    ];
+    for (const res of served) {
+      expect(res.headers.get('content-security-policy')).toBe(policy);
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      await res.arrayBuffer();
+    }
+    // _headers is read, never served, so it is not a file the service worker could install.
+    const worker = await (await env.ASSETS.fetch('https://sync.test/sw.js')).text();
+    expect(worker).toContain('const PRECACHE = [');
+    expect(worker).not.toContain('"/_headers"');
   });
 });
 

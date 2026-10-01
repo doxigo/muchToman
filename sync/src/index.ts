@@ -926,14 +926,20 @@ function allowClaim(ip: string, now = Date.now()): boolean {
 }
 
 /**
- * One policy, stated twice — here as a header on every asset, and as a `<meta>` in the PWA's
- * index.html so a copy of the page saved or served from a cache keeps it. `unsafe-inline` styles
- * are real: the page ships its stylesheet as an inline `<style>` and sizes figures with inline
- * `style="--fit:…"` attributes. Scripts stay 'self' only.
+ * The page's policy, for the one asset response this Worker hands out: index.html at a path that
+ * is no file, from a browser too old to mark the request as a navigation. Every file that exists
+ * is served before this Worker runs, and gets the same headers from pwa/public/_headers; the
+ * `<meta>` in index.html keeps the policy in a saved page. All three say the same thing, which
+ * the tests check. `unsafe-inline` styles are real: the page ships its stylesheet as an inline
+ * `<style>` and sizes figures with inline `style="--fit:…"` attributes. Scripts stay 'self' only.
  */
-const ASSET_CSP =
-  "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-  "style-src 'self' 'unsafe-inline'; script-src 'self'";
+const ASSET_HEADERS = {
+  'content-security-policy':
+    "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'",
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -1065,10 +1071,10 @@ export default {
         return await env.HOUSEHOLD.getByName(token.hid).fetch(inner);
       }
 
-      // Anything else is the PWA, with its content-security-policy riding on every response.
+      // Anything else is the PWA's shell, at a path that is no file.
       const asset = await env.ASSETS.fetch(request);
       const headers = new Headers(asset.headers);
-      headers.set('content-security-policy', ASSET_CSP);
+      for (const [name, value] of Object.entries(ASSET_HEADERS)) headers.set(name, value);
       return new Response(asset.body, { status: asset.status, headers });
     } catch (error) {
       console.error(JSON.stringify({ message: 'sync failed', error: errorMessage(error) }));

@@ -12,8 +12,9 @@
     <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#121511" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
-    <!-- Stated twice on purpose: the Worker sets the same policy as a header on every asset,
-         and this copy survives in a saved page or a cache the header never reached. Inline
+    <!-- Stated twice on purpose: public/_headers sends the same policy as a header on every
+         file (plus frame-ancestors, which only a header can say), and this copy survives in a
+         saved page or a cache the header never reached. Keep the two identical. Inline
          styles are real — the stylesheet below and the style="--fit:…" sizing attributes —
          hence 'unsafe-inline' for styles only; scripts stay 'self'. connect-src 'self' also
          means a dev page on :5173 cannot talk to a worker on :8787 — run against the built

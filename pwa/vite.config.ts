@@ -20,7 +20,8 @@ export default defineConfig({
         for (const file of await readdir(directory, { withFileTypes: true })) {
           const path = resolve(directory, file.name);
           if (file.isDirectory()) await collect(path);
-          else if (file.name !== 'sw.js') files.push(path);
+          // _headers is read by the asset layer and never served, so it is no part of the shell.
+          else if (file.name !== 'sw.js' && file.name !== '_headers') files.push(path);
         }
       }
       await collect(root); files.sort();

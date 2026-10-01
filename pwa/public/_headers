@@ -1,0 +1,8 @@
+# Every file that exists is served by the asset layer before the sync Worker runs, so this is the
+# only way a header reaches index.html, /assets/* and /sw.js. The policy is the <meta> one in
+# index.html, word for word, plus frame-ancestors — which a <meta> cannot carry. Keep the two,
+# and ASSET_HEADERS in sync/src/index.ts, identical; sync's tests check that they are.
+/*
+  Content-Security-Policy: default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
