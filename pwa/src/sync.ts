@@ -28,7 +28,7 @@ import { tehranDay } from './jalali';
 import { MAX_NOTE_CHARS } from './rules';
 import { MAX_PLAUSIBLE_RIAL, clampAt, sha256Hex } from './sms';
 import type { Category, CategoryKindId, Decision, FamilyMember, Goal, GoalKindId, GoalPeriodId, LedgerEntry, Prefs, Publication, Txn } from './model';
-import { batch, erase, pref, put, putAll, row, rows, setPref, settled } from './state';
+import { batch, erase, pref, put, putAll, row, rows, setPref, settled, syncWrite } from './state';
 
 // ---- constants (Sync.kt, Ledger.kt, Derived.kt, Rules.kt) ---------------------------------
 
@@ -1153,11 +1153,11 @@ async function applyPage(session: Session, pulled: PullBody, nextCursor: number,
   const bounded = pulled.records.flatMap((r) => (r ? [{ ...r, updatedAt: clampSyncStamp(r.updatedAt, now) }] : []));
   const plains = await Promise.all(bounded.map((r) => (r.device === session.device ? null : openRecord(session, r))));
   let applied = 0;
-  batch(() => {
+  syncWrite(() => batch(() => {
     bounded.forEach((record, i) => { if (applyRecord(session, record, plains[i], now)) applied++; });
     setSyncPref('syncSeq', nextCursor);
     if (!blank(pulled.primaryMemberId)) setSyncPref('syncPrimaryMember', pulled.primaryMemberId);
-  });
+  }));
   return applied;
 }
 
@@ -1175,7 +1175,7 @@ function ownMemberRow(session: Session, shareSms: boolean, now: number): FamilyM
   const own = row('familyMembers', session.member) ??
     { id: session.member, name: MEMBER_FALLBACK, sharesSms: shareSms, avatar: '', updatedAt: now, deleted: false };
   const member = own.sharesSms === shareSms ? own : { ...own, sharesSms: shareSms, updatedAt: nextStamp(own.updatedAt, now) };
-  if (member !== row('familyMembers', session.member)) put('familyMembers', member);
+  if (member !== row('familyMembers', session.member)) syncWrite(() => put('familyMembers', member));
   return member;
 }
 
@@ -1205,7 +1205,7 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
     // Cleared only once the whole pull is in, so a pull cut short asks again next time.
     if (syncPref('syncPullFirst')) {
       await pull();
-      setSyncPref('syncPullFirst', false);
+      syncWrite(() => setSyncPref('syncPullFirst', false));
     }
     const shareSms = syncPref('syncShareSms');
     const outgoing = await outgoingRecords({
@@ -1247,14 +1247,16 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
         const ack = decode(response, (o) => field(o, 'clamped', (v): v is Json[] => Array.isArray(v) && v.every(isWire), []));
         for (const c of ack ?? []) if (isString(c.id) && isLong(c.updatedAt)) clamped.set(c.id, c.updatedAt);
         const publications = chunk.flatMap((r) => (r.publication ? [{ ...r.publication, updatedAt: clamped.get(r.publication.id) ?? r.publication.updatedAt }] : []));
-        putAll('publications', publications);
-        // The rows that carry their own stamp take the server's word too, or the publisher reads
-        // «row newer than publication» as an unsent edit for as long as this clock stays ahead. An
-        // edit landing meanwhile still goes: its content no longer matches the publication's hash.
-        for (const r of chunk) {
-          const serverAt = clamped.get(r.wire.id);
-          if (serverAt !== undefined) r.settle?.(serverAt);
-        }
+        syncWrite(() => {
+          putAll('publications', publications);
+          // The rows that carry their own stamp take the server's word too, or the publisher reads
+          // «row newer than publication» as an unsent edit for as long as this clock stays ahead. An
+          // edit landing meanwhile still goes: its content no longer matches the publication's hash.
+          for (const r of chunk) {
+            const serverAt = clamped.get(r.wire.id);
+            if (serverAt !== undefined) r.settle?.(serverAt);
+          }
+        });
         sent += chunk.length;
       }
     }

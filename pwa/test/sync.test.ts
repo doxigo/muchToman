@@ -423,6 +423,22 @@ describe('syncNow', () => {
     accountId: null, categoryId: null, merchant: `مورد ${i}`, note: '', createdAt: NOW, updatedAt: NOW, deleted: false,
   });
 
+  it('marks its own writes, so an edit made while it runs still asks for the next sync', async () => {
+    const heard: Array<[string, boolean]> = [];
+    const off = state.subscribe((_, bySync) => heard.push([bySync ? 'sync' : 'her', bySync]));
+    const page = { seq: 1, records: [await record(`member:${THEM}`, 'member', JSON.stringify({ memberId: THEM, name: 'علی', sharesSms: false }))], hasMore: false };
+    serve([page], (records) => {
+      // Filed while the push is on the wire: hers, not the sync's.
+      state.put('manual', manual(7));
+      return Response.json({ clamped: records.map((r) => ({ id: r.id, updatedAt: r.updatedAt })) });
+    });
+    await sync.syncNow(session, NOW);
+    off();
+    expect(heard.filter(([who]) => who === 'her')).toHaveLength(1);
+    expect(heard.filter(([who]) => who === 'sync').length).toBeGreaterThan(1);
+    expect(state.row('familyMembers', THEM)?.name).toBe('علی');
+  });
+
   it('brings a fast clock\'s goal and note back to the server\'s clamp, so a later edit from the household wins', async () => {
     const far = NOW + 30 * 86_400_000;
     const horizon = NOW + 86_400_000;

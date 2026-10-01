@@ -63,20 +63,21 @@ async function start(): Promise<void> {
 
   let announcing: ReturnType<typeof setTimeout> | undefined;
   let publishing: ReturnType<typeof setTimeout> | undefined;
-  subscribe((external) => {
+  subscribe((external, bySync) => {
     // Another tab's write, reloaded here: that tab announces and syncs it.
     if (external) return;
     // publishLedger's announce step: budget and instalment notes on every change, coalesced.
     clearTimeout(announcing);
     announcing = setTimeout(() => { const view = ledger(); void announce(view.allEntries, view.entries, rows('goals')); }, 1500);
     // Every edit the household could see asks for a silent sync, as the phone's view model does
-    // after each one. What a sync writes itself does not ask again — that would never settle.
+    // after each one — one made while a sync runs is queued as one more lap, since that run
+    // gathered what it sends before she made it. What a sync writes itself does not ask again —
+    // that would never settle.
     // ponytail: one trigger on any change rather than a call in every action; unchanged rows cost
     // nothing on the wire because the publisher skips them by content hash.
-    const family = familyState();
-    if (!family.paired || family.syncing) return;
+    if (bySync || !familyState().paired) return;
     clearTimeout(publishing);
-    publishing = setTimeout(() => { if (!familyState().syncing) requestFamilySync(true); }, 2000);
+    publishing = setTimeout(() => requestFamilySync(true), 2000);
   });
 
   // Where a tapped notification asked to land: `?tab=` when it opened the app, a message when

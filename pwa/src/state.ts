@@ -20,16 +20,30 @@ const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()])) as { [K in 
 const prefs: Partial<Prefs> = Object.create(null);
 let version = 0;
 let loaded = false;
-const listeners = new Set<(external: boolean) => void>();
+type Listener = (external: boolean, bySync: boolean) => void;
+const listeners = new Set<Listener>();
+let syncWriting = 0;
 
-/** [external] is a change another tab wrote, here reloaded: that tab answers for it (sync, notes). */
-export function subscribe(listener: (external: boolean) => void): () => void {
+/**
+ * [external] is a change another tab wrote, here reloaded: that tab answers for it (sync, notes).
+ * [bySync] is one the family sync wrote itself, which must not ask for another sync.
+ */
+export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 function changed(external = false): void {
   version++;
-  for (const l of listeners) l(external);
+  for (const l of listeners) l(external, syncWriting > 0);
+}
+
+/**
+ * The family sync's own writes. Marked one at a time rather than for the whole run, because the
+ * run awaits the network in between, and an edit she makes meanwhile is hers and must still ask.
+ */
+export function syncWrite(action: () => void): void {
+  syncWriting++;
+  try { action(); } finally { syncWriting--; }
 }
 export const dataVersion = (): number => version;
 
