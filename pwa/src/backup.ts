@@ -22,6 +22,7 @@ import { TABLES } from './model';
 import type { Prefs, TableName } from './model';
 import { setPref, snapshot, replaceAll, settled } from './state';
 import type { Snapshot } from './state';
+import { loadSession } from './sync';
 
 export const BACKUP_MAGIC = 'MTBAK1';
 export const BACKUP_FORMAT_VERSION = 1;
@@ -51,6 +52,14 @@ const LOCAL_PREFS: string[] = [
   'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncShareSms', 'syncPrimaryMember',
   'lockEnabled', 'lockCredential', 'onboarded',
 ];
+/**
+ * Kept as this browser's too while it is in a household. The phone's restore drops its session
+ * (BACKUP_STRIPPED_META) and pairing again resets these; here the session outlives the restore,
+ * so the file's would share what she never chose to share with the household she is in now, and
+ * push the file's report set over the one the household settled on. Unpaired, they come from the
+ * file: pairing resets the switches, and the report set is hers to bring to a household.
+ */
+const HOUSEHOLD_PREFS: string[] = ['syncShareAssets', 'syncExcludedBanks', 'reportExclusions', 'reportExcluded'];
 /**
  * The household as this browser's session has synced it. The session is not in the file (a
  * restored browser is a new device and pairs again, as on the phone), so these stay whatever the
@@ -221,11 +230,14 @@ export async function browserPayload(): Promise<BrowserPayload> {
   return { pwa: PWA_PAYLOAD_VERSION, prefs: kept as Partial<Prefs>, tables: hers };
 }
 
-/** The backup's tables and prefs over this browser's, keeping what [LOCAL_PREFS]/[LOCAL_TABLES] name. */
-export function restoredSnapshot(payload: BrowserPayload, current: Snapshot): Snapshot {
+/**
+ * The backup's tables and prefs over this browser's, keeping what [LOCAL_PREFS]/[LOCAL_TABLES]
+ * name, and [HOUSEHOLD_PREFS] when [paired].
+ */
+export function restoredSnapshot(payload: BrowserPayload, current: Snapshot, paired = false): Snapshot {
   const prefs: Record<string, unknown> = { ...payload.prefs };
   const mine = current.prefs as Record<string, unknown>;
-  for (const key of LOCAL_PREFS) {
+  for (const key of paired ? [...LOCAL_PREFS, ...HOUSEHOLD_PREFS] : LOCAL_PREFS) {
     delete prefs[key];
     if (key in mine) prefs[key] = mine[key];
   }
@@ -274,5 +286,6 @@ export async function readBackupFile(file: Blob, passphrase: string): Promise<{ 
 
 /** The destructive step: one IndexedDB transaction, so a failure leaves the old ledger whole. */
 export async function applyRestore(payload: BrowserPayload): Promise<void> {
-  await replaceAll((current) => restoredSnapshot(payload, current));
+  const paired = (await loadSession()) != null;
+  await replaceAll((current) => restoredSnapshot(payload, current, paired));
 }

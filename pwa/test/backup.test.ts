@@ -117,6 +117,17 @@ describe('what a restore keeps', () => {
     expect(restored.tables.sources).toEqual(payload.tables.sources);
   });
 
+  it('keeps a paired browser\'s sharing and report set, and takes them from the file when unpaired', () => {
+    const mine = {
+      syncShareAssets: false, syncExcludedBanks: ['MELLAT'], reportExcluded: ['cat_loan'],
+      reportExclusions: { ids: ['cat_loan'], updatedAt: 9, editedByMemberId: 'me' },
+    };
+    const file = { syncShareAssets: true, syncExcludedBanks: [], reportExcluded: [], reportExclusions: { ids: [], updatedAt: 5, editedByMemberId: 'old' } };
+    const restore = (paired: boolean) => restoredSnapshot({ pwa: 1, prefs: file as never, tables: {} }, { prefs: mine as never, tables: {} }, paired).prefs;
+    expect(restore(true)).toMatchObject(mine);
+    expect(restore(false)).toMatchObject(file);
+  });
+
   it('never switches a lock on in a browser that has no credential for it', () => {
     const restored = restoredSnapshot({ pwa: 1, prefs: { lockEnabled: true, lockCredential: 'elsewhere' } as never, tables: {} }, { prefs: {}, tables: {} });
     expect(restored.prefs.lockEnabled).toBeUndefined();
