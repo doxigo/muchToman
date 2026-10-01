@@ -49,6 +49,22 @@ class LinkRegressionTest {
     }
 
     @Test
+    fun `the same balance twice is an echo only when nothing moved in between`() {
+        val sent = txn("a", 1_000, -500_000).copy(balanceRial = 1_500_000)
+        val refund = txn("b", 2_000, 500_000).copy(balanceRial = 2_000_000)
+        val again = txn("c", 3_000, -500_000).copy(balanceRial = 1_500_000)
+        // Sent, refunded, sent again: the second payment is real and stays counted.
+        assertTrue(hiddenRefs(findDuplicates(listOf(sent, refund, again))).isEmpty())
+        // The carrier's second copy, straight after, is the echo — and so is a third copy.
+        val echo = sent.copy(ref = "d", at = 1_500)
+        val third = sent.copy(ref = "e", at = 1_700)
+        assertEquals(setOf("d", "e"), hiddenRefs(findDuplicates(listOf(sent, echo, third, refund))))
+        // Two reference numbers that differ are two payments, however alike.
+        val other = sent.copy(ref = "f", at = 1_500, refNo = "771206")
+        assertTrue(hiddenRefs(findDuplicates(listOf(sent.copy(refNo = "771205"), other))).isEmpty())
+    }
+
+    @Test
     fun `time index preserves brute force matching over mixed rails boundaries and competing legs`() {
         val random = Random(54321)
         repeat(100) { round ->

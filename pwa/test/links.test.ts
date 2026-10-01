@@ -42,6 +42,20 @@ describe('duplicates', () => {
     expect(d[0]).toMatchObject({ reason: 'balance', auto: true });
   });
 
+  it('takes the same balance twice for an echo only when nothing moved in between', () => {
+    const sent = txn({ at: 1000, signed: -500_000, balance: 1_500_000, ref: 's:a:0' });
+    const refund = txn({ at: 2000, signed: 500_000, balance: 2_000_000, ref: 's:b:0' });
+    const again = txn({ at: 3000, signed: -500_000, balance: 1_500_000, ref: 's:c:0' });
+    // Sent, refunded, sent again: the second payment is real and stays counted.
+    expect(hiddenRefs(findDuplicates([sent, refund, again]))).toEqual(new Set());
+    // The carrier's second copy straight after is the echo, and so is a third.
+    const echo = { ...sent, ref: 's:d:0', at: 1500 };
+    const third = { ...sent, ref: 's:e:0', at: 1700 };
+    expect(hiddenRefs(findDuplicates([sent, echo, third, refund]))).toEqual(new Set(['s:d:0', 's:e:0']));
+    // Two reference numbers that differ are two payments, however alike.
+    expect(hiddenRefs(findDuplicates([{ ...sent, refNo: '771205' }, { ...sent, ref: 's:f:0', at: 1500, refNo: '771206' }]))).toEqual(new Set());
+  });
+
   it('reads a monthly cycle back to the same balance as rent, not a duplicate', () => {
     const months = [0, 1, 2].map((i) => txn({ at: 1_000_000 + i * 30 * DAY_MS, signed: -80_000_000, balance: 120_000_000 }));
     expect(findDuplicates(months)).toEqual([]);

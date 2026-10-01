@@ -213,8 +213,11 @@ export const forgetMarkId = (bank: string): string => `forget:${bank}`;
  * fold, rebuilt from scratch each time rather than carried, since here the messages are all kept.
  *
  * Folded oldest first, a typed figure ahead of a message at the same millisecond so the bank takes
- * the tie as it does in [deriveBalance]. The later leg of a settled duplicate is left out: pasting
- * one message twice must not count its money twice, which the phone's seen-set guarantees there.
+ * the tie as it does in [deriveBalance]. The later leg of a settled duplicate is left out when it
+ * states no balance: pasting one message twice must not count its money twice, which the phone's
+ * fold guards by reference number. One that states a balance is folded as the phone folds it —
+ * stating it again changes nothing, and skipping it left this sheet on an older figure than the
+ * phone's whenever a pair was wrongly settled.
  * A bank she never named (OTHER) is not an account — it cannot be named on the sheet.
  */
 export function bankAccountsOf(
@@ -227,7 +230,7 @@ export function bankAccountsOf(
   type Event = { at: number; order: number; txn?: Txn; anchor?: BalanceAnchor; bank: string };
   const events = [
     ...anchors.filter((a) => !a.deleted).map((a): Event => ({ at: a.at, order: 0, anchor: a, bank: a.accountId })),
-    ...txns.filter((t) => t.sourceKind === 'sms' && t.ref.startsWith('s:') && !hidden.has(t.ref))
+    ...txns.filter((t) => t.sourceKind === 'sms' && t.ref.startsWith('s:') && !(hidden.has(t.ref) && t.balanceRial == null))
       .map((t): Event => ({ at: t.at, order: 1, txn: t, bank: t.bank })),
   ].filter((e) => isBank(e.bank) && e.bank !== 'OTHER' && e.at > (floors.get(e.bank) ?? -Infinity))
     .sort((a, b) => a.at - b.at || a.order - b.order || ((a.txn?.ref ?? '') < (b.txn?.ref ?? '') ? -1 : 1));

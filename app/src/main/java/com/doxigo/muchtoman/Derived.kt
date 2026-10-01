@@ -84,7 +84,8 @@ import kotlinx.coroutines.sync.withLock
 // ingest; [sweepSources] now keeps such rows rather than deleting them.
 // 18: links are found with the rows she deleted still in. The echo of a deleted message had come
 // back as a spend of its own, and the other leg of a deleted transfer as income, in every ledger
-// derived since; only linking again puts them right.
+// derived since; only linking again puts them right. The same rebuild un-hides a payment repeated
+// after a refund: a shared balance settles a duplicate now only with nothing moved in between.
 const val PARSER_VERSION = 18
 
 private const val META_PARSER_VER = "parser_ver"

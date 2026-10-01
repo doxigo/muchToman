@@ -142,9 +142,23 @@ private fun pair(a: Txn, b: Txn, kind: String, reason: String, auto: Boolean): L
  * the same rent leaves the same account at the same figure again, which is why both matches
  * are time-bounded now. Anything weaker than that is never settled by the app, because two
  * identical taxi fares forty seconds apart is a thing that happens to people.
+ *
+ * Nor can the same figure come back unless money moved in between, so the balance match also
+ * needs nothing but copies between its two legs on that account, and two reference numbers that
+ * differ refuse it outright. Send 500,000 leaving 1.5 million, take a refund, send it again: the
+ * second send leaves the same figure, and was hidden as the first one's echo — her spending
+ * understated by exactly that payment.
  */
 fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     val ordered = transactions.sortedWith(compareBy({ it.at }, { it.ref }))
+    val onAccount = ordered.groupBy { it.accountId }
+    val place = HashMap<String, Int>()
+    for (rows in onAccount.values) rows.forEachIndexed { i, t -> place[t.ref] = i }
+    fun onlyCopiesBetween(a: Txn, b: Txn): Boolean {
+        val rows = onAccount.getValue(a.accountId)
+        return (place.getValue(a.ref) + 1 until place.getValue(b.ref))
+            .all { rows[it].signedRial == a.signedRial && rows[it].balanceRial == a.balanceRial }
+    }
 
     val byRefNo = mutableListOf<LinkCandidate>()
     for (matches in ordered.filter { it.refNo.isNotEmpty() }.groupBy { it.bank to it.refNo }.values) {
@@ -170,8 +184,12 @@ fun findDuplicates(transactions: List<Txn>): List<LinkCandidate> {
     for (matches in balanceGroups.values) {
         for (i in matches.indices) {
             for (j in i + 1 until matches.size) {
-                if (matches[j].at - matches[i].at > DUPLICATE_BALANCE_WINDOW_MS) break
-                byBalance += pair(matches[i], matches[j], LinkKind.DUPLICATE, "balance", auto = true)
+                val a = matches[i]
+                val b = matches[j]
+                if (b.at - a.at > DUPLICATE_BALANCE_WINDOW_MS) break
+                if (a.refNo.isNotEmpty() && b.refNo.isNotEmpty() && a.refNo != b.refNo) continue
+                if (!onlyCopiesBetween(a, b)) continue
+                byBalance += pair(a, b, LinkKind.DUPLICATE, "balance", auto = true)
             }
         }
     }

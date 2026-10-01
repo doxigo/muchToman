@@ -81,9 +81,19 @@ function distinct(candidates: LinkCandidate[]): LinkCandidate[] {
  * Duplicates, in this order: the bank's reference number within its window, then a shared
  * post-transaction balance within its window, then — never settled by the app — the same money
  * at the same merchant ninety seconds apart, because two identical taxi fares happen to people.
+ *
+ * The same figure cannot come back unless money moved in between, so the balance match also needs
+ * nothing but copies between its legs on that account, and two reference numbers that differ refuse
+ * it: sent, refunded and sent again leaves the same figure twice, and the second payment is real.
  */
 export function findDuplicates(transactions: readonly Txn[]): LinkCandidate[] {
   const ordered = [...transactions].sort(byTime);
+  const onAccount = new Map(groupBy(ordered, (t) => t.accountId).map((rows) => [rows[0].accountId, rows]));
+  const place = new Map<string, number>();
+  for (const rows of onAccount.values()) rows.forEach((t, i) => place.set(t.ref, i));
+  const onlyCopiesBetween = (a: Txn, b: Txn): boolean =>
+    onAccount.get(a.accountId)!.slice(place.get(a.ref)! + 1, place.get(b.ref)!)
+      .every((t) => t.signedRial === a.signedRial && t.balanceRial === a.balanceRial);
 
   const byRefNo: LinkCandidate[] = [];
   for (const matches of groupBy(ordered.filter((t) => t.refNo !== ''), (t) => `${t.bank}\u0000${t.refNo}`)) {
@@ -110,8 +120,12 @@ export function findDuplicates(transactions: readonly Txn[]): LinkCandidate[] {
   for (const matches of balanceGroups) {
     for (let i = 0; i < matches.length; i++) {
       for (let j = i + 1; j < matches.length; j++) {
-        if (matches[j].at - matches[i].at > DUPLICATE_BALANCE_WINDOW_MS) break;
-        byBalance.push(pair(matches[i], matches[j], LinkKind.DUPLICATE, 'balance', true));
+        const a = matches[i];
+        const b = matches[j];
+        if (b.at - a.at > DUPLICATE_BALANCE_WINDOW_MS) break;
+        if (a.refNo !== '' && b.refNo !== '' && a.refNo !== b.refNo) continue;
+        if (!onlyCopiesBetween(a, b)) continue;
+        byBalance.push(pair(a, b, LinkKind.DUPLICATE, 'balance', true));
       }
     }
   }

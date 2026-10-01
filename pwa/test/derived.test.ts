@@ -250,6 +250,9 @@ describe('the accounts sheet', () => {
     const echo = { ...once, ref: 's:b:0', at: 2 };
     expect(bankAccountsOf([once, echo], [], [], new Set(['s:b:0']))[0].balanceRial).toBe(-1_000_000);
     expect(bankAccountsOf([stated(1, 5, 'OTHER')], [], [])).toEqual([]);
+    // A settled leg that states a balance folds as the phone folds it: saying it again changes nothing.
+    const later = txn({ at: 3, signed: -2_000_000, balance: 8_000_000, ref: 's:c:0' });
+    expect(bankTotal(bankAccountsOf([stated(1, 10_000_000), later], [], [], new Set(['s:c:0'])))).toBe(8_000_000);
   });
 
   it('starts a forgotten account again from the next message', () => {
