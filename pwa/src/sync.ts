@@ -19,7 +19,7 @@
  */
 import { glyphNamed } from './categoryIcon';
 import { generateKey, hexOf, importKey, openSealed, randomHex, seal, toBase64Url } from './crypto';
-import { safeAssetShareItems } from './data';
+import { safeAssetShareItems, timeoutSignal } from './data';
 import type { AssetShareItem } from './data';
 import { deleteMeta, getMeta, partition, setMeta, withSyncLock } from './db';
 import { familyLocalRef, ledger } from './derived';
@@ -225,7 +225,7 @@ async function request(url: string, method: string, token: string | null, payloa
     response = await fetch(url, {
       method,
       body: payload,
-      signal: AbortSignal.timeout(20_000),
+      signal: timeoutSignal(20_000),
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(payload !== undefined ? { 'content-type': 'application/json' } : {}) },
     });
   } catch (error) {

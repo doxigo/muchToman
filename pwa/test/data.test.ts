@@ -10,7 +10,7 @@ import {
   effectiveRates, fetchRates, fetchWalletBalance, isWalletAddressFormatValid, isWalletBalanceValid,
   isWalletContractFormatValid, listHoldings, mergeRates, nameOr, rebaseHistory, recordDay, refreshWallets,
   reinstateHolding, removeHolding, sanitizeRates, setExcluded, setHolding, setLabel, setOverride, snapshotDay,
-  snapshotHistory, walletErrorMessage, wealthStatus,
+  snapshotHistory, walletErrorMessage, wealthStatus, timeoutSignal,
 } from '../src/data';
 import type { Totals } from '../src/data';
 import { DAY_MS } from '../src/jalali';
@@ -485,5 +485,25 @@ describe('actions', () => {
     expect(b.amount).toBe(2);
     expect(wealthStatus().walletErrors.get('b')).toBe('موجودی نیومد. اینترنتت رو چک کن و دوباره امتحان کن.');
     expect(wealthStatus().refreshing).toBe(false);
+  });
+});
+
+describe('timeoutSignal', () => {
+  it('aborts after the deadline where AbortSignal.timeout is missing (Safari before 16)', () => {
+    vi.useFakeTimers();
+    const native = AbortSignal.timeout;
+    try {
+      // @ts-expect-error iOS 15's AbortSignal has no timeout()
+      delete AbortSignal.timeout;
+      const signal = timeoutSignal(20_000);
+      vi.advanceTimersByTime(19_999);
+      expect(signal.aborted).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(signal.aborted).toBe(true);
+      expect((signal.reason as DOMException).name).toBe('TimeoutError');
+    } finally {
+      AbortSignal.timeout = native;
+      vi.useRealTimers();
+    }
   });
 });

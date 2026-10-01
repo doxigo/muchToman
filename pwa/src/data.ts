@@ -357,11 +357,24 @@ async function readLimited(res: Response, maxBytes: number): Promise<string> {
  * The Worker's prices. `updatedAt` is when it last pulled real prices, not when we asked — the
  * number worth showing, since a cached response is still old prices.
  */
+/**
+ * A fetch deadline. `AbortSignal.timeout` is Safari 16+, and the PWA otherwise runs on iOS 15.4
+ * (the build's es2022 target, `Object.hasOwn`, `Array.at`) — the last iOS for the iPhone 6s, 7 and
+ * first SE. Without it every request there threw before it was sent: sync said «متصل نشد» and
+ * rates never loaded.
+ */
+export function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(new DOMException('timed out', 'TimeoutError')), ms);
+  return controller.signal;
+}
+
 export async function fetchRates(now = Date.now()): Promise<Rates> {
   const daily = dailyPing(now);
   const res = await fetch('/rates', {
     headers: { Accept: 'application/json', ...(daily ? { 'X-MuchToman-Daily': daily } : {}) },
-    cache: 'no-cache', signal: AbortSignal.timeout(20_000),
+    cache: 'no-cache', signal: timeoutSignal(20_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const parsed = sanitizeRates(JSON.parse(await readLimited(res, MAX_RATES_RESPONSE_BYTES)), now);
@@ -408,7 +421,7 @@ export async function fetchWalletBalance(network: string, address: string, contr
     body: JSON.stringify(contract ? { network, address: address.trim(), contract } : { network, address: address.trim() }),
     redirect: 'manual',
     cache: 'no-store',
-    signal: AbortSignal.timeout(25_000),
+    signal: timeoutSignal(25_000),
   });
   const body = await readLimited(res, MAX_WALLET_RESPONSE_BYTES);
   if (!res.ok) {

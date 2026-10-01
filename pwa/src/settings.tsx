@@ -18,7 +18,7 @@ import { applyRestore, backupFaultFa, BACKUP_MIN_PASSPHRASE, exportBackup, readB
 import type { BrowserPayload } from './backup';
 import { CategoryIcon } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
-import { refreshAll } from './data';
+import { refreshAll, timeoutSignal } from './data';
 import { useLedger } from './derived';
 import type { LedgerHealth } from './derived';
 import { useFamily } from './family';
@@ -580,7 +580,7 @@ function FeedbackPage() {
         body: JSON.stringify({ message: message.trim(), contact: contact.trim(), version: `${VERSION}-pwa` }),
         redirect: 'manual',
         cache: 'no-store',
-        signal: AbortSignal.timeout(20_000),
+        signal: timeoutSignal(20_000),
       });
       ok = res.ok;
     } catch { /* offline or timed out: the same «فرستاده نشد» */ }
