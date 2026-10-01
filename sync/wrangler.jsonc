@@ -37,7 +37,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Household"] }],
 
-  // Safe to leave on: every financial field that passes through here is AES-GCM ciphertext the
-  // Worker has no key for, so there is nothing in a log line to leak.
-  "observability": { "enabled": true }
+  // The code's own console.error lines, and nothing else. Every financial field that passes
+  // through here is AES-GCM ciphertext the Worker has no key for, but invocation logs would keep
+  // every request's URL, headers and the caller's geo, so they stay off.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

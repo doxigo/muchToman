@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import SYNC_WRANGLER from '../../sync/wrangler.jsonc?raw';
 import worker, { renderUsage } from '../src/index';
+import RATES_WRANGLER from '../wrangler.jsonc?raw';
 
 /**
  * The count, the crash endpoint, the feedback form and the public page. What is pinned is the
@@ -35,6 +37,13 @@ describe('the daily count', () => {
       { blobs: ['1.2.5', 'com.farsitel.bazaar'] },
       { blobs: ['b1.2.6b', 'x'.repeat(64)] },
     ]);
+  });
+
+  it('is not also kept in Cloudflare invocation logs, by either Worker', () => {
+    // Invocation logs store each request's headers and geo — the daily header among them.
+    for (const config of [RATES_WRANGLER, SYNC_WRANGLER]) {
+      expect(config).toMatch(/"observability":\s*\{[^}]*"logs":\s*\{\s*"invocation_logs":\s*false\s*\}/);
+    }
   });
 });
 

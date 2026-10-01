@@ -3,7 +3,10 @@
   "name": "muchtoman-rates",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-04",
-  "observability": { "enabled": true },
+  // The code's own console.error lines, and nothing else. Invocation logs stay off: they keep
+  // every request's headers and the caller's geo — X-MuchToman-Daily and a city among them —
+  // which is more than README § Privacy says the app tells anyone.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   // Served from muchtoman.com rather than the workers.dev subdomain it also answers on.
   // workers.dev is filtered wholesale inside Iran — it is a common circumvention host, so
   // the whole domain is DNS-poisoned to 10.10.34.36 — and Iran is where the users are. An
