@@ -265,6 +265,18 @@ class PersistenceTest {
     }
 
     @Test
+    fun `a balance she types is kept beside the messages, where a rescan cannot reach it`() = runBlocking {
+        DurableDb.builder(context, "typed-anchor.db").build().use { db ->
+            migrateAnchorsFromPrefs(emptyList(), db, now)
+            anchorTyped(db, "SAMAN", 4_200_000.0, now + 1)
+            val anchor = db.anchors().newest("SAMAN")!!
+            assertEquals(42_000_000L, anchor.balanceRial)
+            assertEquals("user", anchor.source)
+            assertEquals(now + 1, anchor.at)
+        }
+    }
+
+    @Test
     fun `a bank read only through a number she added keeps its balance across a restart`() {
         // سینا ships no number, so only her confirmed one reads it; the collapse used to drop
         // every row of a bank without a built-in number on the next write.

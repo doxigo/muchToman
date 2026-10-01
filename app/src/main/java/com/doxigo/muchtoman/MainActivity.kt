@@ -2583,7 +2583,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * this coroutine, and a join that gives up early lets the old scan wake and write over the
      * wipe — exactly what the join is here to prevent.
      */
-    private fun restartScan(prepare: () -> Unit) {
+    private fun restartScan(prepare: suspend () -> Unit) {
         val previous = scanJob
         val app = getApplication<Application>()
         scanJob = viewModelScope.launch(Dispatchers.Default) {
@@ -2682,11 +2682,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     /** She tells us what an account really holds; everything read after it builds on that. */
     fun setBankBalance(key: String, balance: Double) {
+        val app = getApplication<Application>()
         restartScan {
-            val next = anchorAccount(store.bankAccounts, key, balance, System.currentTimeMillis())
+            val at = System.currentTimeMillis()
+            val next = anchorAccount(store.bankAccounts, key, balance, at)
             store.bankAccounts = next
             _state.update { it.copy(bankAccounts = next) }
             recordSnapshot()
+            runCatching { anchorTyped(DurableDb.get(app), key, balance, at) }
+                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
         }
     }
 

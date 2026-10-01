@@ -952,6 +952,15 @@ suspend fun migrateAnchorsFromPrefs(accounts: List<BankAccount>, db: DurableDb, 
     }
 }
 
+/**
+ * A balance she typed, written where the ledger keeps the figures no rescan can rebuild. The fold's
+ * copy lives in prefs, which «دوباره خوندن همه پیامک‌ها» wipes; only the one-time migration above
+ * used to write here, so every figure she typed after it lived in that copy alone.
+ */
+suspend fun anchorTyped(db: DurableDb, accountId: String, balanceToman: Double, at: Long) {
+    db.anchors().put(BalanceAnchor(uuid7(at), accountId, at, Math.round(balanceToman * 10.0), "user", at, at))
+}
+
 private const val SOURCES_SWEPT = "sources_swept"
 
 /**
