@@ -123,6 +123,12 @@ class FamilySyncTest {
 
         // A note from before the household existed has no author, and that one is hers.
         assertTrue(decisionMayLeave(decision("m:bb", author = ""), typed, false, her, excluded))
+
+        // A row this phone cannot find any more — hidden, deleted, or a buried household's — has
+        // no bank for the veto to read and no transaction left for the record to name.
+        assertFalse(decisionMayLeave(decision("s:cc:0"), null, true, her, excluded))
+        assertFalse(decisionMayLeave(decision("m:bb"), null, false, her, excluded))
+        assertFalse(decisionMayLeave(decision("f:dd", familyRef = hers.familyRef), null, true, her, excluded))
     }
 
     @Test

@@ -1377,6 +1377,10 @@ private fun familyTargetOf(decision: TxnDecision, txn: Txn?, member: String): St
  * stays theirs: the server keeps it, so nobody needs it echoed, and echoing it would rewrite the
  * record under this device's authorship — which is the line that says who wrote the words. A
  * blank author is a decision from before the household existed, and that one is hers.
+ *
+ * And only about a row this phone can still find. One it cannot — hidden, deleted, or a buried
+ * household's — is a row nobody is shown, and without it there is no bank for the veto to read
+ * and no transaction for the record to name.
  */
 internal fun decisionMayLeave(
     decision: TxnDecision,
@@ -1386,9 +1390,10 @@ internal fun decisionMayLeave(
     excludedBanks: Set<String>,
 ): Boolean {
     if (decision.memberId.isNotBlank() && decision.memberId != member) return false
-    if (txn != null && txn.familyRef.isNotBlank()) return true
-    if (!shareSms && (txn?.sourceKind == "sms" || decision.ref.startsWith("s:"))) return false
-    return txn == null || txn.bank !in excludedBanks
+    if (txn == null) return false
+    if (txn.familyRef.isNotBlank()) return true
+    if (!shareSms && (txn.sourceKind == "sms" || decision.ref.startsWith("s:"))) return false
+    return txn.bank !in excludedBanks
 }
 
 private fun safeSyncedText(value: String, max: Int, fallback: String = ""): String =

@@ -516,12 +516,15 @@ function familyTargetOf(decision: Decision, txn: Txn | undefined, member: string
 /**
  * Whether an answer about one row may leave this device: it inherits every gate the transaction
  * rides, and only her own answers go — somebody else's arrived as their record and stays theirs.
+ * Only about a row this device can still find: one hidden, deleted or buried is a row nobody is
+ * shown, with no bank for the veto to read and no transaction for the record to name.
  */
 export function decisionMayLeave(decision: Decision, txn: Txn | undefined, shareSms: boolean, member: string, excludedBanks: Set<string>): boolean {
   if (!blank(decision.memberId) && decision.memberId !== member) return false;
-  if (txn && !blank(txn.familyRef)) return true;
-  if (!shareSms && (txn?.sourceKind === 'sms' || decision.ref.startsWith('s:'))) return false;
-  return !txn || !excludedBanks.has(txn.bank);
+  if (!txn) return false;
+  if (!blank(txn.familyRef)) return true;
+  if (!shareSms && (txn.sourceKind === 'sms' || decision.ref.startsWith('s:'))) return false;
+  return !excludedBanks.has(txn.bank);
 }
 
 export interface PublishInput {

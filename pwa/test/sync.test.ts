@@ -240,6 +240,18 @@ describe('publishing', () => {
     expect(out).toHaveLength(3);
   });
 
+  it('sends no answer about a row it can no longer find', async () => {
+    const note = (ref: string, familyRef = '') => ({ id: `note:${ref}`, ref, kind: 'note' as const, value: 'نه', createdAt: 1, updatedAt: 1, deleted: false, memberId: ME, familyRef });
+    const setAside = txn('s:cc:0', -1, { sourceKind: 'sms', bank: 'MELLAT' });
+    expect(sync.decisionMayLeave(note('s:cc:0'), setAside, true, ME, new Set(['MELLAT']))).toBe(false);
+    // Hidden or deleted, the bank veto has nothing to read; buried, the target row is gone.
+    expect(sync.decisionMayLeave(note('s:cc:0'), undefined, true, ME, new Set(['MELLAT']))).toBe(false);
+    expect(sync.decisionMayLeave(note('m:bb'), undefined, false, ME, new Set())).toBe(false);
+    const f = note('f:dd', sync.familyTxnId(THEM, 'm:1'));
+    expect(sync.decisionMayLeave(f, undefined, true, ME, new Set())).toBe(false);
+    expect((await sync.outgoingRecords(input([], { decisions: [f] }))).map((r) => r.wire.kind)).toEqual(['member']);
+  });
+
   it('says whose spending her row was, and carries a split on the filing record', async () => {
     const custom = { id: 'cat_mine', parentId: null, nameFa: 'باشگاه', kind: 'expense' as const, sort: 500, builtin: false, archived: false, updatedAt: NOW - 50, glyph: 'DOTS' };
     const groceries = { id: 'cat_groceries', parentId: null, nameFa: 'خواربار', kind: 'expense' as const, sort: 10, builtin: true, archived: false, updatedAt: 0, glyph: '' };
