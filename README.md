@@ -81,7 +81,7 @@ Sample data, live rates.
   («گارسونای محل دیگه اسمت رو حفظن.»), or nothing at all at ساده. Five days without a spend of your
   own brings a note asking whether you are still alive, which is also the likeliest sign the phone
   has stopped hearing from your bank. No line repeats until every one that fits has been said, new
-  lines arrive with the prices rather than with an update, and a secured lock screen shows none of it.
+  lines arrive with the prices rather than with an update, and with the app lock on the lock screen shows none of it.
 - **Who owes you, and whom you owe.** Each person gets a page with the balance in whatever was lent:
   two gold coins stay two coins, priced at today's rate, rather than turning into a Toman figure that
   drifts. File a transfer under "Loan" and the app asks who it was, and says what that leaves before you

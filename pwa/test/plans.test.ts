@@ -132,6 +132,28 @@ describe('plans', () => {
     }
   });
 
+  it('with the app lock on, a note says only its public words', async () => {
+    const shown: Array<{ title: string; options: NotificationOptions }> = [];
+    const reg = {
+      showNotification: async (title: string, options: NotificationOptions) => { shown.push({ title, options }); },
+      getNotifications: async () => [],
+    };
+    vi.stubGlobal('Notification', { permission: 'granted' });
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } });
+    try {
+      state.setPref('quipTone', 'PLAIN');
+      state.setPref('lockEnabled', true);
+      const goal = { ...cap('b1', 50_000_000), shared: false };
+      const rows = [entry(first, -41_500_000, { categoryId: 'cat_dining', category: 'رستوران و کافه' })];
+      await plans.announce(rows, rows, [goal], tehranDayStart(first + 5) + 10 * 3_600_000);
+      // Notify.kt's budgetPublicTitle and publicBody, word for word.
+      expect(shown.map((s) => [s.title, s.options.body])).toEqual([['خبری از بودجه', 'جزئیات توی برنامه']]);
+      expect(shown[0].options).toMatchObject({ tag: 'budget:b1', data: { tab: 'BUDGET' } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('a budget note counts from the ledger start, as its card does', async () => {
     const shown: string[] = [];
     const reg = { showNotification: async (title: string) => { shown.push(title); }, getNotifications: async () => [] };

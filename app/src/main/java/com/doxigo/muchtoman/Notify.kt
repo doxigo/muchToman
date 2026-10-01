@@ -131,9 +131,10 @@ const val EXTRA_OPEN_TAB = "com.doxigo.muchtoman.OPEN_TAB"
 const val EXTRA_OPEN_DECK = "com.doxigo.muchtoman.OPEN_DECK"
 
 /**
- * لفظ روی قفل‌صفحه — the public face of every note. A locked screen names the kind of news and
- * nothing else: no merchant, no figure, no category. The full words wait behind the lock, which is
- * where FLAG_SECURE already keeps the rest of her money.
+ * لفظ روی قفل‌صفحه — the public face of every note: the kind of news and nothing else, no
+ * merchant, no figure, no category. Android shows it on a secure lock screen only when she has
+ * hidden sensitive content there, which is not its default; with the app lock on it is the note
+ * itself, lock screen or not — see [withLockFace]. The PWA's notes say the same words (plans.ts).
  */
 internal fun budgetPublicTitle(): String = "خبری از بودجه"
 
@@ -341,6 +342,33 @@ private fun publicVersion(
     .build()
 
 /**
+ * Finishes a note with its lock-screen face.
+ *
+ * VISIBILITY_PRIVATE and [publicVersion] are the platform's redaction, but Android only uses them
+ * when she has hidden sensitive content on the lock screen — its default shows the full note. So
+ * with the app lock on, the vague words are the note itself (title, body and ticker; the BigText
+ * that carried the full body goes): a figure she locked inside the app must not sit readable over
+ * the phone's own lock. With it off, nothing changes and Android's own setting decides.
+ */
+private fun NotificationCompat.Builder.withLockFace(
+    context: Context,
+    channel: String,
+    category: String,
+    publicTitle: String,
+    intent: PendingIntent,
+): Notification {
+    setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+    setPublicVersion(publicVersion(context, channel, category, publicTitle, intent))
+    if (Store(context).lockEnabled) {
+        setContentTitle(publicTitle)
+        setContentText(publicBody())
+        setStyle(null)
+        setTicker("$publicTitle. ${publicBody()}")
+    }
+    return build()
+}
+
+/**
  * Says one thing about one budget, and replaces whatever it said last.
  *
  * Every word comes from [budgetAlertTitle] and [budgetAlertBody], which are pure and tested. This
@@ -384,12 +412,9 @@ internal fun budgetNote(context: Context, budget: BudgetProgress, quip: String? 
         .setContentIntent(openBudgets(context))
         // Read out as one sentence rather than as a heading and an orphaned figure.
         .setTicker("$title. $body")
-        // VISIBILITY_PRIVATE is what asks a secure lock screen to show [publicVersion] instead of
-        // the merchant-and-amount words above — the platform's own mechanism, and the same line
-        // FLAG_SECURE already draws for the rest of her money.
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setPublicVersion(publicVersion(context, BUDGET_CHANNEL, NotificationCompat.CATEGORY_REMINDER, budgetPublicTitle(), openBudgets(context)))
-        .build()
+        // Kept off the lock screen — see [withLockFace] for when Android does that and when the
+        // app has to.
+        .withLockFace(context, BUDGET_CHANNEL, NotificationCompat.CATEGORY_REMINDER, budgetPublicTitle(), openBudgets(context))
 }
 
 /**
@@ -474,10 +499,8 @@ internal fun landedNote(context: Context, entry: LedgerEntry): Notification {
         .setContentIntent(if (entry.needsReview) openDeck(context) else openLedgerTab(context))
         // Read out as one sentence rather than as a heading and an orphaned figure.
         .setTicker("$title. $body")
-        // Redacted on a secure lock screen — see [budgetNote] for why.
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setPublicVersion(publicVersion(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, landedPublicTitle(), if (entry.needsReview) openDeck(context) else openLedgerTab(context)))
-        .build()
+        // Kept off the lock screen — see [withLockFace].
+        .withLockFace(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, landedPublicTitle(), if (entry.needsReview) openDeck(context) else openLedgerTab(context))
 }
 
 /**
@@ -520,11 +543,9 @@ internal fun filingSummary(context: Context, alert: FilingAlert): Notification {
         // work opens the timeline the work is sitting in.
         .setContentIntent(if (alert.waiting > 0) openDeck(context) else openLedgerTab(context))
         .setTicker("$title. $body")
-        // Redacted on a secure lock screen — see [budgetNote] for why. No `setGroup` on the
+        // Kept off the lock screen — see [withLockFace]. No `setGroup` on the
         // public version: the lock screen renders it standalone.
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setPublicVersion(publicVersion(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, filingPublicTitle(alert.fresh + alert.filed), if (alert.waiting > 0) openDeck(context) else openLedgerTab(context)))
-        .build()
+        .withLockFace(context, FILING_CHANNEL, NotificationCompat.CATEGORY_STATUS, filingPublicTitle(alert.fresh + alert.filed), if (alert.waiting > 0) openDeck(context) else openLedgerTab(context))
 }
 
 /**
@@ -576,10 +597,8 @@ fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long
         .setTimeoutAfter(tehranDayStart(due + 1) - now)
         .setContentIntent(openBudgets(context))
         .setTicker("$title. $body")
-        // Redacted on a secure lock screen — see [budgetNote] for why.
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setPublicVersion(publicVersion(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(), openBudgets(context)))
-        .build()
+        // Kept off the lock screen — see [withLockFace].
+        .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(), openBudgets(context))
     runCatching { NotificationManagerCompat.from(context).notify(progress.plan.id, INSTALLMENT_NOTE_ID, note) }
         .onFailure { android.util.Log.w("muchtoman", "installment notify failed: $it") }
 }
@@ -699,10 +718,8 @@ fun notifyQuiet(context: Context, days: Int, quip: String?) {
         .setAutoCancel(true)
         .setContentIntent(openLedgerTab(context))
         .setTicker("$title. $body")
-        // Redacted on a secure lock screen — see [budgetNote] for why. A roast is for her eyes.
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setPublicVersion(publicVersion(context, QUIET_CHANNEL, NotificationCompat.CATEGORY_STATUS, quietPublicTitle(), openLedgerTab(context)))
-        .build()
+        // Kept off the lock screen — see [withLockFace]. A roast is for her eyes.
+        .withLockFace(context, QUIET_CHANNEL, NotificationCompat.CATEGORY_STATUS, quietPublicTitle(), openLedgerTab(context))
     runCatching { NotificationManagerCompat.from(context).notify(QUIET_NOTE_ID, note) }
         .onFailure { android.util.Log.w("muchtoman", "quiet notify failed: $it") }
 }

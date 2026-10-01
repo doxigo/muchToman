@@ -21,6 +21,7 @@
 - **Depends on**: none
 - **Category**: security
 - **Planned at**: commit `26270fd`, 2026-09-10
+- **Follow-up (2026-10-01)**: PRIVATE + publicVersion redacts only when the user hides sensitive lock-screen content, which is not Android's default — so with the app lock on, `withLockFace` now posts the public words as the note itself (app and PWA).
 
 ## Why this matters
 

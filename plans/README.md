@@ -16,7 +16,7 @@ precondition.
 |---|---|---|---|---|---|
 | 001 | Make monthly cash flow a first-class report | P1 | L | none | DONE — device QA ran on the `mt37clean` emulator, not a physical phone |
 | 002 | Pin the rates Worker's upstream adapters with fixture tests | P1 | M | none | DONE — reviewed 2026-09-10; 7 hermetic fixture tests, worker gate re-run green (47/47) |
-| 003 | Keep transaction details off the lock screen | P1 | S | none | DONE — reviewed 2026-09-10; NotifyTest green on merged tree; nit: «الفظ» in the new KDoc should read «لفظ» (plan-author typo, one character, fix on commit) |
+| 003 | Keep transaction details off the lock screen | P1 | S | none | DONE — reviewed 2026-09-10; NotifyTest green on merged tree; nit: «الفظ» in the new KDoc should read «لفظ» (plan-author typo, one character, fix on commit); 2026-10-01: the redaction alone misses Android's default lock screen, so with the app lock on the public words are now the note itself, app and PWA |
 | 004 | Pin pairing links to the configured sync origin | P1 | S | none | DONE — reviewed 2026-09-10; 8-case origin matrix green, neighbouring sync suites re-run green |
 | 005 | Test the Android sync client's household lifecycle | P2 | M | 004 | DONE — reviewed 2026-09-10; 9 lifecycle tests green on merged tree, asserting both HTTP conversation and durable state |
 | 006 | Cache npm in CI and stop building the PWA twice | P2 | S | none | DONE — reviewed 2026-09-10; action SHAs verified against upstream tags; final confirmation is the next CI run |

@@ -373,12 +373,27 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   return navigator.serviceWorker.ready;
 }
 
-async function showNote(title: string, body: string, tag: string, data: Record<string, unknown>): Promise<void> {
+/**
+ * لفظ روی قفل‌صفحه — each note's public face, the phone's words (Notify.kt budgetPublicTitle and
+ * the rest): the kind of news and nothing else, no figure, no category, no plan name.
+ */
+const BUDGET_PUBLIC_TITLE = 'خبری از بودجه';
+const INSTALLMENT_PUBLIC_TITLE = 'یادآوری قسط';
+const QUIET_PUBLIC_TITLE = 'احوال‌پرسی';
+const PUBLIC_BODY = 'جزئیات توی برنامه';
+
+async function showNote(title: string, body: string, publicTitle: string, tag: string, data: Record<string, unknown>): Promise<void> {
   if (!canNotify()) return;
+  // With the app lock on, the public face is the note itself (Notify.kt withLockFace): a browser
+  // has no lock-screen redaction to lean on, and a figure she locked inside the app must not sit
+  // readable on the lock screen. With it off, the full words.
+  const locked = pref('lockEnabled');
   try {
     const reg = await registration();
     // A tag replaces what was said last under it, as the phone's tag-plus-id does.
-    await reg?.showNotification(title, { body, tag, data, dir: 'rtl', lang: 'fa', icon: '/icon-192.png' });
+    await reg?.showNotification(locked ? publicTitle : title, {
+      body: locked ? PUBLIC_BODY : body, tag, data, dir: 'rtl', lang: 'fa', icon: '/icon-192.png',
+    });
   } catch (error) {
     // A note that cannot be shown must not take down the ledger that computed it.
     console.warn('notify failed', error);
@@ -414,7 +429,7 @@ export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goal
   const news = budgetNews(plans.budgets, budgetMarks());
   if (!same(news.marks, budgetMarks())) setBudgetMarks(news.marks);
   for (const budget of news.alerts) {
-    pending.push(showNote(budgetAlertTitle(budget), withQuip(budgetQuip(budget), budgetAlertBody(budget)), budgetTag(budget.goal.id), OPEN_BUDGET));
+    pending.push(showNote(budgetAlertTitle(budget), withQuip(budgetQuip(budget), budgetAlertBody(budget)), BUDGET_PUBLIC_TITLE, budgetTag(budget.goal.id), OPEN_BUDGET));
   }
   // Back under the first threshold — a new window, a refiled receipt — has no note to keep standing.
   for (const budget of plans.budgets) if (budget.level < BudgetLevel.NEAR) pending.push(closeNote(budgetTag(budget.goal.id)));
@@ -435,6 +450,7 @@ export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goal
       pending.push(showNote(
         installmentReminderTitle(progress.plan, due, today),
         withQuip(takeQuip('installment', null, { plan: progress.plan.nameFa }), installmentReminderBody(progress.plan, due)),
+        INSTALLMENT_PUBLIC_TITLE,
         installmentTag(progress.plan.id),
         { ...OPEN_BUDGET, due },
       ));
@@ -451,7 +467,7 @@ export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goal
       setPref('quietMark', last);
       const usd = usdRiseFa(pref('rateHistory'), last, pref('rates')?.toman.usd);
       const quip = takeQuip('quiet', null, { days: faNumber(days), usd });
-      pending.push(showNote(quietTitle(days), withQuip(quip, quietBody()), QUIET_TAG, OPEN_LEDGER));
+      pending.push(showNote(quietTitle(days), withQuip(quip, quietBody()), QUIET_PUBLIC_TITLE, QUIET_TAG, OPEN_LEDGER));
     }
   }
   await Promise.all(pending);
