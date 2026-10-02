@@ -1109,6 +1109,17 @@ function applyMemberTombstone(session: Session, record: WireRecord): boolean {
  * person pairs again under a fresh member id. Shared budgets stay — keyed by the goal, a re-pair
  * cannot double them, and the household that is left keeps the figure.
  */
+/**
+ * Sync.kt `settleDepartedMembers`: [dropMemberRows] for every member already gone, on every sync.
+ * Builds before that rule pulled their tombstones and kept the rows, and that pull never repeats.
+ * Her own former ids count too: a copy of her old self is exactly the double this prevents.
+ */
+function settleDepartedMembers(session: Session): void {
+  const gone = rows('familyMembers').filter((m) => m.deleted && m.id !== session.member).map((m) => m.id);
+  const held = gone.filter((id) => row('familyAssets', id) || rows('familyTxns').some((t) => t.ownerMemberId === id));
+  if (held.length) syncWrite(() => { for (const id of held) dropMemberRows(id); });
+}
+
 function dropMemberRows(memberId: string): void {
   for (const t of rows('familyTxns')) if (t.ownerMemberId === memberId) erase('familyTxns', t.id);
   erase('familyAssets', memberId);
@@ -1263,6 +1274,7 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
 
     await pull();
     if (canRotate) await rotateTokenIfStale(active, now);
+    settleDepartedMembers(active);
     if (refused) throw refused;
     return { sent, received, unsupportedKinds: [...unsupportedKinds] };
   });

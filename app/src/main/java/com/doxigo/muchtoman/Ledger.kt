@@ -496,6 +496,10 @@ interface FamilyTxnDao {
 
     @Query("DELETE FROM family_txn WHERE owner_member_id = :member")
     suspend fun eraseOwnedBy(member: String)
+
+    /** What is still held for a member already gone — see [settleDepartedMembers]. */
+    @Query("DELETE FROM family_txn WHERE owner_member_id IN (SELECT id FROM family_member WHERE deleted = 1 AND id != :self)")
+    suspend fun eraseDeparted(self: String): Int
 }
 
 @Dao
@@ -524,6 +528,10 @@ interface FamilyAssetDao {
 
     @Query("DELETE FROM family_asset WHERE member_id = :member")
     suspend fun erase(member: String)
+
+    /** What is still held for a member already gone — see [settleDepartedMembers]. */
+    @Query("DELETE FROM family_asset WHERE member_id IN (SELECT id FROM family_member WHERE deleted = 1 AND id != :self)")
+    suspend fun eraseDeparted(self: String): Int
 }
 
 @Dao

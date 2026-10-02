@@ -516,6 +516,23 @@ class SyncLifecycleTest {
         assertNull(durable.familyAssets().get(left))
     }
 
+    /** What a build before that rule left behind: the tombstone applied, the rows kept for good. */
+    @Test
+    fun `a sync drops the rows an older build kept for a member already gone`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val gone = "b".repeat(32)
+        durable.familyMembers().put(FamilyMember(gone, "رضا", updatedAt = 2000, deleted = true))
+        durable.familyTxns().put(FamilyTxn(familyTxnId(gone, "m:1"), gone, "manual", 1000, tehranDay(1000), -1_000, updatedAt = 1000))
+        durable.familyAssets().put(FamilyAsset(gone, "[]", 100.0, updatedAt = 1000))
+        val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)
+
+        pullOnce(server, durable, session)
+
+        assertNull(durable.familyTxns().get(familyTxnId(gone, "m:1")))
+        assertNull(durable.familyAssets().get(gone))
+        assertNotEquals(revision, durable.meta().get(META_SYNC_DERIVE_REVISION))
+    }
+
     @Test
     fun `a remove cancelled while the server answers still buries the member here`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")

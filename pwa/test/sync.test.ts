@@ -423,6 +423,17 @@ describe('syncNow', () => {
     accountId: null, categoryId: null, merchant: `مورد ${i}`, note: '', createdAt: NOW, updatedAt: NOW, deleted: false,
   });
 
+  it('drops on sync the rows an older build kept for a member already gone', async () => {
+    // What a build before that rule left behind: the tombstone applied, the rows kept for good.
+    state.put('familyMembers', { id: THEM, name: 'علی', sharesSms: false, avatar: '', updatedAt: 2, deleted: true });
+    state.put('familyTxns', { id: sync.familyTxnId(THEM, 'm:1'), ownerMemberId: THEM, sourceKind: 'manual', at: 1, day: 1, amountRial: -1, bank: 'MANUAL', merchant: '', updatedAt: 1, deleted: false, transfer: false });
+    state.put('familyAssets', { id: THEM, items: [], totalToman: 0, updatedAt: 1, deleted: false });
+    serve([]);
+    await sync.syncNow(session, NOW);
+    expect(state.rows('familyTxns')).toEqual([]);
+    expect(state.row('familyAssets', THEM)).toBeUndefined();
+  });
+
   it('marks its own writes, so an edit made while it runs still asks for the next sync', async () => {
     const heard: Array<[string, boolean]> = [];
     const off = state.subscribe((_, bySync) => heard.push([bySync ? 'sync' : 'her', bySync]));

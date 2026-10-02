@@ -2308,6 +2308,24 @@ suspend fun syncNow(
         val more = (pulled.hasMore ?: (pulled.records.size >= 1000)) && cursor > previous
     } while (more)
     if (canRotate) rotateTokenIfStale(durable, active, now)
+    settleDepartedMembers(durable, active)
     refused?.let { throw it }
     SyncResult(sent, received, unsupportedKinds)
+}
+
+/**
+ * [dropMemberRows] for every member already gone, on every sync. A tombstone drops its member's
+ * rows the moment it lands, but builds before that rule pulled their tombstones and kept the rows
+ * — and that pull is never repeated. Nothing to do once they are erased, so this costs one query.
+ * Her own former ids count too: a copy of her old self is exactly the double this prevents.
+ */
+private suspend fun settleDepartedMembers(durable: DurableDb, session: SyncSession) {
+    durable.withTransaction {
+        val dropped = durable.familyTxns().eraseDeparted(session.member) +
+            durable.familyAssets().eraseDeparted(session.member)
+        if (dropped > 0) {
+            val revision = durable.meta().get(META_SYNC_DERIVE_REVISION)?.toLongOrNull() ?: 0L
+            durable.meta().put(DurableMeta(META_SYNC_DERIVE_REVISION, (revision + 1).toString()))
+        }
+    }
 }
