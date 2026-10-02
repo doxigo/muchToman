@@ -2817,7 +2817,7 @@ data class UiState(
     val refreshingWallets: Set<String> = emptySet(),
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",
-    /** Bazaar, Myket or Play installed this copy ([installedByStore]), so the store announces updates. */
+    /** Bazaar or Myket installed this copy ([installedByStore]), so the store announces updates. */
     val fromStore: Boolean = false,
     /** What the last crash left behind ([pendingCrash]), until she answers [CrashSheet]. */
     val crashReport: String? = null,

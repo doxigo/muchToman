@@ -73,9 +73,13 @@ private fun installerOf(context: Context): String = runCatching {
  * A store that installed the app also updates it, and only once its own review has passed. The
  * update card links the GitHub build, which is out hours or days before that — so for these
  * installs the card would either race the store or quietly move her off it.
+ *
+ * Not Play: there is no Play listing, yet phones report `com.android.vending` — Android names Play
+ * the installer when a phone migration or an installer app reinstalls a sideloaded APK, and Play
+ * will never update those. Add it back with the first Play release.
  */
 fun installedByStore(context: Context): Boolean =
-    installerOf(context) in setOf("com.farsitel.bazaar", "ir.mservice.market", "com.android.vending")
+    installerOf(context) in setOf("com.farsitel.bazaar", "ir.mservice.market")
 
 // ───────────────────────── crash reports ─────────────────────────
 
