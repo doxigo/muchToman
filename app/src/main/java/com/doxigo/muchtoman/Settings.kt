@@ -39,8 +39,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -75,6 +73,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -287,7 +286,7 @@ private fun SettingsIndex(
                 // touched, and the one that did not — her name — now has a sheet with its own
                 // ذخیره. A save button over eight already-saved settings was a button lying
                 // about seven of them.
-                PillButton("برگشت", onBack, fontSize = 15.sp)
+                PillButton("برگشت", onBack)
             }
 
             Spacer(Modifier.height(Space.l))
@@ -532,7 +531,7 @@ private fun UpgradeCard(onOpen: () -> Unit) {
             modifier = Modifier.padding(top = Space.xs),
         )
         Spacer(Modifier.height(Space.l))
-        PillButton("ببین چی داره", onOpen, voice = ButtonVoice.PRIMARY, fontSize = 15.sp)
+        PillButton("ببین چی داره", onOpen, voice = ButtonVoice.PRIMARY)
     }
 }
 
@@ -635,7 +634,7 @@ internal fun SettingsPage(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ScreenTitle(title, modifier = Modifier.weight(1f))
-                PillButton("برگشت", onBack, fontSize = 15.sp)
+                PillButton("برگشت", onBack)
             }
             Spacer(Modifier.height(Space.xl))
             content()
@@ -707,14 +706,13 @@ private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> U
                     .semantics { contentDescription = "اسمت" },
             )
             Spacer(Modifier.height(Space.xl))
-            Button(
-                onClick = { onDone(draft); onDismiss() },
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp),
-            ) { Text("ذخیره", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            PillButton(
+                "ذخیره",
+                { onDone(draft); onDismiss() },
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
         }
     }
 }
@@ -948,7 +946,7 @@ private fun SmsPage(
             // asked to *press*, and at 15sp in green on its own line the text button read as a
             // heading for the paragraph under it. See [PillButton].
             Spacer(Modifier.height(Space.m))
-            PillButton("اجازه بده بیدار بمونه", { askBackgroundExemption(context) }, fontSize = 15.sp)
+            PillButton("اجازه بده بیدار بمونه", { askBackgroundExemption(context) })
         }
 
         // Blu can send its alerts as its app's notifications instead of SMS, and then there is no
@@ -1422,17 +1420,16 @@ private fun UpgradePage(activity: FragmentActivity, onBackup: () -> Unit, onBack
         )
 
         Spacer(Modifier.height(Space.xxl))
-        Button(
+        PillButton(
+            "گرفتن نسخهٔ کامل",
             // The Worker's proxied copy, as the update sheet uses: github.com, where the release
             // page lives, mostly does not load from Iran. No rates yet means no link to it, and
             // then the site's install section is the next best door.
-            onClick = { openUrl(context, state.rates.latest?.downloadUrlFor(lite = false) ?: "${SITE}#install") },
-            shape = RoundedCornerShape(Radius.pill),
-            colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 60.dp),
-        ) { Text("گرفتن نسخهٔ کامل", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            { openUrl(context, state.rates.latest?.downloadUrlFor(lite = false) ?: "${SITE}#install") },
+            Modifier.fillMaxWidth(),
+            voice = ButtonVoice.PRIMARY,
+            block = true,
+        )
     }
 }
 
@@ -1452,6 +1449,9 @@ private fun FeedbackPage(onBack: () -> Unit) {
     var message by rememberSaveable { mutableStateOf("") }
     var contact by rememberSaveable { mutableStateOf("") }
     var sending by rememberSaveable { mutableStateOf(Sending.IDLE) }
+    // Raised by a send tap with nothing written: the pill stays live, so the refusal needs words.
+    var missingMessage by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     SettingsPage("بازخورد", onBack) {
         Text(
@@ -1471,6 +1471,17 @@ private fun FeedbackPage(onBack: () -> Unit) {
             },
             minLines = 6,
             placeholder = { Text("پیامت") },
+            supportingText = if (missingMessage && message.isBlank()) {
+                {
+                    Text(
+                        "پیامت رو بنویس.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            } else {
+                null
+            },
             shape = RoundedCornerShape(Radius.field),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1494,28 +1505,27 @@ private fun FeedbackPage(onBack: () -> Unit) {
             modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
         )
         Spacer(Modifier.height(Space.xl))
-        Button(
-            onClick = {
-                sending = Sending.SENDING
-                scope.launch {
-                    val sent = postFeedback(BuildConfig.RATES_URL, message, contact).isSuccess
-                    if (sent) message = ""
-                    sending = if (sent) Sending.SENT else Sending.FAILED
+        PillButton(
+            if (sending == Sending.SENDING) "در حال فرستادن…" else "فرستادن",
+            {
+                // An empty message is refused in words, not by a pill that will not press.
+                focusManager.clearFocus()
+                missingMessage = message.isBlank()
+                if (!missingMessage) {
+                    sending = Sending.SENDING
+                    scope.launch {
+                        val sent = postFeedback(BuildConfig.RATES_URL, message, contact).isSuccess
+                        if (sent) message = ""
+                        sending = if (sent) Sending.SENT else Sending.FAILED
+                    }
                 }
             },
-            enabled = message.isNotBlank() && sending != Sending.SENDING,
-            shape = RoundedCornerShape(Radius.pill),
-            colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 60.dp),
-        ) {
-            Text(
-                if (sending == Sending.SENDING) "در حال فرستادن…" else "فرستادن",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+            Modifier.fillMaxWidth(),
+            voice = ButtonVoice.PRIMARY,
+            // Dimmed only while it is on its way, so one message is never sent twice.
+            enabled = sending != Sending.SENDING,
+            block = true,
+        )
         val outcome = when (sending) {
             Sending.SENT -> "فرستاده شد."
             Sending.FAILED -> "فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه."
@@ -1990,6 +2000,7 @@ private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
     var pass by remember { mutableStateOf("") }
     var again by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2053,20 +2064,21 @@ private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
                 )
             }
             Spacer(Modifier.height(Space.xl))
-            Button(
-                onClick = {
+            PillButton(
+                "ساختن فایل پشتیبان",
+                {
+                    // Focus lets go first: the keyboard was covering the line that says why not.
+                    focusManager.clearFocus()
                     when {
                         pass.length < BACKUP_MIN_PASSPHRASE -> problem = "رمز کوتاهه — دست‌کم ۶ حرف باشه."
                         again != pass -> problem = "دوتا رمز یکی نیستن."
                         else -> onDone(pass)
                     }
                 },
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp),
-            ) { Text("ساختن فایل پشتیبان", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
         }
     }
 }
@@ -2088,6 +2100,7 @@ private fun RestoreSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pass by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    val focusManager = LocalFocusManager.current
     // Staged: the line under the rows carries it from here, so the sheet bows out.
     LaunchedEffect(backup.restartNeeded) { if (backup.restartNeeded) onDismiss() }
 
@@ -2139,25 +2152,21 @@ private fun RestoreSheet(
                     )
                 }
                 Spacer(Modifier.height(Space.xl))
-                Button(
-                    onClick = {
+                PillButton(
+                    // The KDF is deliberately slow, so the wait is named rather than mute.
+                    if (backup.working) "در حال خواندن…" else "خواندن فایل",
+                    {
+                        focusManager.clearFocus()
                         if (pass.isEmpty()) problem = "اول رمز فایل رو بزن."
                         else onRead(pass)
                     },
+                    Modifier.fillMaxWidth(),
+                    voice = ButtonVoice.PRIMARY,
+                    // Dimmed only while the file is being read — a second tap would start a
+                    // second slow read under the first.
                     enabled = !backup.working,
-                    shape = RoundedCornerShape(Radius.pill),
-                    colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 60.dp),
-                ) {
-                    Text(
-                        // The KDF is deliberately slow, so the wait is named rather than mute.
-                        if (backup.working) "در حال خواندن…" else "خواندن فایل",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                    block = true,
+                )
             } else {
                 Text(
                     "${backup.readyWords} خونده شد و رمزش درسته.",

@@ -16,25 +16,72 @@ import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle
 import './timeline.css';
 import './manualTxn.css';
 
+/** The clock field's keystrokes as it keeps them: ASCII digits, from either digit set, nothing else. */
+export function clockDigits(text: string): string {
+  return text.replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x6f0))
+    .replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x660)).replace(/\D/g, '');
+}
+
 /**
- * «۱۴:۰۳» read back into milliseconds since Tehran midnight, from either digit set, or null. The
- * one format faClock prints, so the field's opening value always round-trips. A lone hour is not
- * accepted: guessing «:۰۰» is how a transaction lands at the top of the day instead of where it was.
+ * «۱۴:۰۳» — or the field's own «۱۴۰۳» — read back into milliseconds since Tehran midnight, or
+ * null. Four digits, hour then minute; the colon is the field's to draw, never hers to find. A
+ * lone hour or three digits is not accepted: guessing is how a transaction lands at the wrong minute.
  */
 export function parseFaClock(text: string): number | null {
-  const ascii = text.trim().replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x6f0))
-    .replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x660));
-  const match = /^(\d{1,2}):(\d{2})$/.exec(ascii);
-  if (!match) return null;
-  const hour = Number(match[1]); const minute = Number(match[2]);
+  const digits = clockDigits(text);
+  if (digits.length !== 4) return null;
+  const hour = Number(digits.slice(0, 2)); const minute = Number(digits.slice(2));
   if (hour > 23 || minute > 59) return null;
   return (hour * 60 + minute) * 60_000;
 }
 
+/** «۱۴۰۳» drawn as «۱۴:۰۳» (ClockMask, ManualTxnUi.kt): Persian digits, the colon once the minute has begun. */
+const clockShown = (digits: string): string =>
+  [...digits].map((d, i) => (i === 2 ? ':' : '') + String.fromCharCode(0x6f0 + Number(d))).join('');
+
+/**
+ * The clock as four digits on the number pad, the colon drawn for her. Focus selects the whole
+ * time, since the usual edit is a different time typed over this one; and it turns red only once
+ * she has left it, because every retyped time passes through «۱» and «۱۴» on the way.
+ */
+function ClockField({ digits, onDigits }: { digits: string; onDigits: (digits: string) => void }) {
+  const [focused, setFocused] = useState(false);
+  const hint = parseFaClock(digits) == null ? 'ساعت رو چهاررقمی بنویس، مثل ۰۹:۳۰.' : null;
+  const red = hint != null && !focused;
+  const onInput = (e: Event) => {
+    const el = e.currentTarget as HTMLInputElement;
+    let next = clockDigits(el.value);
+    let before = clockDigits(el.value.slice(0, el.selectionStart ?? el.value.length)).length;
+    // A backspace that only took the drawn colon meant the hour digit in front of it.
+    if (next === digits && el.value.length < clockShown(digits).length && before > 0) {
+      next = next.slice(0, before - 1) + next.slice(before); before--;
+    }
+    // A fifth digit is refused rather than pushing one off the end.
+    if (next.length > 4) { next = digits; before--; }
+    onDigits(next);
+    // Written back by hand: a refused keystroke changes no state, so nothing would re-render it.
+    el.value = clockShown(next);
+    const at = Math.min(Math.max(before, 0), next.length);
+    el.setSelectionRange(at + (at > 2 ? 1 : 0), at + (at > 2 ? 1 : 0));
+  };
+  return (
+    <div>
+      <label class={`field clock-field${red ? ' error' : ''}`}>
+        <input value={clockShown(digits)} dir="ltr" inputMode="numeric" aria-label="ساعت تراکنش" aria-invalid={red}
+          onInput={onInput} onBlur={() => setFocused(false)}
+          onFocus={(e) => { const el = e.currentTarget; setFocused(true); setTimeout(() => el.select()); }} />
+        <span class="label">ساعت</span>
+      </label>
+      {hint && (red ? <div key="error" class="field-support error" role="status">{hint}</div>
+        : <div key="hint" class="field-support">{hint}</div>)}
+    </div>
+  );
+}
+
 /**
  * A transaction's day, one step at a time — almost always today or a few days back, and the
- * platform's picker is a Gregorian grid, the wrong calendar to ask this question in. It stops at
- * [today]: the ledger records what happened, and tomorrow has not.
+ * platform's picker is a Gregorian grid, the wrong calendar to ask this question in. «روز بعد» dims
+ * at [today]: the ledger records what happened, and tomorrow has not.
  */
 export function DayStepper({ day, today, onDay }: { day: number; today: number; onDay: (day: number) => void }) {
   return (
@@ -45,7 +92,7 @@ export function DayStepper({ day, today, onDay }: { day: number; today: number; 
         {/* «امروز» is an answer, not a date — the date it stands for is stated under it. */}
         {day >= today - 1 && <div class="day-sub">{faWeekdayDate(day)}</div>}
       </div>
-      <button type="button" class="pill" onClick={() => { if (day < today) onDay(day + 1); }}>روز بعد</button>
+      <button type="button" class="pill" disabled={day >= today} onClick={() => onDay(day + 1)}>روز بعد</button>
     </div>
   );
 }
@@ -64,7 +111,7 @@ function ManualTxnSheet() {
   const [openedAt] = useState(Date.now);
   const today = tehranDay(openedAt);
   const [day, setDay] = useState(today);
-  const [clock, setClock] = useState(() => faClock(openedAt));
+  const [clock, setClock] = useState(() => clockDigits(faClock(openedAt)));
   // Raised by a save tap: the grid cannot flag itself, and an untouched amount refused in silence.
   const [missingCategory, setMissingCategory] = useState(false);
   const [missingAmount, setMissingAmount] = useState(false);
@@ -77,10 +124,11 @@ function ManualTxnSheet() {
   useEffect(() => {
     if (categoryId != null && !choices.some((c) => c.id === categoryId)) setCategoryId(null);
   }, [outgoing]);
-  const usable = rial != null && categoryId != null && sinceMidnight != null;
 
   const save = (): void => {
     // The pill never greys out — a dead button explains nothing — so a tap that cannot save says why.
+    // Focus lets go first: the keyboard was covering the words, and the clock reddens only once left.
+    (document.activeElement as HTMLElement | null)?.blur();
     setMissingCategory(categoryId == null);
     setMissingAmount(!amount.trim());
     if (rial == null || sinceMidnight == null || categoryId == null) return;
@@ -113,16 +161,15 @@ function ManualTxnSheet() {
       <SheetLabel>کِی؟</SheetLabel>
       <DayStepper day={day} today={today} onDay={setDay} />
       <div style={{ marginTop: 'var(--m)' }}>
-        <TextField label="ساعت" ariaLabel="ساعت تراکنش" value={clock} maxLength={5} onInput={(v) => setClock(v.slice(0, 5))}
-          error={sinceMidnight == null ? 'ساعت رو مثل ۱۴:۳۰ بنویس.' : null} />
+        <ClockField digits={clock} onDigits={setClock} />
       </div>
 
       <SheetLabel>توضیحات</SheetLabel>
       <TextField label="یادداشت — خالی هم می‌شه" ariaLabel="توضیحات" value={note} maxLength={MAX_NOTE_CHARS} multiline onInput={(v) => setNote(v.slice(0, MAX_NOTE_CHARS))} />
 
       <div class="sheet-actions">
-        <button type="button" class={`pill wide${usable ? ' primary' : ''}`} style={{ minHeight: '56px', fontSize: '16px' }} onClick={save}>ثبت تراکنش</button>
-        <button type="button" class="pill wide" onClick={closeSheet}>انصراف</button>
+        <PillButton voice="primary" block label="ثبت تراکنش" onClick={save} />
+        <PillButton block label="انصراف" onClick={closeSheet} />
       </div>
     </Sheet>
   );

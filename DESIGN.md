@@ -24,7 +24,7 @@ Two objects in Theme.kt sit outside the Material scheme on purpose:
   caution) are fixed; `strong`/`muted` are green-tinted on forest and the scheme's neutrals
   in the dark. The lock screen and the widget keep the fixed forest full-bleed.
 - **`Cta`** — `fill #9FE870` / `ink #163300` in *both* themes. Every "press this" pill:
-  PillButton PRIMARY, save Buttons, the review pill, the deck's primary answer, the tab badge.
+  PillButton PRIMARY (every save, the review pill, the deck's primary answer) and the tab badge.
 
 **CTA ≠ selection.** Selected states (segmented pills, chips, category tiles, tab indicator
 context) use the scheme's `primary` — forest in light, bright in dark — so *press this* and
@@ -104,11 +104,26 @@ coloured text reads as a caption until it is tried. No `TextButton` anywhere. Th
   the label into the consequence and the pill red, announced as a live region.
 - `HERO` — the tonal pill on the green field.
 
-`block` is a sheet's full-width answer (52dp, 16sp); in-place acts are 44dp, 14sp. Answers
-stack full width (CTA, then the way out, then the delete). Inside a card, routine acts share a
-row in equal cells and the one that loses something takes its own full-width row, so its
-armed sentence always has room. A **door** that leads elsewhere (the backup reminder) is a
-card with a chevron, not a pill.
+**Two sizes, and only two.** `block` is a sheet's full-width answer (52dp, 16sp); in-place acts
+are 44dp, 14sp (drawn; Compose and the browser give the finger its 48). `PillButton` takes no
+size parameters and no CSS resizes `.pill`: a 2026-10 audit found sheet commits at 52, 56 and
+60dp, a Material `Button` beside a pill under the same sheet, and the day stepper at 40dp/12sp —
+one app speaking in five accents. Answers stack full width and all wear `block` (CTA, then the
+way out, then the delete), so «انصراف» is never a size down from the commit it sits under. The one
+family outside the two sizes is دفتر's title line — «تراکنش», the paste and search discs,
+«دسته‌ها» and the review pill — a 48dp toolbar on the neutral well, sized as one row; a 44dp pill
+in it would sit visibly short of its neighbours.
+Inside a card, routine acts share a row in equal cells and the one that loses something takes
+its own full-width row, so its armed sentence always has room. A **door** that leads elsewhere
+(the backup reminder) is a card with a chevron, not a pill.
+
+**A commit never greys out.** It is `PRIMARY` from the moment the sheet opens, and a tap on an
+unfinished form saves nothing: it lets go of focus (the keyboard was covering the words) and
+raises a sentence under each field that is in the way — «مبلغش رو بنویس.», «دسته‌اش رو انتخاب
+کن.» A dimmed button says *no* without saying *why*; a commit that sat tonal until the form was
+complete looked like «انصراف» beside it. Dimmed (38% on both platforms) is kept for two cases
+only: work in flight, whose label already says «در حال …», and a stepper at its end — «روز بعد»
+beside «امروز».
 
 ## Spacing
 

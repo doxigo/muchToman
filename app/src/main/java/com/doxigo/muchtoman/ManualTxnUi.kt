@@ -1,5 +1,7 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,12 +16,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,38 +33,68 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.sp
 
+/** The clock field's keystrokes as it keeps them: ASCII digits, from either digit set, nothing else. */
+fun clockDigits(text: String): String = buildString {
+    for (c in text) when (c) {
+        in '0'..'9' -> append(c)
+        in '۰'..'۹' -> append('0' + (c - '۰'))
+        in '٠'..'٩' -> append('0' + (c - '٠'))
+    }
+}
+
 /**
- * «۱۴:۰۳» read back into minutes since Tehran midnight, from either digit set, or null.
+ * «۱۴:۰۳» — or the field's own «۱۴۰۳» — read back into minutes since Tehran midnight, or null.
  *
- * The one format [faClock] itself prints, so what the field opens with is always parseable and
- * the round trip is exact. A lone hour («۱۴») is not accepted: guessing «:۰۰» silently is how a
- * transaction lands at the top of the day's band instead of where it happened.
+ * Four digits, hour then minute; the colon is the field's to draw, never hers to find on a
+ * keyboard. A lone hour («۱۴») or three digits («۹۳۰») is not accepted: guessing «:۰۰» silently
+ * is how a transaction lands at the top of the day's band instead of where it happened.
  */
 fun parseFaClock(text: String): Long? {
-    val ascii = buildString {
-        for (c in text.trim()) when (c) {
-            in '0'..'9' -> append(c)
-            in '۰'..'۹' -> append('0' + (c - '۰'))
-            in '٠'..'٩' -> append('0' + (c - '٠'))
-            else -> append(c)
-        }
-    }
-    val match = Regex("^(\\d{1,2}):(\\d{2})$").find(ascii) ?: return null
-    val hour = match.groupValues[1].toInt()
-    val minute = match.groupValues[2].toInt()
+    val digits = clockDigits(text)
+    if (digits.length != 4) return null
+    val hour = digits.take(2).toInt()
+    val minute = digits.takeLast(2).toInt()
     if (hour > 23 || minute > 59) return null
     return (hour * 60L + minute) * 60_000L
+}
+
+/**
+ * «۱۴۰۳» drawn as «۱۴:۰۳»: Persian digits, and the colon once the minute has begun. Never a
+ * trailing colon — a separator she could backspace into would be a keystroke that does nothing.
+ */
+private val ClockMask = VisualTransformation { text ->
+    val colonAt = if (text.length > 2) 2 else -1
+    val shown = buildString {
+        text.forEachIndexed { i, c ->
+            if (i == colonAt) append(':')
+            append('۰' + (c - '0'))
+        }
+    }
+    TransformedText(
+        AnnotatedString(shown),
+        object : OffsetMapping {
+            override fun originalToTransformed(offset: Int) = if (colonAt in 0 until offset) offset + 1 else offset
+            override fun transformedToOriginal(offset: Int) = if (colonAt in 0 until offset) offset - 1 else offset
+        },
+    )
 }
 
 /**
@@ -81,6 +115,7 @@ fun ManualTxnSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
@@ -94,16 +129,26 @@ fun ManualTxnSheet(
     val openedAt = remember { System.currentTimeMillis() }
     val today = remember(openedAt) { tehranDay(openedAt) }
     var day by rememberSaveable { mutableStateOf(today) }
-    var clock by rememberSaveable { mutableStateOf(faClock(openedAt)) }
+    var clock by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(clockDigits(faClock(openedAt))))
+    }
+    val clockInteraction = remember { MutableInteractionSource() }
+    val clockFocused by clockInteraction.collectIsFocusedAsState()
+    // The usual edit is a different time, not a different digit: a tap selects all four, so
+    // typing replaces them instead of landing beside them. An effect rather than the focus
+    // callback, because the tap that focuses the field places its caret after that callback.
+    LaunchedEffect(clockFocused) {
+        if (clockFocused) clock = clock.copy(selection = TextRange(0, clock.text.length))
+    }
 
     val rial = remember(amount) { tomanFieldToRial(amount) }
-    val sinceMidnight = remember(clock) { parseFaClock(clock) }
+    val sinceMidnight = remember(clock.text) { parseFaClock(clock.text) }
     val choices = remember(categories, outgoing, categoryUse) {
         categoryChoices(categories, if (outgoing) "out" else "in", categoryUse)
     }
     // Flipping the direction swaps the grid, and a pick from the other side must not survive
     // invisibly — a خرج filed under «حقوق» is money on the wrong side of every report.
-    androidx.compose.runtime.LaunchedEffect(choices) {
+    LaunchedEffect(choices) {
         if (categoryId != null && choices.none { it.id == categoryId }) categoryId = null
     }
     // Raised by a save tap with no category picked. The grid cannot flag itself the way the
@@ -112,8 +157,6 @@ fun ManualTxnSheet(
     // And by one with no amount at all: the field's own error only speaks over a malformed
     // figure, so an untouched field refused in silence.
     var missingAmount by remember { mutableStateOf(false) }
-
-    val usable = rial != null && categoryId != null && sinceMidnight != null
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -187,18 +230,7 @@ fun ManualTxnSheet(
                 onPick = { categoryId = it.id },
                 selectedLabel = "انتخاب‌شده",
             )
-            if (missingCategory && categoryId == null) {
-                Text(
-                    "دسته‌اش رو انتخاب کن.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .padding(top = Space.s, start = Space.xs)
-                        // Announced, so the refusal exists for someone listening too — the
-                        // words appearing under a grid mid-sheet are easy to never reach.
-                        .semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
+            if (missingCategory && categoryId == null) MissingText("دسته‌اش رو انتخاب کن.")
 
             SheetLabel("کِی؟")
             DayStepper(day, today) { day = it }
@@ -206,15 +238,42 @@ fun ManualTxnSheet(
             Spacer(Modifier.height(Space.m))
             OutlinedTextField(
                 value = clock,
-                onValueChange = { clock = it.take(5) },
+                onValueChange = {
+                    val digits = clockDigits(it.text)
+                    // A fifth digit is refused rather than pushing one off the end; anything
+                    // that is not a digit — a pasted «۱۴:۳۰»'s colon — just falls away.
+                    clock = when {
+                        digits.length > 4 -> clock
+                        digits.length == it.text.length -> it.copy(text = digits)
+                        else -> TextFieldValue(digits, TextRange(digits.length))
+                    }
+                },
                 singleLine = true,
-                isError = sinceMidnight == null,
+                // Red only once she has left it: every retyped time passes through «۱» and «۱۴»
+                // on the way, and those are unfinished, not wrong.
+                isError = sinceMidnight == null && !clockFocused,
                 label = { Text("ساعت") },
                 supportingText = if (sinceMidnight == null) {
-                    { Text("ساعت رو مثل ۱۴:۳۰ بنویس.") }
+                    {
+                        Text(
+                            "ساعت رو چهاررقمی بنویس، مثل ۰۹:۳۰.",
+                            // Announced once it turns into a refusal, not while it is a hint.
+                            modifier = if (clockFocused) Modifier
+                            else Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        )
+                    }
                 } else {
                     null
                 },
+                visualTransformation = ClockMask,
+                // Left to right, so the caret walks the digits the way they read and the hour
+                // stays on the left of the colon while she types.
+                textStyle = LocalTextStyle.current.copy(
+                    textAlign = TextAlign.Right,
+                    textDirection = TextDirection.Ltr,
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                interactionSource = clockInteraction,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -238,7 +297,9 @@ fun ManualTxnSheet(
                     // The pill never greys out — a dead button explains nothing — so a tap
                     // that cannot save has to say why. A malformed amount and the clock speak
                     // for themselves; a blank amount and the category need this tap to raise
-                    // their words.
+                    // their words. Focus lets go first: the keyboard was covering them, and the
+                    // clock only turns red once it is no longer being typed in.
+                    focus.clearFocus()
                     missingCategory = categoryId == null
                     missingAmount = amount.isBlank()
                     val cleanRial = rial ?: return@PillButton
@@ -248,16 +309,16 @@ fun ManualTxnSheet(
                     val signed = if (outgoing) -cleanRial else cleanRial
                     close { onSave(signed, category, merchant, note, at) }
                 },
-                voice = if (usable) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
+                voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = 16.sp,
-                minHeight = 56.dp,
+                block = true,
             )
             Spacer(Modifier.height(Space.s))
             PillButton(
                 "انصراف",
                 { close(onDismiss) },
                 modifier = Modifier.fillMaxWidth(),
+                block = true,
             )
         }
     }
@@ -271,13 +332,14 @@ fun ManualTxnSheet(
  * today or one of the few days behind it — and because the platform's own picker is a Gregorian
  * grid, which is the wrong calendar to ask an Iranian household a question in.
  *
- * The ledger records what happened, and tomorrow has not, so the stepper simply stops at
- * [today] rather than dimming into a control that needs explaining.
+ * The ledger records what happened, and tomorrow has not, so «روز بعد» dims at [today]. Beside
+ * «امروز» the dimmed pill needs no words: a stepper at its end is the one disabled control
+ * everybody already reads, and a live-looking pill that did nothing when pressed was worse.
  */
 @Composable
 internal fun DayStepper(day: Long, today: Long, onDay: (Long) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        PillButton("روز قبل", { onDay(day - 1) }, fontSize = 12.sp, minHeight = 40.dp)
+        PillButton("روز قبل", { onDay(day - 1) })
         Column(
             Modifier.weight(1f),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -301,11 +363,6 @@ internal fun DayStepper(day: Long, today: Long, onDay: (Long) -> Unit) {
                 )
             }
         }
-        PillButton(
-            "روز بعد",
-            { if (day < today) onDay(day + 1) },
-            fontSize = 12.sp,
-            minHeight = 40.dp,
-        )
+        PillButton("روز بعد", { onDay(day + 1) }, enabled = day < today)
     }
 }

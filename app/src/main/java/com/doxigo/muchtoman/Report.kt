@@ -46,7 +46,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -2271,7 +2270,7 @@ private fun ExcludeSheet(
                 { close(onDismiss) },
                 voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),
-                minHeight = 52.dp,
+                block = true,
             )
             if (excluded.isNotEmpty()) {
                 Spacer(Modifier.height(Space.s))
@@ -2279,6 +2278,7 @@ private fun ExcludeSheet(
                     "هیچ‌کدوم حذف نشه",
                     { onExcluded(emptySet()); close(onDismiss) },
                     modifier = Modifier.fillMaxWidth(),
+                    block = true,
                 )
             }
         }

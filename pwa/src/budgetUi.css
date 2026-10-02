@@ -46,13 +46,11 @@ button.plan-row:active { background: color-mix(in srgb, var(--on-surface) 6%, va
 
 /* NotifyBlockedCard */
 .notify-what { font-size: 13px; line-height: 22px; color: var(--on-surface-variant); margin-top: var(--xs); }
-.notify-ask { margin-top: var(--s); min-height: 48px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--cta-fill); color: var(--cta-ink); font-size: 13px; font-weight: 700; }
 
 /* ---- sheets ---- */
 .plan-sheet-note { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); padding-top: var(--s); padding-inline-start: var(--xs); }
 .plan-editing { padding-top: var(--l); }
 .plan-conflict { color: var(--error); font-size: 13px; padding-top: var(--m); }
-.plan-save { margin-top: var(--l); }
 .plan-lede { font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
 .plan-older { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); padding-top: var(--xs); }
 .plan-first-plan { line-height: 26px; color: var(--on-surface); margin: var(--l) 0; }
@@ -91,8 +89,6 @@ button.plan-row:active { background: color-mix(in srgb, var(--on-surface) 6%, va
 .worth-title { font-size: 18px; font-weight: 700; color: var(--on-surface); margin-top: var(--xs); }
 .worth-amount { font-size: 24px; font-weight: 800; color: var(--on-surface); margin-top: var(--xs); }
 .worth-ask { font-weight: 600; color: var(--on-surface); margin-top: var(--l); }
-.worth-answers { display: flex; margin-top: var(--s); }
-.worth-answers > button {
-  flex: 1; min-width: 0; min-height: 48px; margin: 0 var(--xs); padding: var(--m) 0; border: 0; border-radius: var(--r-pill);
-  background: var(--surface); color: var(--on-surface); font-weight: 600; text-align: center;
-}
+.worth-answers { display: flex; gap: var(--s); margin-top: var(--s); }
+/* Equal cells; min-width stays auto, so a large font widens its cell rather than clipping the label. */
+.worth-answers > .pill { flex: 1; }

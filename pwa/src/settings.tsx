@@ -453,6 +453,8 @@ function ExportPassSheet() {
   const [again, setAgain] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const done = () => {
+    // Focus lets go first: the keyboard was covering the line that says why not.
+    (document.activeElement as HTMLElement | null)?.blur();
     if (pass.length < BACKUP_MIN_PASSPHRASE) setProblem('رمز کوتاهه — دست‌کم ۶ حرف باشه.');
     else if (again !== pass) setProblem('دوتا رمز یکی نیستن.');
     else { closeSheet(); void runExport(pass); }
@@ -484,6 +486,9 @@ function RestoreSheet({ file }: { file: File }) {
   const [working, setWorking] = useState(false);
   const [ready, setReady] = useState<{ payload: BrowserPayload; words: string } | null>(null);
   const read = async () => {
+    // Enter reaches here too, and the dimmed pill only stops a tap: a second slow KDF run is a wait doubled.
+    if (working) return;
+    (document.activeElement as HTMLElement | null)?.blur();
     if (!pass) { setProblem('اول رمز فایل رو بزن.'); return; }
     setWorking(true); setProblem(null);
     try { setReady(await readBackupFile(file, pass)); } catch (error) {
@@ -515,7 +520,8 @@ function RestoreSheet({ file }: { file: File }) {
           <TextField type="password" label="رمز فایل" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} autoFocus onEnter={() => void read()} />
           {problem && <p class="set-note error" aria-live="polite">{problem}</p>}
           <div style={{ height: 'var(--xl)' }} />
-          {/* The KDF is deliberately slow, so the wait is named rather than mute. */}
+          {/* The KDF is deliberately slow, so the wait is named rather than mute — and dimmed only
+              while it runs, as a second tap would start a second slow read under the first. */}
           <PillButton label={working ? 'در حال خواندن…' : 'خواندن فایل'} voice="primary" block disabled={working} onClick={() => void read()} />
         </>
       ) : (
@@ -570,7 +576,12 @@ function FeedbackPage() {
   const [message, setMessage] = useState('');
   const [contact, setContact] = useState('');
   const [sending, setSending] = useState<'IDLE' | 'SENDING' | 'SENT' | 'FAILED'>('IDLE');
+  // Raised by a send tap with nothing written: the pill stays live, so the refusal needs words.
+  const [missingMessage, setMissingMessage] = useState(false);
   const send = async (): Promise<void> => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setMissingMessage(!message.trim());
+    if (!message.trim()) return;
     setSending('SENDING');
     let ok = false;
     try {
@@ -594,13 +605,15 @@ function FeedbackPage() {
       <div class="stack feedback">
         {/* A new word after «فرستاده شد» is a new message, and the receipt is for the old one. */}
         <TextField multiline label="" ariaLabel="پیامت" placeholder="پیامت" value={message} maxLength={MAX_FEEDBACK_CHARS}
+          error={missingMessage && !message.trim() ? 'پیامت رو بنویس.' : null}
           onInput={(v) => { setMessage(v); if (sending !== 'SENDING') setSending('IDLE'); }} />
         <TextField label="اگه جواب می‌خوای: ایمیل یا آیدی تلگرام" value={contact} maxLength={100} inputMode="email" onInput={setContact} />
       </div>
       <Note>فقط همین‌ها و شمارهٔ نسخهٔ برنامه به <bdi>hey@muchtoman.com</bdi> فرستاده می‌شه.</Note>
       <div style={{ height: 'var(--xl)' }} />
+      {/* Dimmed only while it is on its way, so one message is never sent twice. */}
       <PillButton label={sending === 'SENDING' ? 'در حال فرستادن…' : 'فرستادن'} voice="primary" block
-        disabled={!message.trim() || sending === 'SENDING'} onClick={() => void send()} />
+        disabled={sending === 'SENDING'} onClick={() => void send()} />
       {sending === 'SENT' && <p class="set-note strong" aria-live="polite">فرستاده شد.</p>}
       {sending === 'FAILED' && <Note tone="error">فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه.</Note>}
     </SettingsPage>

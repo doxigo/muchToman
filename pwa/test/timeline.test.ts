@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { matchesLedgerSearch, searchFold } from '../src/timeline';
-import { parseFaClock } from '../src/manualTxn';
+import { clockDigits, parseFaClock } from '../src/manualTxn';
 import { faClock } from '../src/format';
 import { tehranDayStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
@@ -69,8 +69,11 @@ describe('the manual sheet clock', () => {
     expect(faClock(tehranDayStart(20_000) + minute)).toBe('۱۴:۰۳');
     expect(parseFaClock('۱۴:۰۳')).toBe(minute);
     expect(parseFaClock('14:03')).toBe(minute);
-    for (const bad of ['۱۴', '25:00', '14:60', '']) expect(parseFaClock(bad)).toBeNull();
-    expect(parseFaClock('0:00')).toBe(0);
+    // What the field itself holds: digits only, the colon drawn for her.
+    expect(parseFaClock(clockDigits(faClock(tehranDayStart(20_000) + minute)))).toBe(minute);
+    expect(clockDigits('۱۴:۰۳')).toBe('1403');
+    for (const bad of ['۱۴', '930', '25:00', '14:60', '']) expect(parseFaClock(bad)).toBeNull();
+    expect(parseFaClock('0000')).toBe(0);
     expect(parseFaClock('۲۳:۵۹')).toBe((23 * 60 + 59) * 60_000);
   });
 });

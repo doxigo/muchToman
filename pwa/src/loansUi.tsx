@@ -13,7 +13,7 @@ import type { AssetType } from './catalog';
 import { CategoryIcon, hueCss } from './categoryIcon';
 import { currentEffective } from './data';
 import { useLedger } from './derived';
-import { faCompact, faDate, faDay, faHeld, faNumber, faSignedCompact, faWordsToman, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
+import { faCompact, faDay, faHeld, faNumber, faSignedCompact, faWeekdayDate, faWordsToman, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
 import { AssetIcon } from './homeSheets';
 import { Chevron, PersonMark, PlusMark } from './icons';
 import { tomanFieldToRial } from './installments';
@@ -379,6 +379,10 @@ function unitChoices(owed: Iterable<string>): string[] {
 }
 
 const UNREADABLE = 'این عدد قابل خوندن نیست. فقط عدد وارد کن.';
+const NO_NAME = 'اسمش رو بنویس.';
+const NO_ONE = 'یه نفر رو انتخاب کن.';
+/** A blank amount, in the field's own word: Toman is a sum of money, a coin or a gram is not. */
+const noAmountFa = (unit: string): string => (unit ? 'مقدارش رو بنویس.' : 'مبلغش رو بنویس.');
 
 /** The unit chips and the amount under them, the unit's own word at the field's end. */
 function UnitAmount({ units, unit, onUnit, text, onText, error }: {
@@ -426,6 +430,8 @@ function PersonSheet({ id }: { id?: string }) {
   const [unit, setUnit] = useState('');
   const [text, setText] = useState('');
   const [promise, setPromise] = useState<number | null>(editing?.promise ?? null);
+  // Raised by a save tap that could not save: from then on every blank answer says so.
+  const [tried, setTried] = useState(false);
   if (id != null && editing == null) return null;
 
   const carried = editing ? null : parseMove(unit, text);
@@ -434,6 +440,10 @@ function PersonSheet({ id }: { id?: string }) {
   const picked = PROMISES.find((c) => promiseDay(c, today) === promise) ?? 'CUSTOM';
 
   const save = () => {
+    // The commit never greys out — a dead button explains nothing — so a tap that cannot save raises
+    // the words under whatever is missing. Focus lets go first: the keyboard was covering them.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
     if (!ready) return;
     if (editing) return close(() => editLoanPerson(editing.id, name, promise));
     const sign = opening === 'OWED' ? 1 : -1;
@@ -453,13 +463,15 @@ function PersonSheet({ id }: { id?: string }) {
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
       <div style={{ marginTop: 'var(--l)' }}>
-        <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} autoFocus={!editing} />
+        <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} autoFocus={!editing}
+          error={tried && name.trim() === '' ? NO_NAME : null} />
       </div>
       {!editing && (
         <>
           <SheetLabel>کی بدهکاره؟</SheetLabel>
           <SegmentedChoice options={OPENINGS} selected={opening} label={(o) => OPENING_FA[o]} onSelect={setOpening} fontSize={14} />
-          <UnitAmount units={unitChoices([])} unit={unit} onUnit={setUnit} text={text} onText={setText} error={null} />
+          <UnitAmount units={unitChoices([])} unit={unit} onUnit={setUnit} text={text} onText={setText}
+            error={tried && text.trim() === '' ? noAmountFa(unit) : null} />
         </>
       )}
       <SheetLabel>قرار پس دادن</SheetLabel>
@@ -469,12 +481,12 @@ function PersonSheet({ id }: { id?: string }) {
         // Not DayStepper: a promise is a day to come, and that one stops at today.
         <div class="day-stepper" style={{ marginTop: 'var(--m)' }}>
           <button type="button" class="pill" onClick={() => setPromise(promise - 1)}>روز قبل</button>
-          <div class="grow" aria-live="polite"><div class="day-main">{faDate(promise)}</div></div>
+          <div class="grow" aria-live="polite"><div class="day-main">{faWeekdayDate(promise)}</div></div>
           <button type="button" class="pill" onClick={() => setPromise(promise + 1)}>روز بعد</button>
         </div>
       )}
       <div class="sheet-actions">
-        <PillButton voice="primary" block label="ذخیره" disabled={!ready} onClick={save} />
+        <PillButton voice="primary" block label="ذخیره" onClick={save} />
       </div>
       {editing && <SheetDelete label="پاک کردن حساب" onConfirmed={remove} />}
     </Sheet>
@@ -495,6 +507,8 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
   const [unit, setUnit] = useState(!typeId || typeId === TOMAN_ID ? '' : typeId);
   const [text, setText] = useState('');
   const [moveHolding, setMoveHolding] = useState(true);
+  // Raised by a save tap that could not save: from then on every blank answer says so.
+  const [tried, setTried] = useState(false);
   const person = views.find((v) => v.person.id === who) ?? null;
   useGone(personId != null && person == null, close);
   if (personId != null && person == null) return null;
@@ -510,6 +524,8 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
   const ready = parsed != null && !over && (person != null || (who === NEW && newName.trim() !== ''));
 
   const save = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
     if (!ready || parsed == null) return;
     batch(() => {
       const target = person?.person.id ?? addLoanPerson(newName, null, null);
@@ -526,22 +542,25 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
           <SheetLabel>به کی؟</SheetLabel>
           <ChipChoice options={[...views.map((v) => v.person.id), NEW]} selected={who}
             label={(o) => (o === NEW ? '+ یه نفر تازه' : views.find((v) => v.person.id === o)?.person.name ?? '')} onSelect={setWho} />
+          {tried && person == null && who !== NEW && <p class="grid-error" role="status">{NO_ONE}</p>}
           {who === NEW && (
             <div style={{ marginTop: 'var(--m)' }}>
-              <TextField label="اسم" value={newName} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setNewName(v.slice(0, MAX_LOAN_NAME))} />
+              <TextField label="اسم" value={newName} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setNewName(v.slice(0, MAX_LOAN_NAME))}
+                error={tried && newName.trim() === '' ? NO_NAME : null} />
             </div>
           )}
         </>
       )}
       <UnitAmount units={unitChoices(person?.units.keys() ?? [])} unit={unit} onUnit={setUnit} text={text} onText={setText}
-        error={over ? `توی دارایی‌هات فقط ${loanAmountFa(typeOf(unit || TOMAN_ID), holding!.amount)} هست.` : null} />
+        error={over ? `توی دارایی‌هات فقط ${loanAmountFa(typeOf(unit || TOMAN_ID), holding!.amount)} هست.`
+          : tried && text.trim() === '' ? noAmountFa(unit) : null} />
       {switchShown && (
         <div style={{ marginTop: 'var(--s)' }}>
           <SwitchRow title={giving ? 'از دارایی‌هام کم کن' : 'به دارایی‌هام اضافه کن'} checked={moveHolding} onChange={setMoveHolding} />
         </div>
       )}
       <div class="sheet-actions">
-        <PillButton voice="primary" block label="ثبت" disabled={!ready} onClick={save} />
+        <PillButton voice="primary" block label="ثبت" onClick={save} />
       </div>
     </Sheet>
   );
@@ -587,6 +606,8 @@ function LinkSheet({ txnRef }: { txnRef: string }) {
   const [picked, setPicked] = useState<string | null>(current);
   const [fresh, setFresh] = useState(views.length === 0);
   const [name, setName] = useState('');
+  // Raised by a save tap that could not save: from then on every blank answer says so.
+  const [tried, setTried] = useState(false);
   useGone(entry == null, close);
   if (!entry) return null;
 
@@ -594,8 +615,11 @@ function LinkSheet({ txnRef }: { txnRef: string }) {
   const title = entry.txn.direction === 'in' ? 'این پول رو کی داد؟' : 'این پول رو به کی دادی؟';
   const amount = entry.txn.amountRial != null ? [`${faCompact(tomanOf(entry.txn.amountRial))} تومان`] : [];
   const save = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
     if (fresh) { if (name.trim()) close(() => addLoanPersonFrom(entry, name)); }
-    else if (picked != null && picked !== current) close(() => setLoanLink(entry, picked));
+    // The person it is already linked to, picked again, is nothing to write: the sheet just closes.
+    else if (picked != null) close(() => { if (picked !== current) setLoanLink(entry, picked); });
   };
 
   return (
@@ -622,14 +646,15 @@ function LinkSheet({ txnRef }: { txnRef: string }) {
           })}
         </div>
       )}
+      {tried && !fresh && picked == null && <p class="grid-error" role="status">{NO_ONE}</p>}
       {fresh && (
         <div style={{ marginTop: 'var(--m)' }}>
-          <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} onEnter={save} />
+          <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} onEnter={save}
+            error={tried && name.trim() === '' ? NO_NAME : null} />
         </div>
       )}
       <div class="sheet-actions">
-        <PillButton voice="primary" block label={fresh ? 'ساختن و وصل کردن' : 'ثبت'} onClick={save}
-          disabled={fresh ? name.trim() === '' : picked == null || picked === current} />
+        <PillButton voice="primary" block label={fresh ? 'ساختن و وصل کردن' : 'ثبت'} onClick={save} />
         {!fresh && <PillButton block label="+ یه نفر تازه" onClick={() => setFresh(true)} />}
         {current != null && <PillButton block label="جداش کن" onClick={() => close(() => setLoanLink(entry, null))} />}
       </div>

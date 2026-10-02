@@ -132,7 +132,7 @@ export function NotifyBlockedCard({ what, onAsk = askNotify }: { what: string; o
       <p class="notify-what">{what}</p>
       {/* A browser with no notification API has nothing to ask; the sentence still stands. */}
       {typeof Notification !== 'undefined' && (
-        <button type="button" class="notify-ask" onClick={() => onAsk()}>روشن کردن اعلان</button>
+        <div class="mt-s"><PillButton voice="primary" label="روشن کردن اعلان" onClick={() => onAsk()} /></div>
       )}
     </div>
   );
@@ -471,6 +471,8 @@ function BudgetSheet({ id }: { id?: string }) {
   // A month: what her salary, her rent and every bill already run on.
   const [period, setPeriod] = useState<BudgetPeriod>(editing?.period ?? BudgetPeriod.MONTH);
   const [amount, setAmount] = useState(editing ? rialToField(editing.capRial) : '');
+  // Raised by a save tap that could not save: from then on every blank answer says so.
+  const [tried, setTried] = useState(false);
   if (id != null && editing == null) return null;
 
   const capRial = tomanFieldToRial(amount);
@@ -487,9 +489,12 @@ function BudgetSheet({ id }: { id?: string }) {
   const title = editing ? 'ویرایش بودجه' : 'بودجهٔ تازه';
 
   const save = () => {
-    if (capRial == null) return;
+    // Never dimmed — a dead button explains nothing — so a tap that cannot save raises the words under
+    // whatever is missing. Focus lets go first: the keyboard was covering them. A clash is already said.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
+    if (capRial == null || !chosen || conflicts.length > 0) return;
     if (editing) return close(synced(paired, () => editBudget(editing.goal.id, period, capRial, shared)));
-    if (!wantsTotal && picked == null) return;
     close(synced(paired, () => addBudget(wantsTotal ? null : picked, period, capRial, shared)));
   };
 
@@ -518,6 +523,8 @@ function BudgetSheet({ id }: { id?: string }) {
             <CategoryGrid categories={spending.filter((c) => c.id !== CAT_TRANSFER)} selected={picked?.id ?? null}
               onSelect={(c) => { setPicked(c); setWantsTotal(false); }} selectedLabel="انتخاب‌شده" />
           </div>
+          {/* The grid cannot flag itself the way a field does, so a refused save's words live under it. */}
+          {tried && !chosen && <p class="grid-error" role="status">کل خرج یا یه دسته رو انتخاب کن.</p>}
         </>
       )}
 
@@ -526,19 +533,19 @@ function BudgetSheet({ id }: { id?: string }) {
 
       <SheetLabel>سقف خرج، به تومان</SheetLabel>
       <AmountField label="مثلاً ۵ میلیون" ariaLabel="سقف خرج به تومان" raw={amount} onRaw={setAmount} decimals={1}
-        error={amount.trim() !== '' && capRial == null ? UNREADABLE : null} />
+        error={amount.trim() === '' ? (tried ? 'سقفش رو بنویس.' : null) : capRial == null ? UNREADABLE : null} />
 
       {paired && <WhoseChoice shared={shared} wasShared={editing?.shared === true} onChange={setShared} />}
 
       {chosen && conflicts.length > 0 && (
         <>
-          <p class="plan-conflict">
+          <p class="plan-conflict" role="status">
             {'برای همین دسته، دوره و افراد، بودجهٔ دیگه‌ای هست: ' +
               conflicts.map((g) => faCompact(tomanOf(g.targetRial))).join('، ') +
               ' تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.'}
           </p>
           {editing && period === editing.period && shared === editing.shared && (
-            // Error ink: the way out of the clash deletes the other budgets.
+            // Error ink: the way out of the clash deletes the other budgets. A block: the label is a sentence.
             <div class="mt-m">
               <PillButton voice="danger" block label={`فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن`}
                 onClick={() => close(synced(paired, () => keepBudget(editing.goal.id)))} />
@@ -546,9 +553,8 @@ function BudgetSheet({ id }: { id?: string }) {
           )}
         </>
       )}
-      <div class="plan-save">
-        <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره بودجه'}
-          disabled={!(chosen && capRial != null && conflicts.length === 0)} onClick={save} />
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره بودجه'} onClick={save} />
       </div>
       {editing && <SheetDelete label="حذف این بودجه" onConfirmed={() => close(synced(paired, () => deleteGoal(editing.goal.id)))} />}
     </Sheet>
@@ -573,6 +579,8 @@ function GoalSheet({ id }: { id?: string }) {
   const [name, setName] = useState(editing?.goal.nameFa ?? '');
   const [amount, setAmount] = useState(editing ? rialToField(editing.targetRial) : '');
   const [horizon, setHorizon] = useState<GoalHorizon | null>(editing ? null : GoalHorizon.HALF);
+  // Raised by a save tap that could not save, as in BudgetSheet.
+  const [tried, setTried] = useState(false);
   if (id != null && editing == null) return null;
 
   const targetRial = tomanFieldToRial(amount);
@@ -581,6 +589,9 @@ function GoalSheet({ id }: { id?: string }) {
   const deadline = horizon != null ? horizon.endsOn(tehranDay(Date.now())) : editing?.goal.endsOn ?? null;
   const title = editing ? 'ویرایش هدف' : 'هدف تازه';
   const save = () => {
+    // Never dimmed: a tap that cannot save says why, as BudgetSheet's does.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
     if (targetRial == null || name.trim() === '') return;
     if (editing) close(synced(paired, () => editGoal(editing.goal.id, name.trim(), targetRial, horizon, shared)));
     else close(synced(paired, () => addGoal(name.trim(), targetRial, horizon ?? GoalHorizon.HALF, shared)));
@@ -590,10 +601,11 @@ function GoalSheet({ id }: { id?: string }) {
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
       <SheetLabel>هدفت چیه؟</SheetLabel>
-      <TextField label="مثلاً سفر، یا پیش‌پرداخت خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40} />
+      <TextField label="مثلاً سفر، یا پیش‌پرداخت خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
+        error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
       <SheetLabel>چقدر، به تومان</SheetLabel>
       <AmountField label="مبلغ هدف" ariaLabel="مبلغ هدف به تومان" raw={amount} onRaw={setAmount} decimals={1}
-        error={amount.trim() !== '' && targetRial == null ? UNREADABLE : null} />
+        error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : targetRial == null ? UNREADABLE : null} />
       <SheetLabel>تا کِی؟</SheetLabel>
       <SegmentedChoice<GoalHorizon | null> options={[...GOAL_HORIZONS]} selected={horizon} label={(h) => h?.fa ?? ''}
         onSelect={setHorizon} fontSize={14} />
@@ -601,9 +613,8 @@ function GoalSheet({ id }: { id?: string }) {
 
       {paired && <WhoseChoice shared={shared} wasShared={editing?.shared === true} onChange={setShared} />}
 
-      <div class="plan-save">
-        <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره هدف'}
-          disabled={name.trim() === '' || targetRial == null} onClick={save} />
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره هدف'} onClick={save} />
       </div>
       {editing && <SheetDelete label="حذف این هدف" onConfirmed={() => close(synced(paired, () => deleteGoal(editing.goal.id)))} />}
     </Sheet>
@@ -633,20 +644,29 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
   const paymentRial = tomanFieldToRial(amount);
   const count = wholeIn(countText, 1, MAX_INSTALLMENTS);
   const dayOfMonth = wholeIn(dayText, 1, 31);
-  const countBad = countText.trim() !== '' && count == null;
+  // Raised by a save tap that could not save, as in BudgetSheet.
+  const [tried, setTried] = useState(false);
+  const countBad = count == null && (tried || countText.trim() !== '');
   const first = firstDue ?? (dayOfMonth != null ? firstInstallmentDue(dayOfMonth, today) : null);
-  const ready = name.trim() !== '' && paymentRial != null && count != null && dayOfMonth != null;
-  const save = () => { if (ready) onSave(name.trim(), paymentRial!, count!, dayOfMonth!); };
+  const save = () => {
+    // Never dimmed: a tap that cannot save says why, as BudgetSheet's does.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
+    if (name.trim() === '' || paymentRial == null || count == null || dayOfMonth == null) return;
+    onSave(name.trim(), paymentRial, count, dayOfMonth);
+  };
 
   return (
     <Sheet onClose={onDismiss} label="قسط تازه">
       <SheetTitle>قسط تازه</SheetTitle>
       <SheetLabel>قسطِ چی؟</SheetLabel>
-      <TextField label="مثلاً گوشی، یا وام خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40} />
+      <TextField label="مثلاً گوشی، یا وام خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
+        error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
       <SheetLabel>هر قسط چقدره، به تومان</SheetLabel>
       <AmountField label="مبلغ هر قسط" ariaLabel="مبلغ هر قسط به تومان" raw={amount} onRaw={setAmount} decimals={1}
-        error={amount.trim() !== '' && paymentRial == null ? UNREADABLE : null} />
+        error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : paymentRial == null ? UNREADABLE : null} />
       <SheetLabel>{firstDue != null ? 'چند قسط، با همین یکی؟' : 'چند قسط مونده؟'}</SheetLabel>
+      {/* The range names the fix for a blank count as well as a wrong one. */}
       <TextField value={faDigits(countText)} onInput={(v) => setCountText(v.slice(0, 4))} inputMode="numeric"
         error={countBad ? `یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS)} بنویس.` : null}
         support={firstDue != null ? 'همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار.'
@@ -654,19 +674,21 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
       {firstDue == null && (
         <>
           <SheetLabel>چندمِ هر ماه سررسیده؟</SheetLabel>
-          <div class={dayText.trim() !== '' && dayOfMonth == null ? 'field-invalid' : ''}>
+          {/* Its words are the line under it, «یه روز بین ۱ و ۳۱.», whenever the day is not one. */}
+          <div class={dayOfMonth == null && (tried || dayText.trim() !== '') ? 'field-invalid' : ''}>
             <TextField value={faDigits(dayText)} onInput={(v) => setDayText(v.slice(0, 2))} inputMode="numeric" />
           </div>
         </>
       )}
-      {/* The two dates the answers imply, so a wrong count or day is caught before it is saved. */}
-      <SheetNote>
+      {/* The two dates the answers imply, so a wrong count or day is caught before it is saved. Announced
+          only while it is the day's refusal: the dates change with every digit of the count. */}
+      <SheetNote live={first == null}>
         {first == null ? 'یه روز بین ۱ و ۳۱.'
           : count == null ? `اولین سررسید: ${faDate(first)}`
           : `اولین سررسید ${faDate(first)}، آخری ${faDate(jalaliMonthsAfter(first, count - 1))}.`}
       </SheetNote>
-      <div class="plan-save">
-        <PillButton voice="primary" block label="ذخیره قسط" disabled={!ready} onClick={save} />
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label="ذخیره قسط" onClick={save} />
       </div>
     </Sheet>
   );
@@ -835,8 +857,10 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
       {offered.length === 0 ? (
         <>
           <p class="plan-first-plan">هنوز قسطی نساختی. اگه این پرداختِ یه قسط ماهانه‌ست، با همین بسازش تا ببینی چند تا مونده.</p>
-          <PillButton voice="primary" block label="ساختن قسط" onClick={() => setCreating(true)} />
-          <div class="mt-s"><PillButton block label="فعلاً نه" onClick={() => close()} /></div>
+          <div class="sheet-actions">
+            <PillButton voice="primary" block label="ساختن قسط" onClick={() => setCreating(true)} />
+            <PillButton block label="فعلاً نه" onClick={() => close()} />
+          </div>
         </>
       ) : (
         <>
@@ -855,8 +879,10 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
               );
             })}
           </div>
-          <div class="mt-l"><PillButton block label="+ قسط تازه با همین پرداخت" onClick={() => setCreating(true)} /></div>
-          {current && <div class="mt-s"><PillButton block label="از قسط جداش کن" onClick={() => link(null)} /></div>}
+          <div class="sheet-actions">
+            <PillButton block label="+ قسط تازه با همین پرداخت" onClick={() => setCreating(true)} />
+            {current && <PillButton block label="از قسط جداش کن" onClick={() => link(null)} />}
+          </div>
         </>
       )}
     </Sheet>
@@ -894,10 +920,8 @@ export function WorthItCard({ entry, onAnswer, class: cls = '' }: { entry: Ledge
       {entry.txn.amountRial != null && <p class="figure worth-amount">{bidi(`${faCompact(tomanOf(entry.txn.amountRial))} تومان`)}</p>}
       <p class="worth-ask">ارزش داشت؟</p>
       <div class="worth-answers">
-        {WORTH_IT_ANSWERS.map(([label, value]) => (
-          // 48px as a floor only: answered one-handed or not at all, and a large font must not clip.
-          <button type="button" key={value} onClick={() => onAnswer(value)}>{label}</button>
-        ))}
+        {/* Three routine answers, so three equal cells of one row — none of them is the commit. */}
+        {WORTH_IT_ANSWERS.map(([label, value]) => <PillButton key={value} label={label} onClick={() => onAnswer(value)} />)}
       </div>
     </Panel>
   );

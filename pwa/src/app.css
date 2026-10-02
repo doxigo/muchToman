@@ -185,7 +185,7 @@ h1, h2, h3 { margin: 0; }
 .pill.armed { background: var(--error); color: var(--on-error); }
 /* A sentence — an armed consequence, a long block label — wraps rather than running off the pill. */
 .pill.block, .pill.armed { white-space: normal; text-wrap: balance; }
-.pill:disabled { opacity: .45; cursor: default; transform: none; }
+.pill:disabled { opacity: .38; cursor: default; transform: none; }
 .sheet-delete { margin-top: var(--s); }
 
 .segmented { display: flex; background: var(--surface-container); border-radius: var(--r-pill); padding: var(--xs); }
@@ -252,8 +252,8 @@ h1, h2, h3 { margin: 0; }
 .tabbar .badge { position: absolute; top: -4px; inset-inline-end: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--cta-fill); color: var(--cta-ink); font-size: 10px; font-weight: 800; line-height: 16px; text-align: center; }
 
 /* ---- the undo band ------------------------------------------------------------------------------ */
-.notice { position: fixed; inset-inline: var(--edge); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 50; max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: var(--m); padding: var(--m) var(--l); border-radius: var(--r-card); background: var(--on-surface); color: var(--surface); font-size: 14px; animation: rise var(--medium) var(--enter); }
-.notice .pill { background: var(--primary-container); color: var(--on-primary-container); min-height: 36px; }
+/* Notices (Ui.kt NoticeBand): a band on the raised surface with a hairline, its one act the CTA pill. */
+.notice { position: fixed; inset-inline: var(--edge); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 50; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: var(--m); padding: var(--m) var(--l); border: 1px solid var(--outline-variant); border-radius: var(--r-group); background: var(--surface-high); color: var(--on-surface); font-size: 14px; font-weight: 600; line-height: 22px; animation: rise var(--medium) var(--enter); }
 .notice.over-page { bottom: calc(var(--l) + env(safe-area-inset-bottom)); }
 
 /* ---- empty states & bits ------------------------------------------------------------------------ */

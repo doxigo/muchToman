@@ -190,7 +190,10 @@ export function TextField({ label, value, onInput, placeholder, maxLength, ltr, 
         {multiline ? <textarea {...common} /> : <input {...common} type={type ?? 'text'} dir={ltr ? 'ltr' : undefined} />}
         {label && <span class="label">{label}</span>}
       </label>
-      {(error || support) && <div class={`field-support${error ? ' error' : ''}`}>{error || support}</div>}
+      {/* Its own node, keyed, so the error arrives as a status and is announced — a support line
+          changing in place under a field is read only if she goes looking for it. */}
+      {error ? <div key="error" class="field-support error" role="status">{error}</div>
+        : support && <div key="support" class="field-support">{support}</div>}
     </div>
   );
 }
@@ -243,7 +246,9 @@ export function AmountField({ label, raw, onRaw, decimals = 0, error, words = tr
           onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }} />
         {label && <span class="label">{label}</span>}
       </label>
-      <div class={`field-support${error ? ' error' : ''}`}>{error || spelled || ''}</div>
+      {/* The words change with every keystroke and stay quiet; the error is its own announced node. */}
+      {error ? <div key="error" class="field-support error" role="status">{error}</div>
+        : <div key="words" class="field-support">{spelled || ''}</div>}
     </div>
   );
 }

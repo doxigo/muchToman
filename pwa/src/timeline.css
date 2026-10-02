@@ -9,9 +9,12 @@
 }
 .ledger-head { display: flex; align-items: center; gap: var(--s); padding: var(--m) 0; }
 .ledger-head .screen-title { flex: 1; }
-.ledger-pill { min-height: 48px; font-size: 14px; flex: none; }
-.ledger-pill.add { background: var(--surface-container); gap: var(--xs); }
+/* The chips' neutral well at 48px, as Timeline.kt draws them and as the search disc wears it — not the tonal wash. */
+.pill.ledger-pill { min-height: 48px; flex: none; background: var(--surface-container); }
+.ledger-pill.add { gap: var(--xs); }
 .ledger-pill.active { background: var(--primary); color: var(--on-primary); }
+/* The review pill: the title line's 48px family in the CTA fill (ReviewPill, Timeline.kt). */
+.pill.ledger-pill.primary { background: var(--cta-fill); color: var(--cta-ink); }
 /* Four things want the title line and a narrow phone has room for three and a half: the words on
    the add pills yield first — «پیامک» before «تراکنش», which the phone keeps longest — leaving
    square discs; the review count never goes. */
@@ -99,12 +102,9 @@
 .deck { padding-bottom: 0; }
 .deck-question { margin-top: var(--xl); font-size: 18px; font-weight: 700; color: var(--on-bg); }
 .deck-foot { position: sticky; bottom: 0; display: flex; gap: var(--s); margin: 0 calc(-1 * var(--edge)); padding: var(--s) var(--edge) calc(var(--m) + env(safe-area-inset-bottom)); background: var(--bg); }
-.deck-answer { flex: 1; min-height: 52px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); font-size: 15px; font-weight: 700; transition: transform var(--fast) var(--enter); }
-.deck-answer:active { transform: scale(.97); }
-.deck-answer.primary { background: var(--cta-fill); color: var(--cta-ink); }
-.deck-answer.secondary { background: var(--surface-variant); color: var(--on-surface); }
+.deck-foot > .pill { flex: 1; }
 /* Not a surface of its own: it is the answer that changes nothing, and a fill would promise it does. */
-.deck-answer.quiet { background: transparent; color: var(--on-surface-variant); font-weight: 500; }
+.pill.skip-answer { background: transparent; color: var(--on-surface-variant); font-weight: 500; }
 
 .deck-done { display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: calc(var(--m) + env(safe-area-inset-bottom)); }
 .deck-done-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
@@ -114,7 +114,6 @@
 .done-share { width: 100%; margin-top: var(--xxl); padding: var(--xl); border-radius: var(--r-group); background: var(--surface-variant); }
 .done-share .figure { display: block; font-size: 36px; font-weight: 900; color: var(--on-surface); }
 .done-share p { margin-top: var(--xs); font-size: 13px; line-height: 21px; }
-.done-back { min-height: 56px; font-size: 16px; }
 
 .autofile-lines { margin-top: var(--l); padding: var(--s) var(--l); border-radius: var(--r-field); background: var(--surface-variant); }
 .autofile-line { display: flex; align-items: center; gap: var(--m); padding: var(--s) 0; font-size: 14px; line-height: 22px; color: var(--on-surface); }

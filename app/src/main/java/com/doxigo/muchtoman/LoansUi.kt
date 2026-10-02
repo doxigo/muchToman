@@ -27,8 +27,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,9 +52,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -447,9 +448,8 @@ internal fun LoanPersonScreen(
                 PillButton(
                     primary.first, { onMove(primary.second) }, Modifier.weight(1f),
                     voice = if (view.side == LoanSide.SETTLED) ButtonVoice.TONAL else ButtonVoice.PRIMARY,
-                    minHeight = 48.dp,
                 )
-                PillButton(second.first, { onMove(second.second) }, Modifier.weight(1f), minHeight = 48.dp)
+                PillButton(second.first, { onMove(second.second) }, Modifier.weight(1f))
             }
 
             if (view.side != LoanSide.SETTLED) {
@@ -704,31 +704,34 @@ private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The sheet's one commit, in [Cta] green and dimmed until the answers make sense — the installment
- * sheet's own save button, so every sheet in آینده commits the same way.
+ * The sheet's one commit, in [Cta] green and never dimmed: a dead button explains nothing, so a
+ * tap that cannot save yet raises the words under whatever is missing instead.
  */
 @Composable
-private fun CommitButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(Radius.pill),
-        colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-    ) { Text(label, fontWeight = FontWeight.Bold) }
+private fun CommitButton(label: String, onClick: () -> Unit) {
+    PillButton(label, onClick, Modifier.fillMaxWidth(), voice = ButtonVoice.PRIMARY, block = true)
 }
 
 /** A quieter full-width answer under the commit. */
 @Composable
 private fun SheetPill(label: String, onClick: () -> Unit) {
-    PillButton(label, onClick, Modifier.fillMaxWidth().padding(top = Space.s), fontSize = 16.sp, minHeight = 52.dp)
+    PillButton(label, onClick, Modifier.fillMaxWidth().padding(top = Space.s), block = true)
 }
+
+/** A blank amount, in the field's own word: Toman is a sum of money, a coin or a gram is not. */
+private fun missingAmountFa(unit: String): String = if (unit.isBlank()) "مبلغش رو بنویس." else "مقدارش رو بنویس."
 
 /** The amount field for a unit: Toman for cash, the asset's own unit otherwise. */
 @Composable
 private fun AmountField(unit: String, text: String, onText: (String) -> Unit, type: (String) -> AssetType, error: String?) {
     val cash = unit.isBlank()
     val rial = if (cash) tomanFieldToRial(text) else null
+    // A figure that does not read says so itself: the commit no longer dims over it.
+    val shown = error ?: if (text.isNotBlank() && (if (cash) rial == null else unitAmount(text) == null)) {
+        "این عدد قابل خوندن نیست. فقط عدد وارد کن."
+    } else {
+        null
+    }
     OutlinedTextField(
         value = text,
         onValueChange = onText,
@@ -736,9 +739,9 @@ private fun AmountField(unit: String, text: String, onText: (String) -> Unit, ty
         singleLine = true,
         visualTransformation = GroupedNumber,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        isError = error != null,
+        isError = shown != null,
         supportingText = when {
-            error != null -> ({ Text(error) })
+            shown != null -> ({ FieldError(shown) })
             rial != null -> ({ Text(faWordsToman(tomanOf(rial)).orEmpty()) })
             else -> null
         },
@@ -766,6 +769,7 @@ internal fun LoanPersonSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     val today = remember { tehranDay(System.currentTimeMillis()) }
@@ -779,6 +783,8 @@ internal fun LoanPersonSheet(
     val units = remember(holdings) { loanUnits(null, holdings, null, type) }
     val amount = if (unit.isBlank()) null else unitAmount(amountText)
     val openingOk = person != null || rial != null || amount != null
+    // Raised by a save tap that could not save: from then on every blank answer says so.
+    var tried by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -802,6 +808,8 @@ internal fun LoanPersonSheet(
                 onValueChange = { name = it.take(MAX_LOAN_NAME) },
                 label = { Text("مثلاً مهدی، یا خاله مریم") },
                 singleLine = true,
+                isError = tried && name.isBlank(),
+                supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -818,14 +826,18 @@ internal fun LoanPersonSheet(
                 Spacer(Modifier.height(Space.m))
                 UnitChips(units, unit, type) { unit = it; amountText = "" }
                 Spacer(Modifier.height(Space.m))
-                AmountField(unit, amountText, { amountText = it }, type, null)
+                AmountField(unit, amountText, { amountText = it }, type, missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
             }
 
             SheetLabel("قرار پس دادن")
             PromisePicker(promise, today) { promise = it }
 
             Spacer(Modifier.height(Space.xl))
-            CommitButton("ذخیره", enabled = name.isNotBlank() && openingOk) {
+            CommitButton("ذخیره") {
+                // Focus lets go first: the keyboard was covering the words the tap raises.
+                focus.clearFocus()
+                tried = true
+                if (name.isBlank() || !openingOk) return@CommitButton
                 val carried = when {
                     person != null -> null
                     unit.isBlank() -> rial?.let { LoanMove(id = "", personId = "", rial = if (opening == 1) it else -it, day = today) }
@@ -861,7 +873,7 @@ private fun PromisePicker(promise: Long?, today: Long, onPromise: (Long?) -> Uni
     }
     if (promise != null) {
         Row(Modifier.padding(top = Space.m), verticalAlignment = Alignment.CenterVertically) {
-            PillButton("روز قبل", { onPromise(promise - 1) }, fontSize = 12.sp, minHeight = 40.dp)
+            PillButton("روز قبل", { onPromise(promise - 1) })
             Text(
                 faWeekdayDate(promise),
                 fontWeight = FontWeight.Bold,
@@ -869,7 +881,7 @@ private fun PromisePicker(promise: Long?, today: Long, onPromise: (Long?) -> Uni
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            PillButton("روز بعد", { onPromise(promise + 1) }, fontSize = 12.sp, minHeight = 40.dp)
+            PillButton("روز بعد", { onPromise(promise + 1) })
         }
     }
 }
@@ -892,6 +904,7 @@ internal fun LoanMoveSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     var who by rememberSaveable { mutableStateOf(person?.person?.id) }
@@ -909,6 +922,8 @@ internal fun LoanMoveSheet(
     val short = giving && moveHolding && holding != null && amount != null && amount > holding.amount + 1e-9
     val error = if (short) "توی دارایی‌هات فقط ${loanAmountFa(type(holding.typeId), holding.amount)} هست." else null
     val hasWho = person != null || who != null || (naming && newName.isNotBlank())
+    // Raised by a save tap that could not save: from then on every blank answer says so.
+    var tried by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -943,6 +958,7 @@ internal fun LoanMoveSheet(
                     people.forEach { v -> Chip(v.person.name, !naming && who == v.person.id) { who = v.person.id; naming = false } }
                     Chip("+ یه نفر تازه", naming) { naming = true; who = null }
                 }
+                if (tried && !naming && who == null) MissingText("یه نفر رو انتخاب کن.")
                 if (naming) {
                     Spacer(Modifier.height(Space.m))
                     OutlinedTextField(
@@ -950,6 +966,8 @@ internal fun LoanMoveSheet(
                         onValueChange = { newName = it.take(MAX_LOAN_NAME) },
                         label = { Text("اسم") },
                         singleLine = true,
+                        isError = tried && newName.isBlank(),
+                        supportingText = if (tried && newName.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                         shape = RoundedCornerShape(Radius.field),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -959,7 +977,7 @@ internal fun LoanMoveSheet(
             SheetLabel("چی؟")
             UnitChips(units, unit, type) { unit = it; amountText = "" }
             Spacer(Modifier.height(Space.m))
-            AmountField(unit, amountText, { amountText = it }, type, error)
+            AmountField(unit, amountText, { amountText = it }, type, error ?: missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
 
             if (offerHolding) {
                 Row(
@@ -982,7 +1000,10 @@ internal fun LoanMoveSheet(
             }
 
             Spacer(Modifier.height(Space.l))
-            CommitButton("ثبت", enabled = hasWho && amount != null && !short) {
+            CommitButton("ثبت") {
+                focus.clearFocus()
+                tried = true
+                if (!hasWho || amount == null || short) return@CommitButton
                 close {
                     onSave(
                         person?.person?.id ?: who.takeIf { !naming },
@@ -1017,12 +1038,15 @@ internal fun LoanLinkSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
     val delta = loanLinkRial(entry) ?: 0L
     var picked by rememberSaveable(entry.txn.ref) { mutableStateOf(current) }
     var naming by rememberSaveable(entry.txn.ref) { mutableStateOf(views.isEmpty()) }
     var name by rememberSaveable(entry.txn.ref) { mutableStateOf("") }
+    // Raised by a save tap that could not save: from then on every blank answer says so.
+    var tried by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1080,6 +1104,7 @@ internal fun LoanLinkSheet(
                     }
                 }
             }
+            if (tried && !naming && picked == null) MissingText("یه نفر رو انتخاب کن.")
             if (naming) {
                 Spacer(Modifier.height(Space.s))
                 OutlinedTextField(
@@ -1087,18 +1112,23 @@ internal fun LoanLinkSheet(
                     onValueChange = { name = it.take(MAX_LOAN_NAME) },
                     label = { Text("اسمش چیه؟") },
                     singleLine = true,
+                    isError = tried && name.isBlank(),
+                    supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                     shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
 
             Spacer(Modifier.height(Space.l))
-            CommitButton(
-                if (naming) "ساختن و وصل کردن" else "ثبت",
-                enabled = if (naming) name.isNotBlank() else picked != null && picked != current,
-            ) {
+            CommitButton(if (naming) "ساختن و وصل کردن" else "ثبت") {
+                focus.clearFocus()
+                tried = true
+                val unanswered = if (naming) name.isBlank() else picked == null
+                if (unanswered) return@CommitButton
+                // The person it is already linked to, picked again, is nothing to write: the
+                // answer stands, and the sheet just closes.
                 close {
-                    if (naming) onCreate(name.trim()) else onLink(picked)
+                    if (naming) onCreate(name.trim()) else if (picked != current) onLink(picked)
                     onDismiss()
                 }
             }

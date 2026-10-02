@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -42,9 +41,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -151,8 +153,7 @@ fun CategoriesScreen(
                     { adding = true },
                     voice = ButtonVoice.PRIMARY,
                     modifier = Modifier.fillMaxWidth(),
-                    fontSize = 16.sp,
-                    minHeight = 56.dp,
+                    block = true,
                 )
             }
         }
@@ -212,15 +213,7 @@ private fun CategoryRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = Space.m).weight(1f),
             )
-            // This pill draws at 40dp but is hit and announced at 48: Compose expands any
-            // smaller clickable to the minimum touch target. Growing its layout instead would
-            // push every row 4dp taller for a target the finger already has.
-            PillButton(
-                if (category.archived) "برگردون" else "ویرایش",
-                onAction,
-                fontSize = 13.sp,
-                minHeight = 40.dp,
-            )
+            PillButton(if (category.archived) "برگردون" else "ویرایش", onAction)
         }
         if (divided) {
             HorizontalDivider(
@@ -274,6 +267,15 @@ fun CategorySheet(
     fun key(s: String) = faLetters(s).replace("‌", "").replace(" ", "").trim()
     val clash = draft.isNotBlank() && taken.any { key(it) == key(draft) }
     val usable = draft.isNotBlank() && !clash
+    // Raised by a save tap with no name: the clash speaks for itself as she types, a blank field
+    // only once she has asked for it to be saved.
+    var missingName by remember { mutableStateOf(false) }
+    val problem = when {
+        clash -> "یه دسته با همین اسم داری."
+        missingName && draft.isBlank() -> "اسمش رو بنویس."
+        else -> null
+    }
+    val focus = LocalFocusManager.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -302,7 +304,7 @@ fun CategorySheet(
                     }
                 },
                 singleLine = true,
-                isError = clash,
+                isError = problem != null,
                 placeholder = { Text("مثلاً باشگاه") },
                 shape = RoundedCornerShape(Radius.field),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -310,12 +312,14 @@ fun CategorySheet(
                     .fillMaxWidth()
                     .semantics { contentDescription = "اسم دسته" },
             )
-            if (clash) {
+            if (problem != null) {
                 Text(
-                    "یه دسته با همین اسم داری.",
+                    problem,
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = Space.s, start = Space.xs),
+                    modifier = Modifier
+                        .padding(top = Space.s, start = Space.xs)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
 
@@ -359,6 +363,10 @@ fun CategorySheet(
             PillButton(
                 if (editing != null) "ذخیره تغییرات" else "اضافه کن",
                 {
+                    // Never greyed: a tap that cannot save says why, with the keyboard out of the
+                    // way of the words.
+                    focus.clearFocus()
+                    missingName = draft.isBlank()
                     if (usable) {
                         val name = draft.trim()
                         close {
@@ -367,16 +375,16 @@ fun CategorySheet(
                         }
                     }
                 },
-                voice = if (usable) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
+                voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = 16.sp,
-                minHeight = 52.dp,
+                block = true,
             )
             Spacer(Modifier.height(Space.s))
             PillButton(
                 "انصراف",
                 { close(onDismiss) },
                 modifier = Modifier.fillMaxWidth(),
+                block = true,
             )
             if (editing != null) SheetDelete("حذف این دسته") { close { onDelete(); onDismiss() } }
         }

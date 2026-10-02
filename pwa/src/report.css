@@ -11,7 +11,6 @@
 .rp-s { margin-top: var(--s); }
 .rp-m { margin-top: var(--m); }
 .rp-l { margin-top: var(--l); }
-.rp-xl { margin-top: var(--xl); }
 .rp-xxl { margin-top: var(--xxl); }
 .rp-w600 { font-weight: 600; }
 .rp-w700 { font-weight: 700; }
@@ -122,7 +121,7 @@
 .rp-insight-head p { font-weight: 600; line-height: 26px; color: var(--on-surface); }
 .rp-dot { flex: none; width: 8px; height: 8px; border-radius: 4px; }
 .rp-insight-why { margin-top: var(--xs); font-size: 12px; line-height: 20px; color: var(--on-surface-variant); }
-.rp-insight-action { display: inline-flex; align-items: center; min-height: 48px; margin-top: var(--xs); padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--cta-fill); color: var(--cta-ink); font-size: 13px; font-weight: 700; }
+.rp-insight-action { margin-top: var(--xs); }
 
 /* ---- the drill-down sheet ---- */
 .rp-sheet-head { display: flex; align-items: center; gap: var(--m); }

@@ -104,7 +104,7 @@ export function App() {
           <div class={`notice${Page ? ' over-page' : ''}`} role="status" key={nav.notice.key}>
             <span class="grow">{nav.notice.text}</span>
             {nav.notice.action && (
-              <button type="button" class="pill" onClick={() => { nav.notice?.action?.run(); dismissNotice(); }}>{nav.notice.action.label}</button>
+              <button type="button" class="pill primary" onClick={() => { nav.notice?.action?.run(); dismissNotice(); }}>{nav.notice.action.label}</button>
             )}
           </div>
         )}

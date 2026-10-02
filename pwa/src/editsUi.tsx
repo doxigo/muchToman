@@ -41,6 +41,9 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
   const members = family.members;
 
   const save = (): void => {
+    // Never greyed: the field already says what is wrong with the figure, and the tap takes the
+    // keyboard off those words.
+    (document.activeElement as HTMLElement | null)?.blur();
     if (rial == null) return;
     editTxn(entry, rial !== txn.amountRial ? rial : null, day !== txn.day ? day : null,
       member !== entry.ownerMemberId && members.length > 1 ? member : null);
@@ -79,7 +82,7 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
       )}
 
       <div class="sheet-actions">
-        <PillButton label="ذخیره" voice={rial != null ? 'primary' : 'tonal'} block onClick={save} />
+        <PillButton label="ذخیره" voice="primary" block onClick={save} />
         {entry.edited && (
           <PillButton label={txn.ref.startsWith('s:') ? 'برگردون به عدد پیامک' : 'برگردون به عدد اول'} block
             onClick={() => { revertTxnEdits(entry); closeSheet(); }} />
@@ -103,6 +106,9 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
   const [amounts, setAmounts] = useState<string[]>(() =>
     entry?.split?.length ? entry.split.map((p) => rialToField(p.rial)) : ['', '']);
   const [picking, setPicking] = useState<number | null>(null);
+  // Raised by a save tap: a part with no category or no figure is only wrong once she has asked for
+  // the split to be saved — until then it is just not filled in yet.
+  const [missing, setMissing] = useState(false);
   if (!entry) return null;
 
   const total = entry.txn.amountRial ?? 0;
@@ -116,6 +122,10 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
   const setAt = <T,>(list: T[], i: number, v: T): T[] => list.map((x, j) => (j === i ? v : x));
 
   const save = (): void => {
+    // Never greyed: a tap that cannot save marks every part still missing something, with the
+    // keyboard out of the way of the words.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setMissing(true);
     if (!complete) return;
     const parts: SplitSpec = ids.map((id, i) => [id!, i === 0 ? firstRial : rest[i - 1]!]);
     splitTxn(entry, parts);
@@ -132,8 +142,9 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
           <SheetLabel>{i === 0 ? 'بخش اول، باقی مبلغ' : `بخش ${faNumber(i + 1)}`}</SheetLabel>
           <div class="row-flex">
             <div class="grow">
-              <PillButton label={id ? names.get(id) ?? 'دسته‌بندی نشده' : 'انتخاب دسته'} voice={id ? 'tonal' : 'primary'} block
-                onClick={() => setPicking(picking === i ? null : i)} />
+              <button type="button" class="pill wide" onClick={() => setPicking(picking === i ? null : i)}>
+                {id ? names.get(id) ?? 'دسته‌بندی نشده' : 'انتخاب دسته'}
+              </button>
             </div>
             {i > 0 && ids.length > 2 && (
               <PillButton label="حذف" voice="danger" onClick={() => {
@@ -141,6 +152,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
               }} />
             )}
           </div>
+          {missing && id == null && <p class="grid-error" role="status">دسته‌اش رو انتخاب کن.</p>}
           {picking === i && (
             <div style={{ marginTop: 'var(--m)' }}>
               <CategoryGrid categories={choices.filter((c) => c.id === id || !chosen.includes(c.id))} selected={id}
@@ -154,7 +166,9 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
               </p>
             ) : (
               <AmountField label="چقدر، به تومان" ariaLabel={`مبلغ بخش ${faNumber(i + 1)}`} raw={amounts[i]}
-                decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))} />
+                decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))}
+                error={!amounts[i].trim() ? (missing ? 'مبلغش رو بنویس.' : null)
+                  : rest[i - 1] == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
             )}
           </div>
         </div>
@@ -167,7 +181,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
       )}
 
       <div class="sheet-actions">
-        <PillButton label="ذخیره تقسیم" voice={complete ? 'primary' : 'tonal'} block onClick={save} />
+        <PillButton label="ذخیره تقسیم" voice="primary" block onClick={save} />
         {!!entry.split?.length && <PillButton label="یکی‌اش کن" block onClick={() => { splitTxn(entry, []); closeSheet(); }} />}
         <PillButton label="انصراف" block onClick={closeSheet} />
       </div>

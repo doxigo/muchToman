@@ -15,16 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -142,17 +138,13 @@ fun LockScreen(onUnlock: () -> Unit) {
                 color = Hero.muted,
             )
             Spacer(Modifier.height(Space.huge))
-            Button(
-                onClick = onUnlock,
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Cta.fill,
-                    contentColor = Cta.ink,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp),
-            ) { Text("باز کردن", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+            PillButton(
+                "باز کردن",
+                onUnlock,
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
         }
     }
 }

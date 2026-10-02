@@ -18,6 +18,9 @@ class ManualTxnTest {
         assertEquals("۱۴:۰۳", faClock(at))
         assertEquals(minute, parseFaClock("۱۴:۰۳"))
         assertEquals(minute, parseFaClock("14:03"))
+        // What the field itself holds: digits only, the colon drawn by the mask.
+        assertEquals(minute, parseFaClock(clockDigits(faClock(at))))
+        assertEquals("1403", clockDigits("۱۴:۰۳"))
     }
 
     @Test
@@ -25,6 +28,8 @@ class ManualTxnTest {
         // A lone hour is not accepted: guessing «:۰۰» silently is how a transaction lands at
         // the top of the day's band instead of where it happened.
         assertNull(parseFaClock("۱۴"))
+        // Three digits could be ۹:۳۰ or ۹۳:۰ half-typed; the field asks for all four.
+        assertNull(parseFaClock("930"))
         assertNull(parseFaClock("25:00"))
         assertNull(parseFaClock("14:60"))
         assertNull(parseFaClock(""))
@@ -32,7 +37,7 @@ class ManualTxnTest {
 
     @Test
     fun `midnight itself is a real time`() {
-        assertEquals(0L, parseFaClock("0:00"))
+        assertEquals(0L, parseFaClock("0000"))
         assertEquals((23 * 60L + 59) * 60_000L, parseFaClock("۲۳:۵۹"))
     }
 

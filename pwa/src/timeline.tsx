@@ -292,11 +292,7 @@ function TimelineScreen() {
           <ScreenTitle>دفتر</ScreenTitle>
           <AddTxnButton />
           <PasteButton />
-          {waiting > 0 && (
-            <button type="button" class="pill primary ledger-pill" onClick={() => openPage('deck')}>
-              {`مرور ${faNumber(waiting)} مورد`}
-            </button>
-          )}
+          {waiting > 0 && <button type="button" class="pill primary ledger-pill" onClick={() => openPage('deck')}>{`مرور ${faNumber(waiting)} مورد`}</button>}
         </div>
         {everything.length > 0 && (
           <>
@@ -527,7 +523,7 @@ function CategoryFilterSheet() {
       </div>
       <div class="sheet-actions">
         <PillButton label="بستن" voice="primary" block onClick={closeSheet} />
-        {selected.length > 0 && <button type="button" class="pill wide" onClick={() => { setCatFilter([]); closeSheet(); }}>پاک کردن فیلتر</button>}
+        {selected.length > 0 && <PillButton label="پاک کردن فیلتر" block onClick={() => { setCatFilter([]); closeSheet(); }} />}
       </div>
     </Sheet>
   );
@@ -824,8 +820,8 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       {/* The one answer that is always available does not scroll away. Beside it, while the
           backlog is real, the way out of the whole chore — behind a sheet that says what happens. */}
       <div class="deck-foot">
-        <button type="button" class="deck-answer quiet" onClick={onSkip}>بمونه برای بعد</button>
-        {left >= 5 && <button type="button" class="deck-answer secondary" onClick={onAutoFile}>خودکار برای همه</button>}
+        <button type="button" class="pill block skip-answer" onClick={onSkip}>بمونه برای بعد</button>
+        {left >= 5 && <PillButton label="خودکار برای همه" block onClick={onAutoFile} />}
       </div>
     </div>
   );
@@ -879,7 +875,7 @@ function DeckDone({ view, today }: { view: LedgerView; today: number }) {
           </div>
         )}
       </div>
-      <button type="button" class="pill primary wide done-back" onClick={closePage}>برگشت به دفتر</button>
+      <PillButton label="برگشت به دفتر" voice="primary" block onClick={closePage} />
     </div>
   );
 }
@@ -908,8 +904,8 @@ function AutoFileSheet({ skipped = [] }: { skipped?: string[] }) {
         هیچ قانونی ساخته نمی‌شه — هر کدوم رو بعداً می‌تونی از دفتر باز کنی و عوض کنی.
       </p>
       <div class="sheet-actions">
-        <button type="button" class="deck-answer primary" onClick={() => { categoriseAll(plan.assignments); closeSheet(); }}>دسته‌بندی کن</button>
-        <button type="button" class="deck-answer quiet" onClick={closeSheet}>انصراف</button>
+        <PillButton label="دسته‌بندی کن" voice="primary" block onClick={() => { categoriseAll(plan.assignments); closeSheet(); }} />
+        <PillButton label="انصراف" block onClick={closeSheet} />
       </div>
     </Sheet>
   );

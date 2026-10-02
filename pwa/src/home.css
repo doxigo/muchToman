@@ -148,9 +148,6 @@
 .toggle-row .grow > span + span { font-size: 12px; color: var(--on-surface-variant); }
 .toggle-row .switch { display: inline-block; }
 
-.save-btn.pill.block { min-height: 60px; font-size: 18px; margin-top: var(--xl); }
-.ring { width: 20px; height: 20px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 900ms linear infinite; }
-
 .bank-list { display: flex; flex-direction: column; gap: var(--s); padding: var(--l) 0 var(--xxl); }
 .bank-card { padding: var(--l); border-radius: var(--r-card); background: var(--surface); }
 .bank-card .top { display: flex; align-items: flex-start; gap: var(--s); }

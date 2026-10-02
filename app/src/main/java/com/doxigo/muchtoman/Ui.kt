@@ -75,11 +75,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -129,6 +126,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -2076,14 +2074,13 @@ private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Un
             }
 
             Spacer(Modifier.height(Space.xl))
-            Button(
-                onClick = { close { onClose(); openUrl(context, release.downloadUrl) } },
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp),
-            ) { Text("گرفتن فایل نصب", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            PillButton(
+                "گرفتن فایل نصب",
+                { close { onClose(); openUrl(context, release.downloadUrl) } },
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
 
             PillButton(
                 "بعداً",
@@ -2604,7 +2601,11 @@ private fun BankAccountRow(
     onOpenSms: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val focus = LocalFocusManager.current
     var draft by rememberSaveable(account.key) { mutableStateOf("") }
+    // Raised by a save tap with nothing typed: the field's own words only speak over a malformed
+    // figure, so an empty one was refused in silence.
+    var missingDraft by remember(account.key, fixing) { mutableStateOf(false) }
 
     Card(
         shape = RoundedCornerShape(Radius.card),
@@ -2704,9 +2705,19 @@ private fun BankAccountRow(
                     singleLine = true,
                     visualTransformation = GroupedNumber,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    supportingText = if (draft.isNotBlank() && parseAmount(draft) == null) ({
-                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                    }) else null,
+                    supportingText = when {
+                        draft.isBlank() && missingDraft -> ({
+                            Text(
+                                "مبلغش رو بنویس.",
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            )
+                        })
+                        draft.isNotBlank() && parseAmount(draft) == null -> ({
+                            Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
+                        })
+                        else -> null
+                    },
                     shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2731,10 +2742,15 @@ private fun BankAccountRow(
                     if (fixing) {
                         PillButton(
                             "ذخیره موجودی",
-                            { parseAmount(draft)?.let(onAnchor) },
+                            {
+                                // Never greyed out — a dead button explains nothing — so a tap
+                                // that cannot save says why, with the keyboard out of the way.
+                                focus.clearFocus()
+                                missingDraft = draft.isBlank()
+                                parseAmount(draft)?.let(onAnchor)
+                            },
                             Modifier.weight(1f),
                             voice = ButtonVoice.PRIMARY,
-                            enabled = parseAmount(draft) != null,
                         )
                     } else {
                         PillButton("اصلاح موجودی", onFix, Modifier.weight(1f))
@@ -3412,7 +3428,8 @@ internal enum class ButtonVoice {
  * answers and the tab badge already speak in, so a control wearing it is recognisable as one
  * before it is touched.
  *
- * [block] is the full-width answer at the foot of a sheet, a size up.
+ * [block] is the full-width answer at the foot of a sheet, a size up. There is no third size: a
+ * commit at 60dp over a «انصراف» at 44 is two apps arguing on one sheet.
  */
 @Composable
 internal fun PillButton(
@@ -3422,9 +3439,10 @@ internal fun PillButton(
     voice: ButtonVoice = ButtonVoice.TONAL,
     enabled: Boolean = true,
     block: Boolean = false,
-    fontSize: TextUnit = if (block) 16.sp else 14.sp,
-    minHeight: Dp = if (block) 52.dp else 44.dp,
 ) {
+    // Two sizes and no others (DESIGN.md § Buttons): every sheet once picked its own height.
+    val fontSize = if (block) 16.sp else 14.sp
+    val minHeight = if (block) 52.dp else 44.dp
     // A wash of ink rather than a fixed surface, so the pill stands off whatever it sits on.
     // surfaceVariant all but vanished on a card (1.08:1 on the light card colour), which is where
     // most of the in-place acts live. Forest in the light keeps the green whisper; the dark stays
@@ -3510,6 +3528,28 @@ internal fun ArmedButton(
         voice = if (armed) ButtonVoice.ARMED else voice,
         enabled = enabled,
         block = block,
+    )
+}
+
+/**
+ * A field's own error line, announced. A commit never greys out (DESIGN.md § Buttons): its tap
+ * raises this while the keyboard is going away, so it has to be heard as well as seen.
+ */
+@Composable
+internal fun FieldError(text: String) {
+    Text(text, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+}
+
+/** What a commit tap raises under a choice that cannot flag itself — a grid, a list of names. */
+@Composable
+internal fun MissingText(text: String) {
+    Text(
+        text,
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier
+            .padding(top = Space.s, start = Space.xs)
+            .semantics { liveRegion = LiveRegionMode.Polite },
     )
 }
 
@@ -3877,6 +3917,9 @@ private fun EditSheet(
     var nameFocusWanted by remember(key) { mutableStateOf(false) }
     var adjusting by rememberSaveable { mutableStateOf(false) }
     var deltaText by rememberSaveable { mutableStateOf("") }
+    // Why the last ＋ / − tap did nothing, until the field changes. Likewise for ذخیره نرخ.
+    var deltaRefusal by remember { mutableStateOf<String?>(null) }
+    var rateRefusal by remember { mutableStateOf<String?>(null) }
     var manualSubmitted by remember { mutableStateOf(false) }
     var walletAddress by rememberSaveable(key, linkedWallet?.address) {
         mutableStateOf(linkedWallet?.address.orEmpty())
@@ -3900,8 +3943,8 @@ private fun EditSheet(
     val previewRate = if (editingRate) typedRate ?: rate else rate
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
+    val focus = LocalFocusManager.current
     val amountFocus = remember { FocusRequester() }
-    val walletAddressFocus = remember { FocusRequester() }
     if (current == null && source == AmountSource.MANUAL) {
         LaunchedEffect(source) {
             delay(250) // let the sheet finish sliding in before the IME starts moving it
@@ -4101,11 +4144,12 @@ private fun EditSheet(
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 // A red outline is colour alone; the words say what to fix, and why ذخیره
-                // is not available yet.
+                // did not save. Announced, since a save tap is what usually raises them.
                 supportingText = if (amountInvalid) ({
                     Text(
                         if (text.isBlank()) "مقدار دارایی رو وارد کن."
                         else "این عدد قابل خوندن نیست. فقط عدد وارد کن.",
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }) else null,
                 shape = RoundedCornerShape(Radius.field),
@@ -4151,16 +4195,26 @@ private fun EditSheet(
                     val delta = typedDelta?.takeIf { parseAmount(trimNumber(it, type.dec)) == it }
                     OutlinedTextField(
                         value = deltaText,
-                        onValueChange = { deltaText = it },
+                        onValueChange = { deltaText = it; deltaRefusal = null },
                         singleLine = true,
                         visualTransformation = GroupedNumber,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        supportingText = if (typedDelta != null && delta == null) ({
-                            Text(
-                                if (type.dec == 0) "فقط عدد کامل وارد کن."
-                                else "حداکثر ${faNumber(type.dec.toDouble())} رقم اعشار وارد کن.",
-                            )
-                        }) else null,
+                        supportingText = when {
+                            typedDelta != null && delta == null -> ({
+                                Text(
+                                    if (type.dec == 0) "فقط عدد کامل وارد کن."
+                                    else "حداکثر ${faNumber(type.dec.toDouble())} رقم اعشار وارد کن.",
+                                )
+                            })
+                            deltaRefusal != null -> ({
+                                Text(
+                                    deltaRefusal.orEmpty(),
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                            })
+                            else -> null
+                        },
                         shape = RoundedCornerShape(Radius.field),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4177,26 +4231,32 @@ private fun EditSheet(
                         deltaText = ""
                         adjusting = false
                     }
+                    // Never greyed out — a dead button explains nothing — so a tap that cannot
+                    // apply says why, with the keyboard out of the way of the words.
+                    fun tryApply(sign: Int) {
+                        focus.clearFocus()
+                        val next = delta?.let { base + sign * it }
+                        if (next != null && next >= 0) return apply(next)
+                        deltaRefusal = when {
+                            // A holding cannot go below nothing — taking out more than is there
+                            // is a typo, not a request.
+                            next != null -> "بیشتر از اونی که داری نمی‌شه کم کرد."
+                            typedDelta != null -> null // the field already names the places
+                            deltaText.isNotBlank() && parseAmount(deltaText) == null ->
+                                "این عدد قابل خوندن نیست. فقط عدد وارد کن."
+                            else -> "مقدار تغییر رو بنویس."
+                        }
+                    }
                     // Air between the two opposite intents: an edge mis-tap here flips the
                     // sign of a money adjustment.
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(Space.m),
                         modifier = Modifier.padding(top = Space.m),
                     ) {
-                        PillButton(
-                            "＋ اضافه کن",
-                            { delta?.let { apply(base + it) } },
-                            enabled = delta != null,
-                        )
-                        PillButton(
-                            "− کم کن",
-                            { delta?.let { apply(base - it) } },
-                            // A holding cannot go below nothing — taking out more than is
-                            // there is a typo, not a request.
-                            enabled = delta != null && base - delta >= 0,
-                        )
+                        PillButton("＋ اضافه کن", { tryApply(1) })
+                        PillButton("− کم کن", { tryApply(-1) })
                         Spacer(Modifier.weight(1f))
-                        PillButton("بستن", { adjusting = false; deltaText = "" })
+                        PillButton("بستن", { adjusting = false; deltaText = ""; deltaRefusal = null })
                     }
                 }
             }
@@ -4233,12 +4293,16 @@ private fun EditSheet(
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     supportingText = localWalletError?.let { message ->
-                        { Text(message) }
+                        {
+                            Text(
+                                message,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            )
+                        }
                     },
                     shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(walletAddressFocus)
                         .semantics { contentDescription = "آدرس عمومی کیف پول" },
                 )
                 Text(
@@ -4380,6 +4444,7 @@ private fun EditSheet(
                         PillButton("تغییر نرخ", {
                             rateSeed = rate?.let(::fieldNumber).orEmpty()
                             rateText = rateSeed
+                            rateRefusal = null
                             editingRate = true
                         })
                     }
@@ -4392,10 +4457,19 @@ private fun EditSheet(
                     Spacer(Modifier.height(Space.xs))
                     OutlinedTextField(
                         value = rateText,
-                        onValueChange = { rateText = it },
+                        onValueChange = { rateText = it; rateRefusal = null },
                         singleLine = true,
                         visualTransformation = GroupedNumber,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        supportingText = rateRefusal?.let { refusal ->
+                            {
+                                Text(
+                                    refusal,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                            }
+                        },
                         shape = RoundedCornerShape(Radius.field),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4406,15 +4480,24 @@ private fun EditSheet(
                         horizontalArrangement = Arrangement.spacedBy(Space.s),
                         modifier = Modifier.padding(top = Space.m),
                     ) {
-                        // Off while the field does not read as a rate: saving null removed the
-                        // override, and that is «برگشت به نرخ خودکار»'s job, said out loud.
+                        // Refuses, out loud, while the field does not read as a rate: saving null
+                        // removed the override, and that is «برگشت به نرخ خودکار»'s job.
                         PillButton(
                             "ذخیره نرخ",
                             {
-                                if (rateText != rateSeed) typedRate?.let(onRate)
-                                editingRate = false
+                                focus.clearFocus()
+                                val typed = typedRate
+                                if (typed == null) {
+                                    rateRefusal = if (rateText.isNotBlank() && parseAmount(rateText) == null) {
+                                        "این عدد قابل خوندن نیست. فقط عدد وارد کن."
+                                    } else {
+                                        "نرخ رو بنویس."
+                                    }
+                                } else {
+                                    if (rateText != rateSeed) onRate(typed)
+                                    editingRate = false
+                                }
                             },
-                            enabled = typedRate != null,
                         )
                         if (isOverridden) {
                             PillButton("برگشت به نرخ خودکار", {
@@ -4455,56 +4538,54 @@ private fun EditSheet(
             }
 
             Spacer(Modifier.height(Space.xl))
-            Button(
-                onClick = {
+            val fetching = source == AmountSource.WALLET && walletBusy
+            PillButton(
+                when {
+                    fetching -> "در حال گرفتن موجودی…"
+                    source == AmountSource.MANUAL && linkedWallet != null -> "ذخیره مقدار دستی"
+                    source == AmountSource.MANUAL -> "ذخیره"
+                    linkedSelection -> "گرفتن دوباره موجودی"
+                    else -> "چک و ذخیره"
+                },
+                {
+                    // Never greyed out for an unfinished form — a dead button explains nothing —
+                    // so a tap that cannot save puts the reason under the field, with the
+                    // keyboard out of its way.
+                    focus.clearFocus()
                     // After the amount, never before: a name is written onto a row by its key,
                     // and while adding there is no such row until this save makes one.
                     if (source == AmountSource.MANUAL) {
                         manualSubmitted = true
                         if (manualAmount != null) close { onSaveManual(manualAmount); nameIt() }
-                        else amountFocus.requestFocus()
                     } else {
-                        val option = selectedWallet ?: return@Button
+                        // Never null here: the network choice always holds one of its options.
+                        val option = selectedWallet ?: return@PillButton
                         if (walletAddress.isBlank()) {
                             localWalletError = "آدرس عمومی کیف پول رو وارد کن."
-                            walletAddressFocus.requestFocus()
                         } else if (!isWalletAddressFormatValid(option.network, walletAddress)) {
                             localWalletError = "این آدرس با شبکه انتخاب‌شده جور نیست."
-                            walletAddressFocus.requestFocus()
                         } else {
                             onSaveWallet(option, walletAddress.trim()) { nameIt(); close(onDismiss) }
                         }
                     }
                 },
-                enabled = source == AmountSource.MANUAL || (!walletBusy && selectedWallet != null),
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp),
-            ) {
-                if (source == AmountSource.WALLET && walletBusy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Cta.ink,
-                    )
-                    Spacer(Modifier.width(Space.s))
-                }
-                Text(
-                    when {
-                        source == AmountSource.MANUAL && linkedWallet != null -> "ذخیره مقدار دستی"
-                        source == AmountSource.MANUAL -> "ذخیره"
-                        linkedSelection -> "گرفتن دوباره موجودی"
-                        else -> "چک و ذخیره"
-                    },
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                // Only while a balance is being fetched, and the label says so: a second tap
+                // would send the same address again.
+                enabled = !fetching,
+                block = true,
+            )
 
             onLend?.let { lend ->
-                PillButton("به کسی قرض دادم", { close(lend) }, Modifier.fillMaxWidth().padding(top = Space.s), fontSize = 16.sp, minHeight = 52.dp)
+                PillButton(
+                    "به کسی قرض دادم",
+                    { close(lend) },
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = Space.s),
+                    block = true,
+                )
             }
 
             // One stray tap must not erase a holding: the first tap only asks.

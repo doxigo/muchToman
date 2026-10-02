@@ -34,11 +34,9 @@ function AskRow({ title, body }: { title: string; body: string }) {
   );
 }
 
+/** The step's one commit, in the CTA green every other «press this» wears. */
 function Primary({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button type="button" class="pill block" style={{ minHeight: '56px', fontSize: '17px', background: 'var(--primary)', color: 'var(--on-primary)' }}
-      onClick={onClick}>{label}</button>
-  );
+  return <PillButton label={label} voice="primary" onClick={onClick} block />;
 }
 
 /** Always present, always a real way out: nothing here may be a wall. */

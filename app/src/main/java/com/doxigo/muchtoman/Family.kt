@@ -39,8 +39,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -71,6 +69,7 @@ import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -544,7 +543,8 @@ private fun Welcome(heading: String) {
 
 /**
  * Her name and the one button, for starting a household or joining one. The field is
- * pre-filled with the name تنظیمات greets her by, so most of the time this is one tap.
+ * pre-filled with the name تنظیمات greets her by, so most of the time this is one tap. The pill
+ * stays live with the field empty: a tap then says the name is missing instead of doing nothing.
  */
 @Composable
 private fun NameForm(
@@ -555,16 +555,35 @@ private fun NameForm(
     onNameChange: (String) -> Unit,
     onSubmit: () -> Unit,
 ) {
-    val ready = name.isNotBlank() && !working
+    val focusManager = LocalFocusManager.current
+    // Raised by a tap with the field blank, so the refusal has words under the field.
+    var missingName by remember { mutableStateOf(false) }
+    val submit: () -> Unit = {
+        // Focus lets go first: the keyboard was covering the words.
+        focusManager.clearFocus()
+        missingName = name.isBlank()
+        if (!missingName) onSubmit()
+    }
     Spacer(Modifier.height(Space.xxl))
     OutlinedTextField(
         value = name,
         onValueChange = onNameChange,
         singleLine = true,
         label = { Text("اسمت") },
+        supportingText = if (missingName && name.isBlank()) {
+            {
+                Text(
+                    "اسمت رو بنویس.",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        } else {
+            null
+        },
         shape = RoundedCornerShape(Radius.field),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { if (ready) onSubmit() }),
+        keyboardActions = KeyboardActions(onDone = { if (!working) submit() }),
         modifier = Modifier.fillMaxWidth(),
     )
     Text(
@@ -575,21 +594,15 @@ private fun NameForm(
         modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
     )
     Spacer(Modifier.height(Space.xl))
-    CtaButton(action, enabled = ready, onClick = onSubmit)
-}
-
-/** The page's one «press this»: [Cta] green, pill-shaped, a thumb tall. */
-@Composable
-private fun CtaButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(Radius.pill),
-        colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp),
-    ) { Text(label, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+    PillButton(
+        action,
+        submit,
+        Modifier.fillMaxWidth(),
+        voice = ButtonVoice.PRIMARY,
+        // Dimmed only while the household is being made or joined — the label says so.
+        enabled = !working,
+        block = true,
+    )
 }
 
 /**
@@ -1313,7 +1326,7 @@ private fun MeSheet(
                 }
             }
             Spacer(Modifier.height(Space.xxl))
-            CtaButton("ذخیره", enabled = true, onClick = close)
+            PillButton("ذخیره", close, Modifier.fillMaxWidth(), voice = ButtonVoice.PRIMARY, block = true)
         }
     }
 }

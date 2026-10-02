@@ -13,15 +13,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -211,13 +208,10 @@ private fun AskRow(title: String, body: String) {
     }
 }
 
+/** The step's one commit, in the [Cta] green every other «press this» wears. */
 @Composable
 private fun Primary(label: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(Radius.pill),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-    ) { Text(label, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+    PillButton(label, onClick, Modifier.fillMaxWidth(), voice = ButtonVoice.PRIMARY, block = true)
 }
 
 /** Always present, always a real way out: nothing here may be a wall. */

@@ -86,18 +86,29 @@ function Welcome({ heading }: { heading: string }) {
   );
 }
 
-/** Her name and the one button, for starting a household or joining one. */
+/**
+ * Her name and the one button, for starting a household or joining one. The pill stays live with the
+ * field empty: a tap then says the name is missing instead of doing nothing.
+ */
 function NameForm({ name, caption, action, working, onName, onSubmit }: {
   name: string; caption: string; action: string; working: boolean; onName: (v: string) => void; onSubmit: () => void;
 }) {
-  const ready = name.trim() !== '' && !working;
+  const [missingName, setMissingName] = useState(false);
+  const submit = (): void => {
+    // Focus lets go first: the keyboard was covering the words.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setMissingName(!name.trim());
+    if (name.trim()) onSubmit();
+  };
   return (
     <>
       <div style={{ height: 'var(--xxl)' }} />
-      <TextField label="اسمت" value={name} onInput={onName} maxLength={32} onEnter={() => { if (ready) onSubmit(); }} />
+      <TextField label="اسمت" value={name} onInput={onName} maxLength={32} onEnter={() => { if (!working) submit(); }}
+        error={missingName && !name.trim() ? 'اسمت رو بنویس.' : null} />
       <p class="set-note" style={{ paddingTop: 'var(--s)' }}>{caption}</p>
       <div style={{ height: 'var(--xl)' }} />
-      <PillButton label={action} voice="primary" block disabled={!ready} onClick={onSubmit} />
+      {/* Dimmed only while the household is being made or joined — the label says so. */}
+      <PillButton label={action} voice="primary" block disabled={working} onClick={submit} />
     </>
   );
 }

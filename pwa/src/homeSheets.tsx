@@ -279,6 +279,8 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const [rateSeed, setRateSeed] = useState('');
   const [rateText, setRateText] = useState('');
   const [editingRate, setEditingRate] = useState(false);
+  // Why the last ذخیره نرخ tap did nothing, until the field changes.
+  const [rateRefusal, setRateRefusal] = useState<string | null>(null);
   const [labelText, setLabelText] = useState(() => holding?.label ?? '');
   const [naming, setNaming] = useState(() => holding == null && type.kind === 'PROPERTY');
   const [nameFocusWanted, setNameFocusWanted] = useState(false);
@@ -297,10 +299,18 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const typedRate = (() => { const r = parseAmount(rateText); return r != null && r > 0 ? r : null; })();
   // While she types a rate, the «یعنی …» preview follows it, so the override's effect shows first.
   const previewRate = editingRate ? typedRate ?? rate : rate;
-  const editRate = () => { const seed = rate != null ? fieldNumber(rate) : ''; setRateSeed(seed); setRateText(seed); setEditingRate(true); };
-  // Never with null: that removed the override, which is «برگشت به نرخ خودکار»'s job, said out loud.
+  const editRate = () => {
+    const seed = rate != null ? fieldNumber(rate) : '';
+    setRateSeed(seed); setRateText(seed); setRateRefusal(null); setEditingRate(true);
+  };
+  // Never with null: that removed the override, which is «برگشت به نرخ خودکار»'s job — so a tap
+  // that does not read as a rate refuses, out loud, with the keyboard out of the way.
   const saveRate = () => {
-    if (typedRate == null) return;
+    (document.activeElement as HTMLElement | null)?.blur();
+    if (typedRate == null) {
+      setRateRefusal(rateText.trim() && parseAmount(rateText) == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : 'نرخ رو بنویس.');
+      return;
+    }
     if (rateText !== rateSeed) setOverride(typeId, typedRate);
     setEditingRate(false);
   };
@@ -323,6 +333,9 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const saveLabel = () => { setLabel(key, labelText); setNaming(false); };
 
   const save = () => {
+    // Never greyed out for an unfinished form — a dead button explains nothing — so a tap that
+    // cannot save puts the reason under the field, with the keyboard out of its way.
+    (document.activeElement as HTMLElement | null)?.blur();
     if (source === 'MANUAL') {
       setManualSubmitted(true);
       if (manualAmount != null) {
@@ -330,17 +343,14 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
         setHolding(key, typeId, manualAmount);
         nameIt();
         closeSheet();
-      } else document.querySelector<HTMLInputElement>('.edit-amount input')?.focus();
+      }
       return;
     }
+    // Never null here: the network choice always holds one of its options.
     if (!selectedWallet) return;
     if (!walletAddress.trim()) setLocalWalletError('آدرس عمومی کیف پول رو وارد کن.');
     else if (!isWalletAddressFormatValid(selectedWallet.network, walletAddress)) setLocalWalletError('این آدرس با شبکه انتخاب‌شده جور نیست.');
-    else {
-      void connectWallet(key, typeId, selectedWallet, walletAddress.trim()).then((ok) => { if (ok) { nameIt(); if (open.current) closeSheet(); } });
-      return;
-    }
-    document.querySelector<HTMLInputElement>('.edit-address input')?.focus();
+    else void connectWallet(key, typeId, selectedWallet, walletAddress.trim()).then((ok) => { if (ok) { nameIt(); if (open.current) closeSheet(); } });
   };
 
   const remove = () => {
@@ -352,6 +362,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
   const amountInvalid = manualAmount == null && (text.trim() !== '' || manualSubmitted);
   const balanceCardShown = source === 'WALLET' && linkedSelection && current != null;
+  const fetching = source === 'WALLET' && walletBusy;
 
   return (
     <Sheet label={holding ? holding.label.trim() || type.fa : type.fa}>
@@ -410,7 +421,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
           <>
             {/* A house is a valuation she gives, not an amount she counts. */}
             <SheetLabel>{type.kind === 'PROPERTY' ? 'به نظرت چند تومن می‌ارزه؟' : `چقدر ${unit} داری؟`}</SheetLabel>
-            <div class="bare-label big-amount edit-amount">
+            <div class="bare-label big-amount">
               <AmountField label={type.kind === 'PROPERTY' ? 'به نظرت چند تومن می‌ارزه؟' : `چقدر ${type.unitFa} داری؟`}
                 raw={text} decimals={9} words={false} autoFocus={current == null}
                 onRaw={(v) => { setText(v); setManualSubmitted(false); }} onEnter={save}
@@ -436,14 +447,14 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
             <WalletNetworkChoice options={walletOptions} selected={selectedNetwork} enabled={!walletBusy}
               onSelect={(n) => { if (selectedNetwork !== n) setWalletAddress(''); setSelectedNetwork(n); setLocalWalletError(null); clearWalletError(key); }} />
             <SheetLabel>آدرس عمومی کیف پول</SheetLabel>
-            <div class="edit-address">
+            <div>
               <label class={`field ltr${localWalletError ? ' error' : ''}`}>
                 <input value={walletAddress} dir="ltr" disabled={walletBusy} aria-label="آدرس عمومی کیف پول" aria-invalid={!!localWalletError}
                   autocomplete="off" autocapitalize="off" spellcheck={false} maxLength={128}
                   onInput={(e) => { setWalletAddress((e.currentTarget as HTMLInputElement).value.slice(0, 128)); setLocalWalletError(null); clearWalletError(key); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
               </label>
-              {localWalletError && <div class="field-support error">{localWalletError}</div>}
+              {localWalletError && <div class="field-support error" role="status">{localWalletError}</div>}
             </div>
             <p class="note" style={{ marginTop: 'var(--xs)' }}>فقط آدرس عمومی رو وارد کن. عبارت بازیابی یا کلید خصوصی رو هیچ‌وقت وارد نکن.</p>
             <p class="note small">برای خوندن موجودی، آدرس به سرویس عمومی همون شبکه فرستاده می‌شه.</p>
@@ -470,11 +481,11 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
           <div style={{ marginTop: 'var(--m)' }}>
             <p class="edit-caption" style={{ paddingTop: 0, marginBottom: 'var(--xs)' }}>{`هر ${unit} چند تومان؟`}</p>
             <div class="bare-label">
-              <AmountField label={`هر ${type.unitFa} چند تومان؟`} raw={rateText} onRaw={setRateText} decimals={9} words={false} autoFocus
-                onEnter={saveRate} />
+              <AmountField label={`هر ${type.unitFa} چند تومان؟`} raw={rateText} onRaw={(v) => { setRateText(v); setRateRefusal(null); }}
+                decimals={9} words={false} autoFocus onEnter={saveRate} error={rateRefusal} />
             </div>
             <div class="btn-row">
-              <PillButton label="ذخیره نرخ" disabled={typedRate == null} onClick={saveRate} />
+              <PillButton label="ذخیره نرخ" onClick={saveRate} />
               {isOverridden && <PillButton label="برگشت به نرخ خودکار" onClick={() => { setOverride(typeId, null); setEditingRate(false); }} />}
             </div>
           </div>
@@ -487,20 +498,18 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
           </div>
         )}
 
-        {/* Lent out of this very drawer: the move sheet starts on this asset and asks who (loansUi.tsx).
-            Only what she counts by hand — a wallet's figure is the chain's, not hers to move. */}
-        {holding != null && holding.wallet == null && holding.amount > 0 && (
-          <div style={{ marginTop: 'var(--m)' }}>
-            <button type="button" class="pill" onClick={() => openSheet('loanMove', { giving: true, typeId })}>به کسی قرض دادم</button>
-          </div>
-        )}
-
-        <button type="button" class="pill primary block save-btn" onClick={save}
-          disabled={!(source === 'MANUAL' || (!walletBusy && selectedWallet != null))}>
-          {source === 'WALLET' && walletBusy && <span class="ring" aria-hidden="true" />}
-          {source === 'MANUAL' && linkedWallet ? 'ذخیره مقدار دستی'
-            : source === 'MANUAL' ? 'ذخیره' : linkedSelection ? 'گرفتن دوباره موجودی' : 'چک و ذخیره'}
-        </button>
+        <div class="sheet-actions">
+          {/* Disabled only while a balance is being fetched, and the label says so: a second tap
+              would send the same address again. */}
+          <PillButton voice="primary" block disabled={fetching} onClick={save}
+            label={fetching ? 'در حال گرفتن موجودی…' : source === 'MANUAL' && linkedWallet ? 'ذخیره مقدار دستی'
+              : source === 'MANUAL' ? 'ذخیره' : linkedSelection ? 'گرفتن دوباره موجودی' : 'چک و ذخیره'} />
+          {/* Lent out of this very drawer: the move sheet starts on this asset and asks who (loansUi.tsx).
+              Only what she counts by hand — a wallet's figure is the chain's, not hers to move. */}
+          {holding != null && holding.wallet == null && holding.amount > 0 && (
+            <PillButton block label="به کسی قرض دادم" onClick={() => openSheet('loanMove', { giving: true, typeId })} />
+          )}
+        </div>
 
         {/* One stray tap must not erase a holding: the first only asks. */}
         {current != null && <SheetDelete label="حذف این دارایی" onConfirmed={remove} />}
@@ -537,25 +546,38 @@ function Adjust({ dec, unitFa, base, open, onOpen, onApply }: {
   dec: number; unitFa: string; base: number; open: boolean; onOpen: (open: boolean) => void; onApply: (next: number) => void;
 }) {
   const [deltaText, setDeltaText] = useState('');
+  // Why the last ＋ / − tap did nothing, until the field changes.
+  const [refusal, setRefusal] = useState<string | null>(null);
   if (!open) return <div style={{ marginTop: 'var(--m)' }}><PillButton label="اضافه یا کم کردن" onClick={() => onOpen(true)} /></div>;
   const parsed = parseAmount(deltaText);
   const typedDelta = parsed != null && parsed > 0 ? parsed : null;
   const delta = typedDelta != null && parseAmount(trimNumber(typedDelta, dec)) === typedDelta ? typedDelta : null;
   const apply = (next: number) => { onApply(next); setDeltaText(''); onOpen(false); };
+  // Never greyed out — a dead button explains nothing — so a tap that cannot apply says why,
+  // with the keyboard out of the way of the words.
+  const tryApply = (sign: 1 | -1) => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    const next = delta != null ? base + sign * delta : null;
+    if (next != null && next >= 0) { apply(next); return; }
+    // A holding cannot go below nothing: taking out more than is there is a typo, not a request.
+    setRefusal(next != null ? 'بیشتر از اونی که داری نمی‌شه کم کرد.'
+      : typedDelta != null ? null // the field already names the places
+        : deltaText.trim() && parsed == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.'
+          : 'مقدار تغییر رو بنویس.');
+  };
   return (
     <>
       <p class="edit-caption" style={{ marginBottom: 'var(--xs)' }}>مقدار تغییر رو وارد کن</p>
       <div class="bare-label">
-        <AmountField label={`مقدار تغییر ${unitFa}`} raw={deltaText} onRaw={setDeltaText} decimals={9} words={false} autoFocus
-          error={typedDelta != null && delta == null ? (dec === 0 ? 'فقط عدد کامل وارد کن.' : `حداکثر ${faNumber(dec)} رقم اعشار وارد کن.`) : null} />
+        <AmountField label={`مقدار تغییر ${unitFa}`} raw={deltaText} onRaw={(v) => { setDeltaText(v); setRefusal(null); }} decimals={9} words={false} autoFocus
+          error={typedDelta != null && delta == null ? (dec === 0 ? 'فقط عدد کامل وارد کن.' : `حداکثر ${faNumber(dec)} رقم اعشار وارد کن.`) : refusal} />
       </div>
       {/* Air between the two opposite intents: an edge mis-tap here flips a money adjustment's sign. */}
       <div class="btn-row" style={{ gap: 'var(--m)' }}>
-        <PillButton label="＋ اضافه کن" disabled={delta == null} onClick={() => delta != null && apply(base + delta)} />
-        {/* A holding cannot go below nothing: taking out more than is there is a typo. */}
-        <PillButton label="− کم کن" disabled={delta == null || base - delta < 0} onClick={() => delta != null && apply(base - delta)} />
+        <PillButton label="＋ اضافه کن" onClick={() => tryApply(1)} />
+        <PillButton label="− کم کن" onClick={() => tryApply(-1)} />
         <span class="spacer" />
-        <PillButton label="بستن" onClick={() => { setDeltaText(''); onOpen(false); }} />
+        <PillButton label="بستن" onClick={() => { setDeltaText(''); setRefusal(null); onOpen(false); }} />
       </div>
     </>
   );
@@ -603,7 +625,16 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
 }) {
   const off = account.disabled;
   const [draft, setDraft] = useState('');
+  // Raised by a save tap with nothing typed: the field's own words only speak over a malformed figure.
+  const [missingDraft, setMissingDraft] = useState(false);
+  useEffect(() => setMissingDraft(false), [fixing]);
   const parsed = parseAmount(draft);
+  // Never greyed out — a dead button explains nothing — so a tap that cannot save says why.
+  const anchor = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setMissingDraft(!draft.trim());
+    if (parsed != null) onAnchor(parsed);
+  };
   const caption = [account.mask.trim() ? bidi(account.mask) : null, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
     .filter((s): s is string => s != null).join('  •  ');
   return (
@@ -632,9 +663,9 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
           {/* A label that stays: while she types a balance, the unit must still be on screen. */}
           <p class="edit-caption" style={{ marginBottom: 'var(--xs)' }}>موجودی به تومان</p>
           <div class="bare-label">
-            <AmountField label="موجودی به تومان" raw={draft} onRaw={setDraft} decimals={9} words={false} autoFocus
-              onEnter={() => { if (parsed != null) onAnchor(parsed); }}
-              error={draft.trim() && parsed == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
+            <AmountField label="موجودی به تومان" raw={draft} onRaw={setDraft} decimals={9} words={false} autoFocus onEnter={anchor}
+              error={!draft.trim() ? (missingDraft ? 'مبلغش رو بنویس.' : null)
+                : parsed == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
           </div>
         </>
       )}
@@ -643,7 +674,7 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
       <div class="btn-row">
         {fixing ? (
           <>
-            <PillButton voice="primary" label="ذخیره موجودی" disabled={parsed == null} onClick={() => { if (parsed != null) onAnchor(parsed); }} />
+            <PillButton voice="primary" label="ذخیره موجودی" onClick={anchor} />
             <PillButton label="بستن" onClick={onFix} />
           </>
         ) : (

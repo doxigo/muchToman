@@ -130,7 +130,7 @@ export function InsightCard({ insight, why = false, action, onAction, class: cls
         <p>{insight.text}</p>
       </div>
       {why && <p class="rp-insight-why">{insight.why}</p>}
-      {action && <button type="button" class="rp-insight-action" onClick={onAction}>{action}</button>}
+      {action && <button type="button" class="pill primary rp-insight-action" onClick={onAction}>{action}</button>}
     </Panel>
   );
 }
@@ -1005,12 +1005,10 @@ function ExcludeSheet() {
           );
         })}
       </div>
-      <div class="rp-xl"><PillButton label="بستن" voice="primary" block onClick={closeSheet} /></div>
-      {excluded.length > 0 && (
-        <div class="rp-s">
-          <PillButton label="هیچ‌کدوم حذف نشه" block onClick={() => { setReportExcluded([]); closeSheet(); }} />
-        </div>
-      )}
+      <div class="sheet-actions">
+        <PillButton label="بستن" voice="primary" block onClick={closeSheet} />
+        {excluded.length > 0 && <PillButton label="هیچ‌کدوم حذف نشه" block onClick={() => { setReportExcluded([]); closeSheet(); }} />}
+      </div>
     </Sheet>
   );
 }

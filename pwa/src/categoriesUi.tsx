@@ -12,7 +12,7 @@ import { CategoryIcon, PICKABLE_GLYPHS, categoryGlyph, customGlyphs, glyphOf, hu
 import type { CategoryGlyph } from './categoryIcon';
 import { faLetters } from './catalog';
 import { closeSheet, openSheet, registerPage, registerSheet } from './nav';
-import { Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle } from './ui';
+import { PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle } from './ui';
 import { usePageTop } from './timeline';
 import type { Category, CategoryKindId } from './model';
 
@@ -51,7 +51,7 @@ function CategoriesScreen() {
       )}
       {/* The one loud control on the page, pinned where her thumb already is. */}
       <div class="cat-add">
-        <button type="button" class="pill primary wide" onClick={() => openSheet('category', { kind: side })}>افزودن دسته</button>
+        <PillButton label="افزودن دسته" voice="primary" block onClick={() => openSheet('category', { kind: side })} />
       </div>
     </Screen>
   );
@@ -88,7 +88,13 @@ function CategorySheet({ id, kind = CategoryKind.EXPENSE, grid = false }: { id?:
   const taken = (grid ? view.categories : view.managedCategories).filter((c) => c.id !== editing?.id).map((c) => c.nameFa);
   const clash = draft.trim() !== '' && taken.some((t) => nameKey(t) === nameKey(draft));
   const usable = draft.trim() !== '' && !clash;
+  // Raised by a save tap with no name: the clash speaks for itself as she types, a blank field only once asked.
+  const [missingName, setMissingName] = useState(false);
+  const problem = clash ? 'یه دسته با همین اسم داری.' : missingName && !draft.trim() ? 'اسمش رو بنویس.' : null;
   const save = (): void => {
+    // Never greyed: a tap that cannot save says why, with the keyboard out of the way of the words.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setMissingName(!draft.trim());
     if (!usable) return;
     if (editing) editCategory(editing, draft.trim(), glyph);
     else addCategory(draft.trim(), kind, glyph);
@@ -98,8 +104,8 @@ function CategorySheet({ id, kind = CategoryKind.EXPENSE, grid = false }: { id?:
     <Sheet label={editing ? 'ویرایش دسته' : 'دستهٔ تازه'}>
       <SheetTitle>{editing ? 'ویرایش دسته' : 'دستهٔ تازه'}</SheetTitle>
       <SheetLabel>اسمش چی باشه؟</SheetLabel>
-      <label class={`field${clash ? ' error' : ''}`}>
-        <input value={draft} maxLength={24} placeholder="مثلاً باشگاه" aria-label="اسم دسته" aria-invalid={clash} enterKeyHint="done"
+      <label class={`field${problem ? ' error' : ''}`}>
+        <input value={draft} maxLength={24} placeholder="مثلاً باشگاه" aria-label="اسم دسته" aria-invalid={!!problem} enterKeyHint="done"
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
           onInput={(e) => {
             const next = (e.currentTarget as HTMLInputElement).value.slice(0, 24);
@@ -110,7 +116,7 @@ function CategorySheet({ id, kind = CategoryKind.EXPENSE, grid = false }: { id?:
             }
           }} />
       </label>
-      {clash && <p class="grid-error" role="status">یه دسته با همین اسم داری.</p>}
+      {problem && <p class="grid-error" role="status">{problem}</p>}
 
       <SheetLabel>نشونه‌اش</SheetLabel>
       <div class="glyph-picker" role="radiogroup" aria-label="نشونه‌اش">
@@ -127,10 +133,8 @@ function CategorySheet({ id, kind = CategoryKind.EXPENSE, grid = false }: { id?:
       </div>
 
       <div class="sheet-actions">
-        <button type="button" class={`pill wide${usable ? ' primary' : ''}`} style={{ minHeight: '52px', fontSize: '16px' }} onClick={save}>
-          {editing ? 'ذخیره تغییرات' : 'اضافه کن'}
-        </button>
-        <button type="button" class="pill wide" onClick={closeSheet}>انصراف</button>
+        <PillButton label={editing ? 'ذخیره تغییرات' : 'اضافه کن'} voice="primary" block onClick={save} />
+        <PillButton label="انصراف" block onClick={closeSheet} />
       </div>
       {editing && <SheetDelete label="حذف این دسته" onConfirmed={() => { toggleCategoryArchived(editing); closeSheet(); }} />}
     </Sheet>

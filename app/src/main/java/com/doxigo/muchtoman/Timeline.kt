@@ -53,7 +53,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -849,7 +848,7 @@ private fun CategoryFilterSheet(
                 { close(onDismiss) },
                 voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),
-                minHeight = 52.dp,
+                block = true,
             )
             if (selected.isNotEmpty()) {
                 Spacer(Modifier.height(Space.s))
@@ -857,6 +856,7 @@ private fun CategoryFilterSheet(
                     "پاک کردن فیلتر",
                     { onChange(emptyList()); close(onDismiss) },
                     modifier = Modifier.fillMaxWidth(),
+                    block = true,
                 )
             }
         }
@@ -970,6 +970,8 @@ private fun DayHeading(
  */
 @Composable
 private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
+    // The title line's own 48dp family — [AddTxnButton]'s pill, the paste and search discs — in
+    // the CTA fill, rather than a 44dp PillButton sitting a size short of its neighbours.
     Box(
         Modifier
             .clip(RoundedCornerShape(Radius.pill))
@@ -984,6 +986,7 @@ private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = Cta.ink,
+            maxLines = 1,
         )
     }
 }
@@ -2286,20 +2289,19 @@ fun ReviewDeck(
                     .navigationBarsPadding(),
                 horizontalArrangement = Arrangement.spacedBy(Space.s),
             ) {
-                DeckAnswer(
+                SkipAnswer(
                     // Named by what it does — it sets this card aside unanswered and moves on,
                     // which «نه» alone read as a verdict on the question above the grid.
                     label = "بمونه برای بعد",
-                    weight = AnswerWeight.QUIET,
                     onClick = { skipped = skipped + entry.txn.ref },
                     modifier = Modifier.weight(1f),
                 )
                 if (onAutoFile != null && pending.size >= 5) {
-                    DeckAnswer(
-                        label = "خودکار برای همه",
-                        weight = AnswerWeight.SECONDARY,
-                        onClick = { autoFiling = true },
+                    PillButton(
+                        "خودکار برای همه",
+                        { autoFiling = true },
                         modifier = Modifier.weight(1f),
+                        block = true,
                     )
                 }
             }
@@ -2430,8 +2432,7 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
             onDone,
             voice = ButtonVoice.PRIMARY,
             modifier = Modifier.fillMaxWidth().padding(bottom = Space.m),
-            fontSize = 16.sp,
-            minHeight = 56.dp,
+            block = true,
         )
     }
 }
@@ -2518,17 +2519,15 @@ private fun AutoFileSheet(
             )
 
             Spacer(Modifier.height(Space.xl))
-            DeckAnswer(
-                label = "دسته‌بندی کن",
-                weight = AnswerWeight.PRIMARY,
-                onClick = { close { onConfirm(plan.assignments) } },
+            PillButton(
+                "دسته‌بندی کن",
+                { close { onConfirm(plan.assignments) } },
+                voice = ButtonVoice.PRIMARY,
+                modifier = Modifier.fillMaxWidth(),
+                block = true,
             )
             Spacer(Modifier.height(Space.s))
-            DeckAnswer(
-                label = "انصراف",
-                weight = AnswerWeight.QUIET,
-                onClick = { close(onDismiss) },
-            )
+            PillButton("انصراف", { close(onDismiss) }, modifier = Modifier.fillMaxWidth(), block = true)
         }
     }
 }
@@ -2580,44 +2579,37 @@ private fun learnedRule(txn: Txn): String {
         "${bankNameOf(txn.bank)} اعمال می‌شه، و مشابه‌های قبلی هم اصلاح می‌شن."
 }
 
-/** How much of an answer it is: two of these write something, and one deliberately does not. */
-private enum class AnswerWeight { PRIMARY, SECONDARY, QUIET }
-
-/** One of the answers, whether it stands at the foot of the deck or inside the sheet. */
+/**
+ * The deck's answer that writes nothing: this card set aside, unanswered. A block pill's size and
+ * give, but no surface of its own — it is the answer that changes nothing, and a filled shape
+ * would promise it does.
+ */
 @Composable
-private fun DeckAnswer(
-    label: String,
-    weight: AnswerWeight,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun SkipAnswer(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val give by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.press(), label = "give")
     Box(
         modifier
             .fillMaxWidth()
+            .scale(give)
             .clip(RoundedCornerShape(Radius.pill))
-            .background(
-                when (weight) {
-                    AnswerWeight.PRIMARY -> Cta.fill
-                    AnswerWeight.SECONDARY -> MaterialTheme.colorScheme.surfaceVariant
-                    // Not a surface of its own: it is the answer that changes nothing, and a
-                    // filled shape would promise it does.
-                    AnswerWeight.QUIET -> Color.Transparent
-                },
+            .clickable(
+                role = Role.Button,
+                interactionSource = press,
+                indication = LocalIndication.current,
+                onClick = onClick,
             )
-            .clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = 52.dp)
-            .padding(horizontal = Space.l),
+            .padding(horizontal = Space.l, vertical = Space.s),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            fontSize = 15.sp,
-            fontWeight = if (weight == AnswerWeight.QUIET) FontWeight.Medium else FontWeight.Bold,
-            color = when (weight) {
-                AnswerWeight.PRIMARY -> Cta.ink
-                AnswerWeight.SECONDARY -> MaterialTheme.colorScheme.onSurface
-                AnswerWeight.QUIET -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
         )
     }
 }

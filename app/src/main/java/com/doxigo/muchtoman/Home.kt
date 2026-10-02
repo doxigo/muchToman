@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
@@ -224,24 +223,7 @@ fun InsightCard(
         }
         action?.let {
             Spacer(Modifier.height(Space.xs))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .background(Cta.fill)
-                    .clickable(role = Role.Button, onClick = onAction)
-                    // The label sets its own height: at 12sp with 4dp of padding the target was
-                    // half the floor, on the only control these cards have.
-                    .heightIn(min = 48.dp)
-                    .padding(horizontal = Space.l),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    it,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Cta.ink,
-                )
-            }
+            PillButton(it, onAction, voice = ButtonVoice.PRIMARY)
         }
     }
 }

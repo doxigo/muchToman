@@ -243,10 +243,10 @@ internal fun CrashSheet(report: String, onSend: () -> Unit, onDismiss: () -> Uni
                 { close(onSend) },
                 voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),
-                minHeight = 52.dp,
+                block = true,
             )
             Spacer(Modifier.height(Space.s))
-            PillButton("نه، نفرست", { close(onDismiss) }, modifier = Modifier.fillMaxWidth())
+            PillButton("نه، نفرست", { close(onDismiss) }, modifier = Modifier.fillMaxWidth(), block = true)
         }
     }
 }

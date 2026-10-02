@@ -54,7 +54,7 @@
 .loan-value .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tertiary); }
 .loan-value.caution { margin-top: var(--xs); color: var(--secondary); }
 .loan-actions { display: flex; gap: var(--s); margin-top: var(--xl); }
-.loan-actions > .pill { flex: 1; min-width: 0; min-height: 48px; font-size: 15px; }
+.loan-actions > .pill { flex: 1; min-width: 0; }
 .loan-promise { display: flex; align-items: center; gap: var(--m); width: 100%; margin-top: var(--l); padding: 14px var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); font-size: 14px; text-align: start; }
 .loan-promise b { font-weight: 800; }
 .loan-promise > span:last-child { flex: none; font-size: 13px; }

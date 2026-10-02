@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +108,7 @@ fun EditTxnSheet(
     var day by rememberSaveable(txn.ref) { mutableLongStateOf(txn.day) }
     var member by rememberSaveable(txn.ref) { mutableStateOf(entry.ownerMemberId) }
     val rial = remember(amount) { tomanFieldToRial(amount) }
+    val focus = LocalFocusManager.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -171,6 +173,9 @@ fun EditTxnSheet(
             PillButton(
                 "ذخیره",
                 {
+                    // Never greyed: the field already says what is wrong with the figure, and the
+                    // tap takes the keyboard off those words.
+                    focus.clearFocus()
                     val clean = rial ?: return@PillButton
                     close {
                         onSave(
@@ -181,7 +186,7 @@ fun EditTxnSheet(
                         onDismiss()
                     }
                 },
-                voice = if (rial != null) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
+                voice = ButtonVoice.PRIMARY,
                 block = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -272,6 +277,10 @@ fun SplitSheet(
         }
     }
     var picking by rememberSaveable(entry.txn.ref) { mutableStateOf<Int?>(null) }
+    // Raised by a save tap: a part with no category or no figure is only wrong once she has asked
+    // for the split to be saved — until then it is just not filled in yet.
+    var missing by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
 
     val rest = (1 until amounts.size).map { tomanFieldToRial(amounts[it]) }
     val firstRial = total - rest.sumOf { it ?: 0L }
@@ -308,7 +317,6 @@ fun SplitSheet(
                     PillButton(
                         ids[i]?.let { names[it] } ?: "انتخاب دسته",
                         { picking = if (picking == i) null else i },
-                        voice = if (ids[i] == null) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
                         modifier = Modifier.weight(1f),
                     )
                     if (i > 0 && ids.size > 2) {
@@ -317,6 +325,16 @@ fun SplitSheet(
                             ids.removeAt(i); amounts.removeAt(i); picking = null
                         }, voice = ButtonVoice.DANGER)
                     }
+                }
+                if (missing && ids[i] == null) {
+                    Text(
+                        "دسته‌اش رو انتخاب کن.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(top = Space.s, start = Space.xs)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
                 }
                 if (picking == i) {
                     Spacer(Modifier.height(Space.m))
@@ -339,14 +357,27 @@ fun SplitSheet(
                     )
                 } else {
                     val parsed = rest[i - 1]
+                    val blank = amounts[i].isBlank()
                     OutlinedTextField(
                         value = amounts[i],
                         onValueChange = { amounts[i] = it },
                         singleLine = true,
+                        isError = parsed == null && (!blank || missing),
                         visualTransformation = GroupedNumber,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         label = { Text("چقدر، به تومان") },
-                        supportingText = parsed?.let { { Text(faWordsToman(tomanOf(it)).orEmpty()) } },
+                        supportingText = when {
+                            blank && missing -> ({
+                                Text(
+                                    "مبلغش رو بنویس.",
+                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                            })
+                            // A figure it cannot read holds the save back, so it has to say so.
+                            parsed == null && !blank -> ({ Text("مبلغ رو فقط با عدد بنویس.") })
+                            parsed != null -> ({ Text(faWordsToman(tomanOf(parsed)).orEmpty()) })
+                            else -> null
+                        },
                         shape = RoundedCornerShape(Radius.field),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -362,13 +393,17 @@ fun SplitSheet(
             PillButton(
                 "ذخیره تقسیم",
                 {
+                    // Never greyed: a tap that cannot save marks every part still missing something,
+                    // with the keyboard out of the way of the words.
+                    focus.clearFocus()
+                    missing = true
                     if (!complete) return@PillButton
                     val parts = ids.mapIndexed { i, id ->
                         id!! to if (i == 0) firstRial else rest[i - 1]!!
                     }
                     close { onSave(parts); onDismiss() }
                 },
-                voice = if (complete) ButtonVoice.PRIMARY else ButtonVoice.TONAL,
+                voice = ButtonVoice.PRIMARY,
                 block = true,
                 modifier = Modifier.fillMaxWidth(),
             )

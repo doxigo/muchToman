@@ -18,7 +18,7 @@ import { BankLogo } from './logos';
 import { bidi, faCompact, faSignedCompact, faWordsToman, tomanOf } from './format';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
 import { pref } from './state';
-import { Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { PillButton, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 import { openTxn } from './timeline';
 
 function PasteSheet({ text: given = '' }: { text?: string }) {
@@ -39,7 +39,10 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
   const read = ok ? parsePasted(text) : null;
 
   const save = async (): Promise<void> => {
+    // Never greyed: a tap that cannot save says why, with the keyboard out of the way of the words.
+    // The one guard is against a second tap while the first is still writing.
     if (saving) return;
+    (document.activeElement as HTMLElement | null)?.blur();
     setMissingText(blank);
     setMissingBank(!isBank(bank));
     if (!ok || !isBank(bank)) return;
@@ -68,9 +71,8 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
       {missingBank && !isBank(bank) && <p class="grid-error" role="status">بانکش رو انتخاب کن.</p>}
 
       <div class="sheet-actions">
-        <button type="button" class={`pill wide${ok && isBank(bank) ? ' primary' : ''}`} style={{ minHeight: '56px', fontSize: '16px' }}
-          disabled={saving} onClick={() => void save()}>ثبت</button>
-        <button type="button" class="pill wide" onClick={closeSheet}>انصراف</button>
+        <PillButton label="ثبت" voice="primary" block onClick={() => void save()} />
+        <PillButton label="انصراف" block onClick={closeSheet} />
       </div>
     </Sheet>
   );

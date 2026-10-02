@@ -32,8 +32,6 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -57,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -65,7 +64,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -538,22 +536,7 @@ internal fun NotifyBlockedCard(what: String, onAsk: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(Space.s))
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(Radius.pill))
-                .background(Cta.fill)
-                .clickable(role = Role.Button, onClick = onAsk)
-                .heightIn(min = 48.dp)
-                .padding(horizontal = Space.l),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                "روشن کردن اعلان",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Cta.ink,
-            )
-        }
+        PillButton("روشن کردن اعلان", onAsk, voice = ButtonVoice.PRIMARY)
     }
 }
 
@@ -1104,6 +1087,7 @@ private fun BudgetSheet(
     onDelete: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
@@ -1131,6 +1115,8 @@ private fun BudgetSheet(
     )
     val conflicts = budgetConflicts(budgets, candidate)
     val chosen = editing != null || wantsTotal || picked != null
+    // Raised by a save tap that could not save: from then on every blank answer says so.
+    var tried by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1221,6 +1207,9 @@ private fun BudgetSheet(
                         selectedLabel = "انتخاب‌شده",
                     )
                 }
+                // The grid cannot flag itself the way a field does, so a refused save's words
+                // live under it.
+                if (tried && !chosen) MissingText("کل خرج یا یه دسته رو انتخاب کن.")
             }
 
             SheetLabel("هر چه مدت؟")
@@ -1239,10 +1228,10 @@ private fun BudgetSheet(
                 singleLine = true,
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                isError = capRial == null && (tried || amount.isNotBlank()),
                 supportingText = when {
-                    amount.isNotBlank() && capRial == null -> ({
-                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                    })
+                    amount.isBlank() && tried -> ({ FieldError("سقفش رو بنویس.") })
+                    amount.isNotBlank() && capRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
                     // Spelled out, for the same reason every other amount field in the app spells
                     // it out: digits are quick to scan and easy to misread by a factor of ten.
                     capRial != null -> ({
@@ -1266,39 +1255,45 @@ private fun BudgetSheet(
                         conflicts.joinToString("، ") { faCompact(tomanOf(it.targetRial)) } + " تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.",
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(top = Space.m),
+                    modifier = Modifier
+                        .padding(top = Space.m)
+                        // Announced as it appears: it is why the save below will not save.
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 if (editing != null && period == editing.period && shared == editing.shared) {
-                    // Error ink: the way out of the clash deletes the other budgets.
+                    // Error ink: the way out of the clash deletes the other budgets. A block, as
+                    // in the PWA: the label is a sentence and it answers the sheet as much as
+                    // the save under it does.
                     PillButton(
                         "فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن",
                         { close(onKeep) },
                         Modifier.fillMaxWidth().padding(top = Space.m),
                         voice = ButtonVoice.DANGER,
+                        block = true,
                     )
                 }
             }
-            Spacer(Modifier.height(Space.l))
-            Button(
-                onClick = {
-                    val cap = capRial ?: return@Button
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                if (editing != null) "ذخیره تغییرات" else "ذخیره بودجه",
+                {
+                    // Never dimmed — a dead button explains nothing — so a tap that cannot save
+                    // raises the words under whatever is missing. Focus lets go first: the
+                    // keyboard was covering them. A clash is already said above, in error ink.
+                    focus.clearFocus()
+                    tried = true
+                    val cap = capRial ?: return@PillButton
+                    if (!chosen || conflicts.isNotEmpty()) return@PillButton
                     if (editing != null) {
                         close { onUpdate(period, cap, shared) }
                     } else {
-                        if (!wantsTotal && picked == null) return@Button
                         close { onSave(picked.takeUnless { wantsTotal }, period, cap, shared) }
                     }
                 },
-                enabled = chosen && capRial != null && conflicts.isEmpty(),
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            ) {
-                Text(
-                    if (editing != null) "ذخیره تغییرات" else "ذخیره بودجه",
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
 
             if (editing != null) SheetDelete("حذف این بودجه") { close(onDelete) }
         }
@@ -1346,6 +1341,7 @@ private fun GoalSheet(
     onDelete: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
@@ -1355,6 +1351,8 @@ private fun GoalSheet(
     var amount by rememberSaveable { mutableStateOf(editing?.let { rialToField(it.targetRial) } ?: "") }
     var horizon by rememberSaveable { mutableStateOf(if (editing == null) GoalHorizon.HALF else null) }
     val targetRial = remember(amount) { tomanFieldToRial(amount) }
+    // Raised by a save tap that could not save, as in [BudgetSheet].
+    var tried by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1379,6 +1377,8 @@ private fun GoalSheet(
                 onValueChange = { name = it.take(40) },
                 label = { Text("مثلاً سفر، یا پیش‌پرداخت خونه") },
                 singleLine = true,
+                isError = tried && name.isBlank(),
+                supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1391,10 +1391,10 @@ private fun GoalSheet(
                 singleLine = true,
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                isError = targetRial == null && (tried || amount.isNotBlank()),
                 supportingText = when {
-                    amount.isNotBlank() && targetRial == null -> ({
-                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                    })
+                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
+                    amount.isNotBlank() && targetRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
                     targetRial != null -> ({
                         Text(faWordsToman(tomanOf(targetRial)).orEmpty())
                     })
@@ -1433,27 +1433,25 @@ private fun GoalSheet(
                 WhoseChoice(shared, wasShared = editing?.shared == true) { shared = it }
             }
 
-            Spacer(Modifier.height(Space.l))
-            Button(
-                onClick = {
-                    val target = targetRial ?: return@Button
-                    if (name.isBlank()) return@Button
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                if (editing != null) "ذخیره تغییرات" else "ذخیره هدف",
+                {
+                    // Never dimmed: a tap that cannot save says why, as [BudgetSheet]'s does.
+                    focus.clearFocus()
+                    tried = true
+                    val target = targetRial ?: return@PillButton
+                    if (name.isBlank()) return@PillButton
                     if (editing != null) {
                         close { onUpdate(name.trim(), target, horizon, shared) }
                     } else {
                         close { onSave(name.trim(), target, horizon ?: GoalHorizon.HALF, shared) }
                     }
                 },
-                enabled = name.isNotBlank() && targetRial != null,
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            ) {
-                Text(
-                    if (editing != null) "ذخیره تغییرات" else "ذخیره هدف",
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
 
             if (editing != null) SheetDelete("حذف این هدف") { close(onDelete) }
         }
@@ -1481,6 +1479,7 @@ private fun InstallmentSheet(
     fromPayment: LedgerEntry? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
@@ -1494,6 +1493,9 @@ private fun InstallmentSheet(
     val paymentRial = remember(amount) { tomanFieldToRial(amount) }
     val count = remember(countText) { wholeIn(countText, 1..MAX_INSTALLMENTS) }
     val dayOfMonth = remember(dayText) { wholeIn(dayText, 1..31) }
+    // Raised by a save tap that could not save, as in [BudgetSheet].
+    var tried by remember { mutableStateOf(false) }
+    val countBad = count == null && (tried || countText.isNotBlank())
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1518,6 +1520,8 @@ private fun InstallmentSheet(
                 onValueChange = { name = it.take(40) },
                 label = { Text("مثلاً گوشی، یا وام خونه") },
                 singleLine = true,
+                isError = tried && name.isBlank(),
+                supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1530,10 +1534,10 @@ private fun InstallmentSheet(
                 singleLine = true,
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                isError = paymentRial == null && (tried || amount.isNotBlank()),
                 supportingText = when {
-                    amount.isNotBlank() && paymentRial == null -> ({
-                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                    })
+                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
+                    amount.isNotBlank() && paymentRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
                     paymentRial != null -> ({ Text(faWordsToman(tomanOf(paymentRial)).orEmpty()) })
                     else -> null
                 },
@@ -1551,16 +1555,17 @@ private fun InstallmentSheet(
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 supportingText = {
-                    Text(
-                        when {
-                            countText.isNotBlank() && count == null ->
-                                "یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس."
-                            firstDue != null -> "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
-                            else -> "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار."
-                        },
-                    )
+                    // The range names the fix for a blank count as well as a wrong one.
+                    if (countBad) {
+                        FieldError("یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس.")
+                    } else {
+                        Text(
+                            if (firstDue != null) "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
+                            else "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.",
+                        )
+                    }
                 },
-                isError = countText.isNotBlank() && count == null,
+                isError = countBad,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1573,7 +1578,9 @@ private fun InstallmentSheet(
                     singleLine = true,
                     visualTransformation = GroupedNumber,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = dayText.isNotBlank() && dayOfMonth == null,
+                    // Its words are the line under it, «یه روز بین ۱ و ۳۱.», whenever the day is
+                    // not one.
+                    isError = dayOfMonth == null && (tried || dayText.isNotBlank()),
                     shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1588,25 +1595,30 @@ private fun InstallmentSheet(
                 },
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.s, start = Space.xs),
+                modifier = Modifier
+                    .padding(top = Space.s, start = Space.xs)
+                    // Announced only while it is the day's refusal; the dates change with every
+                    // digit of the count and would chatter.
+                    .semantics { if (first == null) liveRegion = LiveRegionMode.Polite },
             )
 
-            Spacer(Modifier.height(Space.l))
-            Button(
-                onClick = {
-                    val payment = paymentRial ?: return@Button
-                    val n = count ?: return@Button
-                    val day = dayOfMonth ?: return@Button
-                    if (name.isBlank()) return@Button
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                "ذخیره قسط",
+                {
+                    // Never dimmed: a tap that cannot save says why, as [BudgetSheet]'s does.
+                    focus.clearFocus()
+                    tried = true
+                    val payment = paymentRial ?: return@PillButton
+                    val n = count ?: return@PillButton
+                    val day = dayOfMonth ?: return@PillButton
+                    if (name.isBlank()) return@PillButton
                     close { onSave(name.trim(), payment, n, day) }
                 },
-                enabled = name.isNotBlank() && paymentRial != null && count != null && dayOfMonth != null,
-                shape = RoundedCornerShape(Radius.pill),
-                colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            ) {
-                Text("ذخیره قسط", fontWeight = FontWeight.Bold)
-            }
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
         }
     }
 }
@@ -1868,13 +1880,14 @@ internal fun InstallmentLinkSheet(
                     lineHeight = 26.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Spacer(Modifier.height(Space.l))
-                Button(
-                    onClick = { creating = true },
-                    shape = RoundedCornerShape(Radius.pill),
-                    colors = ButtonDefaults.buttonColors(containerColor = Cta.fill, contentColor = Cta.ink),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) { Text("ساختن قسط", fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.height(Space.xl))
+                PillButton(
+                    "ساختن قسط",
+                    { creating = true },
+                    Modifier.fillMaxWidth(),
+                    voice = ButtonVoice.PRIMARY,
+                    block = true,
+                )
                 PillButton(
                     "فعلاً نه",
                     { close(onDismiss) },
@@ -1912,7 +1925,7 @@ internal fun InstallmentLinkSheet(
             PillButton(
                 "+ قسط تازه با همین پرداخت",
                 { creating = true },
-                Modifier.fillMaxWidth().padding(top = Space.l),
+                Modifier.fillMaxWidth().padding(top = Space.xl),
                 block = true,
             )
             if (current != null) {
@@ -2022,29 +2035,11 @@ fun WorthItCard(entry: LedgerEntry, onAnswer: (String) -> Unit, modifier: Modifi
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(Space.s))
-        Row(Modifier.fillMaxWidth()) {
-            Answer("آره", Modifier.weight(1f)) { onAnswer(WorthIt.YES) }
-            Answer("لازم بود", Modifier.weight(1f)) { onAnswer(WorthIt.NEEDED) }
-            Answer("نه", Modifier.weight(1f)) { onAnswer(WorthIt.NO) }
+        // Three routine answers, so three equal cells of one row — none of them is the commit.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+            PillButton("آره", { onAnswer(WorthIt.YES) }, Modifier.weight(1f))
+            PillButton("لازم بود", { onAnswer(WorthIt.NEEDED) }, Modifier.weight(1f))
+            PillButton("نه", { onAnswer(WorthIt.NO) }, Modifier.weight(1f))
         }
     }
-}
-
-@Composable
-private fun Answer(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Text(
-        label,
-        textAlign = TextAlign.Center,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier
-            .padding(horizontal = Space.xs)
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(role = Role.Button, onClick = onClick)
-            // 48dp minimum, and a minimum only: this is answered one-handed or it is not
-            // answered, and a fixed height cut the label's descenders off at large font sizes.
-            .heightIn(min = 48.dp)
-            .padding(vertical = Space.m),
-    )
 }
