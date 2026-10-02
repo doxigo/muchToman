@@ -1637,17 +1637,18 @@ function shareFa(n: number, total: number): string {
   return p < 1 ? 'زیر ۱٪' : `${faDigits(String(p))}٪`;
 }
 
+// A length on the page, not a figure anyone reads, so a tenth of a percent is plenty.
+const pct = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`;
+
 function tableFa(caption: string, head: string, rows: [string, number][], share = false): string {
   const total = rows.reduce((sum, [, n]) => sum + n, 0);
   return `<table><caption>${caption}</caption><thead><tr><th>${head}</th><th class="n">گوشی</th>` +
     `${share ? '<th class="n">سهم</th>' : ''}</tr></thead><tbody>` +
-    rows.map(([name, n]) => `<tr><td><bdi>${escapeHtml(name)}</bdi></td><td class="n">${faFigure(n)}</td>` +
+    rows.map(([name, n]) => `<tr><td><bdi>${escapeHtml(name)}</bdi>` +
+      `${share ? `<span class="meter" style="--p:${pct(n / total)}"></span>` : ''}</td><td class="n">${faFigure(n)}</td>` +
       `${share ? `<td class="n">${shareFa(n, total)}</td>` : ''}</tr>`).join('') +
     '</tbody></table>';
 }
-
-// Enough columns that one counted day is a bar, not a wall.
-const MIN_CHART_DAYS = 30;
 
 /**
  * The numbers, as HTML for the page's slot. Up to yesterday only: today is still being counted, and
@@ -1668,30 +1669,24 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
   const counted = window.slice(first);
   const start = counted[0];
   const yesterday = counted[counted.length - 1];
-  const days = window.slice(-Math.max(counted.length, MIN_CHART_DAYS));
-  const counts = days.map(count);
+  const counts = counted.map(count);
   const last = rows.filter((row) => row.day === yesterday);
 
-  const W = 900;
-  const H = 220;
-  const band = W / days.length;
   // Floored at ten so the half-way gridline is always a whole number.
   const top = niceCeil(Math.max(...counts, 10));
-  const bars = counts.map((n, i) => {
-    const x = W - (i + 1) * band + 1; // oldest on the right
-    const w = band - 2; // the 2px surface gap between neighbours
-    const h = (n / top) * H;
-    const r = Math.min(4, w / 2, h);
-    const y = H - h;
-    const bar = n > 0
-      ? `<path class="bar" d="M${x} ${H}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${H}Z"/>`
-      : '';
-    const said = days[i] < start ? 'هنوز شمرده نمی‌شد' : `${faFigure(n)} گوشی`;
-    return `<g class="day"><title>${dayFa(days[i])} · ${said}</title>` +
-      `<rect class="hit" x="${x - 1}" y="0" width="${band}" height="${H}"/>${bar}</g>`;
+  const n = counted.length;
+  const peakAt = counts.indexOf(Math.max(...counts));
+  // A week names every day; past that, four or five dates counted back from yesterday, and the
+  // figures only over yesterday and the peak (hover shows the rest) so labels never collide.
+  const step = n <= 7 ? 1 : Math.ceil(n / 4);
+  const bars = counted.map((day, i) => {
+    const latest = i === n - 1;
+    const shown = n <= 7 || latest || i === peakAt;
+    const named = (n - 1 - i) % step === 0;
+    return `<li class="day${latest ? ' last' : ''}${shown ? ' shown' : ''}" style="--h:${pct(counts[i] / top)}" ` +
+      `title="${dayFa(day)} · ${faFigure(counts[i])} گوشی"><div class="col"><b>${faFigure(counts[i])}</b><i></i></div>` +
+      `<span>${named ? (latest ? 'دیروز' : dayFa(day)) : ''}</span></li>`;
   }).join('');
-  const grid = [0, H / 2, H].map((y) =>
-    `<line class="grid" x1="0" x2="${W}" y1="${y}" y2="${y}" vector-effect="non-scaling-stroke"/>`).join('');
 
   const versions = sumBy(last, (row) => row.version);
   const rest = versions.slice(MAX_VERSION_ROWS).reduce((sum, [, n]) => sum + n, 0);
@@ -1703,7 +1698,7 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
     : `<p class="label">${faFigure(Math.abs(diff))} تا ${diff > 0 ? 'بیشتر' : 'کمتر'} از پریروز</p>`;
   const stat = (label: string, figure: number, note: string) =>
     `<div><dt>${label}</dt><dd class="figure">${faFigure(figure)}</dd><dd>${note}</dd></div>`;
-  const peak = counted.reduce((a, b) => (count(b) > count(a) ? b : a));
+  const peak = counted[peakAt];
   // One day would only repeat the hero; a week's average needs a whole week.
   const stats = counted.length < 2 ? '' : '<dl class="stats">' +
     (counted.length >= 7
@@ -1719,12 +1714,10 @@ export function renderUsage(rows: UsageRow[], now = Date.now()): string {
   return `<section class="hero"><p class="label">گوشی‌هایی که دیروز برنامه رو باز کردن</p>` +
     `<p class="figure">${faFigure(count(yesterday))}</p>${change}</section>${stats}` +
     `<figure class="chart"><figcaption>گوشی‌های فعال هر روز، ${since}</figcaption>` +
-    `<div class="plot"><span class="tick" style="top:0">${faFigure(top)}</span>` +
-    `<span class="tick" style="top:50%">${faFigure(top / 2)}</span>` +
-    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
-    `aria-label="گوشی‌های فعال هر روز از ${dayFa(days[0])} تا ${dayFa(yesterday)}؛ بیشترین ${faFigure(Math.max(...counts))}. جدول روزبه‌روز پایین صفحه است.">` +
-    `${grid}${bars}</svg></div>` +
-    `<div class="axis"><span>${dayFa(days[0])}</span><span>${dayFa(yesterday)}</span></div></figure>` +
+    `<div class="plot" role="img" aria-label="گوشی‌های فعال هر روز از ${dayFa(start)} تا ${dayFa(yesterday)}؛ ` +
+    `بیشترین ${faFigure(counts[peakAt])}. جدول روزبه‌روز پایین صفحه است.">` +
+    `<div class="ticks"><span>${faFigure(top)}</span><span>${faFigure(top / 2)}</span><span>۰</span></div>` +
+    `<ol class="bars">${bars}</ol></div></figure>` +
     '<div class="tables">' +
     tableFa('دیروز، به تفکیک فروشگاه', 'فروشگاه', sumBy(last, (row) => STORES[row.source] ?? DIRECT_INSTALL), true) +
     tableFa('دیروز، به تفکیک نسخه', 'نسخه', [

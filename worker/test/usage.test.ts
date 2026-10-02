@@ -158,7 +158,7 @@ describe('/usage', () => {
     expect(html).toContain('<p class="figure">۱٬۲۳۴</p>');
     expect(html).toContain('۴۳۴ تا بیشتر از پریروز');
     expect(html).toContain('کافه‌بازار');
-    expect(html).toContain('<bdi>گیت‌هاب و نصب مستقیم</bdi></td><td class="n">۳۴</td><td class="n">۲٪</td>');
+    expect(html).toContain('<bdi>گیت‌هاب و نصب مستقیم</bdi><span class="meter" style="--p:2.8%"></span></td><td class="n">۳۴</td><td class="n">۲٪</td>');
     expect(html).toContain('<td class="n">زیر ۱٪</td>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');
@@ -166,8 +166,9 @@ describe('/usage', () => {
     // Two counted days: the running total is phone-days, and nothing before the first count is a zero.
     expect(html).toContain('<dd class="figure">۲٬۰۳۴</dd>');
     expect(html).not.toContain('میانگین هر روز');
-    expect(html.match(/<g class="day">/g)?.length).toBe(30);
-    expect(html.match(/هنوز شمرده نمی‌شد/g)?.length).toBe(28);
+    expect(html.match(/<li class="day/g)?.length).toBe(2);
+    expect(html).toContain('<li class="day last shown" style="--h:61.7%"');
+    expect(html).toContain('<span>دیروز</span>');
     expect(html.split('<summary>')[1].match(/<tr><td>/g)?.length).toBe(2);
   });
 
