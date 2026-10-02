@@ -380,7 +380,7 @@ describe('the ledger view', () => {
 
   it('files a pasted message by the channel it names', () => {
     const view = ledgerView(input({ sources: [source('MELLAT', 'برداشت از خودپرداز مبلغ 2,000,000 ریال', 10)] }));
-    expect(view.entries[0]).toMatchObject({ categoryId: 'cat_cash', needsReview: true });
+    expect(view.entries[0]).toMatchObject({ categoryId: 'cat_cash', needsReview: false });
   });
 });
 

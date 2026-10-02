@@ -203,7 +203,7 @@ const rule = (id: string, priority: number, categoryId: string, p: Partial<Rule>
 
 /**
  * What the app ships knowing: channels the parser identified outright, landing under the review
- * threshold so each shape is confirmed once and never asked about again.
+ * threshold so each shape is confirmed once and never asked about again — except NAMED_CHANNELS.
  */
 export const BUILTIN_RULES: readonly Rule[] = [
   rule('rule_atm', Priority.SHIPPED, CAT_CASH, { pChannel: 'atm', builtin: true }),
@@ -246,9 +246,16 @@ export interface TxnClass {
   needsReview: boolean;
 }
 
+/**
+ * Channels whose name is their category: a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee.
+ * There is nothing for the deck to confirm. A purchase is not one — «خرید روزانه» is a guess.
+ */
+const NAMED_CHANNELS = new Set(['atm', 'fee', 'bill']);
+
 function confidenceOf(r: Rule): number {
   if (r.builtin && r.pMerchantNorm != null) return Confidence.BUILTIN_EXACT;
   if (r.builtin && r.pMerchantLike != null) return Confidence.BUILTIN_LIKE;
+  if (r.builtin && r.pChannel != null && NAMED_CHANNELS.has(r.pChannel)) return Confidence.BUILTIN_EXACT;
   if (r.builtin) return Confidence.CHANNEL_ONLY;
   if (r.pMerchantNorm != null) return Confidence.RULE_EXACT;
   if (r.pMerchantLike != null) return Confidence.RULE_LIKE;

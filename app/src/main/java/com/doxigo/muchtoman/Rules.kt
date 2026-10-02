@@ -498,7 +498,8 @@ const val REVIEW_BELOW = 70
 /**
  * What the app ships knowing. Everything here is a channel the parser identified outright, so
  * it is right far more often than not — but it lands at [Confidence.CHANNEL_ONLY], under the
- * review threshold, so each shape is confirmed once and then never asked about again.
+ * review threshold, so each shape is confirmed once and then never asked about again. Except
+ * [NAMED_CHANNELS], where there is nothing to confirm.
  */
 val BUILTIN_RULES: List<Rule> = listOf(
     Rule("rule_atm", Priority.SHIPPED, CAT_CASH, pChannel = "atm", builtin = true),
@@ -507,6 +508,14 @@ val BUILTIN_RULES: List<Rule> = listOf(
     Rule("rule_pos", Priority.SHIPPED, CAT_SHOPPING_ID, pChannel = "pos", pDirection = "out", builtin = true),
     Rule("rule_income", Priority.SHIPPED, CAT_INCOME, pDirection = "in", builtin = true),
 )
+
+/**
+ * Channels whose name is their category: a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee.
+ * Filed under any of these, the row showed the category and the amber «در انتظار دسته‌بندی» dot
+ * beside it at once, and the deck asked her to agree with something the message had already said.
+ * A purchase is not one — «خرید روزانه» is where it usually goes, not what it is.
+ */
+private val NAMED_CHANNELS = setOf("atm", "fee", "bill")
 
 private const val CAT_BILLS_ID = "cat_bills"
 const val CAT_SHOPPING_ID = "cat_shopping"
@@ -525,6 +534,7 @@ data class TxnClass(
 private fun confidenceOf(rule: Rule): Int = when {
     rule.builtin && rule.pMerchantNorm != null -> Confidence.BUILTIN_EXACT
     rule.builtin && rule.pMerchantLike != null -> Confidence.BUILTIN_LIKE
+    rule.builtin && rule.pChannel in NAMED_CHANNELS -> Confidence.BUILTIN_EXACT
     rule.builtin -> Confidence.CHANNEL_ONLY
     rule.pMerchantNorm != null -> Confidence.RULE_EXACT
     rule.pMerchantLike != null -> Confidence.RULE_LIKE

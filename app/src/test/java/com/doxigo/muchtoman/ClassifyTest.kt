@@ -127,17 +127,27 @@ class ClassifyTest {
     @Test
     fun `a shipped guess asks once and her answer never asks again`() {
         // The whole learning loop, and it is a threshold rather than a model.
-        val atm = txn(signed = -2_000_000, channel = "atm")
-        val shipped = classify(atm, BUILTIN_RULES)
-        assertEquals(CAT_CASH, shipped.categoryId)
+        val pos = txn(signed = -2_000_000, channel = "pos")
+        val shipped = classify(pos, BUILTIN_RULES)
+        assertEquals(CAT_SHOPPING_ID, shipped.categoryId)
         assertTrue("a shipped guess must be confirmed once", shipped.needsReview)
         assertTrue(shipped.confidence < REVIEW_BELOW)
 
-        val hers = ruleFrom(atm, CAT_CASH, addrKey = "20004861", now = 5)
-        val after = classify(atm, BUILTIN_RULES + hers, addrKey = "20004861")
-        assertEquals(CAT_CASH, after.categoryId)
+        val hers = ruleFrom(pos, CAT_SHOPPING_ID, addrKey = "20004861", now = 5)
+        val after = classify(pos, BUILTIN_RULES + hers, addrKey = "20004861")
+        assertEquals(CAT_SHOPPING_ID, after.categoryId)
         assertTrue("and never again after that", !after.needsReview)
         assertTrue(after.confidence >= REVIEW_BELOW)
+    }
+
+    @Test
+    fun `a channel that names its category is filed without asking`() {
+        // A «قبض» filed under قبض‌ها still wore the waiting dot and a card in the deck.
+        for ((channel, category) in listOf("bill" to "cat_bills", "atm" to CAT_CASH, "fee" to CAT_FEES)) {
+            val c = classify(txn(signed = -50_000, channel = channel), BUILTIN_RULES)
+            assertEquals(category, c.categoryId)
+            assertTrue(channel, !c.needsReview)
+        }
     }
 
     @Test

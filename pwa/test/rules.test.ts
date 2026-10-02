@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { jalaliDay, tehranDay, tehranDayStart } from '../src/jalali';
 import type { LedgerEntry, Rule, Txn } from '../src/model';
 import {
-  BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_CASH, CAT_INCOME, CAT_OTHER, CAT_TRANSFER, CAT_UNCATEGORISED, Confidence,
+  BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_CASH, CAT_FEES, CAT_INCOME, CAT_OTHER, CAT_SHOPPING_ID, CAT_TRANSFER, CAT_UNCATEGORISED, Confidence,
   Priority, REVIEW_BELOW, categoryChoices, categoryUseOf, classify, customCategory, ruleFrom, ruleMatches, specificity,
 } from '../src/rules';
 import { merchantNorm } from '../src/sms';
@@ -91,16 +91,22 @@ describe('rules', () => {
   });
 
   it('asks about a shipped guess once, and her answer never asks again', () => {
-    const atm = txn({ signed: -2_000_000, channel: 'atm' });
-    const shipped = classify(atm, BUILTIN_RULES);
-    expect(shipped.categoryId).toBe(CAT_CASH);
+    const pos = txn({ signed: -2_000_000, channel: 'pos' });
+    const shipped = classify(pos, BUILTIN_RULES);
+    expect(shipped.categoryId).toBe(CAT_SHOPPING_ID);
     expect(shipped.needsReview).toBe(true);
     expect(shipped.confidence).toBeLessThan(REVIEW_BELOW);
-    const hers = ruleFrom(atm, CAT_CASH, '20004861', 5);
-    const after = classify(atm, [...BUILTIN_RULES, hers], null, new Set(), '20004861');
-    expect(after.categoryId).toBe(CAT_CASH);
+    const hers = ruleFrom(pos, CAT_SHOPPING_ID, '20004861', 5);
+    const after = classify(pos, [...BUILTIN_RULES, hers], null, new Set(), '20004861');
+    expect(after.categoryId).toBe(CAT_SHOPPING_ID);
     expect(after.needsReview).toBe(false);
     expect(after.confidence).toBeGreaterThanOrEqual(REVIEW_BELOW);
+  });
+
+  it('files a channel that names its category without asking', () => {
+    for (const [channel, category] of [['bill', 'cat_bills'], ['atm', CAT_CASH], ['fee', CAT_FEES]]) {
+      expect(classify(txn({ signed: -50_000, channel }), BUILTIN_RULES)).toMatchObject({ categoryId: category, needsReview: false });
+    }
   });
 
   it('never fires a rule minted from one sender on another sender of the same bank', () => {

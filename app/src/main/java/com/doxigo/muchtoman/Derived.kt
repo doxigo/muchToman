@@ -88,7 +88,9 @@ import kotlinx.coroutines.sync.withLock
 // after a refund: a shared balance settles a duplicate now only with nothing moved in between. And
 // a مانده's veto reads its own line only: a «وام …» advert on the line under it had refused the
 // real balance, and those rows are stored with none until they are read again.
-const val PARSER_VERSION = 18
+// 19: a bill, an ATM withdrawal and a fee are filed without asking — the channel names the
+// category. Every one already stored is still sitting in the deck until this rebuild refiles it.
+const val PARSER_VERSION = 19
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
