@@ -2804,7 +2804,7 @@ data class UiState(
     /** How notes talk — see [Store.quipTone]. */
     val quipTone: QuipTone = QUIP_TONE_DEFAULT,
     val history: Map<Long, Double> = emptyMap(),
-    /** One dollar rate per day — what a closed month's «≈ $» is frozen at. See [Store.rateHistory]. */
+    /** One dollar rate per day — what a closed month's «$» is frozen at. See [Store.rateHistory]. */
     val rateHistory: Map<Long, Double> = emptyMap(),
     /** False only on a phone that has never been past the first-run sheet. See [Store.onboarded]. */
     val onboarded: Boolean = true,

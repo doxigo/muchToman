@@ -17,7 +17,7 @@ class MoneyTest {
         assertEquals(2_022.46, usdOf(239_661_282.0, 118_500.0)!!, 0.01)
         assertNull(usdOf(239_661_282.0, null))   // no rate fetched yet
         assertNull(usdOf(239_661_282.0, 0.0))    // a rate of zero is not a rate
-        assertNull(usdOf(0.0, 118_500.0))        // "≈ $۰" is noise, not information
+        assertNull(usdOf(0.0, 118_500.0))        // "$۰" is noise, not information
     }
 
     @Test
@@ -262,6 +262,12 @@ class MoneyTest {
         assertTrue(faRate(187_000.0).contains("۱۸۷"))
         assertTrue(!faRate(187_000.0).contains("هزار"))
         assertTrue(faRate(180_000_000.0).contains("میلیون"))
+    }
+
+    @Test
+    fun `dollars put the sign on the left of the digits, magnitude outside`() {
+        assertEquals("\u2066\$۸۳۲\u2069", faUsd(832.9))
+        assertEquals("\u2066\$۱٫۲\u2069 میلیون", faUsd(1_200_000.0))
     }
 
     @Test

@@ -155,7 +155,7 @@ fun ReportScreen(
     usdRate: Double? = null,
     /**
      * One recorded dollar rate per day. A window that is over is priced from the days inside it
-     * rather than from today, so a month keeps the «≈ $» it ended on — see [ReportRange.usdRate].
+     * rather than from today, so a month keeps the «$» it ended on — see [ReportRange.usdRate].
      */
     rateHistory: Map<Long, Double> = emptyMap(),
     /** Her «می‌ارزید؟» answers, summed over this report's own window. */
@@ -1181,10 +1181,10 @@ private fun FlowSide(
  * The same figure in the one other unit everyone here already thinks in, under the exact Toman.
  *
  * An aside, at the exact figure's size and never above it: the report is kept in Toman and this
- * is a second reading of it. «≈» because one rate stands for a whole window, and absent — via
- * [usdOf] — rather than standing on a rate that isn't there. Which rate reaches it is the
- * caller's question, and the answer that matters is in [ReportRange.usdRate]: the window she is
- * in is priced today, and one that is over is priced at the days it actually ran through.
+ * is a second reading of it. Absent — via [usdOf] — rather than standing on a rate that isn't
+ * there. Which rate reaches it is the caller's question, and the answer that matters is in
+ * [ReportRange.usdRate]: the window she is in is priced today, and one that is over is priced at
+ * the days it actually ran through.
  */
 @Composable
 private fun UsdAside(
@@ -1195,9 +1195,7 @@ private fun UsdAside(
 ) {
     val usd = usdOf(tomanOf(rial), rate) ?: return
     BasicText(
-        // The isolate keeps the number one opaque run; the "$" sits outside it so bidi puts it
-        // on the reading side of the figure, whether faRate returns digits or a magnitude.
-        text = "≈ \$${bidi(faRate(usd))}",
+        text = faUsd(usd),
         maxLines = 1,
         autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
         style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal)
@@ -1206,7 +1204,7 @@ private fun UsdAside(
             .padding(top = 2.dp)
             // "$" is read out as punctuation or skipped entirely; the unit has to survive for
             // anyone listening rather than looking.
-            .semantics { contentDescription = "حدود ${faRate(usd)} دلار" },
+            .semantics { contentDescription = "${faRate(usd)} دلار" },
     )
 }
 
@@ -1272,8 +1270,7 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
     val weekly = cash.range.week != null
     val top = cash.series.maxOf { maxOf(it.incomeRial, it.spentRial) }.coerceAtLeast(1L)
     // A year of months is twice what this row was built for, so the bars thin out to keep twelve
-    // of them on a narrow phone. Only the bars: the numerals below them fit a twelfth of a screen
-    // at any count, which is the whole reason they are numerals.
+    // of them on a narrow phone, and the month names below them give way to numerals.
     val crowded = cash.series.size > 8
     val barWidth = if (crowded) 7.dp else 12.dp
     // Only worth marking where there is something outside the window to tell it apart from.
@@ -1362,27 +1359,18 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                         Bar(report.spentRial, top, spend, barWidth)
                     }
                     Spacer(Modifier.height(Space.s))
-                    // The month's number, not its name. «فروردین» and «اردیبهشت» are wider
-                    // than a sixth of a phone, let alone a twelfth, so every window longer
-                    // than a couple of months printed «فرورد…» — a label that has lost the
-                    // one syllable telling it apart from «فروردین» of the year before, and
-                    // that at twelve bars was only printed on every other month anyway.
-                    // «۱» fits any column at any count, so every bar can be labelled again.
-                    //
-                    // Nothing is lost by it: the window's full name is set above the card,
-                    // tapping a bar puts that month's name up there, and the spoken
-                    // description on this very column has said «مرداد ۱۴۰۵» all along.
-                    //
-                    // Tabular figures, so «۱۰» and «۱۱» are the same width as each other and
-                    // the row of numerals sits on one baseline grid rather than drifting.
-                    //
-                    // A week is named by the day of the month its شنبه falls on — «۳»، «۱۰»،
-                    // «۱۷» — which is how the two ends of the title above already speak.
-                    Text(
-                        faNumber(
-                            (if (weekly) jalaliOf(report.range.startDay).day
-                            else report.month.month).toDouble(),
-                        ),
+                    // The month's name, stepped down rather than cut when a column is narrow:
+                    // «فرورد…» lost the one syllable telling it apart from «فروردین». Twelve
+                    // bars leave no room for a name at any size, so a year falls back to the
+                    // month's number. A week is named by the day of the month its شنبه falls
+                    // on — «۳»، «۱۰»، «۱۷» — which is how the two ends of the title above speak.
+                    val numeral = weekly || crowded
+                    BasicText(
+                        when {
+                            weekly -> faNumber(jalaliOf(report.range.startDay).day.toDouble())
+                            crowded -> faNumber(report.month.month.toDouble())
+                            else -> MONTHS[report.month.month - 1]
+                        },
                         style = figureStyle(
                             // Weight and a container, not a colour: the selected month has to
                             // be findable without seeing one.
@@ -1390,16 +1378,14 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             weight = if (only) FontWeight.ExtraBold else FontWeight.Normal,
                         ),
-                        fontSize = 11.sp,
                         maxLines = 1,
-                        // Measured outside its own column, because a twelfth of a 320dp phone
-                        // is not reliably wide enough for two digits: at that width «۱۰»,
-                        // «۱۱» and «۱۲» each lost their second digit and drew as a bare «۱»,
-                        // which is not a clipped label but a wrong one — three months of the
-                        // year silently claiming to be فروردین. A numeral overspills by a
-                        // hair rather than by two thirds, so unlike the month names this
-                        // never reaches the label beside it.
-                        modifier = Modifier.wrapContentWidth(unbounded = true),
+                        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
+                        // A numeral is measured outside its own column: a twelfth of a 320dp
+                        // phone is not reliably wide enough for two digits, and «۱۰» drawn as
+                        // a bare «۱» is not a clipped label but a wrong one. It overspills by a
+                        // hair, so it never reaches the label beside it. A name stays inside
+                        // its column, where the auto-size can see the width it has to fit.
+                        modifier = if (numeral) Modifier.wrapContentWidth(unbounded = true) else Modifier,
                     )
                 }
             }

@@ -19,7 +19,7 @@ import type { Change } from './data';
 import { ledger, useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { setReportExcluded, useFamily } from './family';
-import { MONTHS, bidi, faCompact, faDecimal, faNumber, faRate, tomanOf, usdOf } from './format';
+import { MONTHS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf } from './format';
 import { isTotal, worthItAnswers, worthItSummary } from './goals';
 import type { WorthItSummary } from './goals';
 import { Chevron, TrendCaret } from './icons';
@@ -603,9 +603,8 @@ function UsdAside({ rial, rate, end = false }: { rial: number; rate: number | nu
   if (usd == null) return null;
   return (
     <p class={`rp-usd figure muted${end ? ' rp-end' : ''}`}>
-      {/* The isolate keeps the number one run; «$» sits outside it on the reading side. */}
-      <span aria-hidden="true">{`≈ $${bidi(faRate(usd))}`}</span>
-      <span class="sr">{`حدود ${faRate(usd)} دلار`}</span>
+      <span aria-hidden="true">{faUsd(usd)}</span>
+      <span class="sr">{`${faRate(usd)} دلار`}</span>
     </p>
   );
 }
@@ -637,8 +636,9 @@ const BAR_FLOOR = 0.03;
 function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindow }) {
   const weekly = cash.range.week != null;
   const top = Math.max(...cash.series.map((r) => Math.max(r.incomeRial, r.spentRial)), 1);
-  // A year of months thins the bars to keep twelve on a narrow phone; the numerals fit anyway.
-  const barWidth = cash.series.length > 8 ? 7 : 12;
+  // A year of months thins the bars to keep twelve on a narrow phone, and names give way to numerals.
+  const crowded = cash.series.length > 8;
+  const barWidth = crowded ? 7 : 12;
   // Only worth marking where there is something outside the window to tell it apart from.
   const markWindow = !weekly && cash.series.length > cash.range.count;
   return (
@@ -667,10 +667,11 @@ function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindo
                 <Bar rial={report.incomeRial} top={top} tone={INCOME_TINT} width={barWidth} />
                 <Bar rial={report.spentRial} top={top} tone={SPEND_TINT} width={barWidth} />
               </span>
-              {/* The month's number, not its name: «فرورد…» lost the syllable telling it apart.
-                  A week is named by the day its شنبه falls on. */}
-              <span class="figure rp-bar-label">
-                {faNumber(weekly ? jalaliOf(report.range.startDay).day : report.month.month)}
+              {/* The month's name, stepped down rather than cut; twelve bars leave no room for one, so
+                  a year falls back to numerals. A week is named by the day its شنبه falls on. */}
+              <span class={`figure rp-bar-label${weekly || crowded ? '' : ' name'}`}>
+                {weekly ? faNumber(jalaliOf(report.range.startDay).day)
+                  : crowded ? faNumber(report.month.month) : MONTHS[report.month.month - 1]}
               </span>
             </button>
           );

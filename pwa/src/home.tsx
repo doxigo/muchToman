@@ -18,7 +18,7 @@ import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { familyAssetViews, setFamilyTotal, useFamily } from './family';
 import type { FamilyAssetView } from './family';
-import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faWordsToman, tomanOf, usdOf } from './format';
+import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf } from './format';
 import { Chevron, PersonMark, PlusMark, RefreshMark, TabIcon, TrendCaret } from './icons';
 import { DAY_MS, tehranDay } from './jalali';
 import { holdingKey } from './model';
@@ -143,8 +143,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
             ? <span class="label">جمع دارایی‌هات</span>
             : <HeroScopeToggle family={familyMode} onSelect={setFamilyTotal} />}
           {usd != null && (
-            // "$" outside the isolate, so bidi puts it on the reading side of digits or a magnitude.
-            <span class="usd figure" aria-label={`حدود ${faRate(usd)} دلار`}>{`≈ $${bidi(faRate(usd))}`}</span>
+            <span class="usd figure" aria-label={`${faRate(usd)} دلار`}>{faUsd(usd)}</span>
           )}
         </div>
         {/* Keyed on the figure: every refresh lifts the new one into place, the receipt that it did something. */}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faWords, faWordsToman, fieldNumber, groupDigits, parseAmount } from '../src/format';
+import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faUsd, faWords, faWordsToman, fieldNumber, groupDigits, parseAmount } from '../src/format';
 
 /** The phone's own FormatTest expectations, verbatim where they are literal. */
 describe('format', () => {
@@ -58,5 +58,7 @@ describe('format', () => {
 
   it('keeps the sign on the digits', () => {
     expect(faSignedCompact(400_000_000, false)).toBe('⁦−۴۰۰⁩ میلیون');
+    expect(faUsd(832.9)).toBe('\u2066$۸۳۲\u2069');
+    expect(faUsd(1_200_000)).toBe('\u2066$۱٫۲\u2069 میلیون');
   });
 });

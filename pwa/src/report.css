@@ -91,13 +91,15 @@
 .rp-key { display: inline-flex; align-items: center; gap: var(--xs); font-size: 12px; color: var(--on-surface-variant); }
 .rp-key > span { width: 8px; height: 8px; border-radius: 50%; }
 .rp-bars { display: flex; gap: var(--xs); }
-.rp-bar-col { flex: 1 1 0; min-width: 0; min-height: 48px; display: flex; flex-direction: column; align-items: center; gap: var(--s); padding: var(--s) 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--on-surface-variant); }
+.rp-bar-col { flex: 1 1 0; min-width: 0; container-type: inline-size; min-height: 48px; display: flex; flex-direction: column; align-items: center; gap: var(--s); padding: var(--s) 0; border: 0; border-radius: var(--r-field); background: transparent; color: var(--on-surface-variant); }
 .rp-bar-col.marked { background: var(--surface-container); }
 .rp-bar-col.only { color: var(--on-surface); }
 .rp-bar-box { display: flex; align-items: flex-end; gap: 3px; height: 132px; }
 .rp-bar { display: block; border-radius: 4px 4px 0 0; }
 /* Measured outside its column: at twelve bars «۱۰» must not lose its second digit. */
 .rp-bar-label { font-size: 11px; line-height: 1.4; white-space: nowrap; }
+/* A name steps down to fit its column rather than being cut: «اردیبهشت» is ~4.2em wide. */
+.rp-bar-label.name { font-size: clamp(8px, 24cqi, 11px); }
 .rp-bar-col.only .rp-bar-label { font-weight: 800; }
 
 .rp-share { display: block; padding: var(--s) 0; border-radius: var(--r-field); }

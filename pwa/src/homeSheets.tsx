@@ -522,7 +522,7 @@ function WalletBalanceCard({ held, toman, status, error }: { held: string; toman
       <p style={{ fontSize: '13px', fontWeight: 700 }}>موجودی فعلی</p>
       {/* faHeld, not full precision: the row outside says the same number the same length. */}
       <FitLine text={held} max={30} min={18} weight={800} />
-      {toman != null && <FitLine class="sub" text={`≈ ${faCompact(toman, 3, true)} تومان`} max={17} min={13} weight={600} />}
+      {toman != null && <FitLine class="sub" text={`${faCompact(toman, 3, true)} تومان`} max={17} min={13} weight={600} />}
       <p class={`status${error ? ' error' : ''}`} aria-live={error ? 'polite' : undefined}>{status}</p>
     </div>
   );

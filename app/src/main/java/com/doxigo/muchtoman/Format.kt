@@ -226,6 +226,16 @@ fun faRate(rate: Double): String =
     if (rate >= 1_000_000) faCompact(rate) else faNumber(rate)
 
 /**
+ * «$۸۳۲»: the "$" on the left of its digits, the way a dollar figure is written even inside a
+ * Persian line. Same arrangement as [faSignedParts] — the "$" and digits are one left-to-right
+ * island and a magnitude word stays outside it, so «$۱٫۲ میلیون» still reads in order.
+ */
+fun faUsd(usd: Double): String {
+    val parts = faRate(usd).split(' ', limit = 2)
+    return ltrFigure("\$" + parts[0]) + (parts.getOrNull(1)?.let { " $it" } ?: "")
+}
+
+/**
  * The same money in dollars, or nothing at all.
  *
  * Absent — not zero, not a dash — whenever it cannot be stated honestly: no rate fetched yet,

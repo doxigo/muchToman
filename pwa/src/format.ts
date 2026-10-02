@@ -155,6 +155,13 @@ export function faRate(rate: number): string {
   return rate >= 1_000_000 ? faCompact(rate) : faNumber(rate);
 }
 
+/** «$۸۳۲»: "$" and digits as one LTR island, a magnitude word outside it — as faSignedParts. */
+export function faUsd(usd: number): string {
+  const text = faRate(usd);
+  const at = text.indexOf(' ');
+  return at < 0 ? ltrFigure('$' + text) : `${ltrFigure('$' + text.slice(0, at))} ${text.slice(at + 1)}`;
+}
+
 /** Dollars, or nothing: absent whenever it cannot be stated honestly. */
 export function usdOf(toman: number, rate: number | null | undefined): number | null {
   return rate != null && rate > 0 && Number.isFinite(rate) && toman > 0 ? toman / rate : null;

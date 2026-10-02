@@ -918,7 +918,7 @@ class Store(context: Context) {
     /**
      * One dollar rate per day, written beside [history] by [snapshotDay] and on the same gate.
      *
-     * This is what lets a month that is over keep the «≈ $» it had when it ended, instead of
+     * This is what lets a month that is over keep the «$» it had when it ended, instead of
      * every past month silently re-pricing itself each time the rial moves. It only ever grows
      * forward: a month with no days on file gets no dollar figure at all, because nothing here
      * can know what the dollar was worth before the app started writing this down.

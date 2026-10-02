@@ -1539,7 +1539,7 @@ internal fun HeroCard(
 
     HeroPanel {
             // Label and dollar figure share a line, so the top of the card reads as one
-            // sentence — "جمع دارایی‌هات ≈ $۵۱٬۵۰۰" — and the dollars stay an aside rather
+            // sentence — "جمع دارایی‌هات $۵۱٬۵۰۰" — and the dollars stay an aside rather
             // than a second headline.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (state.familyAssets.isEmpty()) {
@@ -1561,11 +1561,8 @@ internal fun HeroCard(
                     )
                 }
                 usd?.let {
-                    // The isolate keeps the number one opaque run; the "$" sits outside it so
-                    // bidi puts it on the reading side of the figure whether faRate returns
-                    // digits ("$۵۱٬۵۰۰") or a magnitude ("$۱٫۲ میلیون").
                     Text(
-                        "≈ \$${bidi(faRate(it))}",
+                        faUsd(it),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = ModamFigures,
@@ -1575,7 +1572,7 @@ internal fun HeroCard(
                         // survive for anyone listening rather than looking.
                         modifier = Modifier
                             .padding(start = Space.s)
-                            .semantics { contentDescription = "حدود ${faRate(it)} دلار" },
+                            .semantics { contentDescription = "${faRate(it)} دلار" },
                     )
                 }
             }
@@ -4297,7 +4294,7 @@ private fun EditSheet(
                             // not a separate finding.
                             previewRate?.let { rate ->
                                 BasicText(
-                                    text = "≈ ${faCompact(current * rate, 3, pad = true)} تومان",
+                                    text = "${faCompact(current * rate, 3, pad = true)} تومان",
                                     maxLines = 1,
                                     autoSize = TextAutoSize.StepBased(
                                         minFontSize = 13.sp,
