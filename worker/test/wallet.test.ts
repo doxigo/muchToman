@@ -13,12 +13,14 @@ const BTC = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 
 let ip = 0;
 
-async function lookup(routes: Record<string, () => Response>, body: Record<string, string>) {
-  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+type Route = (body: Record<string, string>) => Response;
+
+async function lookup(routes: Record<string, Route>, body: Record<string, string>) {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
     const route = Object.entries(routes).find(([prefix]) => url.startsWith(prefix))?.[1];
     if (!route) throw new Error('unexpected fetch: ' + url);
-    return route();
+    return route(typeof init?.body === 'string' ? JSON.parse(init.body) : {});
   });
   const res = await worker.fetch(
     new Request('https://rates.muchtoman.com/wallet-balance', {
@@ -63,21 +65,52 @@ describe('Tron', () => {
     expect(res).toEqual({ status: 502, body: { code: 'unavailable' } });
   });
 
-  const trc20 = (balances: unknown) => ({
-    'https://api.trongrid.io/v1/accounts/': () => Response.json(balances),
-    'https://api.trongrid.io/wallet/triggerconstantcontract': () => Response.json({ constant_result: ['6'.padStart(64, '0')] }),
+  const throttled = () => new Response('', { status: 429 });
+  const word = (n: number) => n.toString(16).padStart(64, '0');
+  const trc20 = (units: number, node = 'https://api.trongrid.io'): Record<string, Route> => ({
+    [`${node}/wallet/triggerconstantcontract`]: (call) => Response.json({
+      result: { result: true },
+      constant_result: [call.function_selector === 'decimals()' ? word(6) : word(units)],
+    }),
   });
 
-  it('reads a TRC-20 balance, and an empty list as the chain saying none', async () => {
-    const held = await lookup(trc20({ success: true, data: [{ [USDT_TRC20]: '12500000' }] }), { network: 'tron', address: TRON, contract: USDT_TRC20 });
+  it('reads a TRC-20 balance, and a zero word as the chain saying none', async () => {
+    const held = await lookup(trc20(12_500_000), { network: 'tron', address: TRON, contract: USDT_TRC20 });
     expect(held.body.amount).toBe(12.5);
-    const none = await lookup(trc20({ success: true, data: [] }), { network: 'tron', address: TRON, contract: USDT_TRC20 });
+    const none = await lookup(trc20(0), { network: 'tron', address: TRON, contract: USDT_TRC20 });
     expect(none.body.amount).toBe(0);
   });
 
-  it('answers unavailable, not 0, when the TRC-20 lookup did not succeed', async () => {
-    const res = await lookup(trc20({ success: false, error: 'rate limited', statusCode: 429 }), { network: 'tron', address: TRON, contract: USDT_TRC20 });
+  it('asks balanceOf for the owner as one 32-byte word', async () => {
+    const seen: string[] = [];
+    await lookup({
+      'https://api.trongrid.io/wallet/triggerconstantcontract': (call) => {
+        if (call.function_selector === 'balanceOf(address)') seen.push(call.parameter);
+        return Response.json({ result: { result: true }, constant_result: [word(6)] });
+      },
+    }, { network: 'tron', address: TRON, contract: USDT_TRC20 });
+    expect(seen).toEqual(['07'.repeat(20).padStart(64, '0')]);
+  });
+
+  it('answers unavailable, not 0, when the TRC-20 call reverted', async () => {
+    const res = await lookup({
+      'https://api.trongrid.io/wallet/triggerconstantcontract': () => Response.json({
+        result: { result: true }, constant_result: [`08c379a0${word(32)}${word(0)}`],
+      }),
+      'https://tron-rpc.publicnode.com/': throttled,
+    }, { network: 'tron', address: TRON, contract: USDT_TRC20 });
     expect(res).toEqual({ status: 502, body: { code: 'unavailable' } });
+  });
+
+  it('asks publicnode when TronGrid throttles', async () => {
+    const trx = await lookup({
+      'https://api.trongrid.io/': throttled,
+      'https://tron-rpc.publicnode.com/wallet/getaccount': () => Response.json({ address: TRON, balance: 2_500_000 }),
+    }, { network: 'tron', address: TRON });
+    expect(trx.body.amount).toBe(2.5);
+    const usdt = await lookup({ 'https://api.trongrid.io/': throttled, ...trc20(12_500_000, 'https://tron-rpc.publicnode.com') },
+      { network: 'tron', address: TRON, contract: USDT_TRC20 });
+    expect(usdt.body.amount).toBe(12.5);
   });
 });
 
@@ -96,7 +129,30 @@ describe('Bitcoin', () => {
   });
 
   it('answers unavailable, not 0, for a body without chain_stats', async () => {
-    const res = await lookup(mempool({ error: 'upstream timeout' }), { network: 'bitcoin', address: BTC });
+    const res = await lookup({
+      ...mempool({ error: 'upstream timeout' }),
+      'https://blockstream.info/api/address/': () => Response.json({ error: 'upstream timeout' }),
+    }, { network: 'bitcoin', address: BTC });
     expect(res).toEqual({ status: 502, body: { code: 'unavailable' } });
+  });
+
+  it('asks blockstream when mempool.space throttles, check and all', async () => {
+    const res = await lookup({
+      'https://mempool.space/': () => new Response('', { status: 429 }),
+      'https://blockstream.info/api/address/': () => Response.json({
+        chain_stats: { funded_txo_sum: 100_000_000, spent_txo_sum: 0 },
+        mempool_stats: {},
+      }),
+    }, { network: 'bitcoin', address: BTC });
+    expect(res.body.amount).toBe(1);
+  });
+
+  it('still refuses an address the check calls invalid', async () => {
+    const res = await lookup({
+      'https://mempool.space/api/v1/validate-address/': () => Response.json({ isvalid: false }),
+      'https://mempool.space/api/address/': () => new Response('Invalid Bitcoin address', { status: 400 }),
+      'https://blockstream.info/api/address/': () => new Response('base58 error', { status: 400 }),
+    }, { network: 'bitcoin', address: BTC });
+    expect(res).toEqual({ status: 400, body: { code: 'invalid_address' } });
   });
 });

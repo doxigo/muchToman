@@ -790,31 +790,70 @@ const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
  * WebCrypto does not have; those stay shape-checked.)
  */
 export async function isTronAddress(text: string): Promise<boolean> {
-  if (!TRON_ADDRESS.test(text)) return false;
+  return (await tronBytes(text)) != null;
+}
+
+/** The 25 bytes behind a base58check Tron address, or null when the text is not one. */
+async function tronBytes(text: string): Promise<Uint8Array | null> {
+  if (!TRON_ADDRESS.test(text)) return null;
   let n = 0n;
   for (const c of text) n = n * 58n + BigInt(BASE58.indexOf(c));
   const bytes = new Uint8Array(25);
   for (let i = 24; i >= 0; i--, n >>= 8n) bytes[i] = Number(n & 0xffn);
-  if (n !== 0n || bytes[0] !== 0x41) return false;
+  if (n !== 0n || bytes[0] !== 0x41) return null;
   const once = await crypto.subtle.digest('SHA-256', bytes.subarray(0, 21));
   const twice = new Uint8Array(await crypto.subtle.digest('SHA-256', once));
-  return twice.subarray(0, 4).every((b, i) => b === bytes[21 + i]);
+  return twice.subarray(0, 4).every((b, i) => b === bytes[21 + i]) ? bytes : null;
+}
+
+/**
+ * TronGrid on its own answered about one lookup in four with a 429 — anonymous requests from
+ * Cloudflare's shared egress share its quota with every other Worker. publicnode runs the same
+ * full-node HTTP API, and only that API is asked for, so either host can answer any call. An
+ * error body a node sends with a 200 moves on to the next host like a failed request does.
+ */
+const TRON_NODES = ['https://api.trongrid.io', 'https://tron-rpc.publicnode.com'];
+
+async function tronCall(
+  path: string,
+  body: JsonRecord,
+  usable: (value: unknown) => true | string,
+): Promise<JsonRecord> {
+  const { value } = await firstOf(
+    TRON_NODES.map((node) => ({
+      name: node,
+      run: () => getJson(`${node}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }, WALLET_UPSTREAM_TIMEOUT_MS),
+    })),
+    usable,
+  );
+  return asRecord(value);
+}
+
+/** A contract call's single 32-byte answer. A revert carries reason data, never one bare word. */
+function constantWord(value: unknown): true | string {
+  const call = asRecord(value);
+  return asRecord(call.result).result === true &&
+    /^[0-9a-fA-F]{64}$/.test(String(asArray(call.constant_result)[0] ?? '')) ||
+    'contract call returned no result';
 }
 
 async function tronBalance(address: string, contract: string): Promise<number> {
-  if (!(await isTronAddress(address))) throw new WalletInputError('invalid_address');
+  const owner = await tronBytes(address);
+  if (owner == null) throw new WalletInputError('invalid_address');
   if (contract && !(await isTronAddress(contract))) throw new WalletInputError('invalid_contract');
 
-  // Every zero below is one the chain said, never one an error body defaulted to: trongrid
+  // Every zero below is one the chain said, never one an error body defaulted to: a node
   // answers 200 with an `Error` field, and a 0 here is persisted over a real holding.
   if (!contract) {
-    const value = await getJson('https://api.trongrid.io/wallet/getaccount', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ address, visible: true }),
-    }, WALLET_UPSTREAM_TIMEOUT_MS);
-    const account = asRecord(value);
-    if (value !== account || account.Error != null) throw new Error('Tron account unavailable');
+    const account = await tronCall(
+      '/wallet/getaccount',
+      { address, visible: true },
+      (value) => asRecord(value) === value && asRecord(value).Error == null || 'Tron account unavailable',
+    );
     // An account never activated is `{}`, and one holding no TRX omits `balance` (protobuf
     // drops a zero) but still names its address. Any other shape is not an account.
     if (account.balance == null) {
@@ -824,58 +863,65 @@ async function tronBalance(address: string, contract: string): Promise<number> {
     return scaledAmount(account.balance, 6);
   }
 
-  const [balancesValue, tokenValue] = await Promise.all([
-    getJson(
-      `https://api.trongrid.io/v1/accounts/${encodeURIComponent(address)}` +
-        `/trc20/balance?contract_address=${encodeURIComponent(contract)}&limit=1`,
-      undefined,
-      WALLET_UPSTREAM_TIMEOUT_MS,
-    ),
-    getJson('https://api.trongrid.io/wallet/triggerconstantcontract', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        owner_address: address,
-        contract_address: contract,
-        function_selector: 'decimals()',
-        visible: true,
-      }),
-    }, WALLET_UPSTREAM_TIMEOUT_MS),
+  // balanceOf on the contract rather than TronGrid's own /v1 token list, which publicnode does
+  // not have. A zero word is the chain's own "holds none of this token".
+  const word = [...owner.subarray(1, 21)]
+    .map((b) => b.toString(16).padStart(2, '0')).join('').padStart(64, '0');
+  const call = (selector: string, parameter: string) => tronCall('/wallet/triggerconstantcontract', {
+    owner_address: address,
+    contract_address: contract,
+    function_selector: selector,
+    parameter,
+    visible: true,
+  }, constantWord);
+  const [balance, decimals] = await Promise.all([
+    call('balanceOf(address)', word),
+    call('decimals()', ''),
   ]);
-  const balances = asRecord(balancesValue);
-  const token = asRecord(tokenValue);
-  if (balances.success !== true || !Array.isArray(balances.data)) {
-    throw new Error('TRC-20 balance unavailable');
-  }
-  // An empty list is the chain's own "holds none of this token".
-  const raw = asRecord(balances.data[0])[contract] ?? '0';
-  const decimalsHex = asArray(token.constant_result)[0];
-  if (!decimalsHex) throw new Error('TRC-20 decimals unavailable');
-  return scaledAmount(raw, tokenDecimals(`0x${decimalsHex}`));
+  return scaledAmount(
+    `0x${asArray(balance.constant_result)[0]}`,
+    tokenDecimals(`0x${asArray(decimals.constant_result)[0]}`),
+  );
 }
+
+/**
+ * mempool.space and blockstream.info serve the same Esplora API, and both refuse an address that
+ * fails its checksum with a 400 — so neither the second host nor a throttled validate-address can
+ * turn a typo into a confident zero.
+ */
+const ESPLORA = ['https://mempool.space/api', 'https://blockstream.info/api'];
 
 async function bitcoinBalance(address: string, contract: string): Promise<number> {
   if (contract) throw new WalletInputError('invalid_contract');
   if (!BITCOIN_ADDRESS.test(address)) throw new WalletInputError('invalid_address');
   const encoded = encodeURIComponent(address);
-  const validation = asRecord(
-    await getJson(
+  // Side by side rather than one after the other: two hosts' timeouts plus the check's would run
+  // past the 15 s the phone and the sync proxy give a lookup.
+  const [validation, stats] = await Promise.allSettled([
+    getJson(
       `https://mempool.space/api/v1/validate-address/${encoded}`,
       undefined,
       WALLET_UPSTREAM_TIMEOUT_MS,
     ),
-  );
-  if (!validation.isvalid) throw new WalletInputError('invalid_address');
+    // A body without chain_stats is an error page, not an empty address: defaulting it to zero
+    // would be persisted over a real holding.
+    firstOf(
+      ESPLORA.map((host) => ({
+        name: host,
+        run: () => getJson(`${host}/address/${encoded}`, undefined, WALLET_UPSTREAM_TIMEOUT_MS),
+      })),
+      (value) => asRecord(asRecord(value).chain_stats) === asRecord(value).chain_stats ||
+        'Bitcoin address stats unavailable',
+    ),
+  ]);
+  // Only the check's "no" is an answer. A throttled check says nothing either way.
+  if (validation.status === 'fulfilled' && !asRecord(validation.value).isvalid) {
+    throw new WalletInputError('invalid_address');
+  }
+  if (stats.status === 'rejected') throw stats.reason;
 
-  const data = asRecord(await getJson(
-    `https://mempool.space/api/address/${encoded}`,
-    undefined,
-    WALLET_UPSTREAM_TIMEOUT_MS,
-  ));
-  // A body without chain_stats is an error page, not an empty address: defaulting it to zero
-  // would be persisted over a real holding.
+  const data = asRecord(stats.value.value);
   const chain = asRecord(data.chain_stats);
-  if (chain !== data.chain_stats) throw new Error('Bitcoin address stats unavailable');
   const mempool = asRecord(data.mempool_stats);
   const confirmed = Number(chain.funded_txo_sum ?? 0) - Number(chain.spent_txo_sum ?? 0);
   const pending = Number(mempool.funded_txo_sum ?? 0) - Number(mempool.spent_txo_sum ?? 0);
