@@ -992,11 +992,16 @@ private fun installmentNoteFa(
 
 /**
  * One cheque: who it is for, from which account, on which day and how far off that is, and — inside
- * the reminder's window — whether the account holds it, in words. Amber confirms the sentence; red
- * once the date has gone by and it still is not covered.
+ * the reminder's window — whether the account holds it, in words.
+ *
+ * It leads with the bank's logo where a budget leads with its category's disc: a cheque is the
+ * account it draws on. The warning is set as a budget's caution line is — the sentence in ink, amber
+ * on the countdown beside the figure the way it sits on a budget's percent — and said out loud, bold
+ * in error, only once the date has gone by uncovered, as a budget over its cap and a late installment
+ * are.
  *
  * «پاس شد» sits on the card rather than in the sheet: it is the one thing she does with a cheque, and
- * a stray tap is taken back from the notice it leaves.
+ * a stray tap is taken back from the notice it leaves. Its row's one equal cell, full width.
  */
 @Composable
 private fun ChequeCard(
@@ -1007,9 +1012,12 @@ private fun ChequeCard(
     onOpen: () -> Unit,
     onPass: () -> Unit,
 ) {
-    val tone = if (cheque.startsOn < today) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+    val late = cheque.startsOn < today
+    val tone = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
     BandCard(shape = shape, divided = true, onOpen = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            BankLogo(cheque.categoryId.orEmpty(), size = 36.dp)
+            Spacer(Modifier.width(Space.m))
             Column(Modifier.weight(1f)) {
                 Text(
                     chequeTitleFa(cheque),
@@ -1024,7 +1032,7 @@ private fun ChequeCard(
             }
             EditHint()
         }
-        Spacer(Modifier.height(Space.s))
+        Spacer(Modifier.height(Space.m))
         Row(verticalAlignment = Alignment.Bottom) {
             BasicText(
                 text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 3)} تومان"),
@@ -1037,15 +1045,22 @@ private fun ChequeCard(
             Text(
                 chequeWhenFa(cheque.startsOn, today),
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (warning != null) FontWeight.Bold else FontWeight.Normal,
+                color = if (warning != null) tone else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         warning?.let {
             Spacer(Modifier.height(Space.xs))
-            Text(it, fontSize = 13.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = tone)
+            Text(
+                it,
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                fontWeight = if (late) FontWeight.Bold else FontWeight.Normal,
+                color = if (late) tone else MaterialTheme.colorScheme.onSurface,
+            )
         }
-        Spacer(Modifier.height(Space.s))
-        PillButton("پاس شد", onPass)
+        Spacer(Modifier.height(Space.m))
+        PillButton("پاس شد", onPass, Modifier.fillMaxWidth())
     }
 }
 
@@ -1810,7 +1825,7 @@ private fun ChequeSheet(
         ) {
             SheetTitle(if (editing != null) "ویرایش چک" else "چک تازه")
 
-            SheetLabel("مبلغ چک، به تومان")
+            SheetLabel("چقدر، به تومان")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -1831,7 +1846,7 @@ private fun ChequeSheet(
                     .semantics { contentDescription = "مبلغ چک به تومان" },
             )
 
-            SheetLabel("تاریخ چک")
+            SheetLabel("سررسیدش کِیه؟")
             OutlinedTextField(
                 value = dateDigits,
                 onValueChange = { dateDigits = clockDigits(it).take(8) },
@@ -1864,10 +1879,12 @@ private fun ChequeSheet(
                     horizontalArrangement = Arrangement.spacedBy(Space.s),
                     verticalArrangement = Arrangement.spacedBy(Space.s),
                 ) {
-                    banks.forEach { b -> Chip(bankNameOf(b), bank == b) { bank = b } }
+                    banks.forEach { b ->
+                        Chip(bankNameOf(b), bank == b, lead = { BankLogo(b, size = 24.dp) }) { bank = b }
+                    }
                 }
             }
-            if (tried && bank == null) FieldError("حسابش رو انتخاب کن.")
+            if (tried && bank == null) MissingText("حسابش رو انتخاب کن.")
 
             SheetLabel("برای کی یا چی؟")
             OutlinedTextField(

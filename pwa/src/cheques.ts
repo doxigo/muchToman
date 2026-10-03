@@ -45,9 +45,10 @@ export const chequeTitleFa = (cheque: Goal): string => cheque.nameFa.trim() || `
 /** The cheque inside a sentence: «چک «اجاره»», or «چک بانک ملت» with no name to quote. */
 const chequeFa = (cheque: Goal): string => (cheque.nameFa.trim() ? `چک «${cheque.nameFa}»` : chequeTitleFa(cheque));
 
-/** «۳ روز مونده», «امروز», «۲ روز گذشته» — the card's corner. */
+/** «۳ روز مونده», «فردا», «امروز», «۲ روز گذشته» — the card's corner; «فردا» as home and the reminder say it. */
 export function chequeWhenFa(due: number, today: number): string {
   if (due === today) return 'امروز';
+  if (due === today + 1) return 'فردا';
   return due > today ? `${faNumber(due - today)} روز مونده` : `${faNumber(today - due)} روز گذشته`;
 }
 

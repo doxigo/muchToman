@@ -39,6 +39,9 @@ describe('cheques', () => {
     const c = cheque();
     expect(chequeWhenFa(due, due)).toBe('امروز');
     expect(chequeWhenFa(due, due - 3)).toBe('۳ روز مونده');
+    // The day before, the word home and the reminder already use — not «۱ روز مونده».
+    expect(chequeWhenFa(due, due - 1)).toBe('فردا');
+    expect(chequeWhenFa(due, due + 1)).toBe('۱ روز گذشته');
     expect(chequeWhenFa(due, due + 2)).toBe('۲ روز گذشته');
     const short = 'تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.';
     expect(chequeWarningFa(c, [c], [mellat], due, -1)).toBe(short);

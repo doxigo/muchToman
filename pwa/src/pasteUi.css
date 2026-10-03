@@ -9,7 +9,6 @@
 .paste-amount + p { margin-top: var(--xs); }
 .paste-no-amount { font-weight: 700; }
 .paste-rows { margin-top: var(--s); }
-.bank-chip { display: inline-flex; align-items: center; gap: var(--s); padding-inline: var(--s) var(--l); flex: none; }
 .paste-how { margin-top: var(--m); }
 /* The Shortcuts how-to: steps in Persian numbers, the iOS labels in bold Latin as she sees them. */
 .howto { margin-top: var(--m); font-size: 14px; line-height: 24px; color: var(--on-surface); }

@@ -39,6 +39,7 @@ import {
 import type { InstallmentProgress, InstallmentSummary } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
 import { LoansSection } from './loansUi';
+import { BankLogo } from './logos';
 import { DigitsField } from './manualTxn';
 import type { Category, Goal, LedgerEntry, Txn } from './model';
 import { closeSheet, openSheet, registerSheet, registerTab, showNotice } from './nav';
@@ -51,7 +52,7 @@ import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
 import { pref } from './state';
 import {
-  AmountField, ChipChoice, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
+  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
 } from './ui';
 import './budgetUi.css';
 
@@ -407,14 +408,17 @@ function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentPr
 
 /**
  * One cheque (ChequeCard, BudgetUi.kt): who for, from which account, on which day and how far off,
- * and — inside the reminder's window — whether the account holds it, in words; amber confirms, red
- * once the date has gone by. «پاس شد» sits beside the row's own button, since a button cannot hold
- * one, and a stray tap is taken back from the notice it leaves.
+ * and — inside the reminder's window — whether the account holds it, in words. It leads with the
+ * bank's logo where a budget leads with its disc. The warning is a budget's caution line: ink, with
+ * amber on the countdown as on a budget's percent; bold in error only once the date has gone by.
+ * «پاس شد» sits beside the row's own button, since a button cannot hold one — its row's one equal
+ * cell — and a stray tap is taken back from the notice it leaves.
  */
 function ChequeCard({ cheque, warning, today, radius, onOpen }: {
   cheque: Goal; warning: string | null; today: number; radius: string; onOpen: () => void;
 }) {
-  const tone = cheque.startsOn < today ? 'var(--error)' : 'var(--secondary)';
+  const late = cheque.startsOn < today;
+  const tone = late ? 'var(--error)' : 'var(--secondary)';
   const pass = () => {
     setChequePassed(cheque.id, true);
     showNotice('چک پاس شد', { label: 'برگردون', run: () => setChequePassed(cheque.id, false) });
@@ -423,19 +427,20 @@ function ChequeCard({ cheque, warning, today, radius, onOpen }: {
     <div class="plan-row divided" style={{ borderRadius: radius, '--tone': tone }}>
       <button type="button" class="cheque-open" onClick={onOpen}>
         <span class="plan-head">
+          <BankLogo bank={cheque.categoryId ?? ''} size={36} />
           <span class="grow">
             <span class="plan-name">{chequeTitleFa(cheque)}</span>
             <span class="plan-sub">از {bankFa(cheque.categoryId ?? '')} • {faDate(cheque.startsOn)}</span>
           </span>
           <EditHint />
         </span>
-        <span class="plan-figure-row mt-s">
+        <span class="plan-figure-row mt-m">
           <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 3)} تومان`)} />
-          <span class="cheque-when">{chequeWhenFa(cheque.startsOn, today)}</span>
+          <span class={`cheque-when${warning ? ' warned' : ''}`}>{chequeWhenFa(cheque.startsOn, today)}</span>
         </span>
-        {warning && <span class="plan-note loud mt-xs">{warning}</span>}
+        {warning && <span class={`plan-note mt-xs${late ? ' loud' : ''}`}>{warning}</span>}
       </button>
-      <div class="mt-s"><PillButton label="پاس شد" onClick={pass} /></div>
+      <div class="cheque-acts"><PillButton label="پاس شد" onClick={pass} /></div>
     </div>
   );
 }
@@ -712,10 +717,10 @@ function ChequeSheet({ id }: { id?: string }) {
   return (
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
-      <SheetLabel>مبلغ چک، به تومان</SheetLabel>
+      <SheetLabel>چقدر، به تومان</SheetLabel>
       <AmountField label="مبلغ چک" ariaLabel="مبلغ چک به تومان" raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : amountRial == null ? UNREADABLE : null} />
-      <SheetLabel>تاریخ چک</SheetLabel>
+      <SheetLabel>سررسیدش کِیه؟</SheetLabel>
       <DigitsField digits={dateDigits} onDigits={setDateDigits} length={8} sep="/" at={[4, 6]} label="مثلاً ۱۴۰۵/۰۹/۱۵"
         ariaLabel="تاریخ چک" hint={due == null && (tried || dateDigits !== '') ? 'تاریخ رو هشت‌رقمی بنویس، مثل ۱۴۰۵/۰۹/۱۵.' : null} />
       {/* The date written out, so a slipped digit is caught before it is saved. */}
@@ -723,8 +728,18 @@ function ChequeSheet({ id }: { id?: string }) {
       <SheetLabel>از کدوم حساب؟</SheetLabel>
       {banks.length === 0
         ? <p class="plan-lede">هنوز حساب بانکی‌ای نداریم؛ با اولین پیامک بانک، حسابش اینجا میاد.</p>
-        : <ChipChoice options={banks} selected={bank} label={bankFa} onSelect={setBank} />}
-      {tried && bank === '' && <p class="field-support error" role="status">حسابش رو انتخاب کن.</p>}
+        : (
+          // The paste sheet's bank chips: each bank's logo on its plate, then its name.
+          <div class="chips" role="radiogroup" aria-label="از کدوم حساب؟">
+            {banks.map((b) => (
+              <button type="button" key={b} class="chip bank-chip" role="radio" aria-checked={b === bank} onClick={() => setBank(b)}>
+                <BankLogo bank={b} size={24} />
+                {bankFa(b)}
+              </button>
+            ))}
+          </div>
+        )}
+      {tried && bank === '' && <p class="grid-error" role="status">حسابش رو انتخاب کن.</p>}
       <SheetLabel>برای کی یا چی؟</SheetLabel>
       <TextField label="اختیاری؛ مثلاً اجاره" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40} />
       <div class="sheet-actions">

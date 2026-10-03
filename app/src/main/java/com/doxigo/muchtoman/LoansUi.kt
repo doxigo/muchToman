@@ -681,18 +681,23 @@ private fun UnitChips(units: List<String>, selected: String, type: (String) -> A
     }
 }
 
-/** [ChipChoice]'s pill, for rows that have to wrap. */
+/**
+ * [ChipChoice]'s pill, for rows that have to wrap. [lead] goes before the label — a bank's logo at
+ * 24dp, as the PWA's paste sheet draws its bank chips — with the start padding drawn in to meet it.
+ */
 @Composable
-internal fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
-    Box(
+internal fun Chip(label: String, active: Boolean, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+    Row(
         Modifier
             .clip(RoundedCornerShape(Radius.pill))
             .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
             .selectable(selected = active, role = Role.RadioButton, onClick = onClick)
             .heightIn(min = 40.dp)
-            .padding(horizontal = Space.l),
-        contentAlignment = Alignment.Center,
+            .padding(start = if (lead != null) Space.s else Space.l, end = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
+        lead?.invoke()
         Text(
             label,
             fontSize = 13.sp,

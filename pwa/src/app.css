@@ -200,6 +200,8 @@ h1, h2, h3 { margin: 0; }
 .chip { min-height: 40px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--surface-container); color: var(--on-surface); font-size: 13px; font-weight: 500; white-space: nowrap; }
 .chip[aria-checked="true"], .chip[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .chip:disabled { color: color-mix(in srgb, var(--on-surface) 50%, transparent); }
+/* A bank's chip: its logo on the white plate before the name (the paste and cheque sheets). */
+.bank-chip { display: inline-flex; align-items: center; gap: var(--s); padding-inline: var(--s) var(--l); flex: none; }
 
 .action-circles { display: flex; justify-content: center; flex-wrap: wrap; margin: var(--xl) 0 var(--s); }
 .action-circle { width: 108px; display: flex; flex-direction: column; align-items: center; gap: var(--s); padding: var(--s) 0; background: none; border: 0; border-radius: var(--r-card); color: var(--on-surface-variant); font-size: 12px; font-weight: 600; }

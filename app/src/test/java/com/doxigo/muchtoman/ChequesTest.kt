@@ -42,6 +42,9 @@ class ChequesTest {
         val c = cheque()
         assertEquals("امروز", chequeWhenFa(due, due))
         assertEquals("۳ روز مونده", chequeWhenFa(due, due - 3))
+        // The day before, the word home and the reminder already use — not «۱ روز مونده».
+        assertEquals("فردا", chequeWhenFa(due, due - 1))
+        assertEquals("۱ روز گذشته", chequeWhenFa(due, due + 1))
         assertEquals("۲ روز گذشته", chequeWhenFa(due, due + 2))
         val short = "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه."
         assertEquals(short, chequeWarningFa(c, listOf(c), listOf(mellat), due, daysBefore = -1))

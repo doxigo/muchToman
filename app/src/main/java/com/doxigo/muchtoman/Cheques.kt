@@ -59,9 +59,10 @@ fun chequeTitleFa(cheque: Goal): String = cheque.nameFa.ifBlank { "چک ${bankNa
 private fun chequeFa(cheque: Goal): String =
     if (cheque.nameFa.isBlank()) chequeTitleFa(cheque) else "چک «${cheque.nameFa}»"
 
-/** «۳ روز مونده», «امروز», «۲ روز گذشته» — the card's corner. */
+/** «۳ روز مونده», «فردا», «امروز», «۲ روز گذشته» — the card's corner; «فردا» as home and the reminder say it. */
 fun chequeWhenFa(due: Long, today: Long): String = when {
     due == today -> "امروز"
+    due == today + 1 -> "فردا"
     due > today -> "${faNumber((due - today).toDouble())} روز مونده"
     else -> "${faNumber((today - due).toDouble())} روز گذشته"
 }
