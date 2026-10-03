@@ -384,9 +384,10 @@ const PUBLIC_BODY = 'جزئیات توی برنامه';
 
 async function showNote(title: string, body: string, publicTitle: string, tag: string, data: Record<string, unknown>): Promise<void> {
   if (!canNotify()) return;
-  // With the app lock on, the public face is the note itself (Notify.kt withLockFace): a browser
-  // has no lock-screen redaction to lean on, and a figure she locked inside the app must not sit
-  // readable on the lock screen. With it off, the full words.
+  // With the app lock on, the public face is the note itself: a browser has no lock-screen
+  // visibility to set, the way the phone keeps its note off the lock screen (Notify.kt
+  // withLockFace), and a figure she locked inside the app must not sit readable there. With it
+  // off, the full words.
   const locked = pref('lockEnabled');
   try {
     const reg = await registration();

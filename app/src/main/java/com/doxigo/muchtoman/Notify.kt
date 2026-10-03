@@ -133,8 +133,8 @@ const val EXTRA_OPEN_DECK = "com.doxigo.muchtoman.OPEN_DECK"
 /**
  * لفظ روی قفل‌صفحه — the public face of every note: the kind of news and nothing else, no
  * merchant, no figure, no category. Android shows it on a secure lock screen only when she has
- * hidden sensitive content there, which is not its default; with the app lock on it is the note
- * itself, lock screen or not — see [withLockFace]. The PWA's notes say the same words (plans.ts).
+ * hidden sensitive content there, which is not its default; with the app lock on the lock screen
+ * shows no note at all — see [withLockFace]. The PWA's notes say the same words (plans.ts).
  */
 internal fun budgetPublicTitle(): String = "خبری از بودجه"
 
@@ -346,9 +346,11 @@ private fun publicVersion(
  *
  * VISIBILITY_PRIVATE and [publicVersion] are the platform's redaction, but Android only uses them
  * when she has hidden sensitive content on the lock screen — its default shows the full note. So
- * with the app lock on, the vague words are the note itself (title, body and ticker; the BigText
- * that carried the full body goes): a figure she locked inside the app must not sit readable over
- * the phone's own lock. With it off, nothing changes and Android's own setting decides.
+ * with the app lock on the note is VISIBILITY_SECRET, the one visibility a secure lock screen
+ * honours whatever that setting says: a figure she locked inside the app must not sit readable over
+ * the phone's own lock. The note itself keeps its full words either way. Swapping them for the
+ * public ones, which this once did, redacted the shade she reads once the phone is open too, and
+ * every transaction note there said «تراکنش تازه» and nothing else.
  */
 private fun NotificationCompat.Builder.withLockFace(
     context: Context,
@@ -357,14 +359,10 @@ private fun NotificationCompat.Builder.withLockFace(
     publicTitle: String,
     intent: PendingIntent,
 ): Notification {
-    setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+    setVisibility(
+        if (Store(context).lockEnabled) NotificationCompat.VISIBILITY_SECRET else NotificationCompat.VISIBILITY_PRIVATE,
+    )
     setPublicVersion(publicVersion(context, channel, category, publicTitle, intent))
-    if (Store(context).lockEnabled) {
-        setContentTitle(publicTitle)
-        setContentText(publicBody())
-        setStyle(null)
-        setTicker("$publicTitle. ${publicBody()}")
-    }
     return build()
 }
 

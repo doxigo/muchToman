@@ -6,7 +6,6 @@ import androidx.core.app.NotificationCompat
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,9 +13,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The lock screen: every note is VISIBILITY_PRIVATE and carries a redacted public version, which
- * Android shows only when she hides sensitive content there. With the app lock off the full words
- * are asserted unchanged; with it on, the public words are the note itself.
+ * The lock screen: every note carries a redacted public version, which Android shows only when she
+ * hides sensitive content there. With the app lock off a note is VISIBILITY_PRIVATE; with it on,
+ * VISIBILITY_SECRET keeps it off the lock screen entirely. Either way the full words are the note.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -135,25 +134,23 @@ class NotifyTest {
     }
 
     @Test
-    fun `with the app lock on every note says only its public words`() {
+    fun `with the app lock on every note is secret and still says its full words`() {
         Store(context).lockEnabled = true
         val progress = budgetProgress(budget(50_000_000), listOf(spend(first, -41_500_000)), first + 5)
         val entry = waiting(at = 1_000L)
         val alert = FilingAlert(fresh = 2, waiting = 3, newest = entry, filed = 1)
         val notes = listOf(
-            budgetNote(context, progress, quip = "یه خط") to budgetPublicTitle(),
-            landedNote(context, entry) to landedPublicTitle(),
-            filingSummary(context, alert) to filingPublicTitle(3),
+            budgetNote(context, progress) to budgetAlertTitle(progress),
+            landedNote(context, entry) to landedTitle(entry),
+            filingSummary(context, alert) to filingAlertTitle(alert),
         )
-        for ((note, publicTitle) in notes) {
-            assertEquals(publicTitle, title(note))
-            assertEquals(publicBody(), text(note))
-            // Nothing else on the note carries the full words: no BigText, a redacted ticker.
-            assertNull(note.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
-            assertEquals("$publicTitle. ${publicBody()}", note.tickerText.toString())
+        for ((note, fullTitle) in notes) {
+            assertEquals(NotificationCompat.VISIBILITY_SECRET, note.visibility)
+            // The regression this pins: the shade she reads once the phone is open had said
+            // «تراکنش تازه» and nothing else on every transaction.
+            assertEquals(fullTitle, title(note))
         }
-        // Only the words change: the stack still bundles under its summary.
-        assertNotNull(landedNote(context, entry).group)
+        assertEquals(landedBody(entry), text(landedNote(context, entry)))
     }
 
     // ─────────── the public words themselves ───────────
