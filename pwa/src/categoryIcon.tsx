@@ -20,12 +20,14 @@ export const CATEGORY_GLYPHS = [
   // A category that outgrew its mark gets a new one: a category she made stores the name.
   'TAXI', 'PIGGY',
   'BUN', 'MUSTACHE', 'SMITTEN',
+  // A settings row's mark, not a category's: «خروجی اکسل» on the backup page. Never pickable.
+  'SHEET',
   'DOTS',
 ] as const;
 export type CategoryGlyph = typeof CATEGORY_GLYPHS[number];
 
-/** What she is offered for a category of her own: everything but the three dots of «unknown». */
-export const PICKABLE_GLYPHS: CategoryGlyph[] = CATEGORY_GLYPHS.filter((g) => g !== 'DOTS');
+/** What she is offered for a category of her own: everything but the three dots of «unknown» and the settings sheet. */
+export const PICKABLE_GLYPHS: CategoryGlyph[] = CATEGORY_GLYPHS.filter((g) => g !== 'DOTS' && g !== 'SHEET');
 
 /** A stored Category.glyph, or null when it names nothing this build draws. */
 export const glyphNamed = (name: string): CategoryGlyph | null =>
@@ -114,6 +116,7 @@ const HUES: Record<Exclude<CategoryGlyph, 'DOTS'>, [string, string]> = {
   TAG: ['#AC4586', '#EC96CC'],
   NOTE: ['#17805A', '#6FD5A0'],
   PERCENT: ['#66737A', '#B4C0C6'],
+  SHEET: ['#66737A', '#B4C0C6'], // no category: a settings mark, inked in the row's own colour
   TRAY: ['#17805A', '#6FD5A0'],
   SWAP: ['#14798C', '#6FCFDE'],
   STACK: ['#2F8544', '#85D993'],
@@ -183,6 +186,7 @@ export const LUCIDE: Partial<Record<CategoryGlyph, string>> = {
   TRAY: 'M12 15V3 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5', // download
   SWAP: 'M8 3 4 7l4 4 M4 7h16 M16 21l4-4-4-4 M20 17H4', // arrow-left-right
   STACK: 'M3 5a9 3 0 1 0 18 0a9 3 0 1 0 -18 0 M3 5V19A9 3 0 0 0 21 19V5 M3 12A9 3 0 0 0 21 12', // database
+  SHEET: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2z M3 9h18 M3 15h18 M9 9v12 M15 9v12', // sheet
   PLANE: 'M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z M21.854 2.147l-10.94 10.939', // send
   GIFT: 'M12 7v14 M20 11v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8 M7.5 7a1 1 0 0 1 0-5A4.8 8 0 0 1 12 7a4.8 8 0 0 1 4.5-5 1 1 0 0 1 0 5 M4 7h16a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1z', // gift
   BLOOM: 'M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M12 16.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 1 1 4.5 4.5 4.5 4.5 0 1 1-4.5 4.5 M12 7.5V9 M7.5 12H9 M16.5 12H15 M12 16.5V15 M8 8l1.88 1.88 M14.12 9.88 16 8 M8 16l1.88-1.88 M14.12 14.12 16 16', // flower

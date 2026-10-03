@@ -34,7 +34,9 @@
 .rp-panel-body { margin-top: var(--xs); font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
 
 /* ---- دارایی ---- */
-.rp-since { font-size: 15px; color: var(--on-surface-variant); margin-bottom: var(--xs); }
+/* The figure's caption line: since when at the start, the unit at the end — in every state. */
+.rp-since { display: flex; align-items: center; gap: var(--s); font-size: 15px; color: var(--on-surface-variant); margin-bottom: var(--xs); }
+.rp-since > span { flex: 1; min-width: 0; }
 .rp-verdict { display: flex; align-items: center; gap: var(--s); margin-top: var(--m); font-size: 14px; }
 .rp-verdict-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px var(--m); border-radius: var(--r-pill); font-weight: 700; }
 .rp-change-exact { font-size: 12px; margin-top: var(--s); }

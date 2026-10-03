@@ -32,7 +32,7 @@ import type { CashFlowReport, Insight, MemberShare, PeriodReport, ReportRange } 
 import { CAT_UNCATEGORISED } from './rules';
 import { pref, rows } from './state';
 import { FilterCategoryChip, MemberFace, TimelineRow, openTxn } from './timeline';
-import { ChipChoice, Panel, PillButton, ScreenTitle, SegmentedChoice, Sheet, SheetLabel, SheetTitle } from './ui';
+import { ChipChoice, Panel, PillButton, PillToggle, ScreenTitle, SegmentedChoice, Sheet, SheetLabel, SheetTitle } from './ui';
 
 // ─────────────────────────── small shared pieces ───────────────────────────
 
@@ -260,20 +260,27 @@ function AssetReportContent() {
     : !inUsd ? [...days.filter((d) => d >= change.sinceDay && d < now).map((d): [number, number] => [d, history[d]]), [now, current]]
       // The same window in dollars, from its first day that has a rate as well as a total.
       : dollars.filter(([d]) => d >= change.sinceDay);
-  const shown = inUsd ? changeAcross(points) : change;
+  const shown = points.length < 2 ? null : inUsd ? changeAcross(points) : change;
+  // «همه» names no window, and neither does a dollar line that starts inside the one she picked:
+  // that one says how far back it really reaches.
+  const since = !shown ? ''
+    : selected !== 'همه' && shown.sinceDay === change?.sinceDay ? `نسبت به ${selected} پیش` : `از ${faNumber(now - shown.sinceDay)} روز پیش`;
 
   return (
     <div>
       {/* A window the history is too short to answer is dimmed, not hidden — its absence is data. */}
       <ChipChoice options={WINDOWS.map(([label]) => label)} selected={selected} label={(l) => l}
         enabled={(l) => available(WINDOWS.find(([label]) => label === l)![1])} onSelect={select} scroll />
-      {/* A slicer like the window, so it wears the window's chips — the segment above is the
-          report switcher, and two tracks in one view would read as two screens. */}
-      <div class="rp-m">
-        <ChipChoice options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : 'تومان'} onSelect={setUsd} />
-      </div>
       <div class="rp-xxl">
-        {shown == null || points.length < 2
+        {/* The unit belongs to the figure and the line under it, not to the page: as a second row
+            of the window's chips it read as another window. So it ends the figure's own caption
+            line, a size down — and stays when the empty state takes the figure's place, because
+            dollars short of a line must still be able to switch back to Toman. */}
+        <div class="rp-since">
+          <span>{since}</span>
+          <PillToggle options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : 'تومان'} onSelect={setUsd} />
+        </div>
+        {shown == null
           // Dollars short of a line say why: the rates start on the day the app first recorded
           // one, which can be long after the Toman history did.
           ? <EmptyReport body={!inUsd ? 'از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.'
@@ -281,9 +288,7 @@ function AssetReportContent() {
               : 'هنوز نرخ دلاری ثبت نشده که دارایی به دلار حساب بشه.'} />
           : (
           <>
-            {/* A dollar line that starts later than the window says how far back it really reaches. */}
-            <ChangeFigure change={shown} windowLabel={selected !== 'همه' && shown.sinceDay === change?.sinceDay ? selected : null}
-              now={now} usd={inUsd} />
+            <ChangeFigure change={shown} usd={inUsd} />
             <div class="rp-chart-card">
               <HistoryChart points={points} tone={changeTone(shown)} />
               {/* Time flows left to right inside the chart, so in this RTL row the first
@@ -333,17 +338,14 @@ function CompositionBar({ composition }: { composition: Array<[Kind, number]> })
   );
 }
 
-/** Bigger or smaller, by how much, since when — stacked the way the hero total is. */
-function ChangeFigure({ change, windowLabel, now, usd }: { change: Change; windowLabel: string | null; now: number; usd: boolean }) {
+/** Bigger or smaller, by how much — stacked the way the hero total is. Since when is the line above, with the unit. */
+function ChangeFigure({ change, usd }: { change: Change; usd: boolean }) {
   const gained = change.delta > 0;
   const flat = Math.abs(change.delta) < 1;
   const tone = changeTone(change);
-  // Null names no window: «همه», or a dollar line that starts inside the one she picked.
-  const since = windowLabel == null ? `از ${faNumber(now - change.sinceDay)} روز پیش` : `نسبت به ${windowLabel} پیش`;
   const delta = Math.abs(change.delta);
   return (
     <div class="rp-fitbox rp-change">
-      <p class="rp-since">{since}</p>
       <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 3, true)} تومان`} min={22} max={44}
         class="figure rp-w900" color={tone} spoken={usd && !flat ? `${faRate(delta)} دلار` : undefined} />
       {!flat && (

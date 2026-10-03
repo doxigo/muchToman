@@ -31,7 +31,7 @@ import { buildStory } from './reports';
 import type { HomeStory } from './reports';
 import { InsightCard, QuietStart } from './report';
 import { pref, useData } from './state';
-import { ActionCircle, HeroPanel, Section } from './ui';
+import { ActionCircle, HeroPanel, PillToggle, Section } from './ui';
 import { AssetIcon, RowAmount, RowTitle, rateIn, useAutoSize, useNow } from './homeSheets';
 import { LoansHeroStrip } from './loansUi';
 import './home.css';
@@ -220,15 +220,7 @@ function HeroFigure({ figure, max = 60, min = 28 }: { figure: string; max?: numb
 
 /** Whose money the headline counts, in the label's own slot and the field's own colours. */
 function HeroScopeToggle({ family, onSelect }: { family: boolean; onSelect: (family: boolean) => void }) {
-  return (
-    <div class="scope" role="radiogroup">
-      {[false, true].map((option) => (
-        <button type="button" role="radio" aria-checked={option === family} onClick={() => onSelect(option)}>
-          {option ? 'خانواده' : 'دارایی‌هات'}
-        </button>
-      ))}
-    </div>
-  );
+  return <PillToggle options={[false, true]} selected={family} label={(o) => o ? 'خانواده' : 'دارایی‌هات'} onSelect={onSelect} />;
 }
 
 /** The way into the report when the change pill has nothing honest to say yet. */

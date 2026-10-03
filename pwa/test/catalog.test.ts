@@ -174,9 +174,10 @@ describe('category marks', () => {
   it('every Lucide line opens absolute', () => {
     for (const [g, d] of Object.entries(LUCIDE)) expect(d.startsWith('M'), g).toBe(true);
   });
-  it('the picker offers every mark except the one that means unknown', () => {
-    expect(PICKABLE_GLYPHS.length).toBe(CATEGORY_GLYPHS.length - 1);
+  it('the picker offers every mark except the one that means unknown and the settings sheet', () => {
+    expect(PICKABLE_GLYPHS.length).toBe(CATEGORY_GLYPHS.length - 2);
     expect(PICKABLE_GLYPHS.includes('DOTS')).toBe(false);
+    expect(PICKABLE_GLYPHS.includes('SHEET')).toBe(false);
   });
   it('a category she made is drawn by its own mark, not by its name', () => {
     expect(customGlyphs([cat('باشگاه', 'STAR')])).toEqual({ 'باشگاه': 'STAR' });

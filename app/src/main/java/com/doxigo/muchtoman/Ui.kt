@@ -1799,26 +1799,55 @@ private fun HeroScopeToggle(
     family: Boolean,
     onSelect: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+) = PillToggle(
+    options = listOf(false, true),
+    selected = family,
+    label = { if (it) "خانواده" else "دارایی‌هات" },
+    onSelect = onSelect,
+    modifier = modifier,
+    fill = Hero.well,
+    ink = Hero.strong,
+    idle = Hero.muted,
+)
+
+/**
+ * The smallest of the three choices: the chosen word on a small pill, the others bare. Below
+ * [ChipChoice] on purpose — it does not slice what follows, it re-reads one figure (whose total,
+ * which unit), so it sits on that figure's own line instead of over the page.
+ *
+ * On paper the chosen pill is `primary`, the selection role, never `Cta`; the hero passes its
+ * field's colours, because up there the bright green is spoken for by the figure itself.
+ */
+@Composable
+internal fun <T> PillToggle(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    fill: Color = MaterialTheme.colorScheme.primary,
+    ink: Color = MaterialTheme.colorScheme.onPrimary,
+    idle: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Row(modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-        listOf(false, true).forEach { option ->
-            val active = option == family
+        options.forEach { option ->
+            val active = option == selected
             Box(
                 Modifier
                     .clip(RoundedCornerShape(Radius.pill))
-                    .background(if (active) Hero.well else Color.Transparent)
+                    .background(if (active) fill else Color.Transparent)
                     // Drawn ~31dp, touched 48dp: Compose extends any sub-48dp clickable to the
-                    // minimum touch target, and the card top must not grow a control's worth.
+                    // minimum touch target, and the line it sits on must not grow a control's worth.
                     .selectable(selected = active, role = Role.RadioButton) { onSelect(option) }
                     .padding(horizontal = Space.m, vertical = 6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    if (option) "خانواده" else "دارایی‌هات",
+                    label(option),
                     fontSize = 13.sp,
                     maxLines = 1,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    color = if (active) Hero.strong else Hero.muted,
+                    color = if (active) ink else idle,
                 )
             }
         }

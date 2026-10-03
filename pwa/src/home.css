@@ -31,13 +31,12 @@
 .home-hero .freshness { margin-top: var(--l); border-top: 1px solid var(--hero-hairline); }
 /* دارایی's header: the figure shares the dollars' line, and the freshness line follows with no hairline. */
 .home-hero.compact .hero { padding-block: var(--l); }
-.home-hero.compact .scope { margin-bottom: var(--xs); }
+.home-hero.compact .pill-toggle { margin-bottom: var(--xs); }
 .home-hero.compact .fig { flex: 1; min-width: 0; margin-top: 0; }
 .home-hero.compact .freshness { margin-top: var(--xs); border-top: 0; }
 
-.scope { display: flex; gap: var(--xs); flex: 1; min-width: 0; }
-.scope > button { border: 0; border-radius: var(--r-pill); padding: 6px var(--m); background: transparent; color: var(--hero-muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
-.scope > button[aria-checked="true"] { background: var(--hero-well); color: var(--hero-strong); font-weight: 700; }
+/* Whose total: the shared PillToggle in the field's colours — the bright green is the figure's. */
+.home-hero .pill-toggle { flex: 1; --toggle-fill: var(--hero-well); --toggle-ink: var(--hero-strong); --toggle-idle: var(--hero-muted); }
 
 /* A door, not a statistic: the row carries the 48px target, the pill stays 32 tall. */
 .hero-door { display: inline-flex; align-items: center; min-height: 48px; margin-top: var(--m); padding: 0; padding-inline-end: var(--m); background: none; border: 0; border-radius: var(--r-pill); color: var(--hero-muted); font-size: 13px; white-space: nowrap; max-width: 100%; }

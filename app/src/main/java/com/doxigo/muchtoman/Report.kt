@@ -309,26 +309,41 @@ private fun AssetReportContent(
     // The same window in dollars, from its first day that has a rate as well as a total.
     val points = if (!inUsd) tomanPoints
     else change?.let { c -> dollars.filter { it.first >= c.sinceDay } }.orEmpty()
-    val shown = if (inUsd) changeAcross(points) else change
+    val shown = (if (inUsd) changeAcross(points) else change)?.takeIf { points.size >= 2 }
+    // «همه» names no window, and neither does a dollar line that starts inside the one she
+    // picked: that one says how far back it really reaches.
+    val since = shown?.let { c ->
+        if (selected != "همه" && c.sinceDay == change?.sinceDay) "نسبت به $selected پیش"
+        else "از ${faNumber((now - c.sinceDay).toDouble())} روز پیش"
+    }
 
     Column(modifier) {
         WindowPicker(selected, ::available) { selected = it }
-        Spacer(Modifier.height(Space.m))
-        // A slicer like the window, so it wears the window's chips — the segment above is the
-        // report switcher, and two tracks in one view would read as two screens.
-        ChipChoice(
-            options = listOf(false, true),
-            selected = inUsd,
-            label = { if (it) "دلار" else "تومان" },
-            onSelect = { inUsd = it },
-        )
 
         // One rhythm across both reports: [Space.m] inside a group, [Space.xxl] between them.
         // Every gap on this screen used to be [Space.l] or [Space.xl], which is the same distance
         // either side of a heading — so nothing was grouped and the eye had to read the words to
         // find out where one section stopped.
         Spacer(Modifier.height(Space.xxl))
-        if (shown == null || points.size < 2) {
+        // The unit belongs to the figure and the line under it, not to the page: as a second row
+        // of the window's chips it read as another window. So it ends the figure's own caption
+        // line, a size down — and stays when the empty state takes the figure's place, because
+        // dollars short of a line must still be able to switch back to Toman.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                since.orEmpty(),
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            PillToggle(
+                options = listOf(false, true),
+                selected = inUsd,
+                label = { if (it) "دلار" else "تومان" },
+                onSelect = { inUsd = it },
+            )
+        }
+        if (shown == null) {
             // Dollars short of a line say why rather than repeat the Toman promise: the rates
             // only start on the day the app first recorded one, which can be long after the
             // Toman history did.
@@ -340,14 +355,9 @@ private fun AssetReportContent(
             )
         } else {
             // The figure is the chart's headline, so it sits inside the group with it rather than
-            // a section apart from the shape it describes. A dollar line that starts later than
-            // the window does says how far back it really reaches instead of naming the window.
-            ChangeFigure(
-                shown,
-                selected.takeIf { it != "همه" && shown.sinceDay == change?.sinceDay },
-                now,
-                inUsd,
-            )
+            // a section apart from the shape it describes.
+            Spacer(Modifier.height(Space.xs))
+            ChangeFigure(shown, inUsd)
             Spacer(Modifier.height(Space.m))
             Box(
                 Modifier
@@ -503,21 +513,17 @@ private fun WindowPicker(
 )
 
 /**
- * Bigger or smaller, by how much, since when — stacked the way the hero total is, because it
- * answers the same kind of question and has earned the same kind of answer.
+ * Bigger or smaller, by how much — stacked the way the hero total is, because it answers the same
+ * kind of question and has earned the same kind of answer. Since when is the line above it, which
+ * also carries the unit.
  */
 @Composable
-private fun ChangeFigure(change: Change, windowLabel: String?, now: Long, usd: Boolean) {
+private fun ChangeFigure(change: Change, usd: Boolean) {
     val gained = change.delta > 0
     val flat = abs(change.delta) < 1
     val tone = changeTone(change)
-    // Null names no window: «همه», or a dollar line that starts inside the one she picked.
-    val since = windowLabel?.let { "نسبت به $it پیش" }
-        ?: "از ${faNumber((now - change.sinceDay).toDouble())} روز پیش"
 
     Column {
-        Text(since, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(Space.xs))
         // Auto-shrinks like the hero figure: a big delta must never wrap.
         BasicText(
             text = when {

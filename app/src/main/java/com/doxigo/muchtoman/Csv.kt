@@ -113,7 +113,8 @@ private fun csvClock(at: Long): String {
 private fun two(n: Int): String = n.toString().padStart(2, '0')
 
 /**
- * The backup page's second act: the warning in words, then «خروجی اکسل». The full edition's only
+ * The backup page's second act: «خروجی اکسل» as a door in its own band, the warning in words under
+ * it where the backup band keeps its own caption. The full edition's only
  * — lite has no ledger to export. Written through the same Storage Access Framework picker the
  * backup uses, so the file goes where she chooses and nowhere else.
  */
@@ -140,15 +141,25 @@ internal fun LedgerCsvExport(activity: FragmentActivity) {
             notice = if (written) "فایل اکسل ساخته شد." else "فایل اکسل ساخته نشد. دوباره امتحان کن."
         }
     }
+    // A band of its own, a section down from the backup's: one more of the page's acts, worn the
+    // way the other two are, but not one of them — this file is not sealed, and the caption says so.
     Spacer(Modifier.height(Space.xxl))
+    DoorRow(
+        title = "خروجی اکسل",
+        subtitle = "همهٔ تراکنش‌های دفتر، توی یک فایل CSV",
+        glyph = CategoryGlyph.SHEET,
+        shape = bandShape(0, 1),
+        divided = false,
+        enabled = true,
+        onClick = { createFile.launch(ledgerCsvName()) },
+    )
     Text(
         "فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.",
         fontSize = 13.sp,
         lineHeight = 20.sp,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(bottom = Space.m, start = Space.xs, end = Space.xs),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
     )
-    PillButton("خروجی اکسل", onClick = { createFile.launch(ledgerCsvName()) })
     notice?.let { words ->
         Text(
             words,

@@ -58,6 +58,9 @@ enum class CategoryGlyph {
     // The people she files money for, as faces beside خرج اتینا's: مامان with her hair up, بابا
     // with his سبیل, and پارتنر smitten. Named for the picture, like every other entry.
     BUN, MUSTACHE, SMITTEN,
+    // A settings row's mark, not a category's: «خروجی اکسل» on the backup page, beside STACK and
+    // TRAY. Here because that row draws from this enum; kept out of [PICKABLE_GLYPHS].
+    SHEET,
     DOTS,
 }
 
@@ -67,13 +70,14 @@ enum class CategoryGlyph {
  * The set the app already draws, rather than a second set imported for the purpose: one pen, one
  * weight, and every one of them already carries a hue that the grid, the timeline and the month's
  * report agree on. [CategoryGlyph.DOTS] is not on it — three dots is what the app draws when it
- * knows nothing, and it must stay that and only that.
+ * knows nothing, and it must stay that and only that. Nor is [CategoryGlyph.SHEET], which is a
+ * settings row's mark rather than a category's.
  *
  * ponytail: nothing stops her picking خواربار's basket for a category of her own, and then there
  * are two green baskets in the grid. She chose it, looking at it, and the alternative is a second
  * set of marks drawn for no other reason than to be unused by the first.
  */
-val PICKABLE_GLYPHS: List<CategoryGlyph> = CategoryGlyph.entries - CategoryGlyph.DOTS
+val PICKABLE_GLYPHS: List<CategoryGlyph> = CategoryGlyph.entries - CategoryGlyph.DOTS - CategoryGlyph.SHEET
 
 /** A stored [Category.glyph], or null when it names nothing this build draws. */
 fun glyphNamed(name: String): CategoryGlyph? =
@@ -217,7 +221,8 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // ── row 5 ──
         CategoryGlyph.NOTE -> if (dark) Color(0xFF6FD5A0) else Color(0xFF17805A)
         // A fee is a cost with no character of its own; giving it a hue would be inventing one.
-        CategoryGlyph.PERCENT -> if (dark) Color(0xFFB4C0C6) else Color(0xFF66737A)
+        // The sheet is no category at all — a settings mark, inked in the row's own colour.
+        CategoryGlyph.PERCENT, CategoryGlyph.SHEET -> if (dark) Color(0xFFB4C0C6) else Color(0xFF66737A)
         // دخانیات, appended last, so its only neighbours are the grey fee beside it and قرض
         // above — which leaves most of the wheel free, and plum is the part of it this grid
         // never used.
@@ -403,6 +408,7 @@ internal val LUCIDE: Map<CategoryGlyph, String> = mapOf(
     CategoryGlyph.TRAY to "M12 15V3 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5", // download
     CategoryGlyph.SWAP to "M8 3 4 7l4 4 M4 7h16 M16 21l4-4-4-4 M20 17H4", // arrow-left-right
     CategoryGlyph.STACK to "M3 5a9 3 0 1 0 18 0a9 3 0 1 0 -18 0 M3 5V19A9 3 0 0 0 21 19V5 M3 12A9 3 0 0 0 21 12", // database
+    CategoryGlyph.SHEET to "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2z M3 9h18 M3 15h18 M9 9v12 M15 9v12", // sheet
     CategoryGlyph.PLANE to "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z M21.854 2.147l-10.94 10.939", // send
     CategoryGlyph.GIFT to "M12 7v14 M20 11v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8 M7.5 7a1 1 0 0 1 0-5A4.8 8 0 0 1 12 7a4.8 8 0 0 1 4.5-5 1 1 0 0 1 0 5 M4 7h16a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1z", // gift
     CategoryGlyph.BLOOM to "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M12 16.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 1 1 4.5 4.5 4.5 4.5 0 1 1-4.5 4.5 M12 7.5V9 M7.5 12H9 M16.5 12H15 M12 16.5V15 M8 8l1.88 1.88 M14.12 9.88 16 8 M8 16l1.88-1.88 M14.12 14.12 16 16", // flower

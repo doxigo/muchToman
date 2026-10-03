@@ -536,7 +536,10 @@ function BackupPage() {
   );
 }
 
-/** The backup page's second act (Csv.kt LedgerCsvExport): the warning in words, then «خروجی اکسل». */
+/**
+ * The backup page's second act (Csv.kt LedgerCsvExport): «خروجی اکسل» as a door in its own band,
+ * the warning in words under it where the backup band keeps its own caption.
+ */
 function LedgerCsvExport() {
   const [notice, setNotice] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -551,8 +554,12 @@ function LedgerCsvExport() {
   };
   return (
     <>
-      <p class="set-note strong" style={{ padding: 'var(--xxl) var(--xs) var(--m)' }}>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.</p>
-      <PillButton label="خروجی اکسل" onClick={save} />
+      {/* A section down from the backup's: one more of the page's acts, but not a sealed one. */}
+      <div style={{ height: 'var(--xxl)' }} />
+      <Band>
+        <DoorRow title="خروجی اکسل" subtitle="همهٔ تراکنش‌های دفتر، توی یک فایل CSV" glyph="SHEET" onClick={save} />
+      </Band>
+      <Note>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.</Note>
       {notice && <p class="set-note" style={{ color: failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{notice}</p>}
     </>
   );

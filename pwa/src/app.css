@@ -203,6 +203,12 @@ h1, h2, h3 { margin: 0; }
 /* A bank's chip: its logo on the white plate before the name (the paste and cheque sheets). */
 .bank-chip { display: inline-flex; align-items: center; gap: var(--s); padding-inline: var(--s) var(--l); flex: none; }
 
+/* PillToggle: drawn ~31px so the line it ends keeps its height, touched 48 — the ::after is the finger's. */
+.pill-toggle { display: flex; gap: var(--xs); min-width: 0; }
+.pill-toggle > button { position: relative; border: 0; border-radius: var(--r-pill); padding: 6px var(--m); background: transparent; color: var(--toggle-idle, var(--on-surface-variant)); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.pill-toggle > button::after { content: ""; position: absolute; inset: -9px 0; }
+.pill-toggle > button[aria-checked="true"] { background: var(--toggle-fill, var(--primary)); color: var(--toggle-ink, var(--on-primary)); font-weight: 700; }
+
 .action-circles { display: flex; justify-content: center; flex-wrap: wrap; margin: var(--xl) 0 var(--s); }
 .action-circle { width: 108px; display: flex; flex-direction: column; align-items: center; gap: var(--s); padding: var(--s) 0; background: none; border: 0; border-radius: var(--r-card); color: var(--on-surface-variant); font-size: 12px; font-weight: 600; }
 .action-circle .disc { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-container); color: var(--on-primary-container); transition: transform var(--fast) var(--enter); }

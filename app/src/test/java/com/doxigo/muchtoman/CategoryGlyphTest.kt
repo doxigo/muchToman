@@ -74,9 +74,10 @@ class CategoryGlyphTest {
     }
 
     @Test
-    fun `the picker offers every mark except the one that means unknown`() {
-        assertEquals(CategoryGlyph.entries.size - 1, PICKABLE_GLYPHS.size)
+    fun `the picker offers every mark except the one that means unknown and the settings sheet`() {
+        assertEquals(CategoryGlyph.entries.size - 2, PICKABLE_GLYPHS.size)
         assertEquals(false, CategoryGlyph.DOTS in PICKABLE_GLYPHS)
+        assertEquals(false, CategoryGlyph.SHEET in PICKABLE_GLYPHS)
     }
 
     @Test

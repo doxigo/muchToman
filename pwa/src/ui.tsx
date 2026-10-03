@@ -106,6 +106,23 @@ export function ChipChoice<T>({ options, selected, label, onSelect, enabled = ()
   );
 }
 
+/**
+ * The smallest of the three (Ui.kt PillToggle): the chosen word on a small pill, the rest bare.
+ * It re-reads one figure — whose total, which unit — so it sits on that figure's own line. On
+ * paper the pill is `primary`; the hero overrides the colours with its field's (home.css).
+ */
+export function PillToggle<T>({ options, selected, label, onSelect }: {
+  options: T[]; selected: T; label: (t: T) => string; onSelect: (t: T) => void;
+}) {
+  return (
+    <div class="pill-toggle" role="radiogroup">
+      {options.map((o) => (
+        <button type="button" role="radio" aria-checked={o === selected} onClick={() => onSelect(o)}>{label(o)}</button>
+      ))}
+    </div>
+  );
+}
+
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }) {
   return <button type="button" class="switch" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)} />;
 }
