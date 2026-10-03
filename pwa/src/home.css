@@ -24,6 +24,11 @@
 .home-hero .hero-strip .dot.trouble { background: var(--hero-warn); }
 .home-hero .hero-strip .warn { color: var(--hero-warn); }
 .home-hero .stale-note { margin-top: var(--xs); font-size: 12px; line-height: 19px; color: var(--hero-muted); }
+/* دارایی's header: the figure shares the dollars' line, and the strip follows with no hairline. */
+.home-hero.compact .hero { padding-block: var(--l); }
+.home-hero.compact .scope { margin-bottom: var(--xs); }
+.home-hero.compact .fig { flex: 1; min-width: 0; margin-top: 0; }
+.home-hero.compact .hero-strip { margin-top: var(--s); padding-top: 0; border-top: 0; }
 
 .scope { display: flex; gap: var(--xs); flex: 1; min-width: 0; }
 .scope > button { border: 0; border-radius: var(--r-pill); padding: 6px var(--m); background: transparent; color: var(--hero-muted); font-size: 13px; font-weight: 500; white-space: nowrap; }

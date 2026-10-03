@@ -1086,6 +1086,9 @@ private fun AppScreens(
                         portfolio = portfolio,
                         onFamilyTotal = vm::setFamilyTotal,
                         onLoans = { loansPage = true },
+                        // Not in the lite edition: there دارایی is the only screen, so its card
+                        // is the one place the words and the exact digits can live.
+                        compact = portfolio && tabs.size > 1,
                     )
                 }
             }
@@ -1406,6 +1409,8 @@ private fun AppScreens(
 @Composable
 internal fun HeroPanel(
     modifier: Modifier = Modifier,
+    /** Only دارایی's compact header passes a smaller one — see [HeroCard]'s `compact`. */
+    vertical: Dp = Space.xl,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // On the dark theme the card is a neutral elevated surface a shade off the page, so the
@@ -1423,7 +1428,7 @@ internal fun HeroPanel(
             ),
     ) {
         Column(
-            Modifier.padding(horizontal = Space.xl, vertical = Space.xl),
+            Modifier.padding(horizontal = Space.xl, vertical = vertical),
             content = content,
         )
     }
@@ -1502,6 +1507,12 @@ internal fun HeroCard(
     onFamilyTotal: (Boolean) -> Unit,
     /** The طلب و بدهی page, from the strip beside the total. */
     onLoans: () -> Unit = {},
+    /**
+     * دارایی's header rather than خانه's answer: the figure, its dollars, whose money and how fresh
+     * — a third of the height, so the list the tab exists for starts above the fold. The words,
+     * the exact digits, the loans and the change pill stay on خانه's card.
+     */
+    compact: Boolean = false,
 ) {
     // What the family shares in is on this screen but never in [UiState.totals]: her figure
     // stays hers everywhere else — the widget, the daily snapshot, the report. The household
@@ -1516,19 +1527,6 @@ internal fun HeroCard(
     // dollar asides come through the same guard.
     val usd = usdOf(total, usdRate)
 
-    // "همین الان" must not still say that half an hour later. A slow tick keeps the label
-    // honest; the minute granularity of faAgo means nothing finer would ever show anyway.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state.rates.updatedAt) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(30_000)
-        }
-    }
-    // A day-old rate silently shown as current is the "quietly wrong total" this app is
-    // built to avoid. Words carry the warning, not colour alone.
-    val stale = state.rates.updatedAt > 0L && now - state.rates.updatedAt > 24 * 60 * 60_000L
-
     // A month is the shortest window the daily snapshots can answer honestly, and the one she
     // is most likely to be asking about. Absent — not zeroed — until there is a snapshot that
     // old to compare against. Always against her own total: the history only ever recorded
@@ -1537,7 +1535,23 @@ internal fun HeroCard(
         changeOver(state.history, System.currentTimeMillis() / DAY_MS, 30, state.totals.toman)
     }.takeUnless { familyMode }
 
-    HeroPanel {
+    HeroPanel(vertical = if (compact) Space.l else Space.xl) {
+        if (compact) {
+            // Whose, how much, how fresh — the full card's order with its middle taken out. No
+            // «جمع دارایی‌هات» label: under the دارایی tab, above its own breakdown, the figure
+            // names itself, and a line of its own is the height this header exists to give back.
+            if (state.familyAssets.isNotEmpty()) {
+                HeroScopeToggle(
+                    family = familyMode,
+                    onSelect = onFamilyTotal,
+                    modifier = Modifier.padding(bottom = Space.xs),
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                HeroTotal(total, min = 20.sp, max = 34.sp, Modifier.weight(1f))
+                usd?.let { HeroUsd(it) }
+            }
+        } else {
             // Label and dollar figure share a line, so the top of the card reads as one
             // sentence — "جمع دارایی‌هات $۵۱٬۵۰۰" — and the dollars stay an aside rather
             // than a second headline.
@@ -1560,52 +1574,11 @@ internal fun HeroCard(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                usd?.let {
-                    Text(
-                        faUsd(it),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = ModamFigures,
-                        color = Hero.muted,
-                        maxLines = 1,
-                        // "$" is read out as punctuation or skipped entirely; the unit has to
-                        // survive for anyone listening rather than looking.
-                        modifier = Modifier
-                            .padding(start = Space.s)
-                            .semantics { contentDescription = "${faRate(it)} دلار" },
-                    )
-                }
+                usd?.let { HeroUsd(it) }
             }
 
             Spacer(Modifier.height(Space.xs))
-            // Must never wrap: "۳٫۲ میلیارد تومان" broken across two lines reads as a layout
-            // bug, and the figure can grow by orders of magnitude. Shrink to fit instead.
-            // Three decimals here, one everywhere else: the headline is the one figure she
-            // watches move, so "۹٫۶۴۳ میلیارد" beats a ۹٫۶ that hides a day's change.
-            //
-            // Every refresh lifts the new figure into place from below. It is the visible
-            // receipt that the fetch did something — and the reason the digits are tabular:
-            // without that, one changed digit slides the whole number sideways as it lands.
-            AnimatedContent(
-                targetState = faCompact(total, 3, pad = true),
-                transitionSpec = {
-                    (
-                        slideInVertically(tween(Motion.medium, easing = Motion.enter)) { it / 3 } +
-                            fadeIn(tween(Motion.medium))
-                        ).togetherWith(
-                        slideOutVertically(tween(Motion.fast, easing = Motion.exit)) { -it / 3 } +
-                            fadeOut(tween(Motion.fast))
-                    )
-                },
-                label = "total",
-            ) { figure ->
-                BasicText(
-                    text = heroFigure(figure, Hero.accent),
-                    maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 60.sp),
-                    style = figureStyle(Hero.accent, FontWeight.Black),
-                )
-            }
+            HeroTotal(total, min = 28.sp, max = 60.sp)
 
             // Digits are quick to scan but easy to misread by a factor of ten. The words
             // are the check on that.
@@ -1646,46 +1619,119 @@ internal fun HeroCard(
 
             Spacer(Modifier.height(Space.l))
             HorizontalDivider(color = Hero.hairline)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = Space.m),
-            ) {
-                val failed = state.error != null && state.rates.updatedAt == 0L
-                // Anything worth a caution sentence on this card dims the dot too — cached
-                // rates under a failed fetch are usable, but a bright green all-clear beside
-                // «متصل نشد» is the colour contradicting the words.
-                val trouble = failed || stale || state.error != null
-                // Colour confirms; the words carry it. A dot on its own would be the one
-                // thing in this app that says "something is wrong" in hue alone.
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(if (trouble) Hero.warn else Hero.mint),
-                )
-                Spacer(Modifier.width(Space.s))
-                Text(
-                    when {
-                        failed -> "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن"
-                        stale -> "نرخ‌ها قدیمی‌ان؛ " + faAgo(state.rates.updatedAt, now)
-                        else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
-                    },
-                    fontSize = 13.sp,
-                    // Not the accent: on this card green is the answer, and a warning wearing
-                    // it read as a second call to act.
-                    color = if (stale || failed) Hero.warn else Hero.muted,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (state.error != null && state.rates.updatedAt > 0L) {
-                Text(
-                    "متصل نشد. نرخ‌های قبلی نشون داده می‌شن.",
-                    fontSize = 12.sp,
-                    lineHeight = 19.sp,
-                    color = Hero.muted,
-                    modifier = Modifier.padding(top = Space.xs),
-                )
-            }
+        }
+        // Both readings of the card, compact or not: a header a third of the height still says
+        // every caution the full card says, in the same words.
+        HeroFreshness(state, Modifier.padding(top = if (compact) Space.s else Space.m))
+    }
+}
+
+/**
+ * The headline figure. Must never wrap: "۳٫۲ میلیارد تومان" broken across two lines reads as a
+ * layout bug, and the figure can grow by orders of magnitude. Shrink to fit instead. Three
+ * decimals here, one everywhere else: the headline is the one figure she watches move, so
+ * "۹٫۶۴۳ میلیارد" beats a ۹٫۶ that hides a day's change.
+ *
+ * Every refresh lifts the new figure into place from below. It is the visible receipt that the
+ * fetch did something — and the reason the digits are tabular: without that, one changed digit
+ * slides the whole number sideways as it lands.
+ */
+@Composable
+private fun HeroTotal(total: Double, min: TextUnit, max: TextUnit, modifier: Modifier = Modifier) {
+    AnimatedContent(
+        targetState = faCompact(total, 3, pad = true),
+        modifier = modifier,
+        transitionSpec = {
+            (
+                slideInVertically(tween(Motion.medium, easing = Motion.enter)) { it / 3 } +
+                    fadeIn(tween(Motion.medium))
+                ).togetherWith(
+                slideOutVertically(tween(Motion.fast, easing = Motion.exit)) { -it / 3 } +
+                    fadeOut(tween(Motion.fast))
+            )
+        },
+        label = "total",
+    ) { figure ->
+        BasicText(
+            text = heroFigure(figure, Hero.accent),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = min, maxFontSize = max),
+            style = figureStyle(Hero.accent, FontWeight.Black),
+        )
+    }
+}
+
+/** The total in dollars, an aside at the end of the figure's line rather than a second headline. */
+@Composable
+private fun HeroUsd(usd: Double) {
+    Text(
+        faUsd(usd),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = ModamFigures,
+        color = Hero.muted,
+        maxLines = 1,
+        // "$" is read out as punctuation or skipped entirely; the unit has to
+        // survive for anyone listening rather than looking.
+        modifier = Modifier
+            .padding(start = Space.s)
+            .semantics { contentDescription = "${faRate(usd)} دلار" },
+    )
+}
+
+/** How old the rates under the figure are, and every caution about them. */
+@Composable
+private fun HeroFreshness(state: UiState, modifier: Modifier = Modifier) {
+    // "همین الان" must not still say that half an hour later. A slow tick keeps the label
+    // honest; the minute granularity of faAgo means nothing finer would ever show anyway.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.rates.updatedAt) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(30_000)
+        }
+    }
+    // A day-old rate silently shown as current is the "quietly wrong total" this app is
+    // built to avoid. Words carry the warning, not colour alone.
+    val stale = state.rates.updatedAt > 0L && now - state.rates.updatedAt > 24 * 60 * 60_000L
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val failed = state.error != null && state.rates.updatedAt == 0L
+            // Anything worth a caution sentence on this card dims the dot too — cached
+            // rates under a failed fetch are usable, but a bright green all-clear beside
+            // «متصل نشد» is the colour contradicting the words.
+            val trouble = failed || stale || state.error != null
+            // Colour confirms; the words carry it. A dot on its own would be the one
+            // thing in this app that says "something is wrong" in hue alone.
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (trouble) Hero.warn else Hero.mint),
+            )
+            Spacer(Modifier.width(Space.s))
+            Text(
+                when {
+                    failed -> "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن"
+                    stale -> "نرخ‌ها قدیمی‌ان؛ " + faAgo(state.rates.updatedAt, now)
+                    else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
+                },
+                fontSize = 13.sp,
+                // Not the accent: on this card green is the answer, and a warning wearing
+                // it read as a second call to act.
+                color = if (stale || failed) Hero.warn else Hero.muted,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (state.error != null && state.rates.updatedAt > 0L) {
+            Text(
+                "متصل نشد. نرخ‌های قبلی نشون داده می‌شن.",
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = Hero.muted,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+        }
     }
 }
 

@@ -121,19 +121,32 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
   const familyMode = pref('familyTotal') && familyAssets.length > 0;
   const total = totals.toman + (familyMode ? familyAssets.reduce((sum, a) => sum + a.totalToman, 0) : 0);
   const usd = usdOf(total, usdRate);
-  const now = useNow();
-  const updatedAt = pref('rates')?.updatedAt ?? 0;
-  // A day-old rate silently shown as current is the quietly wrong total this app exists to avoid.
-  const stale = updatedAt > 0 && now - updatedAt > 24 * 60 * 60_000;
   const history = pref('history');
   // A month, against her own total only — the history never recorded the household's.
   const change = useMemo(() => changeOver(history, Math.trunc(Date.now() / DAY_MS), 30, totals.toman), [history, totals.toman]);
   const shownChange = familyMode ? null : change;
   const figure = faCompact(total, 3, true);
   const words = faWordsToman(total);
-  const failed = error != null && updatedAt === 0;
-  // Anything worth a caution sentence dims the dot too: an all-clear green beside «متصل نشد» contradicts the words.
-  const trouble = failed || stale || error != null;
+  const usdAside = usd != null && <span class="usd figure" aria-label={`${faRate(usd)} دلار`}>{faUsd(usd)}</span>;
+
+  // دارایی's header, not خانه's answer (Ui.kt HeroCard `compact`): whose, how much, how fresh, in a
+  // third of the height, so the list the tab exists for starts above the fold. The words, the exact
+  // digits, the loans and the change pill stay on خانه's card; no «جمع دارایی‌هات» either — under
+  // the دارایی tab, above its own breakdown, the figure names itself.
+  if (portfolio) {
+    return (
+      <div class="home-hero compact">
+        <HeroPanel>
+          {familyAssets.length > 0 && <HeroScopeToggle family={familyMode} onSelect={setFamilyTotal} />}
+          <div class="label-row">
+            <HeroFigure key={figure} figure={figure} max={34} min={20} />
+            {usdAside}
+          </div>
+          <HeroFreshness error={error} />
+        </HeroPanel>
+      </div>
+    );
+  }
 
   return (
     <div class="home-hero">
@@ -142,9 +155,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
           {familyAssets.length === 0
             ? <span class="label">جمع دارایی‌هات</span>
             : <HeroScopeToggle family={familyMode} onSelect={setFamilyTotal} />}
-          {usd != null && (
-            <span class="usd figure" aria-label={`${faRate(usd)} دلار`}>{faUsd(usd)}</span>
-          )}
+          {usdAside}
         </div>
         {/* Keyed on the figure: every refresh lifts the new one into place, the receipt that it did something. */}
         <HeroFigure key={figure} figure={figure} />
@@ -155,27 +166,44 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
         {!familyMode && <LoansHeroStrip />}
         {shownChange ? <ChangePill change={shownChange} onClick={() => openReport('ASSETS')} />
           // Before thirty days there is no honest figure; the slot keeps its target and drops the number.
-          : !portfolio && <ReportLink onClick={() => openReport('ASSETS')} />}
-        <div class="hero-strip">
-          <span class={`dot${trouble ? ' trouble' : ''}`} />
-          <span class={`grow${stale || failed ? ' warn' : ''}`}>
-            {failed ? 'نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن'
-              : stale ? `نرخ‌ها قدیمی‌ان؛ ${faAgo(updatedAt, now)}`
-                : `نرخ‌ها: ${faAgo(updatedAt, now)}`}
-          </span>
-        </div>
-        {error != null && updatedAt > 0 && <p class="stale-note">متصل نشد. نرخ‌های قبلی نشون داده می‌شن.</p>}
+          : <ReportLink onClick={() => openReport('ASSETS')} />}
+        <HeroFreshness error={error} />
       </HeroPanel>
     </div>
   );
 }
 
+/** How old the rates under the figure are, and every caution about them — the same on both readings of the card. */
+function HeroFreshness({ error }: { error: string | null }) {
+  const now = useNow();
+  const updatedAt = pref('rates')?.updatedAt ?? 0;
+  // A day-old rate silently shown as current is the quietly wrong total this app exists to avoid.
+  const stale = updatedAt > 0 && now - updatedAt > 24 * 60 * 60_000;
+  const failed = error != null && updatedAt === 0;
+  // Anything worth a caution sentence dims the dot too: an all-clear green beside «متصل نشد» contradicts the words.
+  const trouble = failed || stale || error != null;
+  return (
+    <>
+      <div class="hero-strip">
+        <span class={`dot${trouble ? ' trouble' : ''}`} />
+        <span class={`grow${stale || failed ? ' warn' : ''}`}>
+          {failed ? 'نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن'
+            : stale ? `نرخ‌ها قدیمی‌ان؛ ${faAgo(updatedAt, now)}`
+              : `نرخ‌ها: ${faAgo(updatedAt, now)}`}
+        </span>
+      </div>
+      {error != null && updatedAt > 0 && <p class="stale-note">متصل نشد. نرخ‌های قبلی نشون داده می‌شن.</p>}
+    </>
+  );
+}
+
 /**
  * Never wraps: «۳٫۲ میلیارد تومان» broken over two lines reads as a layout bug, so it shrinks to
- * fit between 28 and 60 instead. Three decimals here: the headline is the one figure she watches move.
+ * fit between 28 and 60 instead (20 and 34 on دارایی's compact header). Three decimals here: the
+ * headline is the one figure she watches move.
  */
-function HeroFigure({ figure }: { figure: string }) {
-  const ref = useAutoSize<HTMLSpanElement>(60, 28, figure);
+function HeroFigure({ figure, max = 60, min = 28 }: { figure: string; max?: number; min?: number }) {
+  const ref = useAutoSize<HTMLSpanElement>(max, min, figure);
   return <span ref={ref} class="hero-total figure fig">{figure}<span class="unit">تومان</span></span>;
 }
 
