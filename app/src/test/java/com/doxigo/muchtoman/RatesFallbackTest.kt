@@ -110,7 +110,7 @@ class RatesFallbackTest {
             ours,
             now,
         )
-        assertEquals("$origin/download", proxied.latest?.downloadUrlFor(false))
+        assertEquals("$origin/download?v=2.0", proxied.latest?.downloadUrlFor(false))
 
         // Someone else's APK is dropped on its own — the release page survives it, because a
         // note that falls back to GitHub still beats no note at all.

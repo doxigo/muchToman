@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlin.math.abs
 
 @Serializable
@@ -100,7 +101,16 @@ data class Release(
     /** Whichever of the two she has the better chance of actually opening. */
     val downloadUrl: String get() = downloadUrlFor(BuildConfig.LITE)
 
-    fun downloadUrlFor(lite: Boolean): String = (if (lite) apkLite else apk).ifBlank { url }
+    /**
+     * The version rides along on the link. The Worker ignores it and serves the newest build
+     * either way, but whatever opens the link on the phone keys its cache on the whole URL, and a
+     * bare /download is the same URL for every release: a phone kept handing her 1.2.5 from it
+     * long after 1.4.0 was out.
+     */
+    fun downloadUrlFor(lite: Boolean): String {
+        val file = if (lite) apkLite else apk
+        return if (file.isBlank()) url else "$file?v=${URLEncoder.encode(name, "UTF-8")}"
+    }
 }
 
 /** Everything the Worker sends: Toman per one unit of each asset id, plus the coin catalogue. */

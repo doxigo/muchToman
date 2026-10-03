@@ -12,8 +12,8 @@ class ReviewRegressionTest {
         val page = "https://github.com/doxigo/muchToman/releases/tag/v2.0"
         val release = Release("2.0", page, "$origin/download", apkLite = "$origin/download/lite")
         val cleaned = sanitizeRates(Rates(now, mapOf("usd" to 1.0), latest = release), "$origin/rates", now).latest!!
-        assertEquals("$origin/download", cleaned.downloadUrlFor(false))
-        assertEquals("$origin/download/lite", cleaned.downloadUrlFor(true))
+        assertEquals("$origin/download?v=2.0", cleaned.downloadUrlFor(false))
+        assertEquals("$origin/download/lite?v=2.0", cleaned.downloadUrlFor(true))
         assertEquals(page, cleaned.copy(apkLite = "").downloadUrlFor(true))
         val wrong = sanitizeRates(Rates(now, latest = release.copy(apkLite = "$origin/download")), "$origin/rates", now).latest!!
         assertEquals(page, wrong.downloadUrlFor(true))
