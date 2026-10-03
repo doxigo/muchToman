@@ -129,11 +129,9 @@ export function SheetDelete({ label, onConfirmed }: { label: string; onConfirmed
   );
 }
 
-export function ActionCircle({ label, onClick, icon, disabled, quiet }: {
-  label: string; onClick: () => void; icon: ComponentChildren; disabled?: boolean; quiet?: boolean;
-}) {
+export function ActionCircle({ label, onClick, icon }: { label: string; onClick: () => void; icon: ComponentChildren }) {
   return (
-    <button type="button" class={`action-circle${quiet ? ' quiet' : ''}`} onClick={onClick} disabled={disabled} aria-label={label}>
+    <button type="button" class="action-circle" onClick={onClick} aria-label={label}>
       <span class="disc">{icon}</span>
       <span>{label}</span>
     </button>

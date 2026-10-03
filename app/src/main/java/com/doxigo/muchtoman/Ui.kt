@@ -74,7 +74,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -987,11 +986,11 @@ private fun AppScreens(
       }
 
       Box(Modifier.fillMaxSize()) {
-        // Pulling the list down refetches, exactly like the به‌روزرسانی button — the button
-        // stays, because a labelled control is still the one she can be told about by phone.
-        // The pull indicator belongs to the pull alone: init and refreshIfStale() also set
+        // Pulling the list down refetches, exactly like tapping the freshness line on the card —
+        // the line stays, because a labelled control is still the one she can be told about by
+        // phone. The pull indicator belongs to the pull alone: init and refreshIfStale() also set
         // loading, and ungated they dropped an uninvited spinner over the header on every
-        // cold open. The card's own labelled spinner is the receipt for those fetches.
+        // cold open. The line's own «در حال تازه کردن…» is the receipt for those fetches.
         var pulled by remember { mutableStateOf(false) }
         LaunchedEffect(state.refreshing) { if (!state.refreshing) pulled = false }
         val pullState = rememberPullToRefreshState()
@@ -1089,6 +1088,7 @@ private fun AppScreens(
                         // Not in the lite edition: there دارایی is the only screen, so its card
                         // is the one place the words and the exact digits can live.
                         compact = portfolio && tabs.size > 1,
+                        onRefresh = vm::refreshAll,
                     )
                 }
             }
@@ -1126,14 +1126,8 @@ private fun AppScreens(
                             modifier = cell,
                         ) { tint -> BarsIcon(tint) }
                     }
-                    ActionCircle(
-                        label = "تازه کردن",
-                        icon = Icons.Rounded.Refresh,
-                        spinning = state.refreshing,
-                        enabled = !state.refreshing,
-                        onClick = vm::refreshAll,
-                        modifier = cell,
-                    )
+                    // No «تازه کردن» circle: the freshness line on the card above is that control,
+                    // and the pull on this list is its gesture.
                 }
             }
 
@@ -1513,6 +1507,8 @@ internal fun HeroCard(
      * the exact digits, the loans and the change pill stay on خانه's card.
      */
     compact: Boolean = false,
+    /** The freshness line under the total is the refresh control — see [FreshnessLine]. */
+    onRefresh: () -> Unit,
 ) {
     // What the family shares in is on this screen but never in [UiState.totals]: her figure
     // stays hers everywhere else — the widget, the daily snapshot, the report. The household
@@ -1622,7 +1618,7 @@ internal fun HeroCard(
         }
         // Both readings of the card, compact or not: a header a third of the height still says
         // every caution the full card says, in the same words.
-        HeroFreshness(state, Modifier.padding(top = if (compact) Space.s else Space.m))
+        FreshnessLine(state, onRefresh)
     }
 }
 
@@ -1679,9 +1675,16 @@ private fun HeroUsd(usd: Double) {
     )
 }
 
-/** How old the rates under the figure are, and every caution about them. */
+/**
+ * How old the rates under the total are — and the way to make them younger. The line is the
+ * refresh control: the sentence that tells her whether she needs one is the thing she presses,
+ * instead of a third circle in the action row. Same reach as the pull on this list: rates, held
+ * نمادها and wallet balances ([AppVm.refreshAll]).
+ *
+ * One composable owning the tap, so any header that shows the freshness shows the control too.
+ */
 @Composable
-private fun HeroFreshness(state: UiState, modifier: Modifier = Modifier) {
+internal fun FreshnessLine(state: UiState, onRefresh: () -> Unit, modifier: Modifier = Modifier) {
     // "همین الان" must not still say that half an hour later. A slow tick keeps the label
     // honest; the minute granularity of faAgo means nothing finer would ever show anyway.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -1694,15 +1697,49 @@ private fun HeroFreshness(state: UiState, modifier: Modifier = Modifier) {
     // A day-old rate silently shown as current is the "quietly wrong total" this app is
     // built to avoid. Words carry the warning, not colour alone.
     val stale = state.rates.updatedAt > 0L && now - state.rates.updatedAt > 24 * 60 * 60_000L
-    Column(modifier) {
+    val failed = state.error != null && state.rates.updatedAt == 0L
+    // Anything worth a caution sentence on this card dims the dot too — cached rates under a
+    // failed fetch are usable, but a bright green all-clear beside «متصل نشد» is the colour
+    // contradicting the words.
+    val trouble = failed || stale || state.error != null
+    val busy = state.refreshing
+    val line = when {
+        // Work in flight says so in words — the one case DESIGN.md lets a control dim for.
+        busy -> "در حال تازه کردن…"
+        failed -> "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن"
+        stale -> "نرخ‌ها قدیمی‌ان؛ " + faAgo(state.rates.updatedAt, now)
+        else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
+    }
+    val caution = "متصل نشد. نرخ‌های قبلی نشون داده می‌شن."
+        .takeIf { state.error != null && state.rates.updatedAt > 0L }
+
+    // Only while it actually spins: an infinite transition left running costs a frame callback
+    // for ever, on the one screen that is open all day.
+    val angle = if (busy) {
+        rememberInfiniteTransition(label = "spin").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+            label = "angle",
+        ).value
+    } else {
+        0f
+    }
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .alpha(if (busy) 0.38f else 1f)
+            .clip(RoundedCornerShape(Radius.field))
+            .clickable(enabled = !busy, role = Role.Button, onClickLabel = "تازه کردن", onClick = onRefresh)
+            // The dot and the mark say nothing aloud; the words are the whole of it.
+            .semantics { contentDescription = listOfNotNull(line, caution).joinToString(". ") }
+            .heightIn(min = 48.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val failed = state.error != null && state.rates.updatedAt == 0L
-            // Anything worth a caution sentence on this card dims the dot too — cached
-            // rates under a failed fetch are usable, but a bright green all-clear beside
-            // «متصل نشد» is the colour contradicting the words.
-            val trouble = failed || stale || state.error != null
-            // Colour confirms; the words carry it. A dot on its own would be the one
-            // thing in this app that says "something is wrong" in hue alone.
+            // Colour confirms; the words carry it. A dot on its own would be the one thing in
+            // this app that says "something is wrong" in hue alone.
             Box(
                 Modifier
                     .size(7.dp)
@@ -1711,21 +1748,23 @@ private fun HeroFreshness(state: UiState, modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.width(Space.s))
             Text(
-                when {
-                    failed -> "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن"
-                    stale -> "نرخ‌ها قدیمی‌ان؛ " + faAgo(state.rates.updatedAt, now)
-                    else -> "نرخ‌ها: " + faAgo(state.rates.updatedAt, now)
-                },
+                line,
                 fontSize = 13.sp,
-                // Not the accent: on this card green is the answer, and a warning wearing
-                // it read as a second call to act.
-                color = if (stale || failed) Hero.warn else Hero.muted,
-                modifier = Modifier.weight(1f),
+                // Not the accent: on this card green is the answer, and a warning wearing it
+                // read as a second call to act.
+                color = if ((stale || failed) && !busy) Hero.warn else Hero.muted,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            // Beside the words rather than across the card: the mark is what turns a caption
+            // into a control, so it has to read as part of the sentence. Counter-clockwise, like
+            // every other spinner in this app — the arrow is drawn leading anticlockwise.
+            Box(Modifier.padding(start = Space.s).graphicsLayer { rotationZ = -angle }) {
+                ActIcon(ActGlyph.REFRESH, Hero.muted, size = 16.dp, stroke = 1.5.dp)
+            }
         }
-        if (state.error != null && state.rates.updatedAt > 0L) {
+        caution?.let {
             Text(
-                "متصل نشد. نرخ‌های قبلی نشون داده می‌شن.",
+                it,
                 fontSize = 12.sp,
                 lineHeight = 19.sp,
                 color = Hero.muted,
@@ -1812,26 +1851,8 @@ private fun ActionCircle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    spinning: Boolean = false,
-    enabled: Boolean = true,
     content: @Composable (Color) -> Unit = {},
 ) {
-    // Only while it actually spins: an infinite transition left running costs a frame
-    // callback for ever, on the one screen that is open all day.
-    val angle = if (spinning) {
-        val spin = rememberInfiniteTransition(label = "spin")
-        spin.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                tween(900, easing = LinearEasing), RepeatMode.Restart,
-            ),
-            label = "angle",
-        ).value
-    } else {
-        0f
-    }
-
     // The circle takes the press. A ripple inside a 56dp disc is most of the disc, so the
     // action reads as flashing rather than as being pushed; the give is what makes it feel
     // like a button under the thumb.
@@ -1849,7 +1870,6 @@ private fun ActionCircle(
             .scale(give)
             .clip(RoundedCornerShape(Radius.card))
             .clickable(
-                enabled = enabled,
                 role = Role.Button,
                 interactionSource = press,
                 indication = LocalIndication.current,
@@ -1863,21 +1883,11 @@ private fun ActionCircle(
             Modifier
                 .size(56.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .alpha(if (enabled) 1f else 0.6f),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
             if (icon != null) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = ink,
-                    modifier = Modifier
-                        .size(24.dp)
-                        // Counter-clockwise, like every other spinner in this app: the icon
-                        // is drawn with its arrowhead leading anticlockwise.
-                        .graphicsLayer { rotationZ = -angle },
-                )
+                Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(24.dp))
             } else {
                 content(ink)
             }

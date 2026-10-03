@@ -6,10 +6,12 @@
  * reach for next, right under the number that prompts them; then either how the month is going
  * (خانه) or what she owns (دارایی). The sheets behind the list are in homeSheets.tsx.
  *
- * Not ported: pull-to-refresh (the browser's own gesture reloads the page; «تازه کردن» is the
- * labelled control either way), the APK update card, and the stocks refresh the picker kicks.
+ * Not ported: pull-to-refresh (the browser's own gesture reloads the page; the freshness line under
+ * the total is the labelled control either way), the APK update card, and the stocks refresh the
+ * picker kicks.
  */
 import { useMemo } from 'preact/hooks';
+import { ActIcon } from './categoryIcon';
 import { BANK_ID, KIND_FA, holdingsByKind, resolveType, valuedInToman } from './catalog';
 import type { AssetType } from './catalog';
 import { changeOver, computeTotals, backupReminderDue, currentEffective, currentList, nameOr, refreshAll, useWealthStatus } from './data';
@@ -19,7 +21,7 @@ import type { LedgerView } from './derived';
 import { familyAssetViews, setFamilyTotal, useFamily } from './family';
 import type { FamilyAssetView } from './family';
 import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf } from './format';
-import { Chevron, PersonMark, PlusMark, RefreshMark, TabIcon, TrendCaret } from './icons';
+import { Chevron, PersonMark, PlusMark, TabIcon, TrendCaret } from './icons';
 import { DAY_MS, tehranDay } from './jalali';
 import { holdingKey } from './model';
 import type { Coin, Holding, WalletLink } from './model';
@@ -60,14 +62,14 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
         </button>
       )}
 
-      <HeroCard totals={totals} usdRate={rateIn(effective, 'usd')} portfolio={portfolio} familyAssets={familyAssets} error={status.error} />
+      <HeroCard totals={totals} usdRate={rateIn(effective, 'usd')} portfolio={portfolio} familyAssets={familyAssets} />
 
       {/* Real verbs only, fixed cells clustered to the centre so two circles never read as three with one missing. */}
       <div class="action-circles">
         <ActionCircle label="اضافه کردن" icon={<PlusMark size={24} />} onClick={() => openSheet('pickType')} />
         {/* Money no message will report, written down where she is standing. */}
         {!portfolio && <ActionCircle label="تراکنش دستی" icon={<TabIcon tab="LEDGER" />} onClick={() => openSheet('manualTxn')} />}
-        <ActionCircle label="تازه کردن" quiet icon={<RefreshMark spinning={status.refreshing} />} disabled={status.refreshing} onClick={refreshAll} />
+        {/* No «تازه کردن» circle: the freshness line on the card above is that control. */}
       </div>
 
       {!portfolio ? (
@@ -113,8 +115,8 @@ function HomeTopBar({ name }: { name: string }) {
 
 // ---- the hero -----------------------------------------------------------------------------------
 
-function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
-  totals: Totals; usdRate: number | null; portfolio: boolean; familyAssets: FamilyAssetView[]; error: string | null;
+function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
+  totals: Totals; usdRate: number | null; portfolio: boolean; familyAssets: FamilyAssetView[];
 }) {
   // The household total is a reading of the card, never a second total: history, the report and
   // the snapshot stay hers.
@@ -142,7 +144,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
             <HeroFigure key={figure} figure={figure} max={34} min={20} />
             {usdAside}
           </div>
-          <HeroFreshness error={error} />
+          <FreshnessLine />
         </HeroPanel>
       </div>
     );
@@ -167,14 +169,19 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets, error }: {
         {shownChange ? <ChangePill change={shownChange} onClick={() => openReport('ASSETS')} />
           // Before thirty days there is no honest figure; the slot keeps its target and drops the number.
           : <ReportLink onClick={() => openReport('ASSETS')} />}
-        <HeroFreshness error={error} />
+        <FreshnessLine />
       </HeroPanel>
     </div>
   );
 }
 
-/** How old the rates under the figure are, and every caution about them — the same on both readings of the card. */
-function HeroFreshness({ error }: { error: string | null }) {
+/**
+ * How old the rates under the total are, and the way to make them younger (Ui.kt FreshnessLine):
+ * the sentence that tells her whether she needs a refresh is the thing she presses, instead of a
+ * third circle in the action row. Same reach as Android's: rates and wallet balances.
+ */
+export function FreshnessLine() {
+  const { error, refreshing: busy } = useWealthStatus();
   const now = useNow();
   const updatedAt = pref('rates')?.updatedAt ?? 0;
   // A day-old rate silently shown as current is the quietly wrong total this app exists to avoid.
@@ -182,18 +189,22 @@ function HeroFreshness({ error }: { error: string | null }) {
   const failed = error != null && updatedAt === 0;
   // Anything worth a caution sentence dims the dot too: an all-clear green beside «متصل نشد» contradicts the words.
   const trouble = failed || stale || error != null;
+  // Work in flight says so in words — the one case DESIGN.md lets a control dim for.
+  const line = busy ? 'در حال تازه کردن…'
+    : failed ? 'نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن'
+      : stale ? `نرخ‌ها قدیمی‌ان؛ ${faAgo(updatedAt, now)}`
+        : `نرخ‌ها: ${faAgo(updatedAt, now)}`;
+  const caution = error != null && updatedAt > 0 ? 'متصل نشد. نرخ‌های قبلی نشون داده می‌شن.' : null;
   return (
-    <>
-      <div class="hero-strip">
+    <button type="button" class="freshness" onClick={refreshAll} disabled={busy}>
+      <span class="hero-strip">
         <span class={`dot${trouble ? ' trouble' : ''}`} />
-        <span class={`grow${stale || failed ? ' warn' : ''}`}>
-          {failed ? 'نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن'
-            : stale ? `نرخ‌ها قدیمی‌ان؛ ${faAgo(updatedAt, now)}`
-              : `نرخ‌ها: ${faAgo(updatedAt, now)}`}
-        </span>
-      </div>
-      {error != null && updatedAt > 0 && <p class="stale-note">متصل نشد. نرخ‌های قبلی نشون داده می‌شن.</p>}
-    </>
+        <span class={(stale || failed) && !busy ? 'warn' : undefined}>{line}</span>
+        {/* Beside the words, not across the card: the mark is what turns a caption into a control. */}
+        <ActIcon glyph="REFRESH" size={16} stroke={1.5} class={busy ? 'spin' : undefined} />
+      </span>
+      {caution && <span class="stale-note">{caution}</span>}
+    </button>
   );
 }
 

@@ -255,24 +255,27 @@ const heart = (cx: number, cy: number, s: number): string =>
   `C${cx + s} ${cy + 0.1 * s} ${cx + 0.1 * s} ${cy + 0.7 * s} ${cx} ${cy + 0.8 * s}Z`;
 
 /**
- * What can be done to a transaction, in the categories' own pen — Lucide's `pencil`, `split` and
- * `trash-2` (CategoryIcon.kt `ActGlyph`). Apart from [LUCIDE], so no category can wear a bin.
+ * What can be done to a transaction — and to the rates under the total — in the categories' own
+ * pen: Lucide's `pencil`, `split`, `trash-2` and `rotate-ccw` (CategoryIcon.kt `ActGlyph`). Apart
+ * from [LUCIDE], so no category can wear a bin.
  */
 export const ACT_GLYPHS = {
   PENCIL: 'M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5l4 4',
   SPLIT: 'M16 3h5v5 M8 3H3v5 M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3 M15 9l6-6',
   TRASH: 'M10 11v6 M14 11v6 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  // Anticlockwise, which is the way every spinner in this app turns.
+  REFRESH: 'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5',
 } as const;
 export type ActGlyph = keyof typeof ACT_GLYPHS;
 
 /** An act's mark in the box and pen a CategoryIcon of the same size would use. */
-export function ActIcon({ glyph, size = 22, color = 'currentColor', stroke = 1.6 }: {
-  glyph: ActGlyph; size?: number; color?: string; stroke?: number;
+export function ActIcon({ glyph, size = 22, color = 'currentColor', stroke = 1.6, class: cls }: {
+  glyph: ActGlyph; size?: number; color?: string; stroke?: number; class?: string;
 }) {
   const o = size * 0.06;
   const k = (size - 2 * o) / 20;
   return (
-    <Canvas size={size} color={color}>
+    <Canvas size={size} color={color} class={cls}>
       <path {...PEN} stroke-width={stroke / k} transform={`translate(${o} ${o}) scale(${k}) translate(-2 -2)`} d={ACT_GLYPHS[glyph]} />
     </Canvas>
   );

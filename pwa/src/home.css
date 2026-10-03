@@ -20,15 +20,20 @@
 @keyframes figure-in { from { transform: translateY(33%); opacity: 0; } }
 .home-hero .words { margin-top: var(--s); font-size: 15px; line-height: 25px; color: color-mix(in srgb, var(--hero-strong) 93%, transparent); }
 .home-hero .full { margin-top: var(--xs); font-size: 13px; color: var(--hero-muted); }
-.home-hero .hero-strip { margin-top: var(--l); }
-.home-hero .hero-strip .dot.trouble { background: var(--hero-warn); }
-.home-hero .hero-strip .warn { color: var(--hero-warn); }
-.home-hero .stale-note { margin-top: var(--xs); font-size: 12px; line-height: 19px; color: var(--hero-muted); }
-/* دارایی's header: the figure shares the dollars' line, and the strip follows with no hairline. */
+/* The freshness line is the refresh control (Ui.kt FreshnessLine): the whole line, 48 tall at least. */
+.freshness { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 48px; padding: 0; background: none; border: 0; color: var(--hero-muted); text-align: start; }
+/* Dimmed in flight only, and its words say so: «در حال تازه کردن…». The words, not the hairline above them. */
+.freshness:disabled { cursor: default; }
+.freshness:disabled > * { opacity: .38; }
+.freshness .dot.trouble { background: var(--hero-warn); }
+.freshness .warn { color: var(--hero-warn); }
+.freshness .stale-note { margin-top: var(--xs); font-size: 12px; line-height: 19px; }
+.home-hero .freshness { margin-top: var(--l); border-top: 1px solid var(--hero-hairline); }
+/* دارایی's header: the figure shares the dollars' line, and the freshness line follows with no hairline. */
 .home-hero.compact .hero { padding-block: var(--l); }
 .home-hero.compact .scope { margin-bottom: var(--xs); }
 .home-hero.compact .fig { flex: 1; min-width: 0; margin-top: 0; }
-.home-hero.compact .hero-strip { margin-top: var(--s); padding-top: 0; border-top: 0; }
+.home-hero.compact .freshness { margin-top: var(--xs); border-top: 0; }
 
 .scope { display: flex; gap: var(--xs); flex: 1; min-width: 0; }
 .scope > button { border: 0; border-radius: var(--r-pill); padding: 6px var(--m); background: transparent; color: var(--hero-muted); font-size: 13px; font-weight: 500; white-space: nowrap; }
