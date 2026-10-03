@@ -72,6 +72,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -776,6 +777,7 @@ private fun CategoryFilterSheet(
         Column(
             Modifier
                 .navigationBarsPadding()
+                .nestedScroll(SheetFlingGuard)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),

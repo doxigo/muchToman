@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -287,6 +288,7 @@ fun CategorySheet(
             Modifier
                 .navigationBarsPadding()
                 .imePadding()
+                .nestedScroll(SheetFlingGuard)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),

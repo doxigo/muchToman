@@ -1896,6 +1896,7 @@ private fun LedgerStartSheet(health: LedgerHealth, onPick: (Long) -> Unit, onDis
         Column(
             Modifier
                 .navigationBarsPadding()
+                .nestedScroll(SheetFlingGuard)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),

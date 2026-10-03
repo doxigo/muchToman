@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -1965,7 +1966,7 @@ private fun CategorySheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         LazyColumn(
-            Modifier.navigationBarsPadding(),
+            Modifier.navigationBarsPadding().nestedScroll(SheetFlingGuard),
             contentPadding = PaddingValues(start = Space.xl, end = Space.xl, bottom = Space.l),
         ) {
             item(key = "head") {
@@ -2288,6 +2289,7 @@ private fun ExcludeSheet(
         Column(
             Modifier
                 .navigationBarsPadding()
+                .nestedScroll(SheetFlingGuard)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),

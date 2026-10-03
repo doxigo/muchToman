@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -234,6 +235,7 @@ internal fun CrashSheet(report: String, onSend: () -> Unit, onDismiss: () -> Uni
                     .heightIn(max = 180.dp)
                     .clip(RoundedCornerShape(Radius.field))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .nestedScroll(SheetFlingGuard)
                     .verticalScroll(rememberScrollState())
                     .padding(Space.m),
             )

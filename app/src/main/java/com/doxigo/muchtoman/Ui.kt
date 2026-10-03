@@ -2429,9 +2429,9 @@ private fun bankNote(state: UiState): String {
 // the jump every list gives at the end of its scroll. Upward leftovers have nowhere to go
 // here (onPreFling already pulls a half-dragged sheet back up), so swallow them; downward
 // ones still fling the sheet closed.
-// ponytail: attach to each sheet's scrolling content. Four sheets in, still no wrapper: three
-// of them bound a LazyColumn to 0.88 of the screen and the fourth wraps its content, so the
-// shared part is this one line. Extract when two sheets want the same body, not the same guard.
+// ponytail: attach to every sheet's scrolling content — the category sheet went without it and
+// jumped at the end of its icon grid. Still no wrapper: the sheets share this one line and not a
+// body. Extract when two sheets want the same body, not the same guard.
 internal val SheetFlingGuard = object : NestedScrollConnection {
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
         if (available.y < 0f) available else Velocity.Zero
