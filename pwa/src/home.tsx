@@ -2,9 +2,10 @@
  * خانه and دارایی: one list, switched by `portfolio` (Ui.kt 906-1190), with Home.kt's story under
  * the total on خانه and the holdings banded by kind on دارایی.
  *
- * Her, above the money; the answer as the one deep-green object on the page; the verbs she might
- * reach for next, right under the number that prompts them; then either how the month is going
- * (خانه) or what she owns (دارایی). The sheets behind the list are in homeSheets.tsx.
+ * On خانه: her, above the money; the answer as the one deep-green object on the page; the verbs
+ * she might reach for next, right under the number that prompts them; then how the month is going.
+ * On دارایی: the title line with its add pill, the compact hero, then what she owns. The sheets
+ * behind the list are in homeSheets.tsx.
  *
  * Not ported: pull-to-refresh (the browser's own gesture reloads the page; the freshness line under
  * the total is the labelled control either way), the APK update card, and the stocks refresh the
@@ -31,7 +32,7 @@ import { buildStory } from './reports';
 import type { HomeStory } from './reports';
 import { InsightCard, QuietStart } from './report';
 import { pref, useData } from './state';
-import { ActionCircle, HeroPanel, PillToggle, Section } from './ui';
+import { ActionCircle, HeroPanel, PillToggle, ScreenTitle, Section, TitleAddButton } from './ui';
 import { AssetIcon, RowAmount, RowTitle, rateIn, useAutoSize, useNow } from './homeSheets';
 import { LoansHeroStrip } from './loansUi';
 import './home.css';
@@ -51,8 +52,17 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
 
   return (
     <div class="screen home">
-      {/* Her, above the money: the greeting is the door to تنظیمات. */}
-      <HomeTopBar name={pref('name')} />
+      {portfolio ? (
+        // دارایی is a room like دفتر and آینده, so it opens the way they do: its name, and the one
+        // thing it writes beside it — دفتر's title line exactly, so the title stays put between tabs.
+        <div class="title-line">
+          <ScreenTitle>دارایی</ScreenTitle>
+          <TitleAddButton word="دارایی" label="اضافه کردن دارایی" onClick={() => openSheet('pickType')} />
+        </div>
+      ) : (
+        // Her, above the money: the greeting is the door to تنظیمات.
+        <HomeTopBar name={pref('name')} />
+      )}
 
       {backupReminderDue(pref('backupReminderEnabled'), pref('lastBackupAt'), Date.now()) && (
         // A door, not a caption: it leads to تنظیمات, so it wears the card and chevron every door does.
@@ -64,13 +74,16 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
 
       <HeroCard totals={totals} usdRate={rateIn(effective, 'usd')} portfolio={portfolio} familyAssets={familyAssets} />
 
-      {/* Real verbs only, fixed cells clustered to the centre so two circles never read as three with one missing. */}
-      <div class="action-circles">
-        <ActionCircle label="اضافه کردن" icon={<PlusMark size={24} />} onClick={() => openSheet('pickType')} />
-        {/* Money no message will report, written down where she is standing. */}
-        {!portfolio && <ActionCircle label="تراکنش دستی" icon={<TabIcon tab="LEDGER" />} onClick={() => openSheet('manualTxn')} />}
-        {/* No «تازه کردن» circle: the freshness line on the card above is that control. */}
-      </div>
+      {/* Real verbs only, fixed cells clustered to the centre so two circles never read as three with
+          one missing. Not under دارایی's compact header: its one verb is the pill beside the title. */}
+      {!portfolio && (
+        <div class="action-circles">
+          <ActionCircle label="اضافه کردن" icon={<PlusMark size={24} />} onClick={() => openSheet('pickType')} />
+          {/* Money no message will report, written down where she is standing. */}
+          <ActionCircle label="تراکنش دستی" icon={<TabIcon tab="LEDGER" />} onClick={() => openSheet('manualTxn')} />
+          {/* No «تازه کردن» circle: the freshness line on the card above is that control. */}
+        </div>
+      )}
 
       {!portfolio ? (
         <>
@@ -474,7 +487,7 @@ function EmptyHint() {
     <div class="empty-hint">
       <span class="disc"><TabIcon tab="ASSETS" /></span>
       <h2>هنوز چیزی اضافه نکردی</h2>
-      <p>از دکمه پایین پول نقد، دلار، طلا، سکه یا رمزارز اضافه کن تا جمعشون رو ببینی.</p>
+      <p>پول نقد، دلار، طلا، سکه یا رمزارز رو از دکمه «+ دارایی» بالای صفحه اضافه کن تا جمعشون رو ببینی.</p>
     </div>
   );
 }

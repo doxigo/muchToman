@@ -147,6 +147,12 @@ h1, h2, h3 { margin: 0; }
 .screen.no-tabs { padding-bottom: calc(var(--huge) + env(safe-area-inset-bottom)); }
 .screen-head { display: flex; align-items: center; gap: var(--m); min-height: 56px; margin: var(--l) 0 var(--xl); }
 .screen-head .screen-title { flex: 1; }
+/* A root page's title with its 48px controls beside it — دفتر's and دارایی's (Timeline.kt's Row, Space.m above and below). */
+.title-line { display: flex; align-items: center; gap: var(--s); padding: var(--m) 0; }
+.title-line .screen-title { flex: 1; min-width: 3em; }
+/* The chips' neutral well at 48px, as Timeline.kt draws them and as the search disc wears it — not the tonal wash. */
+.pill.ledger-pill { min-height: 48px; flex: none; background: var(--surface-container); }
+.ledger-pill.add { gap: var(--xs); }
 .section { padding: var(--xxl) var(--xs) var(--m); display: flex; align-items: baseline; gap: var(--s); }
 .section h2 { flex: 1; font-size: 16px; font-weight: 800; }
 .gap-s > * + * { margin-top: var(--s); }

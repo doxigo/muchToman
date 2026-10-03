@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -135,11 +136,20 @@ class UiSmokeTest {
         children.firstNotNullOfOrNull { if (matcher.matches(it)) it else it.firstMatch(matcher) }
 
     /**
+     * دارایی's title pill. Its visible word is the tab's and the title's own «دارایی», so it is
+     * found by what a tap on it says it does, the label TalkBack reads after the word.
+     */
+    private val addAssetPill = SemanticsMatcher("click label «اضافه کردن دارایی»") {
+        it.config.getOrNull(SemanticsActions.OnClick)?.label == "اضافه کردن دارایی"
+    }
+
+    /**
      * Walks the picker into an [EditSheet] for [typeFa] and saves [amountFa] — typed in Persian
      * digits, because that is what her keyboard produces and what [parseAmount] must read.
      */
     private fun addHolding(typeFa: String, amountFa: String) {
-        rule.onNodeWithContentDescription("اضافه کردن").performClick()
+        tab("دارایی").performClick()
+        rule.onNode(addAssetPill).performClick()
         waitForText("چی می‌خوای اضافه کنی؟")
         // Searched for, not scrolled to. The رمزارز band above طلا is filled by the rates fetch,
         // and on a fresh install that fetch can land between the scroll and the tap: a dozen
@@ -185,9 +195,11 @@ class UiSmokeTest {
 
         tab("دارایی").performClick()
         tab("دارایی").assertIsSelected()
-        // The portfolio surface: the add circle stands, and the home-only manual-transaction
-        // circle is gone — which is what tells this tab apart from خانه whatever data exists.
-        rule.onNodeWithContentDescription("اضافه کردن").assertIsDisplayed()
+        // The portfolio surface: its own title line with the add pill, and none of خانه's
+        // circles — which is what tells this tab apart from خانه whatever data exists.
+        rule.onNode(isHeading() and hasText("دارایی")).assertIsDisplayed()
+        rule.onNode(addAssetPill).assertIsDisplayed()
+        rule.onNodeWithContentDescription("اضافه کردن").assertDoesNotExist()
         rule.onNodeWithContentDescription("تراکنش دستی").assertDoesNotExist()
 
         tab("گزارش").performClick()
@@ -200,9 +212,8 @@ class UiSmokeTest {
     @Test
     fun assetPickerAddsAHoldingThatLandsOnTheList() {
         addHolding("طلای ۱۸ عیار", "۲۵٫۵")
-        tab("دارایی").performClick()
-        // The rows sit under the hero and the action circles in the screen's own lazy list,
-        // so it takes a scroll to bring the new one into composition.
+        // The rows sit under the title and the hero in the screen's own lazy list, so it takes
+        // a scroll to bring the new one into composition.
         scrollPageTo(hasText("طلای ۱۸ عیار"))
         rule.onNodeWithText("طلای ۱۸ عیار").assertIsDisplayed()
     }
@@ -212,7 +223,6 @@ class UiSmokeTest {
         // Its own holding, its own type — مثقال طلا collides with nothing the picker test
         // leaves behind, so every match below is unambiguous whatever the test order.
         addHolding("مثقال طلا", "۳")
-        tab("دارایی").performClick()
         scrollPageTo(hasText("مثقال طلا"))
         rule.onNodeWithText("مثقال طلا").performClick()
         waitForText("حذف این دارایی")

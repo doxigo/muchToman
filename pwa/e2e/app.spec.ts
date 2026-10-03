@@ -72,6 +72,18 @@ test('first run asks once, then lands on خانه with the five tabs', async ({ 
   await expect(page.getByRole('heading', { name: 'قبل از شروع' })).toHaveCount(0);
 });
 
+test('دارایی opens on its own title line, and the pill beside it adds', async ({ page }) => {
+  await onboard(page);
+  await page.getByRole('tab', { name: 'دارایی' }).click();
+  await expect(page.getByRole('heading', { name: 'دارایی', exact: true })).toBeVisible();
+  // خانه's greeting and circles stay on خانه.
+  await expect(page.getByRole('button', { name: 'تنظیمات' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'اضافه کردن', exact: true })).toHaveCount(0);
+  await expect(page.getByText('بالای صفحه اضافه کن')).toBeVisible();
+  await page.getByRole('button', { name: 'اضافه کردن دارایی' }).click();
+  await expect(page.getByRole('dialog', { name: 'چی می‌خوای اضافه کنی؟' })).toBeVisible();
+});
+
 test('installs every bundle before the first offline reload', async ({ page, context }) => {
   await onboard(page);
   await activeWorker(page);

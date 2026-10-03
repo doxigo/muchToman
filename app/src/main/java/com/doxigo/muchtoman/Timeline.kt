@@ -412,7 +412,7 @@ fun TimelineScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ScreenTitle("دفتر", modifier = Modifier.weight(1f))
-                    if (onAddTxn != null) AddTxnButton(onAddTxn, labelled)
+                    if (onAddTxn != null) TitleAddButton("تراکنش", "تراکنش دستی", onAddTxn, labelled)
                     if (waiting > 0) ReviewPill(waiting, onReview)
                 }
             }
@@ -543,49 +543,6 @@ fun TimelineScreen(
 }
 
 /**
- * The door to a hand-entered transaction, beside the title — present wherever the ledger is,
- * because the moment she paid cash for something is not a moment she is standing in تنظیمات.
- *
- * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and the one
- * action on this screen that writes money is not the place to make her guess; «تراکنش» after the
- * mark costs a few millimetres and answers it outright. The pill is the neutral well the chips
- * below wear rather than the review pill's filled green — two solid fills on one line would both
- * be claiming «this one» — and the mark alone carries the interactive colour, which is what keeps
- * it from reading as a third filter.
- *
- * [labelled] is false only where the line genuinely cannot hold the word — see the header.
- */
-@Composable
-private fun AddTxnButton(onClick: () -> Unit, labelled: Boolean) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(role = Role.Button, onClickLabel = "تراکنش دستی", onClick = onClick)
-            // Square when the word is gone, so it reads as the mark's own disc rather than as a
-            // pill that lost its label.
-            .then(
-                if (labelled) Modifier.heightIn(min = 48.dp).padding(horizontal = Space.l)
-                else Modifier.size(48.dp),
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        PlusMark(MaterialTheme.colorScheme.primary, size = 20.dp)
-        if (labelled) {
-            Spacer(Modifier.width(Space.xs))
-            Text(
-                "تراکنش",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-/**
  * The plus, drawn with the pen every other mark in this app is drawn with. A typed «+» is text
  * doing an icon's job: it sits on a baseline, inherits a weight axis, and lands off-centre in
  * any disc that holds it.
@@ -634,7 +591,7 @@ private fun FilterButton(count: Int, onClick: () -> Unit) {
 }
 
 /**
- * The door to narrowing by words, in the disc [AddTxnButton] already wears when its own word is
+ * The door to narrowing by words, in the disc [TitleAddButton] already wears when its own word is
  * gone: mark-only, pill-round, 48dp. Open — or closed over words still at work — it holds the
  * app's «this one», exactly as the filter button beside it does when it is the thing narrowing.
  */
@@ -976,7 +933,7 @@ private fun DayHeading(
  */
 @Composable
 private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
-    // The title line's own 48dp family — [AddTxnButton]'s pill, the paste and search discs — in
+    // The title line's own 48dp family — [TitleAddButton]'s pill, the paste and search discs — in
     // the CTA fill, rather than a 44dp PillButton sitting a size short of its neighbours.
     Box(
         Modifier

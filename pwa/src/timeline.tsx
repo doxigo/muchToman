@@ -33,8 +33,8 @@ import {
 } from './format';
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
-import { CheckMark, PlusMark, SearchMark } from './icons';
-import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, SignedFigure, Switch } from './ui';
+import { CheckMark, SearchMark } from './icons';
+import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, SignedFigure, Switch, TitleAddButton } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
 
 // ---- words ------------------------------------------------------------------------------------
@@ -293,9 +293,9 @@ function TimelineScreen() {
       {/* Pinned: a filter she cannot see is a filter she forgets she set, and on this screen
           that reads as money gone missing. */}
       <div class="ledger-top">
-        <div class={`ledger-head${waiting > 0 ? ' crowded' : ''}`}>
+        <div class={`title-line ledger-head${waiting > 0 ? ' crowded' : ''}`}>
           <ScreenTitle>دفتر</ScreenTitle>
-          <AddTxnButton />
+          <TitleAddButton word="تراکنش" label="تراکنش دستی" onClick={() => openSheet('manualTxn')} />
           <PasteButton />
           {waiting > 0 && <button type="button" class="pill primary ledger-pill" onClick={() => openPage('deck')}>{`مرور ${faNumber(waiting)} مورد`}</button>}
         </div>
@@ -341,20 +341,6 @@ function TimelineScreen() {
           </div>
         )}
     </Screen>
-  );
-}
-
-/**
- * The door to a hand-entered transaction. It says the word — a bare «+» is a guess she spends a
- * tap to check — in the chips' neutral well, the mark alone carrying the interactive colour.
- * On a crowded line the words yield first; the review count never does.
- */
-function AddTxnButton() {
-  return (
-    <button type="button" class="pill ledger-pill add" aria-label="تراکنش دستی" onClick={() => openSheet('manualTxn')}>
-      <PlusMark color="var(--primary)" />
-      <span class="word">تراکنش</span>
-    </button>
   );
 }
 

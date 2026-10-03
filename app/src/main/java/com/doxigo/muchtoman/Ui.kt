@@ -217,6 +217,49 @@ internal fun ScreenTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * The door to writing something down, beside a root page's [ScreenTitle] — دفتر's «تراکنش» and
+ * دارایی's «دارایی», one object so the two title lines cannot drift apart.
+ *
+ * It says the word. A bare «+» in a disc is a guess she has to spend a tap to check, and an
+ * action that writes money is not the place to make her guess; the word after the mark costs a
+ * few millimetres and answers it outright. The pill is the neutral well the چیپ‌ها below دفتر's
+ * title wear rather than the review pill's filled green — two solid fills on one line would both
+ * be claiming «this one» — and the mark alone carries the interactive colour, which is what keeps
+ * it from reading as a filter.
+ *
+ * [labelled] is false only where the line genuinely cannot hold the word — دفتر's crowded line.
+ * Square then, so it reads as the mark's own disc rather than as a pill that lost its label, and
+ * [onClickLabel] becomes its name: a mark says nothing to TalkBack.
+ */
+@Composable
+internal fun TitleAddButton(word: String, onClickLabel: String, onClick: () -> Unit, labelled: Boolean = true) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+            .then(
+                if (labelled) Modifier.heightIn(min = 48.dp).padding(horizontal = Space.l)
+                else Modifier.size(48.dp).semantics { contentDescription = onClickLabel },
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        PlusMark(MaterialTheme.colorScheme.primary, size = 20.dp)
+        if (labelled) {
+            Spacer(Modifier.width(Space.xs))
+            Text(
+                word,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 /** A sheet's question, in the same voice — ten sheets had drifted to three sizes of it. */
 @Composable
 internal fun SheetTitle(text: String, modifier: Modifier = Modifier) {
@@ -399,6 +442,8 @@ private fun AppScreens(
 ) {
     val backupState by vm.backup.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
+    // خانه's circle and دارایی's title pill: one door to the picker.
+    val addAsset: () -> Unit = { adding = true; vm.refreshStocksForPicker() }
     var editing by remember { mutableStateOf<Editing?>(null) }
     // Saveable, like tab and transactionRef below: these four are *where she is standing*, and
     // a process death that threw her from دسته‌بندی‌ها back to the asset list read as the app
@@ -433,6 +478,10 @@ private fun AppScreens(
     // one tab it has is where it opens.
     var tab by rememberSaveable { mutableStateOf(tabs.first()) }
     val portfolio = tab == Tab.ASSETS
+    // دارایی as a room of its own: a title line and the compact hero. Not in the lite edition —
+    // there دارایی is the only screen, so its card is the one place the words and the exact
+    // digits can live, and the greeting is the only door to تنظیمات.
+    val compact = portfolio && tabs.size > 1
 
     // Which report, and which month of it. Both live up here because every door into گزارش‌ها
     // says which of the two reports it is a door to — the asset change pill opens دارایی, the
@@ -1037,17 +1086,34 @@ private fun AppScreens(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + Space.l),
         ) {
-            // Her, above the money, on the paper — the greeting is the door to تنظیمات, the way
-            // every phone on the planet gets you to your own account.
             item(key = "top") {
-                HomeTopBar(
-                    name = state.name,
-                    onSettings = { settings = true },
-                    modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(edge)
-                        .padding(top = Space.s),
-                )
+                if (compact) {
+                    // دارایی is a room like دفتر and آینده, so it opens the way they do: its name,
+                    // and the one thing it writes beside it. Same insets as دفتر's title line, so
+                    // the title stays put as she moves between the tabs.
+                    Row(
+                        Modifier
+                            .statusBarsPadding()
+                            .padding(horizontal = Space.xl, vertical = Space.m)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Space.s),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ScreenTitle("دارایی", modifier = Modifier.weight(1f))
+                        TitleAddButton("دارایی", "اضافه کردن دارایی", onClick = addAsset)
+                    }
+                } else {
+                    // Her, above the money, on the paper — the greeting is the door to تنظیمات,
+                    // the way every phone on the planet gets you to your own account.
+                    HomeTopBar(
+                        name = state.name,
+                        onSettings = { settings = true },
+                        modifier = Modifier
+                            .statusBarsPadding()
+                            .padding(edge)
+                            .padding(top = Space.s),
+                    )
+                }
             }
 
             if (backupReminderDue(
@@ -1096,17 +1162,16 @@ private fun AppScreens(
                         portfolio = portfolio,
                         onFamilyTotal = vm::setFamilyTotal,
                         onLoans = { loansPage = true },
-                        // Not in the lite edition: there دارایی is the only screen, so its card
-                        // is the one place the words and the exact digits can live.
-                        compact = portfolio && tabs.size > 1,
+                        compact = compact,
                         onRefresh = vm::refreshAll,
                     )
                 }
             }
 
             // What she might do next, directly under the number that prompts it — real verbs
-            // only, each a circle with its name under it.
-            item(key = "actions") {
+            // only, each a circle with its name under it. Not under دارایی's compact header: its
+            // one verb is the pill beside the title.
+            if (!compact) item(key = "actions") {
                 // Fixed cells clustered to the centre, not thirds of the screen: two circles
                 // spread to three slots' positions read as a row with a button missing, and
                 // the sibling heroes have to share one rhythm whatever their count.
@@ -1118,7 +1183,7 @@ private fun AppScreens(
                     ActionCircle(
                         label = "اضافه کردن",
                         icon = Icons.Rounded.Add,
-                        onClick = { adding = true; vm.refreshStocksForPicker() },
+                        onClick = addAsset,
                         modifier = cell,
                     )
                     if (!portfolio) {
@@ -1217,7 +1282,7 @@ private fun AppScreens(
                     }
                 }
             } else if (state.listHoldings.isEmpty()) {
-                item { EmptyHint() }
+                item { EmptyHint(pill = compact) }
             } else {
                 // Dollars, gold, coins and crypto used to arrive as one undifferentiated stack
                 // of cards. Banding them by kind separates them without moving anything: the
@@ -3233,8 +3298,9 @@ private fun FamilyAssetBand(shared: FamilyAssetView, modifier: Modifier = Modifi
     }
 }
 
+/** [pill]: the add button is the «+ دارایی» pill up by the title, not the circle under the card. */
 @Composable
-private fun EmptyHint() {
+private fun EmptyHint(pill: Boolean) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -3267,7 +3333,8 @@ private fun EmptyHint() {
         )
         Spacer(Modifier.height(Space.s))
         Text(
-            "از دکمه پایین پول نقد، دلار، طلا، سکه یا رمزارز اضافه کن تا جمعشون رو ببینی.",
+            if (pill) "پول نقد، دلار، طلا، سکه یا رمزارز رو از دکمه «+ دارایی» بالای صفحه اضافه کن تا جمعشون رو ببینی."
+            else "از دکمه پایین پول نقد، دلار، طلا، سکه یا رمزارز اضافه کن تا جمعشون رو ببینی.",
             fontSize = 15.sp,
             lineHeight = 25.sp,
             textAlign = TextAlign.Center,

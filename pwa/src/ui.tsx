@@ -8,6 +8,7 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { closePage, closeSheet } from './nav';
 import { faWordsToman, groupDigits, parseAmount } from './format';
+import { PlusMark } from './icons';
 
 export function ScreenTitle({ children }: { children: ComponentChildren }) {
   return <h1 class="screen-title">{children}</h1>;
@@ -17,6 +18,20 @@ export function SheetTitle({ children }: { children: ComponentChildren }) {
 }
 export function SheetLabel({ children }: { children: ComponentChildren }) {
   return <h3 class="sheet-label">{children}</h3>;
+}
+
+/**
+ * The door to writing something down, beside a root page's title (Ui.kt TitleAddButton) — دفتر's
+ * «تراکنش» and دارایی's «دارایی». It says the word: a bare «+» is a guess she spends a tap to check.
+ * The chips' neutral well, the mark alone carrying the interactive colour. `label` is its name.
+ */
+export function TitleAddButton({ word, label, onClick }: { word: string; label: string; onClick: () => void }) {
+  return (
+    <button type="button" class="pill ledger-pill add" aria-label={label} onClick={onClick}>
+      <PlusMark color="var(--primary)" />
+      <span class="word">{word}</span>
+    </button>
+  );
 }
 
 /** A root page's frame: the title row (with an optional «برگشت» or trailing control) and the body. */

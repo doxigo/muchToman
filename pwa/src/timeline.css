@@ -7,11 +7,7 @@
   padding: env(safe-area-inset-top) var(--edge) 0;
   container: ledger-top / inline-size;
 }
-.ledger-head { display: flex; align-items: center; gap: var(--s); padding: var(--m) 0; }
-.ledger-head .screen-title { flex: 1; }
-/* The chips' neutral well at 48px, as Timeline.kt draws them and as the search disc wears it — not the tonal wash. */
-.pill.ledger-pill { min-height: 48px; flex: none; background: var(--surface-container); }
-.ledger-pill.add { gap: var(--xs); }
+/* The title line itself (.title-line) and its 48px pills are app.css's: دارایی's title line is the same one. */
 .ledger-pill.active { background: var(--primary); color: var(--on-primary); }
 /* The review pill: the title line's 48px family in the CTA fill (ReviewPill, Timeline.kt). */
 .pill.ledger-pill.primary { background: var(--cta-fill); color: var(--cta-ink); }
@@ -26,7 +22,6 @@
   .ledger-head.crowded .ledger-pill.add { width: 48px; padding: 0; }
   .ledger-head.crowded .ledger-pill.add .word { display: none; }
 }
-.ledger-head .screen-title { min-width: 3em; }
 .ledger-controls { display: flex; align-items: center; gap: var(--s); padding-bottom: var(--m); }
 .ledger-disc { flex: none; width: 48px; height: 48px; border: 0; border-radius: var(--r-pill); display: grid; place-items: center; background: var(--surface-container); color: var(--on-surface); }
 .ledger-disc.active { background: var(--primary); color: var(--on-primary); }
