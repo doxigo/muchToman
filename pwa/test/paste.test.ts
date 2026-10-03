@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MAX_PASTE_CHARS, bodyToStore, parsePasted, severalMessages } from '../src/paste';
+import { MAX_PASTE_CHARS, bodyToStore, parsePasted, readBundle, severalMessages, writeBundle } from '../src/paste';
+import { BANKS, bankOf } from '../src/sms';
 import { nextStamp, uuid7 } from '../src/sync';
 
 /**
@@ -147,6 +148,71 @@ describe('one message at a time', () => {
     expect(severalMessages('واریز مبلغ 5,000,000 ریال\n1405/5/1 11:26\nبرداشت مبلغ 2,000,000 ریال\n1405/5/2 09:10')).toBe(true);
     expect(severalMessages('واریز 5,000,000\nمانده 9,000,000\nبرداشت 2,000,000\nمانده 7,000,000')).toBe(true);
     expect(severalMessages(`برداشت مبلغ 2,000,000 ریال\n${' '.repeat(MAX_PASTE_CHARS)}`)).toBe(true);
+  });
+});
+
+const body = (id: string): string => cases().find((c) => c.id === id)!.body.join('\n');
+
+describe("a shortcut's bundle", () => {
+  it('splits into its messages, each with its sender and when it arrived', () => {
+    const mellat = body('mellat-6104-withdrawal-with-balance');
+    const saman = body('saman-deposit-arabic-kaf');
+    expect(readBundle(`#muchtoman 6104 2026-10-03T14:22:05+03:30\n${mellat}\n#muchtoman 0999 992 0000\n${saman}\n`)).toEqual([
+      { sender: '6104', body: mellat, at: Date.parse('2026-10-03T14:22:05+03:30') },
+      { sender: '0999 992 0000', body: saman, at: null },
+    ]);
+  });
+
+  it('reads a stamp a Persian phone wrote, and keeps what came before the first marker', () => {
+    expect(readBundle('برداشت مبلغ 2,000,000 ریال\r\n#muchtoman Bank Mellat ۲۰۲۶-۱۰-۰۳T۱۴:۲۲:۰۵Z\r\nواریز مبلغ 5,000,000 ریال')).toEqual([
+      { sender: '', body: 'برداشت مبلغ 2,000,000 ریال', at: null },
+      { sender: 'Bank Mellat', body: 'واریز مبلغ 5,000,000 ریال', at: Date.parse('2026-10-03T14:22:05Z') },
+    ]);
+    // A time that is no time is dropped, and the sender keeps the rest of the line.
+    expect(readBundle('#muchtoman 6104 2026-13-45T99:99\nواریز')![0]).toEqual({ sender: '6104', body: 'واریز', at: null });
+  });
+
+  it('writes back what it read, for the messages still waiting on an answer', () => {
+    const records = readBundle(`#muchtoman Foo 2026-10-03T10:52:05Z\n${body('melli-interest-trailing-plus')}\n#muchtoman\nواریز`)!;
+    expect(readBundle(writeBundle(records))).toEqual(records);
+  });
+
+  it('is no bundle without its marker, so several plain messages are still refused', () => {
+    for (const c of cases()) expect(readBundle(c.body.join('\n')), c.id).toBeNull();
+    const pair = `${body('saderat-paya-deposit-trailing-plus')}\n${body('saderat-pos-purchase-trailing-minus')}`;
+    expect(readBundle(pair)).toBeNull();
+    expect(severalMessages(pair)).toBe(true);
+    // Only a marker that opens its line and stands as a word of its own.
+    expect(readBundle('واریز #muchtoman 6104')).toBeNull();
+    expect(readBundle('#muchtomanx 6104\nواریز')).toBeNull();
+  });
+});
+
+describe('the sender table', () => {
+  it("is Sms.kt's, bank for bank and number for number", () => {
+    const kt = readFileSync(join(__dirname, '../../app/src/main/java/com/doxigo/muchtoman/Sms.kt'), 'utf8');
+    const start = kt.indexOf('enum class Bank(');
+    const android = [...kt.slice(start, kt.indexOf('\n}\n', start))
+      .matchAll(/^\s+([A-Z_]+)\(\s*"([^"]*)",\s*(?:listOf\(([^)]*)\)|emptyList\(\))/gm)]
+      // BLU_APP, the Blu app's package, is a constant rather than a quoted sender: a phone's alone.
+      .map((m) => ({ name: m[1], fa: m[2], numbers: [...(m[3] ?? '').matchAll(/"([^"]*)"/g)].map((n) => n[1]) }));
+    expect(android.length).toBeGreaterThanOrEqual(28);
+    expect(BANKS.map(({ name, fa, numbers }) => ({ name, fa, numbers: [...numbers] }))).toEqual(android);
+  });
+
+  it('names the bank of every corpus sender it lists, however the carrier writes it, and no stranger', () => {
+    let named = 0;
+    for (const c of cases()) {
+      const bank = bankOf(c.sender);
+      if (!bank || !c.expect?.bank) continue;
+      expect(bank, c.id).toBe(c.expect.bank);
+      named++;
+    }
+    expect(named).toBeGreaterThanOrEqual(20);
+    for (const sender of ['+98 999 992 0000', '+989999920000', '09999920000', '9999920000']) expect(bankOf(sender), sender).toBe('SAMAN');
+    expect(bankOf('۶۱۰۴')).toBe('MELLAT');
+    expect(bankOf(' refah  bank ')).toBe('REFAH');
+    for (const stranger of ['+989121234567', '10001', 'Tel100031', '', 'بانک ملت']) expect(bankOf(stranger), stranger).toBeNull();
   });
 });
 

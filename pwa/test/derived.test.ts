@@ -12,7 +12,8 @@ import { autoFilePlan } from '../src/filing';
 import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/jalali';
 import type { BalanceAnchor, Decision, FamilyTxn, LedgerEntry, ManualTxn, Source, Txn } from '../src/model';
 import { BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_OTHER, CAT_SHOPPING_ID, CAT_UNCATEGORISED } from '../src/rules';
-import { AT_FUTURE_SLACK_MS, parseToRows, pastedMoment, printedMoment, sha256Hex, sourceId } from '../src/sms';
+import { readBundle } from '../src/paste';
+import { AT_FUTURE_SLACK_MS, bankOf, parseToRows, pastedMoment, printedMoment, sha256Hex, sourceId } from '../src/sms';
 
 /** Derived.kt, as DeriveTest.kt, LedgerStartTest.kt and FilingTest.kt pin it, and AppVm's ledger actions. */
 
@@ -451,6 +452,28 @@ describe('ledger actions', () => {
     // Both at once is refused rather than read as one row.
     expect(await ledger.addPastedSms(`${pos}\n${paya}`, 'SADERAT')).toBeNull();
     expect(state.rows('sources')).toHaveLength(2);
+  });
+
+  it("stores a shortcut's bundle by its senders, once however often it is pasted", async () => {
+    const body = (id: string): string => cases().find((c) => c.id === id)!.body.join('\n');
+    const bundle = [
+      `#muchtoman 6104 2026-10-03T14:22:05+03:30\n${body('mellat-6104-withdrawal-with-balance')}`,
+      `#muchtoman +98 9870 0719\n${body('saderat-paya-deposit-trailing-plus')}`,
+      `#muchtoman 0999 992 0000\n${body('rejected-otp-from-a-real-bank-number')}`,
+      `#muchtoman Foo\n${body('mellat-6104-interest-deposit')}`,
+    ].join('\n');
+    const records = readBundle(bundle)!;
+    expect(await ledger.addPastedBundle(records, bankOf)).toBe(2);
+    const sources = state.rows('sources');
+    expect(sources.map((s) => s.bank).sort()).toEqual(['MELLAT', 'SADERAT']);
+    // When the Shortcut saw it arrive, not when it was pasted.
+    expect(sources.find((s) => s.bank === 'MELLAT')!.at).toBe(Date.parse('2026-10-03T14:22:05+03:30'));
+    // The same bundle again adds nothing; her answer for the sender the table lacks adds its one.
+    expect(await ledger.addPastedBundle(records, bankOf)).toBe(0);
+    expect(await ledger.addPastedBundle(records, (s) => bankOf(s) ?? (s === 'Foo' ? 'MELLAT' : null))).toBe(1);
+    expect(await ledger.addPastedBundle(records, (s) => bankOf(s) ?? 'MELLAT')).toBe(0);
+    expect(state.rows('sources')).toHaveLength(3);
+    expect(derived.ledger().entries).toHaveLength(3);
   });
 
   it('files one row, and «همیشه» files every one like it', async () => {

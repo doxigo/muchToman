@@ -14,6 +14,7 @@ import { CAT_TRANSFER, DecisionKind, MAX_NOTE_CHARS, customCategory, ruleFrom } 
 import { MAX_PLAUSIBLE_RIAL } from './sms';
 import { forgetMarkId, ledger, manualRef, mineId } from './derived';
 import { bodyToStore, severalMessages } from './paste';
+import type { Bundled } from './paste';
 import { pastedMoment, sourceId } from './sms';
 import { batch, pref, put, row, rows, setPref } from './state';
 import { familyTxnId, uuid7 } from './sync';
@@ -285,6 +286,23 @@ export async function addPastedSms(text: string, bank: string, at?: number): Pro
     setPref('lastPasteBank', bank);
   });
   return source;
+}
+
+/**
+ * A Shortcut's bundle (paste.ts `readBundle`), each message stored by addPastedSms — the same
+ * refusals and the same dedupe, so pasting the same bundle again adds nothing. A record whose
+ * sender [bankFor] cannot name is not stored. Returns how many messages were new.
+ *
+ * ponytail: one write per message, each a re-render; one batch for the lot if a long bundle ever
+ * shows it.
+ */
+export async function addPastedBundle(records: Bundled[], bankFor: (sender: string) => string | null): Promise<number> {
+  const before = rows('sources').length;
+  for (const r of records) {
+    const bank = bankFor(r.sender);
+    if (bank) await addPastedSms(r.body, bank, r.at ?? undefined);
+  }
+  return rows('sources').length - before;
 }
 
 /** Where the ledger starts. Nothing is deleted or re-read; «از اول» (0) brings every row back as it was. */

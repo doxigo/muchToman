@@ -200,6 +200,25 @@ test('two messages pasted as one are refused on the paste sheet', async ({ page 
   await expect(sheet).toBeVisible();
 });
 
+test("a shortcut's bundle lands each message under its sender's bank, once", async ({ page }) => {
+  const bundle = [
+    `#muchtoman 6104\n${corpus('mellat.json', 'mellat-6104-withdrawal-with-balance')}`,
+    `#muchtoman 98700719\n${corpus('saderat.json', 'saderat-paya-deposit-trailing-plus')}`,
+    `#muchtoman 0999 992 0000\n${corpus('rejected.json', 'rejected-otp-from-a-real-bank-number')}`,
+  ].join('\n');
+  await onboard(page, `/#paste=${encodeURIComponent(bundle)}`);
+  const sheet = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await expect(sheet).toContainText('۲ پیام از ۲ بانک؛ ۱ تا تراکنش نبود');
+  // Every sender known, so no bank is asked.
+  await expect(sheet.getByRole('radiogroup')).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('status')).toContainText('۲ پیامک ثبت شد');
+  await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
+  await page.getByRole('dialog', { name: 'پیامک بانک' }).getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('پیامک تازه‌ای نبود');
+});
+
 test('a budget counts this month against its cap', async ({ page }) => {
   await onboard(page);
   await addManual(page, '250000', 'میوه‌فروشی', 'خواربار');

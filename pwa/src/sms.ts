@@ -3,19 +3,21 @@
  * `parseToRows`, for a browser that is handed its messages rather than reading them.
  *
  * The phone knows a bank by the number a message arrives from. A pasted message has no sender,
- * so the paste sheet asks which bank it was, and that answer is `Source.bank`. Everything after
+ * so the paste sheet asks which bank it was, and that answer is `Source.bank` — unless it came in
+ * a Shortcut's bundle, which names each sender for the phone's own table to read. Everything after
  * that is the phone's: the same reading (paste.ts, held to the same golden corpus), the same
  * `s:<hash>:<seq>` ref, the same Tehran day, the same refusal of an implausible figure.
  */
-import { RUN_TOGETHER, parsePasted } from './paste';
+import { RUN_TOGETHER, digitsOf, parsePasted } from './paste';
 import { jalaliDay, jalaliMonthLength, jalaliOf, tehranDay, tehranDayStart } from './jalali';
 import type { Source, Txn } from './model';
 
 export interface Bank { name: string; fa: string; numbers: readonly string[] }
 
 /**
- * Sms.kt's enum, in its order. The numbers are the phone's sender gate and are kept here for
- * reference only — nothing in the browser has a sender to hold against them.
+ * Sms.kt's enum, in its order, held to it by `test/paste.test.ts`. The numbers are the phone's
+ * sender gate; here they name the bank of a Shortcut's bundle, the one paste that carries who
+ * sent each message ({@link bankOf}). Blu's app package is the phone's alone and is left out.
  */
 export const BANKS: readonly Bank[] = [
   { name: 'BLU', fa: 'بلو بانک', numbers: ['0999 998 7641', '90000258', '+9890000258', '98300087641'] },
@@ -143,6 +145,24 @@ export const clampAt = (at: number, now: number): number => Math.min(Math.max(at
 const WHITESPACE = /[\s\p{Z}]+/gu;
 /** Whitespace-collapsed and trimmed — a rule's merchant needle, so it must never change shape. */
 export const merchantNorm = (merchant: string): string => merchant.trim().replace(WHITESPACE, ' ');
+
+/**
+ * A sender reduced to what identifies it — Sms.kt `senderKey`. A lettered header is its own name,
+ * whitespace collapsed and case ignored; a number is its digits, with the +98…, 98… or 0… in front
+ * of a mobile line dropped so the three ways a carrier writes one are one sender. A shortcode is itself.
+ */
+export function senderKey(sender: string): string {
+  const trimmed = sender.trim();
+  if (/\p{L}/u.test(trimmed)) return trimmed.replace(WHITESPACE, ' ').toLowerCase();
+  const digits = digitsOf(trimmed);
+  if (digits.length === 12 && digits.startsWith('98')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+}
+
+const BY_SENDER = new Map(BANKS.flatMap((b) => b.numbers.map((n) => [senderKey(n), b.name] as const)));
+/** The bank a sender is by the phone's own table — Sms.kt `bankOf` — or null for one it does not list. */
+export const bankOf = (sender: string): string | null => BY_SENDER.get(senderKey(sender)) ?? null;
 
 /**
  * One pasted message, read into transaction rows — Derived.kt `parseToRows`.

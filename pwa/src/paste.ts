@@ -47,7 +47,7 @@ const NOTHING: Pasted = {
 };
 
 /** Persian and Arabic-Indic digits fold to ASCII; every separator is dropped, the dot included. */
-function digitsOf(s: string): string {
+export function digitsOf(s: string): string {
   let out = '';
   for (const c of s) {
     const code = c.codePointAt(0)!;
@@ -425,6 +425,53 @@ export function severalMessages(text: string): boolean {
   }
   return balances > 1;
 }
+
+/**
+ * A Shortcut's bundle: many messages in one paste, each saying who sent it. iOS lets no app read
+ * the inbox, but a Shortcuts automation on «Message» can append every bank message to a file as it
+ * arrives, and she pastes the lot here. The format is the least a Text action can build:
+ *
+ *     #muchtoman <sender> <arrival time, ISO 8601, optional>
+ *     <the message, every line of it>
+ *
+ * one after another. The marker is Latin and opens its own line, which no bank message does. The
+ * sender is for the phone's own table to name (sms.ts `bankOf`). The time is when the message
+ * arrived — the stamp the phone has on every message and a lone paste has not — so a week of
+ * undated messages pasted on Friday is not all filed on Friday. Persian digits are read in it, for
+ * a phone set to Persian; a time that does not parse is dropped and the message keeps its own.
+ *
+ * Null when there is no marker: the text is one plain message, or several the sheet refuses.
+ * Anything before the first marker is a record with no sender — asked about, never lost.
+ */
+const BUNDLE_HEAD = /^#muchtoman(?!\S)[ \t]*(.*)$/gm;
+const D = '[0-9۰-۹]';
+const ARRIVED = new RegExp(
+  `(?:^|\\s)(${D}{4}-${D}{2}-${D}{2}T${D}{2}:${D}{2}(?::${D}{2}(?:\\.${D}+)?)?(?:Z|[+-]${D}{2}:${D}{2})?)\\s*$`,
+);
+
+export interface Bundled { sender: string; body: string; at: number | null }
+
+export function readBundle(text: string): Bundled[] | null {
+  const heads = [...text.matchAll(BUNDLE_HEAD)];
+  if (!heads.length) return null;
+  const lead = text.slice(0, heads[0].index).trim();
+  const out: Bundled[] = lead ? [{ sender: '', body: lead, at: null }] : [];
+  heads.forEach((m, i) => {
+    const stamp = ARRIVED.exec(m[1]);
+    const at = stamp ? Date.parse(stamp[1].replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))) : NaN;
+    out.push({
+      sender: (stamp ? m[1].slice(0, stamp.index) : m[1]).trim(),
+      body: text.slice(m.index! + m[0].length, heads[i + 1]?.index ?? text.length).trim(),
+      at: Number.isNaN(at) ? null : at,
+    });
+  });
+  return out;
+}
+
+/** The records back as a bundle, for the ones still waiting on her answer. */
+export const writeBundle = (records: Bundled[]): string => records
+  .map((r) => `#muchtoman ${r.sender}${r.at == null ? '' : ` ${new Date(r.at).toISOString()}`}\n${r.body}`)
+  .join('\n');
 
 // ---- enrichment: nothing below feeds the money above ----------------------------------------
 
