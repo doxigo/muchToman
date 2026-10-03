@@ -548,6 +548,8 @@ data class LedgerView(
     val budgets: List<BudgetProgress> = emptyList(),
     /** The same table a third way — see `Installments.kt`. In the order she added them. */
     val installments: List<InstallmentProgress> = emptyList(),
+    /** And a fourth — see `Cheques.kt`. The ones not yet passed, soonest first. */
+    val cheques: List<Goal> = emptyList(),
     /** ref → yes | no | needed, for the ones she has answered. */
     val worthIt: Map<String, String> = emptyMap(),
     /**
@@ -763,6 +765,7 @@ suspend fun ledgerView(
             active.filter { it.kind == GoalKind.INSTALLMENT }
                 .map { installmentProgress(it, links, ledger.entries, today, mineId) },
         ),
+        cheques = openCheques(active),
         worthIt = answers,
         loanLinks = loanLinks(durable.decisions().ofKind(DecisionKind.LOAN)),
         marks = ledger.marks,

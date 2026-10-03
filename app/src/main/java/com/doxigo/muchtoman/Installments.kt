@@ -333,6 +333,9 @@ const val INSTALLMENT_REMINDER_DEFAULT = 1
  */
 private val REMIND_HOURS = 9..21
 
+/** Whether [now] falls inside [REMIND_HOURS] in Tehran — shared with the cheque reminder. */
+internal fun remindAwake(now: Long): Boolean = (now + TEHRAN_OFFSET_MS).mod(DAY_MS) / 3_600_000L in REMIND_HOURS
+
 /**
  * The next payment she has not covered that falls due today or later.
  *
@@ -361,7 +364,7 @@ fun installmentNews(
     now: Long,
 ): InstallmentNews {
     val today = tehranDay(now)
-    val awake = (now + TEHRAN_OFFSET_MS).mod(DAY_MS) / 3_600_000L in REMIND_HOURS
+    val awake = remindAwake(now)
     val due = mutableListOf<Pair<InstallmentProgress, Long>>()
     val marks = HashMap<String, Long>()
     for (progress in installments) {
@@ -378,7 +381,7 @@ fun installmentNews(
 }
 
 /** When a due day is, from today: «گذشته», «امروزه», «فرداست», «۳ روز دیگه‌ست». */
-private fun installmentWhenFa(days: Long): String = when {
+internal fun installmentWhenFa(days: Long): String = when {
     days < 0L -> "گذشته"
     days == 0L -> "امروزه"
     days == 1L -> "فرداست"

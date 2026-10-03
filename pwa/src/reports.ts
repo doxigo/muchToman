@@ -14,11 +14,13 @@
 import { splitParts } from './edits';
 import { budgetInsight, pressingBudget } from './budget';
 import type { BudgetProgress } from './budget';
+import { chequeInsight, pressingCheque } from './cheques';
+import type { ChequeAccount } from './cheques';
 import { INSTALLMENT_REMINDER_DEFAULT, installmentInsight, pressingInstallment } from './installments';
 import type { InstallmentProgress } from './installments';
 import { MONTHS, faDigits, faNumber } from './format';
 import { jalaliDay, jalaliMonthLength, jalaliOf, weekStart } from './jalali';
-import type { LedgerEntry } from './model';
+import type { Goal, LedgerEntry } from './model';
 import { PASS_THROUGH_CATEGORIES } from './rules';
 
 const div = (a: number, b: number): number => Math.trunc(a / b);
@@ -863,6 +865,8 @@ export interface HomeStory {
   attentionBudget: BudgetProgress | null;
   /** The plan behind [attention] when a payment is what is asking — read only when [attentionBudget] is null. */
   attentionInstallment: InstallmentProgress | null;
+  /** The cheque behind [attention] when one is falling due — ahead of the other two (Reports.kt). */
+  attentionCheque: Goal | null;
   /** The one line worth leading with, and never more than one. */
   headline: Insight | null;
   /** The single thing asking for her, if anything is. */
@@ -878,6 +882,9 @@ export interface StoryOptions extends ReadingOptions {
   installments?: InstallmentProgress[];
   /** The reminder's window from تنظیمات, which home keeps to as well. */
   installmentDays?: number;
+  /** Her open cheques and the accounts they draw on, on that same window. */
+  cheques?: Goal[];
+  accounts?: ChequeAccount[];
 }
 
 /** The current month for home: [buildCashFlow]'s walk minus the six-month series. */
@@ -887,7 +894,7 @@ export function buildStory(
   today: number,
   {
     budgets = [], countPassThrough = false, excluded = NONE, mineId = '',
-    installments = [], installmentDays = INSTALLMENT_REMINDER_DEFAULT,
+    installments = [], installmentDays = INSTALLMENT_REMINDER_DEFAULT, cheques = [], accounts = [],
   }: StoryOptions = {},
 ): HomeStory {
   const here = reportMonthOf(today);
@@ -897,8 +904,11 @@ export function buildStory(
   const had = previous.transactions > 0 ? previous : null;
   const pressing = pressingBudget(budgets);
   const payment = pressingInstallment(installments, today, installmentDays);
-  // The budget first, then a payment falling due, so [attention] prefers either over a review queue.
+  const cheque = pressingCheque(cheques, accounts, today, installmentDays);
+  // A cheque falling due first, then the budget, then a payment, so [attention] prefers any of them
+  // over a review queue.
   const insights = [
+    ...(cheque ? [chequeInsight(cheque, cheques, accounts, today, installmentDays)] : []),
     ...(pressing ? [budgetInsight(pressing, entries, mineId, excluded)] : []),
     ...(payment ? [installmentInsight(payment[0], payment[1], today)] : []),
     ...narrate(month, had, entries, buffer, true),
@@ -912,6 +922,7 @@ export function buildStory(
     bufferDays: buffer,
     attentionBudget: pressing,
     attentionInstallment: payment?.[0] ?? null,
+    attentionCheque: cheque,
     headline: wins[0] ?? insights.find((i) => i.tone !== 'ATTENTION') ?? null,
     attention: insights.find((i) => i.tone === 'ATTENTION') ?? null,
   };

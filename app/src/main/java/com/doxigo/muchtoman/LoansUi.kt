@@ -683,7 +683,7 @@ private fun UnitChips(units: List<String>, selected: String, type: (String) -> A
 
 /** [ChipChoice]'s pill, for rows that have to wrap. */
 @Composable
-private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
+internal fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(Radius.pill))

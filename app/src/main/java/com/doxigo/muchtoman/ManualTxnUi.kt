@@ -77,25 +77,29 @@ fun parseFaClock(text: String): Long? {
 }
 
 /**
- * «۱۴۰۳» drawn as «۱۴:۰۳»: Persian digits, and the colon once the minute has begun. Never a
- * trailing colon — a separator she could backspace into would be a keystroke that does nothing.
+ * Digits drawn as they are written: Persian, with [sep] before each index in [at] once a digit sits
+ * there. Never a trailing separator — one she could backspace into would be a keystroke that does
+ * nothing. The clock's «۱۴۰۳» is «۱۴:۰۳»; a cheque's «۱۴۰۵۰۹۱۵» is «۱۴۰۵/۰۹/۱۵».
  */
-private val ClockMask = VisualTransformation { text ->
-    val colonAt = if (text.length > 2) 2 else -1
+internal fun digitsMask(sep: Char, vararg at: Int) = VisualTransformation { text ->
     val shown = buildString {
         text.forEachIndexed { i, c ->
-            if (i == colonAt) append(':')
+            if (i in at) append(sep)
             append('۰' + (c - '0'))
         }
     }
     TransformedText(
         AnnotatedString(shown),
         object : OffsetMapping {
-            override fun originalToTransformed(offset: Int) = if (colonAt in 0 until offset) offset + 1 else offset
-            override fun transformedToOriginal(offset: Int) = if (colonAt in 0 until offset) offset - 1 else offset
+            override fun originalToTransformed(offset: Int) = offset + at.count { it < offset }
+            // The k-th separator sits at its index plus the k drawn before it.
+            override fun transformedToOriginal(offset: Int) = offset - at.withIndex().count { (k, a) -> a + k < offset }
         },
     )
 }
+
+/** «۱۴۰۳» drawn as «۱۴:۰۳», the colon once the minute has begun. */
+private val ClockMask = digitsMask(':', 2)
 
 /**
  * «تراکنش دستی» — the door for money no message will ever report: cash handed over, a دنگ paid

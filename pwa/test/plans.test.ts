@@ -6,6 +6,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { BudgetLevel, BudgetPeriod } from '../src/budget';
+import { newCheque } from '../src/cheques';
 import { GoalKind } from '../src/goals';
 import { jalaliDay, tehranDayStart } from '../src/jalali';
 import type { Goal } from '../src/model';
@@ -149,6 +150,36 @@ describe('plans', () => {
       // Notify.kt's budgetPublicTitle and publicBody, word for word.
       expect(shown.map((s) => [s.title, s.options.body])).toEqual([['خبری از بودجه', 'جزئیات توی برنامه']]);
       expect(shown[0].options).toMatchObject({ tag: 'budget:b1', data: { tab: 'BUDGET' } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reminds of a cheque once, its warning as the words, and says only «یادآوری چک» under the lock', async () => {
+    const shown: Array<{ title: string; options: NotificationOptions }> = [];
+    const reg = {
+      showNotification: async (title: string, options: NotificationOptions) => { shown.push({ title, options }); },
+      getNotifications: async () => [],
+    };
+    vi.stubGlobal('Notification', { permission: 'granted' });
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } });
+    try {
+      state.setPref('quipTone', 'PLAIN');
+      const cheque = newCheque('c1', 'اجاره', 500_000_000, first + 1, 'MELLAT', 0)!;
+      const now = tehranDayStart(first) + 10 * 3_600_000;
+      await plans.announce([], [], [cheque], now);
+      // No account for ملت in this ledger: unknown, said as unknown.
+      expect(shown.map((s) => [s.title, s.options.body])).toEqual([
+        ['سررسید چک «اجاره» فرداست', 'موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰ میلیون تومان توش هست.'],
+      ]);
+      expect(shown[0].options).toMatchObject({ tag: 'cheque:c1', data: { tab: 'BUDGET', due: first + 1 } });
+      expect(state.pref('installmentMarks')).toEqual({ c1: first + 1 });
+      await plans.announce([], [], [cheque], now + 3_600_000);
+      expect(shown).toHaveLength(1);
+      state.setPref('installmentMarks', {});
+      state.setPref('lockEnabled', true);
+      await plans.announce([], [], [cheque], now);
+      expect([shown[1].title, shown[1].options.body]).toEqual(['یادآوری چک', 'جزئیات توی برنامه']);
     } finally {
       vi.unstubAllGlobals();
     }

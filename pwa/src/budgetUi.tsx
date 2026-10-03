@@ -22,13 +22,14 @@ import {
   budgetScopeFa, budgetScopeNoteFa, budgetTotalNoteFa,
 } from './budget';
 import type { BudgetProgress } from './budget';
+import { chequeDateDigits, chequeTitleFa, chequeWarningFa, chequeWhenFa, parseChequeDate } from './cheques';
 import { CategoryGrid } from './categoryGrid';
 import { CategoryIcon, customGlyphs, glyphOf, hueCss } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
 import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { requestFamilySync, useFamily } from './family';
-import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, parseAmount, today as tehranToday, tomanOf } from './format';
+import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekdayDate, parseAmount, today as tehranToday, tomanOf } from './format';
 import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
@@ -38,18 +39,19 @@ import {
 import type { InstallmentProgress, InstallmentSummary } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
 import { LoansSection } from './loansUi';
+import { DigitsField } from './manualTxn';
 import type { Category, Goal, LedgerEntry, Txn } from './model';
-import { closeSheet, openSheet, registerSheet, registerTab } from './nav';
+import { closeSheet, openSheet, registerSheet, registerTab, showNotice } from './nav';
 import {
   addBudget, addGoal, addInstallment, addInstallmentFrom, deleteGoal, editBudget, editGoal, keepBudget, readPlans,
-  setInstallmentPayment,
+  saveCheque, setChequePassed, setInstallmentPayment,
 } from './plans';
 import type { Plans } from './plans';
 import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
 import { pref } from './state';
 import {
-  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
+  AmountField, ChipChoice, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
 } from './ui';
 import './budgetUi.css';
 
@@ -152,11 +154,13 @@ function bandShape(index: number, count: number): string {
 function BudgetScreen() {
   const { view, plans } = usePlans();
   const canNote = useCanNotify();
-  const { budgets, goals, installments } = plans;
+  const { budgets, goals, installments, cheques } = plans;
   const custom = customGlyphs(view.managedCategories);
+  const days = pref('installmentReminder');
+  const today = tehranToday();
   // Only raised where there is something to be quiet about — never the launch-time prompt.
   const notifyBlocked = (budgets.length > 0 ||
-    (pref('installmentReminder') >= 0 && installments.some((p) => !p.done))) && !canNote;
+    (days >= 0 && (installments.some((p) => !p.done) || cheques.length > 0))) && !canNote;
   const caps = budgets.map((b) => b.goal);
 
   return (
@@ -166,8 +170,8 @@ function BudgetScreen() {
       {notifyBlocked && (
         <div class="mb-m">
           <NotifyBlockedCard what={budgets.length === 0
-            // No budget means it was raised for the installment reminders alone.
-            ? 'تا اعلان روشن نباشه، یادآوری سررسید قسط‌ها بهت نمی‌رسه.'
+            // No budget means it was raised for the installment and cheque reminders alone.
+            ? 'تا اعلان روشن نباشه، یادآوری سررسید قسط‌ها و چک‌ها بهت نمی‌رسه.'
             : 'بودجه‌هات همین‌جا حساب می‌شن، ولی تا اعلان روشن نباشه بیرون از برنامه خبری بهت نمی‌رسه.'} />
         </div>
       )}
@@ -211,6 +215,19 @@ function BudgetScreen() {
       ))}
       <AddRow label={installments.length === 0 ? 'اولین قسط' : 'قسط تازه'}
         radius={bandShape(installments.length, installments.length + 1)} onClick={() => openSheet('installment')} />
+
+      <SectionLabel>چک‌ها</SectionLabel>
+      {cheques.length === 0 && (
+        // Says what the section watches for, since that is the reason to type a cheque in.
+        <p class="plan-empty">چکی که کشیدی رو با تاریخش ثبت کن. نزدیک سررسید اگه موجودی حسابش کم باشه، همین‌جا می‌گیم چقدر کمه.</p>
+      )}
+      {cheques.map((cheque, i) => (
+        <ChequeCard key={cheque.id} cheque={cheque} today={today} radius={bandShape(i, cheques.length + 1)}
+          warning={chequeWarningFa(cheque, cheques, view.bankAccounts, today, days)}
+          onOpen={() => openSheet('cheque', { id: cheque.id })} />
+      ))}
+      <AddRow label={cheques.length === 0 ? 'اولین چک' : 'چک تازه'} radius={bandShape(cheques.length, cheques.length + 1)}
+        onClick={() => openSheet('cheque')} />
 
       <LoansSection />
     </Screen>
@@ -385,6 +402,41 @@ function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentPr
       {left && <span class="plan-sub mt-s">{left}</span>}
       {note && <span class={`plan-note quiet mt-xs${note[1] ? ' loud' : ''}`}>{note[0]}</span>}
     </BandCard>
+  );
+}
+
+/**
+ * One cheque (ChequeCard, BudgetUi.kt): who for, from which account, on which day and how far off,
+ * and — inside the reminder's window — whether the account holds it, in words; amber confirms, red
+ * once the date has gone by. «پاس شد» sits beside the row's own button, since a button cannot hold
+ * one, and a stray tap is taken back from the notice it leaves.
+ */
+function ChequeCard({ cheque, warning, today, radius, onOpen }: {
+  cheque: Goal; warning: string | null; today: number; radius: string; onOpen: () => void;
+}) {
+  const tone = cheque.startsOn < today ? 'var(--error)' : 'var(--secondary)';
+  const pass = () => {
+    setChequePassed(cheque.id, true);
+    showNotice('چک پاس شد', { label: 'برگردون', run: () => setChequePassed(cheque.id, false) });
+  };
+  return (
+    <div class="plan-row divided" style={{ borderRadius: radius, '--tone': tone }}>
+      <button type="button" class="cheque-open" onClick={onOpen}>
+        <span class="plan-head">
+          <span class="grow">
+            <span class="plan-name">{chequeTitleFa(cheque)}</span>
+            <span class="plan-sub">از {bankFa(cheque.categoryId ?? '')} • {faDate(cheque.startsOn)}</span>
+          </span>
+          <EditHint />
+        </span>
+        <span class="plan-figure-row mt-s">
+          <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 3)} تومان`)} />
+          <span class="cheque-when">{chequeWhenFa(cheque.startsOn, today)}</span>
+        </span>
+        {warning && <span class="plan-note loud mt-xs">{warning}</span>}
+      </button>
+      <div class="mt-s"><PillButton label="پاس شد" onClick={pass} /></div>
+    </div>
   );
 }
 
@@ -617,6 +669,68 @@ function GoalSheet({ id }: { id?: string }) {
         <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره هدف'} onClick={save} />
       </div>
       {editing && <SheetDelete label="حذف این هدف" onConfirmed={() => close(synced(paired, () => deleteGoal(editing.goal.id)))} />}
+    </Sheet>
+  );
+}
+
+// ─────────────────────────── a cheque ───────────────────────────
+
+/**
+ * 'cheque' {id?} (ChequeSheet, BudgetUi.kt): how much, the date on it, the account it draws on, and —
+ * if she likes — who or what it is for. The date is typed as printed and written out under the field
+ * before she saves; the accounts are the bank accounts sheet's, whose balance the warning reads.
+ * Editing is the same sheet filled in, with delete under it.
+ */
+function ChequeSheet({ id }: { id?: string }) {
+  const { view, plans } = usePlans();
+  const close = useClose();
+  const editing = id != null ? plans.cheques.find((c) => c.id === id) ?? null : null;
+  useGone(id != null && editing == null, close);
+  const accounts = view.bankAccounts;
+  const [amount, setAmount] = useState(editing ? rialToField(editing.targetRial) : '');
+  const [dateDigits, setDateDigits] = useState(editing ? chequeDateDigits(editing.startsOn) : '');
+  // The only account there is, when there is only one.
+  const [bank, setBank] = useState(editing?.categoryId ?? (accounts.length === 1 ? accounts[0].bank : ''));
+  const [name, setName] = useState(editing?.nameFa ?? '');
+  // Raised by a save tap that could not save, as in BudgetSheet.
+  const [tried, setTried] = useState(false);
+  if (id != null && editing == null) return null;
+
+  const amountRial = tomanFieldToRial(amount);
+  const due = parseChequeDate(dateDigits);
+  // An account forgotten since the cheque was written stays offered, or editing would lose it.
+  const banks = [...new Set([...accounts.map((a) => a.bank), ...(editing?.categoryId ? [editing.categoryId] : [])])];
+  const title = editing ? 'ویرایش چک' : 'چک تازه';
+  const save = () => {
+    // Never dimmed: a tap that cannot save says why, as BudgetSheet's does.
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
+    if (amountRial == null || due == null || bank === '') return;
+    close(() => saveCheque(editing?.id ?? null, name.trim(), amountRial, due, bank));
+  };
+
+  return (
+    <Sheet onClose={() => close()} label={title}>
+      <SheetTitle>{title}</SheetTitle>
+      <SheetLabel>مبلغ چک، به تومان</SheetLabel>
+      <AmountField label="مبلغ چک" ariaLabel="مبلغ چک به تومان" raw={amount} onRaw={setAmount} decimals={1}
+        error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : amountRial == null ? UNREADABLE : null} />
+      <SheetLabel>تاریخ چک</SheetLabel>
+      <DigitsField digits={dateDigits} onDigits={setDateDigits} length={8} sep="/" at={[4, 6]} label="مثلاً ۱۴۰۵/۰۹/۱۵"
+        ariaLabel="تاریخ چک" hint={due == null && (tried || dateDigits !== '') ? 'تاریخ رو هشت‌رقمی بنویس، مثل ۱۴۰۵/۰۹/۱۵.' : null} />
+      {/* The date written out, so a slipped digit is caught before it is saved. */}
+      {due != null && <SheetNote>{faWeekdayDate(due)}</SheetNote>}
+      <SheetLabel>از کدوم حساب؟</SheetLabel>
+      {banks.length === 0
+        ? <p class="plan-lede">هنوز حساب بانکی‌ای نداریم؛ با اولین پیامک بانک، حسابش اینجا میاد.</p>
+        : <ChipChoice options={banks} selected={bank} label={bankFa} onSelect={setBank} />}
+      {tried && bank === '' && <p class="field-support error" role="status">حسابش رو انتخاب کن.</p>}
+      <SheetLabel>برای کی یا چی؟</SheetLabel>
+      <TextField label="اختیاری؛ مثلاً اجاره" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40} />
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label={editing ? 'ذخیره تغییرات' : 'ذخیره چک'} onClick={save} />
+      </div>
+      {editing && <SheetDelete label="حذف این چک" onConfirmed={() => close(() => deleteGoal(editing.id))} />}
     </Sheet>
   );
 }
@@ -933,3 +1047,4 @@ registerSheet('goal', GoalSheet);
 registerSheet('installment', InstallmentRoute);
 registerSheet('installmentPayments', InstallmentPaymentsSheet);
 registerSheet('installmentLink', InstallmentLinkSheet);
+registerSheet('cheque', ChequeSheet);

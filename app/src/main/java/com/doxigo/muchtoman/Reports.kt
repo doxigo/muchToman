@@ -1127,6 +1127,11 @@ data class HomeStory(
      * Only read when [attentionBudget] is null: a cap run past outranks it, as it does in [insights].
      */
     val attentionInstallment: InstallmentProgress? = null,
+    /**
+     * The cheque behind [attention] when one is falling due — see [pressingCheque]. Ahead of the
+     * other two: a cheque the account cannot cover is a penalty on a date, not a reading of her month.
+     */
+    val attentionCheque: Goal? = null,
 ) {
     /** The one line worth leading with, and never more than one. */
     val headline: Insight? get() = wins.firstOrNull() ?: insights.firstOrNull { it.tone != Insight.Tone.ATTENTION }
@@ -1168,6 +1173,9 @@ fun buildStory(
     installments: List<InstallmentProgress> = emptyList(),
     /** The reminder's window from تنظیمات, which home keeps to as well. */
     installmentDays: Int = INSTALLMENT_REMINDER_DEFAULT,
+    /** Her open cheques and the accounts they draw on, on that same window. See [pressingCheque]. */
+    cheques: List<Goal> = emptyList(),
+    accounts: List<BankAccount> = emptyList(),
 ): HomeStory {
     val here = reportMonthOf(today)
     val month = monthReport(entries, here, countPassThrough, excluded)
@@ -1176,12 +1184,15 @@ fun buildStory(
     val had = previous.takeIf { it.transactions > 0 }
     val pressing = pressingBudget(budgets)
     val payment = pressingInstallment(installments, today, installmentDays)
+    val cheque = pressingCheque(cheques, accounts, today, installmentDays)
     return HomeStory(
         month = month,
         previous = previous,
         // First, so that [HomeStory.attention] — which takes the first ATTENTION line there is —
-        // prefers a cap she has run past, then a payment falling due, over a review queue.
+        // prefers a cheque falling due, then a cap she has run past, then a payment falling due,
+        // over a review queue.
         insights = listOfNotNull(
+            cheque?.let { chequeInsight(it, cheques, accounts, today, installmentDays) },
             pressing?.let { budgetInsight(it, entries, mineId, excluded) },
             payment?.let { (plan, index) -> installmentInsight(plan, index, today) },
         ) + narrate(month, had, entries, buffer, current = true),
@@ -1189,5 +1200,6 @@ fun buildStory(
         bufferDays = buffer,
         attentionBudget = pressing,
         attentionInstallment = payment?.first,
+        attentionCheque = cheque,
     )
 }

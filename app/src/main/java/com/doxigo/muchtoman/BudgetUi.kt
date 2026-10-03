@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -147,6 +148,15 @@ fun BudgetScreen(
     onAddInstallment: (String, Long, Int, Int) -> Unit,
     /** This transaction paid that plan — or, with null, paid none. */
     onInstallmentPayment: (LedgerEntry, String?) -> Unit,
+    /** Her open cheques, soonest first — see `Cheques.kt`. */
+    cheques: List<Goal>,
+    /** What the bank accounts sheet shows: the accounts a cheque can draw on, and is checked against. */
+    bankAccounts: List<BankAccount>,
+    /** The reminder's window from تنظیمات, which a cheque's warning keeps to. */
+    reminderDays: Int,
+    /** A cheque, new with a null id or corrected: who for, the amount in Rial, its day, its bank. */
+    onSaveCheque: (String?, String, Long, Long, String) -> Unit,
+    onPassCheque: (String) -> Unit,
     /** طلب و بدهی, as one door: see [LoansDoor]. */
     loans: LoanTotals,
     loanPeople: Int,
@@ -167,6 +177,8 @@ fun BudgetScreen(
     var editingGoal by rememberSaveable { mutableStateOf<String?>(null) }
     var addingInstallment by rememberSaveable { mutableStateOf(false) }
     var openInstallment by rememberSaveable { mutableStateOf<String?>(null) }
+    var addingCheque by rememberSaveable { mutableStateOf(false) }
+    var editingCheque by rememberSaveable { mutableStateOf<String?>(null) }
     // Off the spending side alone, in the grid's own order: those are the only categories a roof
     // could have counted, so they are the only ones worth naming as left out of one. «پس‌گرفتن
     // قرض» is set aside on a fresh install too, and listing money coming back under a cap on
@@ -199,8 +211,8 @@ fun BudgetScreen(
             // nobody reads. Only ever shown when there is something to be silent about.
             if (notifyBlocked) {
                 NotifyBlockedCard(
-                    // No budget means it was raised for the installment reminders alone.
-                    if (budgets.isEmpty()) "تا اعلان روشن نباشه، یادآوری سررسید قسط‌ها بهت نمی‌رسه."
+                    // No budget means it was raised for the installment and cheque reminders alone.
+                    if (budgets.isEmpty()) "تا اعلان روشن نباشه، یادآوری سررسید قسط‌ها و چک‌ها بهت نمی‌رسه."
                     else "بودجه‌هات همین‌جا حساب می‌شن، ولی تا اعلان روشن نباشه بیرون از برنامه " +
                         "خبری بهت نمی‌رسه.",
                     onAskNotify,
@@ -302,6 +314,35 @@ fun BudgetScreen(
                 onClick = { addingInstallment = true },
             )
 
+            SectionLabel("چک‌ها")
+            if (cheques.isEmpty()) {
+                // Says what the section watches for, since that is the reason to type a cheque in.
+                Text(
+                    "چکی که کشیدی رو با تاریخش ثبت کن. نزدیک سررسید اگه موجودی حسابش کم باشه، " +
+                        "همین‌جا می‌گیم چقدر کمه.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 26.sp,
+                )
+                Spacer(Modifier.height(Space.l))
+            }
+            val today = tehranDay(System.currentTimeMillis())
+            val chequeRows = cheques.size + 1
+            cheques.forEachIndexed { i, cheque ->
+                ChequeCard(
+                    cheque,
+                    warning = chequeWarningFa(cheque, cheques, bankAccounts, today, reminderDays),
+                    today = today,
+                    shape = bandShape(i, chequeRows),
+                    onOpen = { editingCheque = cheque.id },
+                    onPass = { onPassCheque(cheque.id) },
+                )
+            }
+            AddRow(
+                label = if (cheques.isEmpty()) "اولین چک" else "چک تازه",
+                shape = bandShape(cheques.size, chequeRows),
+                onClick = { addingCheque = true },
+            )
+
             // Money that comes back, or has to go back — the fourth thing this tab plans around.
             // One door rather than a list: the people have a page of their own.
             SectionLabel("طلب و بدهی")
@@ -389,6 +430,33 @@ fun BudgetScreen(
                 onAddInstallment(name, payment, count, day)
             },
             onDismiss = { addingInstallment = false },
+        )
+    }
+
+    if (addingCheque) {
+        ChequeSheet(
+            accounts = bankAccounts,
+            onSave = { name, amount, due, bank ->
+                addingCheque = false
+                onSaveCheque(null, name, amount, due, bank)
+            },
+            onDismiss = { addingCheque = false },
+        )
+    }
+
+    cheques.firstOrNull { it.id == editingCheque }?.let { cheque ->
+        ChequeSheet(
+            accounts = bankAccounts,
+            editing = cheque,
+            onSave = { name, amount, due, bank ->
+                editingCheque = null
+                onSaveCheque(cheque.id, name, amount, due, bank)
+            },
+            onDelete = {
+                editingCheque = null
+                onDelete(cheque.id)
+            },
+            onDismiss = { editingCheque = null },
         )
     }
 
@@ -918,6 +986,67 @@ private fun installmentNoteFa(
     progress.nextDue == today -> "سررسید قسط ${faOrdinal(progress.paidCount + 1)} امروزه." to false
     progress.nextDue != null -> "قسط ${faOrdinal(progress.paidCount + 1)}: ${faDate(progress.nextDue)}" to false
     else -> null
+}
+
+// ─────────────────────────── one cheque ───────────────────────────
+
+/**
+ * One cheque: who it is for, from which account, on which day and how far off that is, and — inside
+ * the reminder's window — whether the account holds it, in words. Amber confirms the sentence; red
+ * once the date has gone by and it still is not covered.
+ *
+ * «پاس شد» sits on the card rather than in the sheet: it is the one thing she does with a cheque, and
+ * a stray tap is taken back from the notice it leaves.
+ */
+@Composable
+private fun ChequeCard(
+    cheque: Goal,
+    warning: String?,
+    today: Long,
+    shape: Shape,
+    onOpen: () -> Unit,
+    onPass: () -> Unit,
+) {
+    val tone = if (cheque.startsOn < today) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+    BandCard(shape = shape, divided = true, onOpen = onOpen) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    chequeTitleFa(cheque),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "از ${bankNameOf(cheque.categoryId.orEmpty())} • ${faDate(cheque.startsOn)}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            EditHint()
+        }
+        Spacer(Modifier.height(Space.s))
+        Row(verticalAlignment = Alignment.Bottom) {
+            BasicText(
+                text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 3)} تومان"),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
+                style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Space.s))
+            Text(
+                chequeWhenFa(cheque.startsOn, today),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        warning?.let {
+            Spacer(Modifier.height(Space.xs))
+            Text(it, fontSize = 13.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = tone)
+        }
+        Spacer(Modifier.height(Space.s))
+        PillButton("پاس شد", onPass)
+    }
 }
 
 /**
@@ -1619,6 +1748,155 @@ private fun InstallmentSheet(
                 voice = ButtonVoice.PRIMARY,
                 block = true,
             )
+        }
+    }
+}
+
+/** «۱۴۰۵۰۹۱۵» drawn as «۱۴۰۵/۰۹/۱۵» — the date as the cheque has it printed. */
+private val ChequeDateMask = digitsMask('/', 4, 6)
+
+/**
+ * A cheque, in four answers: how much, the date on it, the account it draws on, and — if she likes —
+ * who or what it is for.
+ *
+ * The date is typed as it is printed on the cheque and written out under the field before she saves,
+ * [InstallmentSheet]'s day-of-month arrangement: a picker stepping a day at a time is the wrong tool
+ * for a date three months out, and a cheque's date is exact. The accounts are the ones the bank
+ * accounts sheet lists, because the balance the warning reads is theirs.
+ *
+ * Editing is the same sheet filled in, with delete under it behind the two-tap confirm.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChequeSheet(
+    accounts: List<BankAccount>,
+    onSave: (String, Long, Long, String) -> Unit,
+    onDismiss: () -> Unit,
+    editing: Goal? = null,
+    onDelete: () -> Unit = {},
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
+
+    var amount by rememberSaveable { mutableStateOf(editing?.let { rialToField(it.targetRial) } ?: "") }
+    var dateDigits by rememberSaveable { mutableStateOf(editing?.let { chequeDateDigits(it.startsOn) } ?: "") }
+    // The only account there is, when there is only one.
+    var bank by rememberSaveable { mutableStateOf(editing?.categoryId ?: accounts.singleOrNull()?.bank) }
+    var name by rememberSaveable { mutableStateOf(editing?.nameFa ?: "") }
+    val amountRial = remember(amount) { tomanFieldToRial(amount) }
+    val due = remember(dateDigits) { parseChequeDate(dateDigits) }
+    // An account forgotten since the cheque was written stays offered, or editing would lose it.
+    val banks = (accounts.map { it.bank } + listOfNotNull(editing?.categoryId)).distinct()
+    // Raised by a save tap that could not save, as in [BudgetSheet].
+    var tried by remember { mutableStateOf(false) }
+    val dateBad = due == null && (tried || dateDigits.isNotEmpty())
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .nestedScroll(SheetFlingGuard)
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle(if (editing != null) "ویرایش چک" else "چک تازه")
+
+            SheetLabel("مبلغ چک، به تومان")
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("مبلغ چک") },
+                singleLine = true,
+                visualTransformation = GroupedNumber,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                isError = amountRial == null && (tried || amount.isNotBlank()),
+                supportingText = when {
+                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
+                    amount.isNotBlank() && amountRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
+                    amountRial != null -> ({ Text(faWordsToman(tomanOf(amountRial)).orEmpty()) })
+                    else -> null
+                },
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "مبلغ چک به تومان" },
+            )
+
+            SheetLabel("تاریخ چک")
+            OutlinedTextField(
+                value = dateDigits,
+                onValueChange = { dateDigits = clockDigits(it).take(8) },
+                label = { Text("مثلاً ۱۴۰۵/۰۹/۱۵") },
+                singleLine = true,
+                visualTransformation = ChequeDateMask,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = dateBad,
+                // The date written out, so a slipped digit is caught before it is saved.
+                supportingText = when {
+                    due != null -> ({ Text(faWeekdayDate(due)) })
+                    dateBad -> ({ FieldError("تاریخ رو هشت‌رقمی بنویس، مثل ۱۴۰۵/۰۹/۱۵.") })
+                    else -> null
+                },
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SheetLabel("از کدوم حساب؟")
+            if (banks.isEmpty()) {
+                Text(
+                    "هنوز حساب بانکی‌ای نداریم؛ با اولین پیامک بانک، حسابش اینجا میاد.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                    verticalArrangement = Arrangement.spacedBy(Space.s),
+                ) {
+                    banks.forEach { b -> Chip(bankNameOf(b), bank == b) { bank = b } }
+                }
+            }
+            if (tried && bank == null) FieldError("حسابش رو انتخاب کن.")
+
+            SheetLabel("برای کی یا چی؟")
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(40) },
+                label = { Text("اختیاری؛ مثلاً اجاره") },
+                singleLine = true,
+                shape = RoundedCornerShape(Radius.field),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(Space.xl))
+            PillButton(
+                if (editing != null) "ذخیره تغییرات" else "ذخیره چک",
+                {
+                    // Never dimmed: a tap that cannot save says why, as [BudgetSheet]'s does.
+                    focus.clearFocus()
+                    tried = true
+                    val rial = amountRial ?: return@PillButton
+                    val day = due ?: return@PillButton
+                    val from = bank ?: return@PillButton
+                    close { onSave(name.trim(), rial, day, from) }
+                },
+                Modifier.fillMaxWidth(),
+                voice = ButtonVoice.PRIMARY,
+                block = true,
+            )
+
+            if (editing != null) SheetDelete("حذف این چک") { close(onDelete) }
         }
     }
 }

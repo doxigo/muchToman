@@ -355,7 +355,7 @@ private fun SettingsIndex(
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             if (full) {
                 IndexRow(
-                    title = "یادآوری قسط",
+                    title = "یادآوری قسط و چک",
                     value = installmentReminderFa(installmentReminder),
                     shape = bandShape(2, 4),
                     divided = true,
@@ -789,9 +789,10 @@ private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDism
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("یادآوری قسط")
+            SheetTitle("یادآوری قسط و چک")
             Text(
-                "قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه.",
+                "قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه. اگه موجودی حساب یه چک کم باشه، " +
+                    "از همین روز روی کارتش می‌گیم.",
                 fontSize = 13.sp,
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -3,6 +3,8 @@ import {
   BACKUP_MAGIC, BackupError, gunzip, gzip, openBackup, restoredSnapshot, sealBackup,
 } from '../src/backup';
 import type { BrowserPayload } from '../src/backup';
+import { newCheque, openCheques } from '../src/cheques';
+import { jalaliDay } from '../src/jalali';
 
 // The real 600k rounds would make each case a second or two; the header carries the count, so a
 // small one exercises the same path.
@@ -106,6 +108,17 @@ describe('the .mtbak envelope', () => {
 });
 
 describe('what a restore keeps', () => {
+  it('carries cheques through the file as goal rows, and a file from before them restores with none', async () => {
+    const open = newCheque('c1', 'اجاره', 500_000_000, jalaliDay(1405, 9, 15), 'MELLAT', 1)!;
+    const passed = { ...newCheque('c2', '', 70_000_000, jalaliDay(1405, 7, 1), 'SAMAN', 1)!, endsOn: jalaliDay(1405, 7, 1) };
+    const sealed = await sealBackup({ ...payload, tables: { ...payload.tables, goals: [open, passed] } }, 'secret-1', 1, 0, ROUNDS);
+    const restored = restoredSnapshot((await openBackup(sealed, 'secret-1')).payload, { prefs: {}, tables: {} });
+    expect(restored.tables.goals).toEqual([open, passed]);
+    expect(openCheques(restored.tables.goals ?? [])).toEqual([open]);
+    const older = await openBackup(await sealBackup(payload, 'secret-1', 1, 0, ROUNDS), 'secret-1');
+    expect(openCheques(restoredSnapshot(older.payload, { prefs: {}, tables: {} }).tables.goals ?? [])).toEqual([]);
+  });
+
   it('takes her data from the file and keeps this browser\'s lock, household and marks', () => {
     const current = {
       prefs: { name: 'قبلی', lockEnabled: true, lockCredential: 'cred', syncSeq: 44, rates: null } as never,

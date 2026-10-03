@@ -12,7 +12,7 @@ import type { Decision, Goal, LedgerEntry } from './model';
 import { spendable, spendableRows } from './reports';
 import { CAT_BILLS_ID, CAT_CASH, CAT_FEES, CAT_INCOME, CAT_TRANSFER, DecisionKind } from './rules';
 
-export const GoalKind = { SAVE: 'save', CAP: 'cap', INSTALLMENT: 'installment' } as const;
+export const GoalKind = { SAVE: 'save', CAP: 'cap', INSTALLMENT: 'installment', CHEQUE: 'cheque' } as const;
 
 /** The `period` column's vocabulary — on disk, so values rather than an enum. */
 export const GoalPeriod = {

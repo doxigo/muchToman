@@ -389,6 +389,21 @@ class PersistenceTest {
     }
 
     @Test
+    fun `a cheque rides the backup as a goal row, open or passed, and comes back the same`() = runBlocking {
+        DurableDb.builder(context, "cheque-source.db").build().use { db ->
+            val open = newCheque("c1", "اجاره", 500_000_000, jalaliDay(1405, 9, 15), "MELLAT", now)!!
+            val passed = newCheque("c2", "", 70_000_000, jalaliDay(1405, 7, 1), "SAMAN", now)!!.copy(endsOn = jalaliDay(1405, 7, 1))
+            db.goals().put(open)
+            db.goals().put(passed)
+            val copy = context.getDatabasePath("cheque-copy.db").apply { writeBytes(backupDurableDbBytes(context, db)) }
+            DurableDb.builder(context, copy.path).build().use { restored ->
+                assertEquals(setOf(open, passed), restored.goals().active().toSet())
+                assertEquals(listOf(open), openCheques(restored.goals().active()))
+            }
+        }
+    }
+
+    @Test
     fun `newer schema and invalid database leave current data and preferences untouched`() {
         val original = schemaDatabase(DURABLE_DB_VERSION, "durable.db", "original")
         val originalBytes = original.readBytes()

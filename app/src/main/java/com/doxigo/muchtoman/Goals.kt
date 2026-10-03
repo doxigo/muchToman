@@ -16,12 +16,13 @@ import androidx.room.Query
  * figure is one that can drift away from the transactions underneath it, and then the app is
  * congratulating her on a number it made up.
  *
- * Three shapes, and no more:
+ * Four shapes, and no more:
  *  - `save` — put this much aside by then. This file.
  *  - `cap`  — keep spending under this much, per week, month or فصل. That is a budget, and it
  *    lives in `Budget.kt`, which is one row of this same table read a different way. A cap names
  *    a category, or names none and is then the roof over all of them — see [Goal.total].
  *  - `installment` — pay this much a month, this many times. `Installments.kt`; always private.
+ *  - `cheque` — a cheque she wrote, due on one day from one bank account. `Cheques.kt`; always private.
  *
  * They share a table because they share everything that matters — a target in Rial, a period, a
  * start, an end, and progress that is never written down — and they are two files because the
@@ -38,6 +39,7 @@ object GoalKind {
     const val SAVE = "save"
     const val CAP = "cap"
     const val INSTALLMENT = "installment"
+    const val CHEQUE = "cheque"
 }
 
 /**

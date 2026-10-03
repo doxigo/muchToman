@@ -280,10 +280,13 @@ function Story({ view }: { view: LedgerView }) {
       mineId: view.mineId,
       installments: plans.installments,
       installmentDays,
+      cheques: plans.cheques,
+      accounts: view.bankAccounts,
     });
   }, [view, reportExcluded, installmentDays]);
-  const budget = story.attentionBudget != null;
-  const plan = !budget && story.attentionInstallment != null;
+  const cheque = story.attentionCheque != null;
+  const budget = !cheque && story.attentionBudget != null;
+  const plan = !cheque && !budget && story.attentionInstallment != null;
   return (
     <>
       {story.month.transactions > 0 ? <MonthFlow story={story} onOpen={() => openReport('CASH_FLOW')} />
@@ -295,8 +298,8 @@ function Story({ view }: { view: LedgerView }) {
           {story.attention && (
             // It leaves the screen, so it says where it goes — and that depends on what is asking.
             <InsightCard insight={story.attention}
-              action={budget ? 'بودجه رو باز کن' : plan ? 'قسط‌ها رو باز کن' : 'دفتر رو باز کن'}
-              onAction={() => selectTab(budget || plan ? 'BUDGET' : 'LEDGER')} />
+              action={cheque ? 'چک‌ها رو باز کن' : budget ? 'بودجه رو باز کن' : plan ? 'قسط‌ها رو باز کن' : 'دفتر رو باز کن'}
+              onAction={() => selectTab(cheque || budget || plan ? 'BUDGET' : 'LEDGER')} />
           )}
         </div>
       )}

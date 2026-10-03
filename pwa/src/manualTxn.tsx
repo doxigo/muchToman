@@ -35,46 +35,61 @@ export function parseFaClock(text: string): number | null {
   return (hour * 60 + minute) * 60_000;
 }
 
-/** «۱۴۰۳» drawn as «۱۴:۰۳» (ClockMask, ManualTxnUi.kt): Persian digits, the colon once the minute has begun. */
-const clockShown = (digits: string): string =>
-  [...digits].map((d, i) => (i === 2 ? ':' : '') + String.fromCharCode(0x6f0 + Number(d))).join('');
+/**
+ * Digits drawn as they are written (digitsMask, ManualTxnUi.kt): Persian, with [sep] before each
+ * index in [at] once a digit sits there — the clock's «۱۴:۰۳», a cheque's «۱۴۰۵/۰۹/۱۵».
+ */
+const shownDigits = (digits: string, sep: string, at: number[]): string =>
+  [...digits].map((d, i) => (at.includes(i) ? sep : '') + String.fromCharCode(0x6f0 + Number(d))).join('');
 
 /**
- * The clock as four digits on the number pad, the colon drawn for her. Focus selects the whole
- * time, since the usual edit is a different time typed over this one; and it turns red only once
- * she has left it, because every retyped time passes through «۱» and «۱۴» on the way.
+ * A fixed count of digits on the number pad, the separators drawn for her. Focus selects the whole
+ * value, since the usual edit is a different one typed over it; and it turns red only once she has
+ * left it, because every retyped value passes through shorter ones on the way.
  */
-function ClockField({ digits, onDigits }: { digits: string; onDigits: (digits: string) => void }) {
+export function DigitsField({ digits, onDigits, length, sep, at, label, ariaLabel, hint }: {
+  digits: string; onDigits: (digits: string) => void; length: number; sep: string; at: number[];
+  label: string; ariaLabel: string; hint: string | null;
+}) {
   const [focused, setFocused] = useState(false);
-  const hint = parseFaClock(digits) == null ? 'ساعت رو چهاررقمی بنویس، مثل ۰۹:۳۰.' : null;
   const red = hint != null && !focused;
+  const shown = (d: string) => shownDigits(d, sep, at);
   const onInput = (e: Event) => {
     const el = e.currentTarget as HTMLInputElement;
     let next = clockDigits(el.value);
     let before = clockDigits(el.value.slice(0, el.selectionStart ?? el.value.length)).length;
-    // A backspace that only took the drawn colon meant the hour digit in front of it.
-    if (next === digits && el.value.length < clockShown(digits).length && before > 0) {
+    // A backspace that only took a drawn separator meant the digit in front of it.
+    if (next === digits && el.value.length < shown(digits).length && before > 0) {
       next = next.slice(0, before - 1) + next.slice(before); before--;
     }
-    // A fifth digit is refused rather than pushing one off the end.
-    if (next.length > 4) { next = digits; before--; }
+    // One digit too many is refused rather than pushing one off the end.
+    if (next.length > length) { next = digits; before--; }
     onDigits(next);
     // Written back by hand: a refused keystroke changes no state, so nothing would re-render it.
-    el.value = clockShown(next);
-    const at = Math.min(Math.max(before, 0), next.length);
-    el.setSelectionRange(at + (at > 2 ? 1 : 0), at + (at > 2 ? 1 : 0));
+    el.value = shown(next);
+    const pos = Math.min(Math.max(before, 0), next.length);
+    const caret = pos + at.filter((a) => a < pos).length;
+    el.setSelectionRange(caret, caret);
   };
   return (
     <div>
       <label class={`field clock-field${red ? ' error' : ''}`}>
-        <input value={clockShown(digits)} dir="ltr" inputMode="numeric" aria-label="ساعت تراکنش" aria-invalid={red}
+        <input value={shown(digits)} dir="ltr" inputMode="numeric" aria-label={ariaLabel} aria-invalid={red}
           onInput={onInput} onBlur={() => setFocused(false)}
           onFocus={(e) => { const el = e.currentTarget; setFocused(true); setTimeout(() => el.select()); }} />
-        <span class="label">ساعت</span>
+        <span class="label">{label}</span>
       </label>
       {hint && (red ? <div key="error" class="field-support error" role="status">{hint}</div>
         : <div key="hint" class="field-support">{hint}</div>)}
     </div>
+  );
+}
+
+/** The clock as four digits, the colon drawn for her. */
+function ClockField({ digits, onDigits }: { digits: string; onDigits: (digits: string) => void }) {
+  return (
+    <DigitsField digits={digits} onDigits={onDigits} length={4} sep=":" at={[2]} label="ساعت" ariaLabel="ساعت تراکنش"
+      hint={parseFaClock(digits) == null ? 'ساعت رو چهاررقمی بنویس، مثل ۰۹:۳۰.' : null} />
   );
 }
 

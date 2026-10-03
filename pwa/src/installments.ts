@@ -325,6 +325,12 @@ export const INSTALLMENT_REMINDER_DEFAULT = 1;
 const REMIND_FROM = 9;
 const REMIND_TO = 21;
 
+/** Whether [now] falls inside those hours in Tehran — shared with the cheque reminder. */
+export function remindAwake(now: number): boolean {
+  const hour = Math.trunc(((((now + TEHRAN_OFFSET_MS) % DAY_MS) + DAY_MS) % DAY_MS) / 3_600_000);
+  return hour >= REMIND_FROM && hour <= REMIND_TO;
+}
+
 /**
  * The next payment she has not covered that falls due today or later. Not [nextDue]: a plan she
  * pays but never links would be reminded once, of a date already gone, and then never again.
@@ -350,8 +356,7 @@ export function installmentNews(
   now: number,
 ): InstallmentNews {
   const today = tehranDay(now);
-  const hour = Math.trunc(((((now + TEHRAN_OFFSET_MS) % DAY_MS) + DAY_MS) % DAY_MS) / 3_600_000);
-  const awake = hour >= REMIND_FROM && hour <= REMIND_TO;
+  const awake = remindAwake(now);
   const due: Array<[InstallmentProgress, number]> = [];
   const marks: Record<string, number> = {};
   for (const progress of installments) {
@@ -368,7 +373,7 @@ export function installmentNews(
 }
 
 /** When a due day is, from today: «گذشته», «امروزه», «فرداست», «۳ روز دیگه‌ست». */
-function installmentWhenFa(days: number): string {
+export function installmentWhenFa(days: number): string {
   if (days < 0) return 'گذشته';
   if (days === 0) return 'امروزه';
   if (days === 1) return 'فرداست';

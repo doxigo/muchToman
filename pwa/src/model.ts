@@ -101,7 +101,7 @@ export interface LinkDecision {
   deleted: boolean;
 }
 
-export type GoalKindId = 'save' | 'cap' | 'installment';
+export type GoalKindId = 'save' | 'cap' | 'installment' | 'cheque';
 export type GoalPeriodId = 'week' | 'jmonth' | 'jquarter' | 'once';
 
 /** Budgets (cap), savings goals (save) and installment plans (installment), one table. */

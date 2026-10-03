@@ -10,7 +10,8 @@ import {
   BUDGET_TOTAL_FA, BudgetLevel, budgetAlertBody, budgetAlertTitle, budgetConflicts, budgetNews, budgetsOf, ownerNameOf,
 } from './budget';
 import type { BudgetMark, BudgetPeriod, BudgetProgress } from './budget';
-import { mineId } from './derived';
+import { chequeNews, chequeReminderBody, chequeReminderTitle, newCheque, openCheques } from './cheques';
+import { ledger, mineId } from './derived';
 import { faNumber } from './format';
 import { GoalKind, GoalPeriod, goalProgress, worthItAnswers } from './goals';
 import type { GoalHorizon, GoalProgress } from './goals';
@@ -35,6 +36,8 @@ export interface Plans {
   budgets: BudgetProgress[];
   /** Installment plans, in the order she added them. */
   installments: InstallmentProgress[];
+  /** Cheques not yet passed, soonest first (cheques.ts). */
+  cheques: Goal[];
   /** ref → her «ارزش داشت؟» answer. */
   worthIt: Map<string, string>;
 }
@@ -71,6 +74,7 @@ export function plansOf({
     budgets: budgetsOf(active, kept, today, { names, mineId, members, excluded }),
     installments: installmentsByDue(active.filter((g) => g.kind === GoalKind.INSTALLMENT)
       .map((g) => installmentProgress(g, links, entries, today, mineId))),
+    cheques: openCheques(active),
     worthIt: worthItAnswers(decisions),
   };
 }
@@ -229,6 +233,26 @@ export function setInstallmentPayment(entry: LedgerEntry, planId: string | null)
   writeInstallmentLink(entry, planId);
 }
 
+// ─────────────────────────── cheques ───────────────────────────
+
+/**
+ * A cheque she has written, or with [id] one she is correcting (MainActivity.kt saveCheque).
+ * Private like a plan. A moved date is a new date to remind her of: the mark is the date.
+ */
+export function saveCheque(id: string | null, name: string, amountRial: number, due: number, bank: string): void {
+  const now = Date.now();
+  const made = newCheque(id ?? uuid7(now), name, amountRial, due, bank, now, mineId());
+  const old = id != null ? liveGoal(id) : null;
+  if (made) put('goals', old ? { ...made, createdAt: old.createdAt } : made);
+}
+
+/** «پاس شد», or with [passed] false the undo of it: the day she said so goes on the row. */
+export function setChequePassed(id: string, passed: boolean): void {
+  const cheque = liveGoal(id);
+  const now = Date.now();
+  if (cheque) put('goals', { ...cheque, endsOn: passed ? tehranDay(now) : null, updatedAt: now });
+}
+
 /**
  * A plan made from the payment she just filed, that payment linked as its first installment —
  * one write, so the plan never shows without the payment that prompted it.
@@ -346,6 +370,7 @@ export function setReportExcluded(ids: Iterable<string>, now = Date.now()): void
 
 const budgetTag = (goalId: string): string => `budget:${goalId}`;
 const installmentTag = (planId: string): string => `installment:${planId}`;
+const chequeTag = (id: string): string => `cheque:${id}`;
 /** Both notes open «آینده», where the cards are. The worker's click handler reads `tab`. */
 const OPEN_BUDGET = { tab: 'BUDGET' };
 /** The quiet note: one at most, opening دفتر, where a missing spend would be. */
@@ -379,6 +404,7 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
  */
 const BUDGET_PUBLIC_TITLE = 'خبری از بودجه';
 const INSTALLMENT_PUBLIC_TITLE = 'یادآوری قسط';
+const CHEQUE_PUBLIC_TITLE = 'یادآوری چک';
 const QUIET_PUBLIC_TITLE = 'احوال‌پرسی';
 const PUBLIC_BODY = 'جزئیات توی برنامه';
 
@@ -442,11 +468,28 @@ export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goal
     // Gone when its day is: a «فرداست» still standing the day after is wrong.
     pending.push(closeNote(installmentTag(plan.plan.id), (data) => ((data as { due?: number } | null)?.due ?? today) < today));
   }
+  for (const cheque of plans.cheques) {
+    pending.push(closeNote(chequeTag(cheque.id), (data) => ((data as { due?: number } | null)?.due ?? today) < today));
+  }
   const days = pref('installmentReminder');
-  if (days >= 0 && plans.installments.length && canNotify()) {
+  if (days >= 0 && (plans.installments.length || plans.cheques.length) && canNotify()) {
     const said = pref('installmentMarks');
     const reminders = installmentNews(plans.installments, days, said, now);
-    if (!same(reminders.marks, said)) setPref('installmentMarks', reminders.marks);
+    // One map for both, as on the phone: each news keeps only its own ids.
+    const cheques = chequeNews(plans.cheques, days, said, now);
+    const marks = { ...reminders.marks, ...cheques.marks };
+    if (!same(marks, said)) setPref('installmentMarks', marks);
+    // Read only when there is something to say: the ledger is the one figure the warning needs.
+    const accounts = cheques.due.length ? ledger().bankAccounts : [];
+    for (const cheque of cheques.due) {
+      pending.push(showNote(
+        chequeReminderTitle(cheque, today),
+        chequeReminderBody(cheque, plans.cheques, accounts, today, days),
+        CHEQUE_PUBLIC_TITLE,
+        chequeTag(cheque.id),
+        { ...OPEN_BUDGET, due: cheque.startsOn },
+      ));
+    }
     for (const [progress, due] of reminders.due) {
       pending.push(showNote(
         installmentReminderTitle(progress.plan, due, today),

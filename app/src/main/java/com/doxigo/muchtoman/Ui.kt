@@ -882,7 +882,10 @@ private fun AppScreens(
               // the first-run sheet refuses to be.
               notifyBlocked = (
                   state.ledger.budgets.isNotEmpty() ||
-                      (state.installmentReminder >= 0 && state.ledger.installments.any { !it.done })
+                      (
+                          state.installmentReminder >= 0 &&
+                              (state.ledger.installments.any { !it.done } || state.ledger.cheques.isNotEmpty())
+                          )
                   ) && !canNote,
               // Paired, not «has a member id»: an unpaired phone keeps its identity from a
               // household it has left, and offering to share with it would be offering to share
@@ -896,6 +899,14 @@ private fun AppScreens(
               installments = state.ledger.installments,
               onAddInstallment = vm::addInstallment,
               onInstallmentPayment = vm::setInstallmentPayment,
+              cheques = state.ledger.cheques,
+              bankAccounts = state.bankAccounts,
+              reminderDays = state.installmentReminder,
+              onSaveCheque = vm::saveCheque,
+              onPassCheque = { id ->
+                  vm.setChequePassed(id, true)
+                  notices.show("چک پاس شد", "برگردون") { vm.setChequePassed(id, false) }
+              },
               loans = state.loanTotals,
               loanPeople = state.loans.people.size,
               onOpenLoans = { loansPage = true },
@@ -1182,17 +1193,19 @@ private fun AppScreens(
                                 // This one leaves the screen, so it says where it goes — and where
                                 // it goes depends on what is asking. A button reading «دفتر رو باز
                                 // کن» under a line about a budget is a button that lies.
-                                val budget = story.attentionBudget != null
-                                val plan = !budget && story.attentionInstallment != null
+                                val cheque = story.attentionCheque != null
+                                val budget = !cheque && story.attentionBudget != null
+                                val plan = !cheque && !budget && story.attentionInstallment != null
                                 InsightCard(
                                     it,
                                     Modifier.weight(1f).fillMaxHeight(),
                                     action = when {
+                                        cheque -> "چک‌ها رو باز کن"
                                         budget -> "بودجه رو باز کن"
                                         plan -> "قسط‌ها رو باز کن"
                                         else -> "دفتر رو باز کن"
                                     },
-                                    onAction = { tab = if (budget || plan) Tab.BUDGET else Tab.LEDGER },
+                                    onAction = { tab = if (cheque || budget || plan) Tab.BUDGET else Tab.LEDGER },
                                 )
                             }
                         }

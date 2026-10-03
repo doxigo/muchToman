@@ -145,6 +145,8 @@ internal fun filingPublicTitle(count: Int): String =
 
 internal fun installmentPublicTitle(): String = "یادآوری قسط"
 
+internal fun chequePublicTitle(): String = "یادآوری چک"
+
 internal fun quietPublicTitle(): String = "احوال‌پرسی"
 
 internal fun publicBody(): String = "جزئیات توی برنامه"
@@ -219,18 +221,22 @@ private fun ensureFilingChannel(context: Context) {
     )
 }
 
-/** The installment channel, made the way the other two are. */
+/**
+ * The installment channel, made the way the other two are — and the cheque reminder's too, since
+ * both are one setting's window. Created every time rather than once: the platform renames an
+ * existing channel when asked again, which is how a phone made before cheques learns their name,
+ * and it never raises a weight she has turned down.
+ */
 private fun ensureInstallmentChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
-    if (manager.getNotificationChannel(INSTALLMENT_CHANNEL) != null) return
     manager.createNotificationChannel(
         NotificationChannel(
             INSTALLMENT_CHANNEL,
-            "قسط",
+            "قسط و چک",
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "یادآوری سررسید قسط‌هایی که ثبت کردی."
+            description = "یادآوری سررسید قسط‌ها و چک‌هایی که ثبت کردی."
             setShowBadge(true)
         },
     )
@@ -602,6 +608,35 @@ fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long
 }
 
 /**
+ * Reminds her of one cheque's date — and, when the account it draws on cannot cover it, says that
+ * instead of the amount. [notifyInstallment]'s note in every other respect: the channel, the
+ * id with the cheque's own id as the tag, the lock face, and gone once its day is.
+ */
+// [canNotify] checked in the body — see [notifyBudget].
+@SuppressLint("MissingPermission")
+fun notifyCheque(context: Context, cheque: Goal, body: String, now: Long) {
+    if (!canNotify(context)) return
+    ensureInstallmentChannel(context)
+    val title = chequeReminderTitle(cheque, tehranDay(now))
+    val note = NotificationCompat.Builder(context, INSTALLMENT_CHANNEL)
+        .setSmallIcon(R.drawable.ic_toman)
+        .setColor(0xFF0A423B.toInt())
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setCategory(NotificationCompat.CATEGORY_REMINDER)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        .setTimeoutAfter(tehranDayStart(cheque.startsOn + 1) - now)
+        .setContentIntent(openBudgets(context))
+        .setTicker("$title. $body")
+        // Kept off the lock screen — see [withLockFace].
+        .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, chequePublicTitle(), openBudgets(context))
+    runCatching { NotificationManagerCompat.from(context).notify(cheque.id, INSTALLMENT_NOTE_ID, note) }
+        .onFailure { android.util.Log.w("muchtoman", "cheque notify failed: $it") }
+}
+
+/**
  * Takes back whatever was said about one budget.
  *
  * Called for every budget that is no longer near its cap, which is how a new month clears last
@@ -651,16 +686,28 @@ fun announceBudgets(context: Context, store: Store, budgets: List<BudgetProgress
  * nothing a day late, and one written down as said and never shown is a payment she was not told of.
  * Runs under [ledgerGate], held by both callers, for [announceBudgets]'s reason.
  */
-fun announceInstallments(context: Context, store: Store, installments: List<InstallmentProgress>) {
+fun announceInstallments(
+    context: Context,
+    store: Store,
+    installments: List<InstallmentProgress>,
+    cheques: List<Goal> = emptyList(),
+) {
     val days = store.installmentReminder
-    if (days < 0 || installments.isEmpty() || !canNotify(context)) return
+    if (days < 0 || (installments.isEmpty() && cheques.isEmpty()) || !canNotify(context)) return
     ensureInstallmentChannel(context)
     val now = System.currentTimeMillis()
-    val news = installmentNews(installments, days, store.installmentMarks, now)
-    store.installmentMarks = news.marks
+    val said = store.installmentMarks
+    val news = installmentNews(installments, days, said, now)
+    // One map for both: each news keeps only its own ids, so the union is exactly what was said.
+    val (chequesDue, chequeMarks) = chequeNews(cheques, days, said, now)
+    store.installmentMarks = news.marks + chequeMarks
     for ((progress, due) in news.due) {
         notifyInstallment(context, progress, due, now, store.takeQuip("installment", vars = mapOf("plan" to progress.plan.nameFa)))
     }
+    if (chequesDue.isEmpty()) return
+    val accounts = store.bankAccounts
+    val today = tehranDay(now)
+    for (cheque in chequesDue) notifyCheque(context, cheque, chequeReminderBody(cheque, cheques, accounts, today, days), now)
 }
 
 /**

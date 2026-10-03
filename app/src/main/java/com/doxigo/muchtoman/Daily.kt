@@ -191,8 +191,9 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         // the family.
         val goals = durable.goals().active()
         val budgets = goals.any { it.kind == GoalKind.CAP }
-        // An installment only has something to say while its reminder is on.
-        val reminders = store.installmentReminder >= 0 && goals.any { it.kind == GoalKind.INSTALLMENT }
+        // An installment or a cheque only has something to say while its reminder is on.
+        val reminders = store.installmentReminder >= 0 &&
+            goals.any { it.kind == GoalKind.INSTALLMENT || it.kind == GoalKind.CHEQUE && it.endsOn == null }
         val announce = (budgets || reminders || store.smsEnabled || canReadNotifications(app)) &&
             canNotify(app)
         val session = loadSession(durable)
@@ -220,7 +221,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                         startsOn = store.ledgerStartsOn,
                     )
                     announceBudgets(app, store, view.budgets)
-                    announceInstallments(app, store, view.installments)
+                    announceInstallments(app, store, view.installments, view.cheques)
                     announceFiling(app, store, view)
                     announceQuiet(app, store, view.entries)
                 }

@@ -215,7 +215,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             // wake up and find nothing four times a day.
             scheduleLedgerWatch(app, watchWanted())
             announceBudgets(app, store, view.budgets)
-            announceInstallments(app, store, view.installments)
+            announceInstallments(app, store, view.installments, view.cheques)
             // The other half is deliberately not announced here: this line runs with the app in front
             // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
             // is being told, so the note comes down and the mark moves past everything on screen —
@@ -576,7 +576,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private fun watchWanted(): Boolean {
         val ledger = _state.value.ledger
         return store.smsEnabled || ledger.budgets.isNotEmpty() ||
-            (store.installmentReminder >= 0 && ledger.installments.any { !it.done })
+            (store.installmentReminder >= 0 && (ledger.installments.any { !it.done } || ledger.cheques.isNotEmpty()))
     }
 
     /** Locked state is session-only; the *preference* is what persists. */
@@ -2126,6 +2126,39 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A cheque she has written, or with [id] one she is correcting. Private like a plan, so there is
+     * no sync to ask for. A moved date is a new date to remind her of: the mark is the date.
+     */
+    fun saveCheque(id: String?, name: String, amountRial: Long, due: Long, bank: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val made = newCheque(id ?: uuid7(now), name, amountRial, due, bank, now, mineId) ?: return@runCatching
+                val old = id?.let { durable.goals().byId(it) }
+                durable.goals().put(old?.let { made.copy(createdAt = it.createdAt) } ?: made)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "saveCheque failed: $it") }
+        }
+    }
+
+    /** «پاس شد», or with [passed] false the undo of it: the day she said so goes on the row. */
+    fun setChequePassed(id: String, passed: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val cheque = durable.goals().byId(id) ?: return@runCatching
+                durable.goals().put(cheque.copy(endsOn = if (passed) tehranDay(now) else null, updatedAt = now))
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setChequePassed failed: $it") }
+        }
+    }
+
+    /**
      * Says this transaction paid plan [planId], or with null that it paid none. Called from both
      * ends of the link: a plan's own sheet, and the page of the transaction.
      */
@@ -2884,6 +2917,8 @@ data class UiState(
             mineId = ledger.mineId,
             installments = ledger.installments,
             installmentDays = installmentReminder,
+            cheques = ledger.cheques,
+            accounts = bankAccounts,
         )
     }
     val stocks: List<Stock> get() = tse.stocks

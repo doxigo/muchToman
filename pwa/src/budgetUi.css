@@ -44,6 +44,13 @@ button.plan-row:active { background: color-mix(in srgb, var(--on-surface) 6%, va
 .plan-note.loud { font-weight: 700; color: var(--tone); }
 .plan-part { font-size: 12px; line-height: 20px; color: var(--on-surface-variant); }
 
+/* A cheque's row: the open target is a button of its own, so «پاس شد» can sit beside it rather than in it. */
+.cheque-open { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; text-align: start; }
+.cheque-open > span { display: block; }
+.cheque-open > .plan-head { display: flex; }
+.cheque-open > .plan-figure-row { display: flex; align-items: flex-end; gap: var(--s); }
+.cheque-when { flex: none; font-size: 13px; color: var(--on-surface-variant); }
+
 /* NotifyBlockedCard */
 .notify-what { font-size: 13px; line-height: 22px; color: var(--on-surface-variant); margin-top: var(--xs); }
 

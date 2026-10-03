@@ -211,7 +211,7 @@ function SettingsIndex() {
       <Band>
         <IndexRow title="ظاهر برنامه" value={THEME_FA[pref('themeMode')]} onClick={() => openSheet('theme')} mark={<AppearanceGlyph />} />
         <IndexRow title="قفل و امنیت" value={pref('lockEnabled') ? 'روشن' : 'خاموش'} onClick={() => openRoom('SECURITY')} mark={<LockGlyph />} />
-        <IndexRow title="یادآوری قسط" value={installmentReminderFa(pref('installmentReminder'))} onClick={() => openSheet('installmentReminder')}
+        <IndexRow title="یادآوری قسط و چک" value={installmentReminderFa(pref('installmentReminder'))} onClick={() => openSheet('installmentReminder')}
           mark={<Glyph glyph="INSTALMENT" />} />
         <IndexRow title="لحن اعلان‌ها" value={QUIP_TONE_FA[quipToneOf(pref('quipTone'))]} onClick={() => openSheet('quipTone')}
           mark={<Glyph glyph="MUSIC" />} />
@@ -280,9 +280,9 @@ function InstallmentReminderSheet() {
     closeSheet();
   };
   return (
-    <Sheet label="یادآوری قسط">
-      <SheetTitle>یادآوری قسط</SheetTitle>
-      <p class="sheet-body">قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه.</p>
+    <Sheet label="یادآوری قسط و چک">
+      <SheetTitle>یادآوری قسط و چک</SheetTitle>
+      <p class="sheet-body">قسطی که پرداختش رو ثبت کرده باشی، یادآوری نمی‌شه. اگه موجودی حساب یه چک کم باشه، از همین روز روی کارتش می‌گیم.</p>
       <div style={{ height: 'var(--l)' }} />
       <SegmentedChoice options={INSTALLMENT_REMINDER_DAYS} selected={pref('installmentReminder')} label={installmentReminderFa} fontSize={15} onSelect={pick} />
     </Sheet>
