@@ -182,7 +182,9 @@ fun ReportScreen(
                 .statusBarsPadding()
                 .padding(horizontal = Space.xl),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // دفتر's and دارایی's title line: 12dp under the status bar, a 48dp row. The four
+            // root tabs share it so the title stays put as she moves between them.
+            Row(Modifier.padding(top = Space.m).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Neutral where there are two of them: naming the screen after one of its
                 // two halves is what hid the other one for a year.
                 ScreenTitle(

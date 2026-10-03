@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -197,11 +198,14 @@ fun BudgetScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = bottomInset + Space.l),
         ) {
+            // The root tabs' one title line (see دفتر): a 48dp row 12dp under the status bar.
             ScreenTitle(
                 "آینده",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = Space.m),
+                    .padding(vertical = Space.m)
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically),
             )
 
             SectionLabel("بودجه‌ها", top = Space.s)

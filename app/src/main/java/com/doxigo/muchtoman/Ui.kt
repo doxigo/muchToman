@@ -1483,6 +1483,12 @@ internal fun HeroPanel(
     modifier: Modifier = Modifier,
     /** Only دارایی's compact header passes a smaller one — see [HeroCard]'s `compact`. */
     vertical: Dp = Space.xl,
+    /**
+     * [HeroCard] ends on [FreshnessLine], whose 48dp touch target centres a 13sp line and so
+     * already carries ~13dp of air under the words; the full [vertical] on top of that left
+     * the card bottom-heavy.
+     */
+    bottom: Dp = vertical,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // On the dark theme the card is a neutral elevated surface a shade off the page, so the
@@ -1500,7 +1506,7 @@ internal fun HeroPanel(
             ),
     ) {
         Column(
-            Modifier.padding(horizontal = Space.xl, vertical = vertical),
+            Modifier.padding(start = Space.xl, end = Space.xl, top = vertical, bottom = bottom),
             content = content,
         )
     }
@@ -1609,7 +1615,7 @@ internal fun HeroCard(
         changeOver(state.history, System.currentTimeMillis() / DAY_MS, 30, state.totals.toman)
     }.takeUnless { familyMode }
 
-    HeroPanel(vertical = if (compact) Space.l else Space.xl) {
+    HeroPanel(vertical = if (compact) Space.l else Space.xl, bottom = if (compact) Space.s else Space.m) {
         if (compact) {
             // Whose, how much, how fresh — the full card's order with its middle taken out. No
             // «جمع دارایی‌هات» label: under the دارایی tab, above its own breakdown, the figure

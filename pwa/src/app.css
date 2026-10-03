@@ -147,6 +147,9 @@ h1, h2, h3 { margin: 0; }
 .screen.no-tabs { padding-bottom: calc(var(--huge) + env(safe-area-inset-bottom)); }
 .screen-head { display: flex; align-items: center; gap: var(--m); min-height: 56px; margin: var(--l) 0 var(--xl); }
 .screen-head .screen-title { flex: 1; }
+/* A root tab's head sits on دفتر's and دارایی's title line (.title-line: 12px down, 48px tall), so the
+   title stays put as she moves between the tabs. Pages with «برگشت» keep their own. */
+.screen:not(.no-tabs) > .screen-head, .rp-top .screen-head { margin-top: var(--m); min-height: 48px; }
 /* A root page's title with its 48px controls beside it — دفتر's and دارایی's (Timeline.kt's Row, Space.m above and below). */
 .title-line { display: flex; align-items: center; gap: var(--s); padding: var(--m) 0; }
 .title-line .screen-title { flex: 1; min-width: 3em; }
