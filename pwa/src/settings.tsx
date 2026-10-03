@@ -19,7 +19,8 @@ import type { BrowserPayload } from './backup';
 import { CategoryIcon } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
 import { currentTotals, recordSnapshot, refreshAll, timeoutSignal } from './data';
-import { useLedger } from './derived';
+import { downloadLedgerCsv } from './csv';
+import { ledger, useLedger } from './derived';
 import type { LedgerHealth } from './derived';
 import { useFamily } from './family';
 import { bidi, faAgo, faCompact, faDate, faNumber, parseAmount, tomanOf } from './format';
@@ -529,7 +530,31 @@ function BackupPage() {
           checked={pref('backupReminderEnabled')} onChange={(on) => setPref('backupReminderEnabled', on)} />
       </Band>
       {ui.notice && <p class="set-note" style={{ color: ui.failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{ui.notice}</p>}
+      {/* Apart from the backup, after everything that reports on it: a file in the clear. */}
+      <LedgerCsvExport />
     </SettingsPage>
+  );
+}
+
+/** The backup page's second act (Csv.kt LedgerCsvExport): the warning in words, then «خروجی اکسل». */
+function LedgerCsvExport() {
+  const [notice, setNotice] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const save = () => {
+    try {
+      downloadLedgerCsv(ledger().entries);
+      setFailed(false); setNotice('فایل اکسل ساخته شد.');
+    } catch (error) {
+      console.warn('csv export failed', error);
+      setFailed(true); setNotice('فایل اکسل ساخته نشد. دوباره امتحان کن.');
+    }
+  };
+  return (
+    <>
+      <p class="set-note strong" style={{ padding: 'var(--xxl) var(--xs) var(--m)' }}>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.</p>
+      <PillButton label="خروجی اکسل" onClick={save} />
+      {notice && <p class="set-note" style={{ color: failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{notice}</p>}
+    </>
   );
 }
 

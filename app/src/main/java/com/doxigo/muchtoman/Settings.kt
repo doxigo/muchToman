@@ -1479,6 +1479,8 @@ private fun BackupPage(activity: FragmentActivity, onBack: () -> Unit) {
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
+        // Apart from the backup, after everything that reports on it: a file in the clear.
+        if (!BuildConfig.LITE) LedgerCsvExport(activity)
     }
 
     if (exportSheet) {
