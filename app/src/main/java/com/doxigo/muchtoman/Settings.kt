@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +31,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -71,6 +75,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -82,6 +87,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -99,6 +105,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.text.Collator
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
@@ -147,6 +155,8 @@ fun SettingsScreen(
     onQuipToneChange: (QuipTone) -> Unit,
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
+    /** A bank she keeps by hand, and its balance in Toman — see [AppVm.addManualBank]. */
+    onAddBank: (String, Double) -> Unit,
     onLockChange: (Boolean) -> Unit,
     onWidgetLockChange: (Boolean) -> Unit,
     /** The door to «دسته‌بندی‌ها», which is a room of its own rather than a strip here. */
@@ -205,6 +215,7 @@ fun SettingsScreen(
             disabledBanks = disabledBanks,
             onSmsChange = onSmsChange,
             onBankChange = onBankChange,
+            onAddBank = onAddBank,
             onRescanInbox = onRescanInbox,
             onBack = { page = SettingsRoom.INDEX },
         )
@@ -858,10 +869,12 @@ private fun SmsPage(
     disabledBanks: Set<String>,
     onSmsChange: (Boolean) -> Unit,
     onBankChange: (String, Boolean) -> Unit,
+    onAddBank: (String, Double) -> Unit,
     onRescanInbox: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    var addingBank by rememberSaveable { mutableStateOf(false) }
 
     // Whether this phone suspends the app hard enough to delay a bank message. Re-read when she
     // comes back rather than answered once: the button below leaves for Android's own settings,
@@ -996,42 +1009,70 @@ private fun SmsPage(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
         )
-        if (smsEnabled && granted || listening) {
-            // One switch per bank actually seen, not per bank we know how to read: a list
-            // of fifteen banks she has no account at is a list nobody reads. And only the banks
-            // something still reads — with SMS off, a bank last heard from by پیامک is frozen and
-            // out of the total, so a switch for it would be a switch for nothing.
-            val shown = countedBankAccounts(bankAccounts, smsEnabled && granted, listening)
-            val banks = shown.map { it.bank }.distinct()
-            SectionLabel("بانک‌ها")
-            if (banks.isEmpty()) {
+        // One switch per bank actually seen, not per bank we know how to read: a list of fifteen
+        // banks she has no account at is a list nobody reads. And only the banks something still
+        // reads — with SMS off, a bank last heard from by پیامک is frozen and out of the total, so a
+        // switch for it would be a switch for nothing. The ones she keeps by hand, she reads.
+        val reading = smsEnabled && granted
+        val shown = countedBankAccounts(bankAccounts, reading, listening)
+        val banks = shown.map { it.bank }.distinct()
+        // The «+» is for whoever keeps her messages to herself. While the inbox is read, her banks
+        // arrive on their own, and a row asking her to type one would ask for what the app reads.
+        val addable = !reading
+        val rows = banks.size + if (addable) 1 else 0
+        SectionLabel("بانک‌ها")
+        if (banks.isEmpty() && (reading || listening)) {
+            Text(
+                "هنوز تراکنش بانکی نرسیده. اولین پیامک یا اعلان بانک که بیاد، بانک اینجا " +
+                    "نشون داده می‌شه.",
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Space.xs, end = Space.xs, bottom = Space.m),
+            )
+        }
+        // One band, as on the asset list: these are N of the same thing, and N separate cards
+        // made each bank look like its own section. The «+» closes it, as every band's does.
+        banks.forEachIndexed { i, bank ->
+            val accounts = shown.filter { it.bank == bank }
+            SettingCard(
+                title = accounts.first().bankFa,
+                subtitle = "${faCompact(accounts.sumOf { it.balance })} تومان" + when {
+                    accounts.any { !it.trusted } -> "  •  نیاز به بررسی"
+                    // «دستی», the asset sheet's word, because nothing will move this figure but her.
+                    accounts.all { it.manual } -> "  •  دستی"
+                    else -> ""
+                },
+                checked = bank !in disabledBanks,
+                onChange = { on -> onBankChange(bank, on) },
+                shape = bandShape(i, rows),
+                divided = i < rows - 1,
+                // The bank's own mark, as in the accounts sheet. A row of identical
+                // 🏛️ told her nothing the name beside it did not already say.
+                badge = { BankLogo(bank, size = 44.dp) },
+            )
+        }
+        if (addable) {
+            SettingsAddRow("اضافه کردن بانک", bandShape(banks.size, rows), { addingBank = true })
+            // Only until she has kept one: after that the row above says «دستی» and the
+            // accounts sheet on خانه says where its figure is corrected.
+            if (shown.none { it.manual }) {
                 Text(
-                    "هنوز تراکنش بانکی نرسیده. اولین پیامک یا اعلان بانک که بیاد، بانک اینجا " +
-                        "نشون داده می‌شه.",
+                    "بدون پیامک هم می‌شه: بانکت رو اضافه کن و موجودیش رو خودت بنویس. هر وقت " +
+                        "عوض شد، از «حساب‌های بانکی» توی خانه اصلاحش کن.",
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Space.xs, end = Space.xs),
+                    modifier = Modifier.padding(top = Space.m, start = Space.xs, end = Space.xs),
                 )
-            } else {
-                // One band, as on the asset list: these are N of the same thing, and N
-                // separate cards made each bank look like its own section.
-                banks.forEachIndexed { i, bank ->
-                    val accounts = shown.filter { it.bank == bank }
-                    SettingCard(
-                        title = accounts.first().bankFa,
-                        subtitle = "${faCompact(accounts.sumOf { it.balance })} تومان" +
-                            if (accounts.any { !it.trusted }) "  •  نیاز به بررسی" else "",
-                        checked = bank !in disabledBanks,
-                        onChange = { on -> onBankChange(bank, on) },
-                        shape = bandShape(i, banks.size),
-                        divided = i < banks.size - 1,
-                        // The bank's own mark, as in the accounts sheet. A row of identical
-                        // 🏛️ told her nothing the name beside it did not already say.
-                        badge = { BankLogo(bank, size = 44.dp) },
-                    )
-                }
             }
+        }
+        if (addingBank) {
+            AddBankSheet(
+                taken = banks.toSet(),
+                onAdd = onAddBank,
+                onDismiss = { addingBank = false },
+            )
         }
 
         if (smsEnabled && granted) {
@@ -1052,6 +1093,221 @@ private fun SmsPage(
                 chevron = false,
             )
         }
+    }
+}
+
+/**
+ * A bank she keeps by hand: which one, then what is in it.
+ *
+ * Two steps in one sheet rather than a list with the field under it: twenty-five banks put the
+ * field a long scroll below the one she had just tapped. The list leaves out the banks already on
+ * the page — one account per bank, as everywhere else — and runs in alphabetical order without
+ * the «بانک» nearly all of them start with, which is how she looks for one.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddBankSheet(taken: Set<String>, onAdd: (String, Double) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val banks = remember(taken) {
+        val order = Collator.getInstance(Locale("fa"))
+        PICKABLE_BANKS.filter { it.name !in taken }.sortedWith(compareBy(order) { it.fa.removePrefix("بانک ") })
+    }
+    var picked by rememberSaveable { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        val bank = picked?.let { name -> banks.firstOrNull { it.name == name } }
+        if (bank == null) {
+            Column(
+                Modifier
+                    .nestedScroll(SheetFlingGuard)
+                    .fillMaxHeight(0.88f)
+                    .navigationBarsPadding()
+                    .padding(horizontal = Space.xl),
+            ) {
+                SheetTitle("اضافه کردن بانک")
+                Text(
+                    "موجودیش رو خودت می‌نویسی و هر وقت عوض شد، از «حساب‌های بانکی» توی خانه " +
+                        "اصلاحش می‌کنی.",
+                    fontSize = 13.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+                LazyColumn(
+                    contentPadding = PaddingValues(top = Space.l, bottom = Space.l),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    itemsIndexed(banks, key = { _, b -> b.name }) { i, b ->
+                        BankChoice(
+                            bank = b,
+                            shape = bandShape(i, banks.size),
+                            divided = i < banks.lastIndex,
+                            onPick = { picked = b.name },
+                        )
+                    }
+                }
+            }
+        } else {
+            BankBalanceStep(
+                bank = bank,
+                onOther = { picked = null },
+                onSave = { balance -> onAdd(bank.name, balance); onDismiss() },
+            )
+        }
+    }
+}
+
+/** One bank in [AddBankSheet]'s list: its logo on the white plate, its name, the way on. */
+@Composable
+private fun BankChoice(bank: Bank, shape: Shape, divided: Boolean, onPick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, onClick = onPick)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = Space.l, vertical = Space.m),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BankLogo(bank.name, size = 36.dp)
+            Text(
+                bank.fa,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = Space.m).weight(1f),
+            )
+            Icon(
+                Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = Space.l + 36.dp + Space.m),
+            )
+        }
+    }
+}
+
+/**
+ * [AddBankSheet]'s second step: the bank she picked, with the way back to the list beside it, and
+ * what it holds. The prompt and the field are the asset sheet's, so typing a balance here and a
+ * holding there is one habit — and so is the figure in words under it, the guard against an extra
+ * zero. That guard matters more here than anywhere: a bank's own app shows Rial, one zero more
+ * than the Toman this asks for, which is why the line above the field says so before she types.
+ */
+@Composable
+private fun BankBalanceStep(bank: Bank, onOther: () -> Unit, onSave: (Double) -> Unit) {
+    val focus = LocalFocusManager.current
+    val field = remember { FocusRequester() }
+    var text by rememberSaveable(bank.name) { mutableStateOf("") }
+    // Raised by a save tap that could not save; the field's words speak only once it is asked.
+    var submitted by rememberSaveable(bank.name) { mutableStateOf(false) }
+    val amount = parseAmount(text)
+    // She picked a bank in order to type what is in it.
+    LaunchedEffect(bank) { field.requestFocus() }
+    val save = {
+        // Never greyed out — a dead button explains nothing — so a tap that cannot save says why,
+        // with the keyboard out of the way of the words.
+        focus.clearFocus()
+        submitted = true
+        amount?.let(onSave)
+        Unit
+    }
+    val prompt = "چقدر تومان توی این حساب داری؟"
+
+    Column(
+        Modifier
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = Space.xl)
+            .padding(bottom = Space.l),
+    ) {
+        SheetTitle("اضافه کردن بانک")
+        Row(
+            Modifier
+                .padding(top = Space.l)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.group))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(Space.l),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BankLogo(bank.name, size = 44.dp)
+            Text(
+                bank.fa,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = Space.m).weight(1f),
+            )
+            PillButton("بانک دیگه", onOther)
+        }
+
+        SheetLabel(prompt)
+        Text(
+            "اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.",
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = Space.xs, end = Space.xs, bottom = Space.s),
+        )
+        val invalid = amount == null && (text.isNotBlank() || submitted)
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it; submitted = false },
+            singleLine = true,
+            isError = invalid,
+            visualTransformation = GroupedNumber,
+            textStyle = TextStyle(
+                fontFamily = ModamFigures,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { save() }),
+            // A red outline is colour alone; the words say what to fix, and why ذخیره did not save.
+            supportingText = if (invalid) ({
+                Text(
+                    if (text.isBlank()) "مبلغش رو بنویس." else "این عدد قابل خوندن نیست. فقط عدد وارد کن.",
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }) else null,
+            shape = RoundedCornerShape(Radius.field),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(field)
+                .semantics { contentDescription = prompt },
+        )
+        // The figure she just typed, in words.
+        if (amount != null && amount % 1.0 == 0.0 && amount >= 1000) {
+            faWordsToman(amount)?.let {
+                Text(
+                    it,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.s, start = Space.xs, end = Space.xs),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(Space.xl))
+        PillButton("ذخیره", save, Modifier.fillMaxWidth(), voice = ButtonVoice.PRIMARY, block = true)
     }
 }
 

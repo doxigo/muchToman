@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SnapshotTest {
@@ -149,5 +150,21 @@ class SnapshotTest {
         assertEquals(50.0, list.first { it.typeId == BANK_ID }.amount, 0.0)
         // Neither read: no bank row, as before.
         assertEquals(1, listHoldings(listOf(Holding("usd", 1.0)), false, accounts, emptySet()).size)
+    }
+
+    @Test
+    fun `a bank she keeps by hand counts with nothing read, until a message takes it over`() {
+        // سینا ships no number, so only her hand keeps it on file: the store's own filter must not
+        // drop it as one of the unnameable rows.
+        val sina = BankAccount("SINA", balance = 200.0, updatedAt = 5, anchored = true, manual = true)
+        val accounts = collapseAccounts(listOf(anchored("SAMAN", 300.0), sina))
+        assertEquals(listOf("SAMAN", "SINA"), accounts.map { it.bank })
+        assertEquals(200.0, listHoldings(emptyList(), false, accounts, emptySet()).single().amount, 0.0)
+        assertEquals(250.0, listHoldings(emptyList(), false, accounts + anchored("BLU", 50.0), emptySet(), notified = true).single().amount, 0.0)
+        // Once a message folds in, the messages keep the figure, and it freezes with them.
+        val mine = listOf(BankAccount("SAMAN", balance = 300.0, updatedAt = 5, anchored = true, manual = true))
+        val read = applyBankSms(mine, BankSms(Bank.SAMAN, "6219", "", delta = null, balance = 400.0, at = 10L, inferred = false))
+        assertTrue(read.single().anchored && !read.single().manual)
+        assertEquals(emptyList<Holding>(), listHoldings(emptyList(), false, read, emptySet()))
     }
 }

@@ -598,7 +598,9 @@ function BankSheet() {
       <div class="home-sheet">
         <SheetTitle>حساب‌های بانکی</SheetTitle>
         <p class="muted" style={{ fontSize: '13px', lineHeight: '20px', marginTop: 'var(--xs)' }}>
-          موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.
+          {view.bankAccounts.every((a) => a.manual)
+            ? 'موجودی این حساب‌ها رو خودت نوشتی؛ هر وقت عوض شد، همین‌جا اصلاحش کن. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'
+            : 'موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'}
         </p>
         <div class="bank-list">
           {view.bankAccounts.map((acc) => (
@@ -680,8 +682,10 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
         ) : (
           <>
             <PillButton label="اصلاح موجودی" onClick={onFix} />
-            {/* Two taps: a balance she anchored by hand is a number nothing can rebuild. */}
-            <ArmedButton label="حذف حساب" armedLabel="موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن" onConfirmed={onForget} />
+            {/* Two taps: a balance she anchored by hand is a number nothing can rebuild. Nothing
+                restarts a bank she keeps by hand; the number she wrote just goes. */}
+            <ArmedButton label="حذف حساب" armedLabel={account.manual ? 'موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن'
+              : 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن'} onConfirmed={onForget} />
           </>
         )}
       </div>

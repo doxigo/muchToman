@@ -463,8 +463,17 @@ notification exists once, when it is posted, so `BankNotificationListener` store
 then wakes the same worker `SmsReceiver` does. The balance fold (`runScan`) reads those rows back
 next to the inbox. Title and text joined by a newline are Blu's SMS body exactly (corpus case
 `blu-app-notification-parid`). It answers to Android's notification-access switch alone, not to
-the SMS one: with SMS off, `countedBankAccounts` keeps only Blu's balance in the total, and the fold
-has its own `notifyScannedTo` so neither source moves the other's watermark. To test it, grant
+the SMS one: with SMS off, `countedBankAccounts` keeps only Blu's balance in the total (and the banks
+she keeps by hand, below), and the fold has its own `notifyScannedTo` so neither source moves the
+other's watermark.
+
+**Banks kept by hand** are for someone who will not grant `READ_SMS`: تنظیمات ← پیامک‌های بانک offers a
+«+» on its bank band while the inbox is not read, and the sheet takes a bank and its balance
+(`AppVm.addManualBank`). The account is `BankAccount.manual`, which `countedBankAccounts` counts with
+SMS off and `collapseAccounts` keeps even for a bank with no numbers. The first message `applyBankSms`
+folds in builds a fresh account without the flag, so from then on it is an SMS account like any other.
+The PWA needs no flag in storage: a typed anchor with no message after it is already an account in
+`bankAccountsOf`, which marks it `manual` for the copy. To test it, grant
 access (`adb shell cmd notification allow_listener com.doxigo.muchtoman/.BankNotificationListener`)
 with a Blu notification still in the shade; the listener takes it on connect.
 

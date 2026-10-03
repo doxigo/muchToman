@@ -315,7 +315,7 @@ fun CompanionScreen(
                         onClick = if (founder) null else ({ openMember = member.id }),
                     )
                 }
-                AddMemberRow(
+                SettingsAddRow(
                     label = if (state.pairingUrl == null) "دعوت عضو جدید" else "ساختن کد تازه",
                     enabled = !state.working,
                     shape = bandShape(rows - 1, rows),
@@ -1034,12 +1034,13 @@ private fun MemberRow(
 }
 
 /**
- * The member band's last row: the way to add one. A quiet well with the pen's «+», the shape
- * بودجه ends its bands with — the loud green is kept for the answer inside a sheet, and a filled
- * slab under the list read as the page's main event on a household that is already whole.
+ * A settings band's last row: the way to add one — a member here, a bank kept by hand on
+ * «پیامک‌های بانک». A quiet well with the pen's «+», the shape بودجه ends its bands with — the loud
+ * green is kept for the answer inside a sheet, and a filled slab under the list read as the page's
+ * main event on a household that is already whole.
  */
 @Composable
-private fun AddMemberRow(label: String, enabled: Boolean, shape: Shape, onClick: () -> Unit) {
+internal fun SettingsAddRow(label: String, shape: Shape, onClick: () -> Unit, enabled: Boolean = true) {
     val ink = if (enabled) {
         MaterialTheme.colorScheme.primary
     } else {

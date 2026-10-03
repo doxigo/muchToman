@@ -244,8 +244,10 @@ describe('the accounts sheet', () => {
     expect(bankTotal(bankAccountsOf(rows, [anchor(200, 90_000_000)], []))).toBe(89_000_000);
     expect(bankTotal(bankAccountsOf(rows, [anchor(50, 90_000_000)], []))).toBe(9_000_000);
     expect(bankTotal(bankAccountsOf(rows, [anchor(100, 90_000_000)], []))).toBe(9_000_000);
-    // A typed figure alone is an account.
-    expect(bankAccountsOf([], [anchor(5, 7_000_000, 'SINA')], [])).toMatchObject([{ bank: 'SINA', balanceRial: 7_000_000, trusted: true }]);
+    // A typed figure alone is an account — a bank she keeps by hand — until a message folds in.
+    expect(bankAccountsOf([], [anchor(5, 7_000_000, 'SINA')], [])).toMatchObject([{ bank: 'SINA', balanceRial: 7_000_000, trusted: true, manual: true }]);
+    expect(bankAccountsOf(rows, [anchor(50, 90_000_000)], [])).toMatchObject([{ manual: false }]);
+    expect(bankAccountsOf([stated(10, 5_000_000)], [anchor(50, 90_000_000)], [])).toMatchObject([{ manual: false }]);
   });
 
   it('never counts the echo of a message pasted twice, and never names OTHER', () => {

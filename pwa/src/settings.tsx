@@ -18,15 +18,15 @@ import { applyRestore, backupFaultFa, BACKUP_MIN_PASSPHRASE, exportBackup, readB
 import type { BrowserPayload } from './backup';
 import { CategoryIcon } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
-import { refreshAll, timeoutSignal } from './data';
+import { currentTotals, recordSnapshot, refreshAll, timeoutSignal } from './data';
 import { useLedger } from './derived';
 import type { LedgerHealth } from './derived';
 import { useFamily } from './family';
-import { bidi, faAgo, faCompact, faDate, faNumber, tomanOf } from './format';
-import { Chevron, PersonMark } from './icons';
+import { bidi, faAgo, faCompact, faDate, faNumber, parseAmount, tomanOf } from './format';
+import { Chevron, PersonMark, PlusMark } from './icons';
 import { INSTALLMENT_REMINDER_DAYS, installmentReminderFa } from './installments';
 import { tehranDay } from './jalali';
-import { setLedgerStartsOn, toggleBankDisabled } from './ledger';
+import { setBankBalance, setLedgerStartsOn, toggleBankDisabled } from './ledger';
 import { disableLock, enableLock, lockAvailable } from './lock';
 import { BankLogo } from './logos';
 import type { QuipTone, ThemeMode } from './model';
@@ -34,9 +34,10 @@ import { closeSheet, openPage, openSheet, registerPage, registerSheet } from './
 import { QUIP_TONES, QUIP_TONE_CAPTION, QUIP_TONE_FA, quipToneOf } from './quips';
 import { reportMonthOf } from './reports';
 import type { ReportMonth } from './reports';
-import { BANKS } from './sms';
+import { BANKS, PICKABLE_BANKS } from './sms';
+import type { Bank } from './sms';
 import { pref, setPref, useData } from './state';
-import { ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetTitle, TextField } from './ui';
+import { AmountField, ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 
 type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH' | 'FEEDBACK';
 
@@ -335,22 +336,107 @@ function SmsPage() {
       </p>
 
       <SectionLabel>بانک‌ها</SectionLabel>
-      {banks.length === 0
-        ? <p class="set-note" style={{ paddingTop: 0 }}>هنوز پیامک بانکی نرسیده. اولین پیامک که بیاد، بانک اینجا نشون داده می‌شه.</p>
-        : (
-          <Band>
-            {banks.map((bank) => {
-              const accounts = view.bankAccounts.filter((a) => a.bank === bank);
-              const rial = accounts.reduce((sum, a) => sum + a.balanceRial, 0);
-              return (
-                <SettingCard key={bank} title={accounts[0].bankFa}
-                  subtitle={`${faCompact(tomanOf(rial))} تومان${accounts.some((a) => !a.trusted) ? '  •  نیاز به بررسی' : ''}`}
-                  checked={!accounts[0].disabled} onChange={() => toggleBankDisabled(bank)} badge={<BankLogo bank={bank} size={44} />} />
-              );
-            })}
-          </Band>
-        )}
+      {/* One band, the «+» closing it as every band's does. Always offered: the browser reads no inbox,
+          which is the phone's messages-off room, where a bank she keeps by hand is the way in. */}
+      <Band>
+        {banks.map((bank) => {
+          const accounts = view.bankAccounts.filter((a) => a.bank === bank);
+          const rial = accounts.reduce((sum, a) => sum + a.balanceRial, 0);
+          // «دستی», the word the asset sheet uses, because nothing will move this figure but her.
+          const note = accounts.some((a) => !a.trusted) ? '  •  نیاز به بررسی' : accounts.every((a) => a.manual) ? '  •  دستی' : '';
+          return (
+            <SettingCard key={bank} title={accounts[0].bankFa} subtitle={`${faCompact(tomanOf(rial))} تومان${note}`}
+              checked={!accounts[0].disabled} onChange={() => toggleBankDisabled(bank)} badge={<BankLogo bank={bank} size={44} />} />
+          );
+        })}
+        <button type="button" class="add-member" onClick={() => openSheet('addBank')}><PlusMark size={18} />اضافه کردن بانک</button>
+      </Band>
+      {/* Only until she has kept one: after that the row says «دستی» and the accounts sheet says where it is corrected. */}
+      {!view.bankAccounts.some((a) => a.manual) && (
+        <Note>بدون پیامک هم می‌شه: بانکت رو اضافه کن و موجودیش رو خودت بنویس. هر وقت عوض شد، از «حساب‌های بانکی» توی خانه اصلاحش کن.</Note>
+      )}
     </SettingsPage>
+  );
+}
+
+/**
+ * A bank she keeps by hand (Settings.kt AddBankSheet): which one, then what is in it. Two steps in
+ * one sheet, so the field is not a long scroll below the bank she tapped. The banks already on the
+ * page are left out — one account per bank — and the rest run alphabetically without the «بانک»
+ * nearly all of them start with, which is how she looks for one.
+ */
+function AddBankSheet() {
+  const view = useLedger();
+  const [picked, setPicked] = useState<string | null>(null);
+  const taken = new Set(view.bankAccounts.map((a) => a.bank));
+  const bare = (b: Bank) => b.fa.replace(/^بانک /, '');
+  const banks = PICKABLE_BANKS.filter((b) => !taken.has(b.name)).sort((a, b) => bare(a).localeCompare(bare(b), 'fa'));
+  const bank = banks.find((b) => b.name === picked);
+  return (
+    <Sheet label="اضافه کردن بانک">
+      <SheetTitle>اضافه کردن بانک</SheetTitle>
+      {bank ? <BankBalanceStep bank={bank} onOther={() => setPicked(null)} /> : (
+        <>
+          <p class="sheet-body">موجودیش رو خودت می‌نویسی و هر وقت عوض شد، از «حساب‌های بانکی» توی خانه اصلاحش می‌کنی.</p>
+          <div style={{ height: 'var(--l)' }} />
+          <div class="set-band">
+            {banks.map((b) => (
+              <button key={b.name} type="button" class="set-row bank-choice" onClick={() => setPicked(b.name)}>
+                <BankLogo bank={b.name} size={36} />
+                <span class="set-text"><span class="set-title one" style={{ display: 'block' }}>{b.fa}</span></span>
+                <Chev />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/**
+ * The second step: the bank she picked, the way back to the list beside it, and what it holds — the
+ * asset sheet's prompt and field, so typing a balance here and a holding there is one habit. The
+ * words under the figure guard against an extra zero, which matters most here: a bank's own app
+ * shows Rial, one zero more than the Toman this asks for, so the line above the field says so first.
+ */
+function BankBalanceStep({ bank, onOther }: { bank: Bank; onOther: () => void }) {
+  const [text, setText] = useState('');
+  // Raised by a save tap that could not save; the field's words speak only once it is asked.
+  const [submitted, setSubmitted] = useState(false);
+  const amount = parseAmount(text);
+  const invalid = amount == null && (text.trim() !== '' || submitted);
+  const prompt = 'چقدر تومان توی این حساب داری؟';
+  // Never greyed out — a dead button explains nothing — so a tap that cannot save says why.
+  const save = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setSubmitted(true);
+    if (amount == null) return;
+    // Back switched on, since she added it to see it in her total; a rebase, not a step — the money
+    // was in the bank before she told the app about it.
+    const before = currentTotals();
+    if (pref('disabledBanks').includes(bank.name)) toggleBankDisabled(bank.name);
+    setBankBalance(bank.name, Math.round(amount * 10));
+    recordSnapshot(before);
+    closeSheet();
+  };
+  return (
+    <>
+      <div class="bank-picked">
+        <BankLogo bank={bank.name} size={44} />
+        <span class="grow">{bank.fa}</span>
+        <PillButton label="بانک دیگه" onClick={onOther} />
+      </div>
+      <SheetLabel>{prompt}</SheetLabel>
+      <p class="set-note" style={{ padding: '0 var(--xs) var(--s)' }}>اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.</p>
+      <div class="bare-label big-amount">
+        <AmountField label={prompt} raw={text} decimals={9} autoFocus onEnter={save}
+          onRaw={(v) => { setText(v); setSubmitted(false); }}
+          error={invalid ? (text.trim() ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : 'مبلغش رو بنویس.') : null} />
+      </div>
+      <div style={{ height: 'var(--xl)' }} />
+      <PillButton label="ذخیره" voice="primary" block onClick={save} />
+    </>
   );
 }
 
@@ -730,4 +816,5 @@ registerSheet('quipTone', QuipToneSheet);
 registerSheet('exportPass', ExportPassSheet);
 registerSheet('restore', RestoreSheet);
 registerSheet('ledgerStart', LedgerStartSheet);
+registerSheet('addBank', AddBankSheet);
 

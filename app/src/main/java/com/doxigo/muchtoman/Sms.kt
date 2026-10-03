@@ -178,6 +178,14 @@ data class BankAccount(
     val pending: Double? = null,
     /** `refNo|delta` → when, for the balance-less messages [foldBankSms] folded inside the duplicate window. */
     val refs: Map<String, Long> = emptyMap(),
+    /**
+     * She added this bank herself and no message has touched it since — the way to keep a bank
+     * without letting the app read her messages. Nothing reading it is the point, so it counts
+     * whatever [countedBankAccounts] is told. The first message [applyBankSms] folds in builds a
+     * fresh account without it: from then on the messages keep the figure, and it is frozen like
+     * any other once they stop.
+     */
+    val manual: Boolean = false,
 ) {
     /** The bank alone: see [applyBankSms] for why the printed identifier cannot key an account. */
     val key: String get() = bank
@@ -1189,8 +1197,9 @@ fun collapseAccounts(accounts: List<BankAccount>, extra: Map<String, Bank> = emp
         // A bank we no longer read can never be corrected by another message, so its figure is
         // frozen at whatever the build that wrote it believed — and it cannot even be named,
         // since the enum entry is gone. Rows from banks that were guessed at by wording, rather
-        // than known by their number, are exactly this: unnameable and unfixable.
-        .filter { it.bank in read }
+        // than known by their number, are exactly this: unnameable and unfixable. A bank she
+        // keeps by hand is neither, numbers or not — she is the one who corrects it.
+        .filter { it.bank in read || it.manual }
         .groupBy { it.bank }
         .map { (_, rows) -> rows.maxWith(compareBy({ it.anchored }, { it.updatedAt })) }
 }

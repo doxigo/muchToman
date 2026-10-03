@@ -682,6 +682,7 @@ private fun AppScreens(
             },
             onSmsChange = vm::setSmsEnabled,
             onBankChange = vm::setBankEnabled,
+            onAddBank = vm::addManualBank,
             onLockChange = { on ->
                 // Confirm identity before arming it, so the lock is never switched on by
                 // someone who could not then get back in.
@@ -1317,7 +1318,8 @@ private fun AppScreens(
 
     if (banks) {
         BankSheet(
-            accounts = state.bankAccounts,
+            accounts = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified),
+            reads = state.readsBanks,
             disabled = state.disabledBanks,
             strangers = state.strangeSenders,
             onAnchor = vm::setBankBalance,
@@ -2237,8 +2239,11 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
  * to open something to distrust is a number she will trust.
  */
 private fun bankNote(state: UiState): String {
-    val live = state.bankAccounts.filterNot { it.bank in state.disabledBanks }
-    val off = state.bankAccounts.size - live.size
+    // The accounts behind the figure, not every one on file: with SMS off the row stands for the
+    // banks she keeps by hand, and a frozen one beside them would be counted here and not there.
+    val shown = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified)
+    val live = shown.filterNot { it.bank in state.disabledBanks }
+    val off = shown.size - live.size
     // Just "۴ حساب": the row is already titled حساب‌های بانکی, and the longer wording pushed
     // the warning off the end of a single line, which is the half it cannot afford to lose.
     val counted = "${faNumber(live.size.toDouble())} حساب"
@@ -2272,6 +2277,8 @@ internal val SheetFlingGuard = object : NestedScrollConnection {
 @Composable
 private fun BankSheet(
     accounts: List<BankAccount>,
+    /** Whether anything reads her banks. Off, every account here is one she keeps by hand. */
+    reads: Boolean,
     disabled: Set<String>,
     strangers: List<StrangeSender>,
     onAnchor: (String, Double) -> Unit,
@@ -2324,7 +2331,8 @@ private fun BankSheet(
         ) {
             SheetTitle("حساب‌های بانکی")
             Text(
-                "موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.",
+                if (accounts.all { it.manual }) "موجودی این حساب‌ها رو خودت نوشتی؛ هر وقت عوض شد، همین‌جا اصلاحش کن. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد."
+                else "موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.",
                 fontSize = 13.sp,
                 color = muted,
                 lineHeight = 20.sp,
@@ -2351,6 +2359,11 @@ private fun BankSheet(
                         onOpenSms = { openSmsThread(context, acc.sender) },
                     )
                 }
+
+                // Everything below works on her messages, and while nothing reads them every row
+                // above is a bank she keeps by hand: a number to add or an inbox to re-read would
+                // be tools for something she said no to.
+                if (!reads) return@LazyColumn
 
                 // A message that names one of her banks, arrived from a number the list does
                 // not have — the one silence worth breaking, since without it a bank that adds
@@ -2763,7 +2776,9 @@ private fun BankAccountRow(
                     // a number nothing can rebuild, so the first tap only names what is lost.
                     ArmedButton(
                         "حذف حساب",
-                        "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
+                        // Nothing restarts a bank she keeps by hand; the number she wrote just goes.
+                        if (account.manual) "موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن"
+                        else "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
                         onForget,
                         Modifier.fillMaxWidth(),
                         key = account.key,

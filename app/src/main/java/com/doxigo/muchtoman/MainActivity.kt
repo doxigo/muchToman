@@ -2531,12 +2531,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * same thing on demand, so a figure that has gone wrong is never a dead end.
      */
     fun rescanSms() = restartScan {
-        store.bankAccounts = emptyList()
+        // The banks she keeps by hand were never read from a message, so no re-read rebuilds them.
+        val kept = store.bankAccounts.filter { it.manual }
+        store.bankAccounts = kept
         store.seenSms = emptySet()
         store.smsScannedTo = 0L
         store.notifyScannedTo = 0L
         store.strangeSenders = emptyList()
-        _state.update { it.copy(bankAccounts = emptyList(), strangeSenders = emptyList()) }
+        _state.update { it.copy(bankAccounts = kept, strangeSenders = emptyList()) }
     }
 
     /**
@@ -2700,6 +2702,32 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(bankAccounts = next) }
             recordSnapshot()
             runCatching { anchorTyped(DurableDb.get(app), key, balance, at) }
+                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
+        }
+    }
+
+    /**
+     * A bank she keeps by hand, for someone who will not let the app read her messages: its
+     * balance is whatever she types, and it counts with SMS off — see [BankAccount.manual].
+     *
+     * It replaces whatever this phone held for that bank, which can only be a figure nothing
+     * reads any more (the settings page offers only banks not already counted), and it comes back
+     * switched on: she added it to see it in her total. A rebase, not a step — the money was in
+     * the bank before she told the app about it.
+     */
+    fun addManualBank(bank: String, balance: Double) {
+        if (runCatching { Bank.valueOf(bank) }.getOrNull() == null) return
+        val app = getApplication<Application>()
+        val before = _state.value.totals
+        restartScan {
+            val at = System.currentTimeMillis()
+            val next = store.bankAccounts.filterNot { it.bank == bank } +
+                BankAccount(bank, balance = balance, updatedAt = at, anchored = true, manual = true)
+            store.bankAccounts = next
+            store.disabledBanks = store.disabledBanks - bank
+            _state.update { it.copy(bankAccounts = next, disabledBanks = store.disabledBanks) }
+            recordSnapshot(countedBefore = before)
+            runCatching { anchorTyped(DurableDb.get(app), bank, balance, at) }
                 .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
         }
     }

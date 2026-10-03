@@ -208,13 +208,14 @@ fun recordDay(history: Map<Long, Double>, epochDay: Long, total: Double): Map<Lo
 /**
  * The balances something still reads: every bank's while bank SMS is on, only Blu's while only its
  * app's notifications are, none while neither is. A balance nothing reads any more is frozen at its
- * last message, and a frozen figure must not sit in her total as if it were today's.
+ * last message, and a frozen figure must not sit in her total as if it were today's. The banks she
+ * keeps by hand ([BankAccount.manual]) are read by her, so they count either way.
  */
 fun countedBankAccounts(accounts: List<BankAccount>, smsEnabled: Boolean, notified: Boolean): List<BankAccount> =
     when {
         smsEnabled -> accounts
-        notified -> accounts.filter { it.bank == Bank.BLU.name }
-        else -> emptyList()
+        notified -> accounts.filter { it.bank == Bank.BLU.name || it.manual }
+        else -> accounts.filter { it.manual }
     }
 
 /**

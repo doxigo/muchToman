@@ -167,6 +167,11 @@ export interface BankAccountView {
   trusted: boolean;
   /** Switched out of the total, still tracked and listed. */
   disabled: boolean;
+  /**
+   * Made by the figure she typed and no message since (Sms.kt `BankAccount.manual`): a bank she keeps
+   * by hand. The first message folded into it hands the figure to the messages.
+   */
+  manual: boolean;
 }
 
 /** A stated balance under this is pocket money; over it, a hundred-fold jump stops being believable. */
@@ -196,7 +201,7 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
   if (existing && t.at < existing.updatedAt) return existing;
   const mask = t.mask.trim() ? t.mask : existing?.mask ?? '';
   if (t.balanceRial != null) {
-    return { bank: t.bank, mask, balanceRial: t.balanceRial, updatedAt: t.at, inferred: t.inferred, anchored: true };
+    return { bank: t.bank, mask, balanceRial: t.balanceRial, updatedAt: t.at, inferred: t.inferred, anchored: true, manual: false };
   }
   if (delta == null) return existing;
   return {
@@ -206,6 +211,7 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
     // Accumulating never un-marks a guess, and never turns a running total into an anchored one.
     inferred: t.inferred || existing?.inferred === true,
     anchored: existing?.anchored === true,
+    manual: false,
     pending: existing?.pending,
   };
 }
@@ -249,7 +255,7 @@ export function bankAccountsOf(
     const existing = accounts.get(e.bank);
     // Her figure makes an account even where no message has yet: the ledger's allBalances reads it so.
     const next = e.anchor
-      ? { bank: e.bank, mask: existing?.mask ?? '', balanceRial: e.anchor.balanceRial, updatedAt: e.anchor.at, inferred: false, anchored: true }
+      ? { bank: e.bank, mask: existing?.mask ?? '', balanceRial: e.anchor.balanceRial, updatedAt: e.anchor.at, inferred: false, anchored: true, manual: existing?.manual ?? true }
       : foldBankSms(existing, e.txn!);
     if (next) accounts.set(e.bank, next);
   }
