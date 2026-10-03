@@ -105,7 +105,7 @@ export const setAsideFa = (startsOn: number): string =>
  * Which side of the ledger she is looking at. A transfer leg is neither income nor spending, and a
  * row with no amount is a stated balance — both appear under «همه» and nowhere else.
  */
-type Lens = 'ALL' | 'INCOME' | 'EXPENSE';
+export type Lens = 'ALL' | 'INCOME' | 'EXPENSE';
 const LENSES: Lens[] = ['ALL', 'INCOME', 'EXPENSE'];
 const LENS_FA: Record<Lens, string> = { ALL: 'همه', INCOME: 'درآمد', EXPENSE: 'خرج' };
 const LENS_EMPTY_FA: Record<Lens, string> = { ALL: '', INCOME: 'هنوز درآمدی ثبت نشده', EXPENSE: 'هنوز خرجی ثبت نشده' };
@@ -115,6 +115,16 @@ function lensMatches(lens: Lens, entry: LedgerEntry): boolean {
   const signed = entry.txn.signedRial;
   if (signed == null) return false;
   return lens === 'INCOME' ? signed > 0 : signed < 0;
+}
+
+/**
+ * The rows دفتر lists (Timeline.kt `ledgerRows`). A split row is listed as its parts — each its own
+ * category, mark and figure, the way every total already counts it — so a payment that bought two
+ * things is two rows, each narrowed on its own. A part still opens the one transaction behind it.
+ */
+export function ledgerRows(entries: LedgerEntry[], lens: Lens, filter: readonly string[], query: string): LedgerEntry[] {
+  return entries.flatMap(splitParts).filter((e) => lensMatches(lens, e) &&
+    (!filter.length || filter.includes(e.categoryId)) && matchesLedgerSearch(e, query));
 }
 
 /** Everything the app knows about one transaction that is not its figure — one list for the page and the deck. */
@@ -204,7 +214,7 @@ export function usePageTop(): void {
 
 /** The marks she gave her categories, once per derived view rather than once per row. */
 const glyphMemo = new WeakMap<LedgerView, Record<string, CategoryGlyph>>();
-function glyphsOf(view: LedgerView): Record<string, CategoryGlyph> {
+export function glyphsOf(view: LedgerView): Record<string, CategoryGlyph> {
   let glyphs = glyphMemo.get(view);
   if (!glyphs) glyphMemo.set(view, (glyphs = customGlyphs(view.managedCategories)));
   return glyphs;
@@ -255,12 +265,7 @@ function TimelineScreen() {
   const [query, setQuery] = useState('');
   // «Nothing here at all» and «nothing on this side» are different facts with different answers.
   const everything = useMemo(() => view.entries.filter((e) => !e.duplicate), [view.entries]);
-  const visible = useMemo(
-    () => everything.filter((e) => lensMatches(lens, e) &&
-      (!filter.length || filter.includes(e.categoryId) || !!e.split?.some((p) => filter.includes(p.categoryId))) &&
-      matchesLedgerSearch(e, query)),
-    [everything, lens, filter, query],
-  );
+  const visible = useMemo(() => ledgerRows(everything, lens, filter, query), [everything, lens, filter, query]);
   const grouped = useMemo(() => {
     const days = new Map<number, LedgerEntry[]>();
     for (const e of visible) {
@@ -326,7 +331,8 @@ function TimelineScreen() {
             {grouped.map(([day, entries]) => (
               <section key={day}>
                 <DayHeading day={day} today={today} rows={entries} />
-                {entries.map((e) => <TimelineRow key={e.txn.ref} entry={e} onClick={() => openTxn(e.txn.ref)} />)}
+                {/* Ref and category: the parts of a split row share the ref. */}
+                {entries.map((e) => <TimelineRow key={`${e.txn.ref}:${e.categoryId}`} entry={e} onClick={() => openTxn(e.txn.ref)} />)}
               </section>
             ))}
             {/* Where the list stops because she chose where it starts — a ledger that simply
@@ -459,8 +465,6 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
   const txn = entry.txn;
   const incoming = txn.direction === 'in';
   const categoryFa = ledgerCategoryFa(entry);
-  const glyph = glyphOf(ledgerMarkFa(entry), glyphsOf(ledger()));
-  const hue = hueCss(glyph);
   const rial = txn.signedRial ?? txn.amountRial;
   const waiting = entry.needsReview && !entry.transfer;
   const owner = entry.ownerName.trim();
@@ -472,10 +476,9 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
   return (
     <button type="button" class="txn-row" onClick={onClick} aria-label={pendingWords}>
       {showIcon && (
-        <span class="txn-disc" style={{ '--hue': hue }}>
-          <CategoryIcon glyph={glyph} size={22} stroke={1.8} color="var(--hue)" />
+        <CategoryDisc markFa={ledgerMarkFa(entry)}>
           {owner && <span class="owner-badge" aria-hidden="true"><MemberFace name={entry.ownerName} avatar={entry.ownerAvatar} size={21} /></span>}
-        </span>
+        </CategoryDisc>
       )}
       <span class="grow txn-text">
         <span class="txn-title ellipsis">{txnTitleFa(txn)}</span>
@@ -492,6 +495,20 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
         </span>
       ) : <span class="muted txn-balance">مانده</span>}
     </button>
+  );
+}
+
+/**
+ * A row's category disc (Timeline.kt `CategoryDisc`): the mark she chose it by, in its hue on a 16%
+ * wash of it — and the grey dots of «دسته‌بندی نشده» while a row waits, which is what the disc is for.
+ */
+export function CategoryDisc({ markFa, children }: { markFa: string; children?: ComponentChildren }) {
+  const glyph = glyphOf(markFa, glyphsOf(ledger()));
+  return (
+    <span class="txn-disc" style={{ '--hue': hueCss(glyph) }}>
+      <CategoryIcon glyph={glyph} size={22} stroke={1.8} color="var(--hue)" />
+      {children}
+    </span>
   );
 }
 

@@ -188,4 +188,23 @@ class LedgerSearchTest {
         assertTrue(matchesLedgerSearch(row, "۷۸۴۵۱۲"))
         assertFalse(matchesLedgerSearch(row, "999999"))
     }
+
+    // ---- what دفتر lists ----
+
+    @Test
+    fun `a split row is listed as its parts, each narrowed on its own`() {
+        val row = entry(merchant = "کافه دنج", signed = -60_000_000L).copy(
+            split = listOf(SplitPart("cat_smokes", "دخانیات", 53_500_000L), SplitPart("cat_cafe", "کافی‌شاپ", 6_500_000L)),
+        )
+        val all = ledgerRows(listOf(row), LedgerLens.ALL, emptyList(), "")
+        assertEquals(
+            listOf("cat_smokes" to -53_500_000L, "cat_cafe" to -6_500_000L),
+            all.map { it.categoryId to it.txn.signedRial },
+        )
+        // Both open the one transaction behind them.
+        assertEquals(listOf(row.txn.ref, row.txn.ref), all.map { it.txn.ref })
+        assertEquals(listOf("cat_cafe"), ledgerRows(listOf(row), LedgerLens.EXPENSE, listOf("cat_cafe"), "").map { it.categoryId })
+        assertEquals(listOf("cat_smokes"), ledgerRows(listOf(row), LedgerLens.ALL, emptyList(), "دخانیات").map { it.categoryId })
+        assertTrue(ledgerRows(listOf(row), LedgerLens.INCOME, emptyList(), "").isEmpty())
+    }
 }

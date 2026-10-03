@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Shape
@@ -55,6 +57,7 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -305,20 +308,39 @@ fun SplitSheet(
         ) {
             SheetTitle("تقسیم بین دسته‌ها")
             Spacer(Modifier.height(Space.xs))
+            // Exact, not compact: she is reconciling a receipt, and «۶ میلیون» over parts that
+            // add to ۶٬۰۱۲٬۰۰۰ would read as a split that does not add up.
             Text(
-                bidi("کل تراکنش ${faCompact(tomanOf(total))} تومان"),
+                bidi("کل تراکنش ${faNumber(tomanOf(total))} تومان"),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(Space.m))
 
             ids.indices.forEach { i ->
-                SheetLabel(if (i == 0) "بخش اول، باقی مبلغ" else "بخش ${faNumber((i + 1).toDouble())}")
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PillButton(
-                        ids[i]?.let { names[it] } ?: "انتخاب دسته",
-                        { picking = if (picking == i) null else i },
+                if (i > 0) PartDivider()
+                val over = i == 0 && firstRial <= 0
+                Row(Modifier.fillMaxWidth().padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+                    SplitPartHead(
+                        nameFa = ids[i]?.let { names[it] },
+                        sub = when {
+                            over -> "بخش‌های دیگه از کل تراکنش بیشتر شدن."
+                            missing && ids[i] == null -> "دسته‌اش رو انتخاب کن."
+                            i == 0 -> "باقی مبلغ"
+                            else -> null
+                        },
+                        error = over || (missing && ids[i] == null),
+                        open = picking == i,
                         modifier = Modifier.weight(1f),
-                    )
+                    ) { picking = if (picking == i) null else i }
+                    if (i == 0 && !over) {
+                        Text(
+                            faNumber(tomanOf(firstRial)),
+                            style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold),
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(start = Space.s, end = Space.xs),
+                        )
+                    }
                     if (i > 0 && ids.size > 2) {
                         Spacer(Modifier.width(Space.s))
                         PillButton("حذف", {
@@ -326,36 +348,17 @@ fun SplitSheet(
                         }, voice = ButtonVoice.DANGER)
                     }
                 }
-                if (missing && ids[i] == null) {
-                    Text(
-                        "دسته‌اش رو انتخاب کن.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .padding(top = Space.s, start = Space.xs)
-                            .semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
                 if (picking == i) {
-                    Spacer(Modifier.height(Space.m))
+                    Spacer(Modifier.height(Space.s))
                     CategoryGrid(
                         choices = choices.filter { it.id == ids[i] || it.id !in chosen },
                         selectedId = ids[i],
                         onPick = { ids[i] = it.id; picking = null },
                         selectedLabel = "انتخاب‌شده",
                     )
+                    Spacer(Modifier.height(Space.s))
                 }
-                Spacer(Modifier.height(Space.s))
-                if (i == 0) {
-                    Text(
-                        if (firstRial > 0) bidi("${faCompact(tomanOf(firstRial))} تومان")
-                        else "بخش‌های دیگه از کل تراکنش بیشتر شدن.",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (firstRial > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(start = Space.xs),
-                    )
-                } else {
+                if (i > 0) {
                     val parsed = rest[i - 1]
                     val blank = amounts[i].isBlank()
                     OutlinedTextField(
@@ -379,14 +382,15 @@ fun SplitSheet(
                             else -> null
                         },
                         shape = RoundedCornerShape(Radius.field),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(start = PartInset),
                     )
                 }
             }
 
             if (ids.size < MAX_SPLIT_PARTS) {
-                Spacer(Modifier.height(Space.l))
-                PillButton("یه بخش دیگه", { ids.add(null); amounts.add("") })
+                PartDivider()
+                // The grid opens with the part: a category is the first thing a new part needs.
+                AddPartRow { ids.add(null); amounts.add(""); picking = ids.lastIndex }
             }
 
             Spacer(Modifier.height(Space.xl))
@@ -419,6 +423,96 @@ fun SplitSheet(
             Spacer(Modifier.height(Space.s))
             PillButton("انصراف", { close(onDismiss) }, block = true, modifier = Modifier.fillMaxWidth())
         }
+    }
+}
+
+/** Where a part's text starts — past the row's own inset, the disc and the gap after it. */
+private val PartInset = Space.xs + 44.dp + Space.m
+
+/** Between two parts, from where the text starts: the discs stay one column. */
+@Composable
+private fun PartDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier.padding(start = PartInset, top = Space.s, bottom = Space.s),
+    )
+}
+
+/**
+ * A part's head in the anatomy دفتر gives the row it becomes — the category's disc, its name — so
+ * the sheet already shows the rows a save will list. Unchosen, it is the grey dots of a row still
+ * waiting. Disc and name are one target that opens the grid under it, and the chevron says so.
+ */
+@Composable
+private fun SplitPartHead(
+    nameFa: String?,
+    sub: String?,
+    error: Boolean,
+    open: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val turn by animateFloatAsState(if (open) 180f else 0f, Motion.settle(), label = "chevron")
+    Row(
+        modifier
+            .clip(RoundedCornerShape(Radius.field))
+            .clickable(role = Role.Button, onClickLabel = if (open) "بستن دسته‌ها" else "انتخاب دسته", onClick = onClick)
+            .padding(Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CategoryDisc(nameFa ?: "دسته‌بندی نشده")
+        Spacer(Modifier.width(Space.m))
+        Column(Modifier.weight(1f)) {
+            // The chevron rides the name's own line, so a two-line sentence under it cannot push
+            // it away from the word it belongs to.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    nameFa ?: "انتخاب دسته",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (nameFa == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = Space.xs).size(20.dp).rotate(turn),
+                )
+            }
+            if (sub != null) {
+                Text(
+                    sub,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+        }
+    }
+}
+
+/** The way to one more part, in the grid's own «add» voice: a `primary` plus on its wash. */
+@Composable
+private fun AddPartRow(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.xs)
+            .clip(RoundedCornerShape(Radius.field))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(Space.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) { PlusMark(MaterialTheme.colorScheme.primary, size = 18.dp) }
+        Spacer(Modifier.width(Space.m))
+        Text("یه بخش دیگه", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }
 

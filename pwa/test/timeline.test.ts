@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesLedgerSearch, searchFold } from '../src/timeline';
+import { ledgerRows, matchesLedgerSearch, searchFold } from '../src/timeline';
 import { clockDigits, parseFaClock } from '../src/manualTxn';
 import { faClock } from '../src/format';
 import { tehranDayStart } from '../src/jalali';
@@ -60,6 +60,22 @@ describe('the ledger search', () => {
     expect(matchesLedgerSearch(row, '999')).toBe(false);
     expect(matchesLedgerSearch(entry({ merchant: 'داروخانه' }), 'کافه')).toBe(false);
     expect(matchesLedgerSearch(entry({ merchant: 'کافه دنج', signed: null }), '250')).toBe(false);
+  });
+});
+
+describe('what دفتر lists', () => {
+  it('lists a split row as its parts, each narrowed on its own', () => {
+    const row: LedgerEntry = {
+      ...entry({ merchant: 'کافه دنج', signed: -60_000_000 }),
+      split: [{ categoryId: 'cat_smokes', categoryFa: 'دخانیات', rial: 53_500_000 }, { categoryId: 'cat_cafe', categoryFa: 'کافی‌شاپ', rial: 6_500_000 }],
+    };
+    const all = ledgerRows([row], 'ALL', [], '');
+    expect(all.map((e) => [e.categoryId, e.txn.signedRial])).toEqual([['cat_smokes', -53_500_000], ['cat_cafe', -6_500_000]]);
+    // Both open the one transaction behind them.
+    expect(all.map((e) => e.txn.ref)).toEqual([row.txn.ref, row.txn.ref]);
+    expect(ledgerRows([row], 'EXPENSE', ['cat_cafe'], '').map((e) => e.categoryId)).toEqual(['cat_cafe']);
+    expect(ledgerRows([row], 'ALL', [], 'دخانیات').map((e) => e.categoryId)).toEqual(['cat_smokes']);
+    expect(ledgerRows([row], 'INCOME', [], '')).toEqual([]);
   });
 });
 

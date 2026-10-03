@@ -4,10 +4,10 @@
  */
 import { useEffect, useState } from 'preact/hooks';
 import './settings.css';
-import { ActIcon } from './categoryIcon';
+import { ActIcon, CategoryIcon, glyphOf, hueCss } from './categoryIcon';
 import type { ActGlyph } from './categoryIcon';
 import { CategoryGrid } from './categoryGrid';
-import { useLedger } from './derived';
+import { ledger, useLedger } from './derived';
 import { MAX_SPLIT_PARTS } from './edits';
 import type { SplitSpec } from './edits';
 import { useFamily } from './family';
@@ -17,9 +17,9 @@ import { editTxn, revertTxnEdits, splitTxn } from './ledger';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, categoryChoices } from './rules';
 import { closeSheet, registerSheet } from './nav';
 import { DayStepper } from './manualTxn';
-import { MemberFace, useTehranDay } from './timeline';
+import { CategoryDisc, MemberFace, glyphsOf, useTehranDay } from './timeline';
 import { AmountField, PillButton, Sheet, SheetLabel, SheetTitle } from './ui';
-import { Chevron } from './icons';
+import { Chevron, PlusMark } from './icons';
 import type { LedgerEntry, SplitPart } from './model';
 
 /**
@@ -135,50 +135,70 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
   return (
     <Sheet label="تقسیم بین دسته‌ها">
       <SheetTitle>تقسیم بین دسته‌ها</SheetTitle>
-      <p class="muted" style={{ marginTop: 'var(--xs)' }}>{bidi(`کل تراکنش ${faCompact(tomanOf(total))} تومان`)}</p>
+      {/* Exact, not compact: she is reconciling a receipt, and «۶ میلیون» over parts that add to
+          ۶٬۰۱۲٬۰۰۰ would read as a split that does not add up. */}
+      <p class="muted" style={{ marginTop: 'var(--xs)' }}>{bidi(`کل تراکنش ${faNumber(tomanOf(total))} تومان`)}</p>
 
-      {ids.map((id, i) => (
-        <div key={i}>
-          <SheetLabel>{i === 0 ? 'بخش اول، باقی مبلغ' : `بخش ${faNumber(i + 1)}`}</SheetLabel>
-          <div class="row-flex">
-            <div class="grow">
-              <button type="button" class="pill wide" onClick={() => setPicking(picking === i ? null : i)}>
-                {id ? names.get(id) ?? 'دسته‌بندی نشده' : 'انتخاب دسته'}
-              </button>
+      {/* Each part in the anatomy دفتر gives the row it becomes — the category's disc, its name —
+          so the sheet already shows the rows a save will list. Unchosen, it is the grey dots of a
+          row still waiting. Disc and name are one target that opens the grid under it. */}
+      <div class="split-parts">
+        {ids.map((id, i) => {
+          const name = id ? names.get(id) ?? 'دسته‌بندی نشده' : null;
+          const over = i === 0 && firstRial <= 0;
+          const sub = over ? 'بخش‌های دیگه از کل تراکنش بیشتر شدن.'
+            : missing && id == null ? 'دسته‌اش رو انتخاب کن.'
+              : i === 0 ? 'باقی مبلغ' : null;
+          return (
+            <div class="split-part" key={i}>
+              <div class="split-head">
+                <button type="button" class="split-pick" aria-expanded={picking === i}
+                  onClick={() => setPicking(picking === i ? null : i)}>
+                  <CategoryDisc markFa={name ?? 'دسته‌بندی نشده'} />
+                  <span class="split-text">
+                    <span class="split-name-line">
+                      <span class={`split-name ellipsis${name ? '' : ' unchosen'}`}>{name ?? 'انتخاب دسته'}</span>
+                      <span class={`split-chev${picking === i ? ' open' : ''}`}><Chevron size={20} /></span>
+                    </span>
+                    {sub && <span class={`split-sub${over || id == null ? ' error' : ''}`} role="status">{sub}</span>}
+                  </span>
+                </button>
+                {i === 0 && !over && <span class="figure split-figure">{faNumber(tomanOf(firstRial))}</span>}
+                {i > 0 && ids.length > 2 && (
+                  <PillButton label="حذف" voice="danger" onClick={() => {
+                    setIds(ids.filter((_, j) => j !== i)); setAmounts(amounts.filter((_, j) => j !== i)); setPicking(null);
+                  }} />
+                )}
+              </div>
+              {picking === i && (
+                <div class="split-grid">
+                  <CategoryGrid categories={choices.filter((c) => c.id === id || !chosen.includes(c.id))} selected={id}
+                    selectedLabel="انتخاب‌شده" onSelect={(c) => { setIds(setAt(ids, i, c.id)); setPicking(null); }} />
+                </div>
+              )}
+              {i > 0 && (
+                <div class="split-amount">
+                  <AmountField label="چقدر، به تومان" ariaLabel={`مبلغ ${name ?? `بخش ${faNumber(i + 1)}`}`} raw={amounts[i]}
+                    decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))}
+                    error={!amounts[i].trim() ? (missing ? 'مبلغش رو بنویس.' : null)
+                      : rest[i - 1] == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
+                </div>
+              )}
             </div>
-            {i > 0 && ids.length > 2 && (
-              <PillButton label="حذف" voice="danger" onClick={() => {
-                setIds(ids.filter((_, j) => j !== i)); setAmounts(amounts.filter((_, j) => j !== i)); setPicking(null);
-              }} />
-            )}
+          );
+        })}
+        {ids.length < MAX_SPLIT_PARTS && (
+          // The grid opens with the part: a category is the first thing a new part needs.
+          <div>
+            <button type="button" class="split-add" onClick={() => {
+              setIds([...ids, null]); setAmounts([...amounts, '']); setPicking(ids.length);
+            }}>
+              <span class="split-add-disc"><PlusMark size={18} /></span>
+              یه بخش دیگه
+            </button>
           </div>
-          {missing && id == null && <p class="grid-error" role="status">دسته‌اش رو انتخاب کن.</p>}
-          {picking === i && (
-            <div style={{ marginTop: 'var(--m)' }}>
-              <CategoryGrid categories={choices.filter((c) => c.id === id || !chosen.includes(c.id))} selected={id}
-                selectedLabel="انتخاب‌شده" onSelect={(c) => { setIds(setAt(ids, i, c.id)); setPicking(null); }} />
-            </div>
-          )}
-          <div style={{ marginTop: 'var(--s)' }}>
-            {i === 0 ? (
-              <p class="figure" style={{ fontWeight: 700, color: firstRial > 0 ? 'var(--on-surface)' : 'var(--error)' }}>
-                {firstRial > 0 ? bidi(`${faCompact(tomanOf(firstRial))} تومان`) : 'بخش‌های دیگه از کل تراکنش بیشتر شدن.'}
-              </p>
-            ) : (
-              <AmountField label="چقدر، به تومان" ariaLabel={`مبلغ بخش ${faNumber(i + 1)}`} raw={amounts[i]}
-                decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))}
-                error={!amounts[i].trim() ? (missing ? 'مبلغش رو بنویس.' : null)
-                  : rest[i - 1] == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
-            )}
-          </div>
-        </div>
-      ))}
-
-      {ids.length < MAX_SPLIT_PARTS && (
-        <div style={{ marginTop: 'var(--l)' }}>
-          <PillButton label="یه بخش دیگه" onClick={() => { setIds([...ids, null]); setAmounts([...amounts, '']); }} />
-        </div>
-      )}
+        )}
+      </div>
 
       <div class="sheet-actions">
         <PillButton label="ذخیره تقسیم" voice="primary" block onClick={save} />
@@ -191,14 +211,18 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
 
 /** The parts of a split row, as the transaction page lists them under its category. */
 export function SplitPanel({ split }: { split: SplitPart[] }) {
+  const custom = glyphsOf(ledger());
   return (
     <div class="details">
-      {split.map((p) => (
-        <div class="detail-row" key={p.categoryId}>
-          <span>{p.categoryFa}</span>
-          <span class="figure">{bidi(`${faCompact(tomanOf(p.rial))} تومان`)}</span>
-        </div>
-      ))}
+      {split.map((p) => {
+        const glyph = glyphOf(p.categoryFa, custom);
+        return (
+          <div class="detail-row split-panel-row" key={p.categoryId}>
+            <span><CategoryIcon glyph={glyph} size={18} color={hueCss(glyph)} />{p.categoryFa}</span>
+            <span class="figure">{bidi(`${faCompact(tomanOf(p.rial))} تومان`)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

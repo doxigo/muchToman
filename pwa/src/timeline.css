@@ -82,6 +82,31 @@
 .txn-section { margin-top: var(--xxl); font-size: 18px; font-weight: 700; color: var(--on-bg); }
 .txn-acts { margin-top: var(--xxl); }
 .txn-acts > .set-band + .set-band { margin-top: var(--l); }
+
+/* «تقسیم بین دسته‌ها» (EditsUi.kt SplitSheet): each part in the ledger row's anatomy, divided from
+   where the text starts so the discs read as one column. */
+.split-parts { --text-start: calc(var(--xs) + 44px + var(--m)); margin-top: var(--m); }
+.split-parts > * + * { position: relative; margin-top: var(--s); padding-top: var(--s); }
+.split-parts > * + *::before { content: ""; position: absolute; top: 0; inset-inline: var(--text-start) 0; border-top: 1px solid var(--outline-variant); }
+.split-head { display: flex; align-items: center; gap: var(--s); padding: var(--xs) 0; }
+.split-pick, .split-add { display: flex; align-items: center; min-width: 0; padding: var(--xs); border: 0; border-radius: var(--r-field); background: none; color: inherit; text-align: start; font: inherit; }
+.split-pick { flex: 1; }
+.split-pick:active, .split-add:active { background: color-mix(in srgb, var(--on-surface) 6%, transparent); }
+.split-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.split-name-line { display: flex; align-items: center; min-width: 0; }
+.split-name { font-size: 16px; font-weight: 600; color: var(--on-surface); }
+.split-name.unchosen { color: var(--primary); }
+.split-sub { margin-top: 2px; font-size: 13px; line-height: 20px; color: var(--on-surface-variant); }
+.split-sub.error { color: var(--error); }
+/* The pen's chevron points to the start; turned, it says the grid is below — and turns back up over it. */
+.split-chev { display: grid; flex: none; margin-inline-start: var(--xs); color: var(--on-surface-variant); transform: rotate(-90deg); transition: transform var(--medium) var(--enter); }
+.split-chev.open { transform: rotate(90deg); }
+.split-figure { flex: none; padding-inline-end: var(--xs); font-size: 15px; font-weight: 700; color: var(--on-surface); }
+.split-grid { margin: var(--s) 0; }
+.split-amount { margin-top: var(--xs); padding-inline-start: var(--text-start); }
+.split-add { width: 100%; margin: var(--xs) 0; font-size: 16px; font-weight: 700; color: var(--primary); }
+.split-add-disc { flex: none; width: 44px; height: 44px; margin-inline-end: var(--m); border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.split-panel-row > span:first-child { display: inline-flex; align-items: center; gap: var(--s); }
 .txn-caption { margin-top: var(--xs); font-size: 13px; line-height: 22px; color: var(--on-surface-variant); }
 
 .learn-toggle { display: flex; align-items: center; gap: var(--m); padding: var(--m); border-radius: var(--r-field); background: var(--surface-variant); cursor: pointer; }

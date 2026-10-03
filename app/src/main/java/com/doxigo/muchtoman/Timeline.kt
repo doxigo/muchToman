@@ -294,6 +294,21 @@ internal fun matchesLedgerSearch(entry: LedgerEntry, query: String): Boolean {
     return digits.isNotEmpty() && entry.txn.amountRial?.toString()?.contains(digits) == true
 }
 
+/**
+ * The rows دفتر lists. A split row is listed as its parts — each its own category, mark and
+ * figure, the way every total already counts it ([spendable]) — so a payment that bought two
+ * things is two rows, and each is narrowed on its own: «کافی‌شاپ» keeps the coffee and drops the
+ * cigarettes. A part still opens the one transaction behind it, by ref.
+ */
+internal fun ledgerRows(
+    entries: List<LedgerEntry>,
+    lens: LedgerLens,
+    catFilter: List<String>,
+    query: String,
+): List<LedgerEntry> = entries.flatMap(::splitParts).filter {
+    lens.matches(it) && (catFilter.isEmpty() || it.categoryId in catFilter) && matchesLedgerSearch(it, query)
+}
+
 @Composable
 fun TimelineScreen(
     ledger: LedgerView,
@@ -326,13 +341,7 @@ fun TimelineScreen(
     // and get different answers, and telling her the ledger is empty when she has merely filtered
     // it to a side she has none of would be the screen lying about her money.
     val everything = remember(ledger.entries) { ledger.entries.filterNot { it.duplicate } }
-    val visible = remember(everything, lens, catFilter, query) {
-        everything.filter {
-            lens.matches(it) &&
-                (catFilter.isEmpty() || it.categoryId in catFilter || it.split.any { p -> p.categoryId in catFilter }) &&
-                matchesLedgerSearch(it, query)
-        }
-    }
+    val visible = remember(everything, lens, catFilter, query) { ledgerRows(everything, lens, catFilter, query) }
     val grouped = remember(visible) { visible.groupBy { it.txn.day }.toSortedMap(compareByDescending { it }) }
     val waiting = ledger.review.size
 
@@ -501,7 +510,8 @@ fun TimelineScreen(
                     // single row can recompose — or later animate — without dragging its whole
                     // day with it. The rows are container-less on the paper, so nothing visual
                     // belonged to the day composable but the heading.
-                    items(rows, key = { it.txn.ref }, contentType = { "txn" }) { entry ->
+                    // Ref and category: the parts of a split row share the ref.
+                    items(rows, key = { "${it.txn.ref}:${it.categoryId}" }, contentType = { "txn" }) { entry ->
                         TimelineRow(entry) { onOpen(entry) }
                     }
                 }
@@ -1052,12 +1062,6 @@ internal fun TimelineRow(
     }
     val categoryFa = ledgerCategoryFa(entry)
     val markFa = ledgerMarkFa(entry)
-    // Same mark *and* same colour as the grid she chose it in: a hundred rows are read by the
-    // disc at the start of the line long before the word is. «دسته‌بندی نشده» has no mark of
-    // its own, falls to DOTS, and DOTS is the one entry in [categoryHue] that returns muted
-    // text rather than a hue — a row still waiting for her stays grey while every filed row
-    // beside it carries colour, which is the distinction the disc is for.
-    val hue = categoryHue(markFa)
     val rial = txn.signedRial ?: txn.amountRial
     // The amber dot below is colour and nothing else, and colour is the one channel TalkBack
     // and a colour-blind reader share none of. On a waiting row the whole line is restated the
@@ -1094,13 +1098,7 @@ internal fun TimelineRow(
     ) {
         if (showIcon) {
             Box {
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(hue.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center,
-                ) { CategoryIcon(markFa, hue, size = 22.dp, stroke = 1.8.dp) }
+                CategoryDisc(markFa)
                 // Whose row, on the disc's edge — the face they picked ([MemberFace]),
                 // shrunk to a badge. A badge rather than a disc of its own because the disc's
                 // hue is the category and stays the first thing the eye reads; on a shared
@@ -1194,6 +1192,25 @@ internal fun TimelineRow(
             )
         }
     }
+}
+
+/**
+ * A row's category disc: same mark *and* same colour as the grid she chose it in — a hundred rows
+ * are read by the disc at the start of the line long before the word is. «دسته‌بندی نشده» has no
+ * mark of its own, falls to DOTS, and DOTS is the one entry in [categoryHue] that returns muted
+ * text rather than a hue — a row still waiting for her stays grey while every filed row beside it
+ * carries colour, which is the distinction the disc is for.
+ */
+@Composable
+internal fun CategoryDisc(markFa: String) {
+    val hue = categoryHue(markFa)
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(hue.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center,
+    ) { CategoryIcon(markFa, hue, size = 22.dp, stroke = 1.8.dp) }
 }
 
 /**
