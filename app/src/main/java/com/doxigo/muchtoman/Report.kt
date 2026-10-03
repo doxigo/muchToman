@@ -239,6 +239,8 @@ fun ReportScreen(
                     history = history,
                     current = current,
                     composition = composition,
+                    usdRate = usdRate,
+                    rateHistory = rateHistory,
                     bottomInset = bottomInset,
                     modifier = Modifier
                         .weight(1f)
@@ -257,11 +259,22 @@ private fun AssetReportContent(
     history: Map<Long, Double>,
     current: Double,
     composition: List<Pair<Kind, Double>>,
+    /** Today's live dollar rate — see [ReportScreen]. */
+    usdRate: Double?,
+    /** One recorded dollar rate per day, the only rate a past day is ever read at. */
+    rateHistory: Map<Long, Double>,
     bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     val now = today()
     val sorted = remember(history) { history.toSortedMap() }
+    // In Toman the line climbs with inflation almost whatever she does; in dollars it answers
+    // whether she is actually any richer. Toman first, because it is the unit the app keeps.
+    var inUsd by remember { mutableStateOf(false) }
+    // Today closes the dollar line as it closes the Toman one: the live total at the live rate.
+    val dollars = remember(history, current, rateHistory, usdRate) {
+        usdHistory(history + (now to current), usdRate?.let { rateHistory + (now to it) } ?: rateHistory)
+    }
 
     fun available(days: Int?): Boolean = when {
         sorted.isEmpty() -> days == null
@@ -289,25 +302,52 @@ private fun AssetReportContent(
     }
 
     // Chart points: the window's snapshots, closed with the live total as today's point.
-    val points: List<Pair<Long, Double>> = change?.let { c ->
+    val tomanPoints: List<Pair<Long, Double>> = change?.let { c ->
         sorted.filterKeys { it >= c.sinceDay && it < now }.map { it.key to it.value } +
             (now to current)
     } ?: emptyList()
+    // The same window in dollars, from its first day that has a rate as well as a total.
+    val points = if (!inUsd) tomanPoints
+    else change?.let { c -> dollars.filter { it.first >= c.sinceDay } }.orEmpty()
+    val shown = if (inUsd) changeAcross(points) else change
 
     Column(modifier) {
         WindowPicker(selected, ::available) { selected = it }
+        Spacer(Modifier.height(Space.m))
+        // A slicer like the window, so it wears the window's chips — the segment above is the
+        // report switcher, and two tracks in one view would read as two screens.
+        ChipChoice(
+            options = listOf(false, true),
+            selected = inUsd,
+            label = { if (it) "دلار" else "تومان" },
+            onSelect = { inUsd = it },
+        )
 
         // One rhythm across both reports: [Space.m] inside a group, [Space.xxl] between them.
         // Every gap on this screen used to be [Space.l] or [Space.xl], which is the same distance
         // either side of a heading — so nothing was grouped and the eye had to read the words to
         // find out where one section stopped.
         Spacer(Modifier.height(Space.xxl))
-        if (change == null || points.size < 2) {
-            EmptyReport()
+        if (shown == null || points.size < 2) {
+            // Dollars short of a line say why rather than repeat the Toman promise: the rates
+            // only start on the day the app first recorded one, which can be long after the
+            // Toman history did.
+            EmptyReport(
+                if (!inUsd) "از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه."
+                else dollars.firstOrNull()?.let { (day, _) ->
+                    "نرخ دلار از ${faDayMonth(day, now)} ثبت می‌شه؛ نمودار دلاری از روز دوم شروع می‌شه."
+                } ?: "هنوز نرخ دلاری ثبت نشده که دارایی به دلار حساب بشه.",
+            )
         } else {
             // The figure is the chart's headline, so it sits inside the group with it rather than
-            // a section apart from the shape it describes.
-            ChangeFigure(change, selected, now)
+            // a section apart from the shape it describes. A dollar line that starts later than
+            // the window does says how far back it really reaches instead of naming the window.
+            ChangeFigure(
+                shown,
+                selected.takeIf { it != "همه" && shown.sinceDay == change?.sinceDay },
+                now,
+                inUsd,
+            )
             Spacer(Modifier.height(Space.m))
             Box(
                 Modifier
@@ -319,7 +359,7 @@ private fun AssetReportContent(
                 Column {
                     HistoryChart(
                         points,
-                        tone = changeTone(change),
+                        tone = changeTone(shown),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp),
@@ -328,9 +368,9 @@ private fun AssetReportContent(
                     // Time flows left to right inside the chart, so in this RTL row the
                     // first caption lands on the right — under the newest end of the line.
                     Row(Modifier.fillMaxWidth()) {
-                        ChartCaption("اکنون", current)
+                        ChartCaption("اکنون", points.last().second, inUsd)
                         Spacer(Modifier.weight(1f))
-                        ChartCaption("شروع", sorted.getValue(change.sinceDay))
+                        ChartCaption("شروع", points.first().second, inUsd)
                     }
                 }
             }
@@ -467,25 +507,31 @@ private fun WindowPicker(
  * answers the same kind of question and has earned the same kind of answer.
  */
 @Composable
-private fun ChangeFigure(change: Change, windowLabel: String, now: Long) {
+private fun ChangeFigure(change: Change, windowLabel: String?, now: Long, usd: Boolean) {
     val gained = change.delta > 0
     val flat = abs(change.delta) < 1
     val tone = changeTone(change)
-    val since = if (windowLabel == "همه") {
-        "از ${faNumber((now - change.sinceDay).toDouble())} روز پیش"
-    } else {
-        "نسبت به $windowLabel پیش"
-    }
+    // Null names no window: «همه», or a dollar line that starts inside the one she picked.
+    val since = windowLabel?.let { "نسبت به $it پیش" }
+        ?: "از ${faNumber((now - change.sinceDay).toDouble())} روز پیش"
 
     Column {
         Text(since, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(Space.xs))
         // Auto-shrinks like the hero figure: a big delta must never wrap.
         BasicText(
-            text = if (flat) "بدون تغییر" else "${faCompact(abs(change.delta), 3, pad = true)} تومان",
+            text = when {
+                flat -> "بدون تغییر"
+                usd -> faUsd(abs(change.delta))
+                else -> "${faCompact(abs(change.delta), 3, pad = true)} تومان"
+            },
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 44.sp),
             style = figureStyle(tone, FontWeight.Black),
+            // "$" is read out as punctuation or skipped; the unit has to survive for listeners.
+            modifier = Modifier.semantics {
+                if (usd && !flat) contentDescription = "${faRate(abs(change.delta))} دلار"
+            },
         )
         if (!flat) {
             Spacer(Modifier.height(Space.m))
@@ -515,33 +561,38 @@ private fun ChangeFigure(change: Change, windowLabel: String, now: Long) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                "${faNumber(abs(change.delta))} تومان",
-                fontSize = 12.sp,
-                fontFamily = ModamFigures,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.s),
-            )
+            // The exact Toman under its magnitude; a dollar figure is short enough to read whole.
+            if (!usd) {
+                Text(
+                    "${faNumber(abs(change.delta))} تومان",
+                    fontSize = 12.sp,
+                    fontFamily = ModamFigures,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.s),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ChartCaption(label: String, value: Double) {
+private fun ChartCaption(label: String, value: Double, usd: Boolean) {
     Column {
         Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            "${faCompact(value)} تومان",
+            if (usd) faUsd(value) else "${faCompact(value)} تومان",
             fontSize = 14.sp,
             fontFamily = ModamFigures,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 2.dp),
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .semantics { if (usd) contentDescription = "${faRate(value)} دلار" },
         )
     }
 }
 
 @Composable
-private fun EmptyReport() {
+private fun EmptyReport(body: String) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -562,7 +613,7 @@ private fun EmptyReport() {
         Text("هنوز نموداری نیست", fontSize = 22.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(Space.s))
         Text(
-            "از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.",
+            body,
             fontSize = 15.sp,
             lineHeight = 25.sp,
             textAlign = TextAlign.Center,

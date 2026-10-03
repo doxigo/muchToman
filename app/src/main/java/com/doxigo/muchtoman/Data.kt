@@ -442,6 +442,28 @@ fun changeOver(history: Map<Long, Double>, today: Long, windowDays: Int, current
 }
 
 /**
+ * The total history in dollars, oldest first: each day's Toman over the dollar rate recorded
+ * *that* day ([Store.rateHistory]; the caller adds today's live rate beside today's live total).
+ *
+ * A day with no rate drops out rather than borrowing a neighbour's or today's. Priced at today's
+ * rate, every past day would re-price itself whenever the dollar moved, and the line would only
+ * ever be the Toman line rescaled — inflation and all, which is what this reading is for seeing
+ * past.
+ */
+fun usdHistory(history: Map<Long, Double>, rates: Map<Long, Double>): List<Pair<Long, Double>> =
+    history.toSortedMap().mapNotNull { (day, toman) ->
+        rates[day]?.takeIf { it > 0.0 && it.isFinite() }?.let { day to toman / it }
+    }
+
+/** First point to last, so it is measured from the first day that has both a total and a rate. */
+fun changeAcross(points: List<Pair<Long, Double>>): Change? {
+    if (points.size < 2) return null
+    val (day, base) = points.first()
+    val delta = points.last().second - base
+    return Change(delta, if (base > 0) delta / base * 100 else null, day)
+}
+
+/**
  * The fold's figures are Toman by the time [parseBankSms] is done; the ledger states its bound
  * in Rial ([MAX_PLAUSIBLE_RIAL], Derived.kt), so this is the same line in the fold's unit.
  */

@@ -10,7 +10,7 @@ import {
   effectiveRates, fetchRates, fetchWalletBalance, isWalletAddressFormatValid, isWalletBalanceValid,
   isWalletContractFormatValid, listHoldings, mergeRates, nameOr, rebaseHistory, recordDay, refreshWallets,
   reinstateHolding, removeHolding, sanitizeRates, setExcluded, setHolding, setLabel, setOverride, snapshotDay,
-  snapshotHistory, walletErrorMessage, wealthStatus, timeoutSignal,
+  snapshotHistory, walletErrorMessage, wealthStatus, timeoutSignal, usdHistory, changeAcross,
 } from '../src/data';
 import type { Totals } from '../src/data';
 import { DAY_MS } from '../src/jalali';
@@ -130,6 +130,22 @@ describe('history', () => {
   });
   it('percent is omitted when the baseline was zero', () => {
     expect(changeOver({ 50: 0 }, 100, 30, 12)!.percent).toBeNull();
+  });
+  it('the dollar line prices each day at its own rate and skips days without one', () => {
+    // Rates began on day 92; day 94 has a total but no rate; day 96 has a rate but no total.
+    const history = { 90: 900, 92: 1_000, 94: 1_100, 95: 1_500 };
+    const usd = usdHistory(history, { 92: 10, 95: 20, 96: 30, 91: 0 });
+    // Never priced at a neighbour's rate or today's: day 94 is simply not on the line.
+    expect(usd).toEqual([[92, 100], [95, 75]]);
+    // Measured from the first day with both — day 92, not the window's first Toman day 90 — and
+    // the Toman total rose half while the dollars fell a quarter.
+    const c = changeAcross(usd)!;
+    expect(c.sinceDay).toBe(92);
+    expect(c.delta).toBeCloseTo(-25, 9);
+    expect(c.percent).toBeCloseTo(-25, 9);
+    // One day with both is no line.
+    expect(changeAcross(usdHistory(history, { 95: 20 }))).toBeNull();
+    expect(changeAcross(usdHistory(history, {}))).toBeNull();
   });
 });
 

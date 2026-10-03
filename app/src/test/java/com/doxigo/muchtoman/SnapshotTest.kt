@@ -167,4 +167,24 @@ class SnapshotTest {
         assertTrue(read.single().anchored && !read.single().manual)
         assertEquals(emptyList<Holding>(), listHoldings(emptyList(), false, read, emptySet()))
     }
+
+    @Test
+    fun `the dollar line prices each day at its own rate and skips days without one`() {
+        // Rates began on day 92; day 94 has a total but no rate; day 96 has a rate but no total.
+        val history = mapOf(90L to 900.0, 92L to 1_000.0, 94L to 1_100.0, 95L to 1_500.0)
+        val rates = mapOf(92L to 10.0, 95L to 20.0, 96L to 30.0, 91L to 0.0)
+        val usd = usdHistory(history, rates)
+
+        // Never priced at a neighbour's rate or today's: day 94 is simply not on the line.
+        assertEquals(listOf(92L to 100.0, 95L to 75.0), usd)
+        // Measured from the first day with both — day 92, not the window's first Toman day 90 —
+        // and the Toman total rose half while the dollars fell a quarter.
+        val change = changeAcross(usd)!!
+        assertEquals(92L, change.sinceDay)
+        assertEquals(-25.0, change.delta, 1e-9)
+        assertEquals(-25.0, change.percent!!, 1e-9)
+        // One day with both is no line.
+        assertNull(changeAcross(usdHistory(history, mapOf(95L to 20.0))))
+        assertNull(changeAcross(usdHistory(history, emptyMap())))
+    }
 }

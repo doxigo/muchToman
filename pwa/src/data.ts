@@ -200,6 +200,28 @@ export function changeOver(history: Record<string, number>, today: number, windo
 }
 
 /**
+ * The total history in dollars, oldest first: each day's Toman over the rate recorded *that* day
+ * (the caller adds today's live rate beside today's live total). A day with no rate drops out
+ * rather than borrowing a neighbour's or today's — priced at today's, every past day would
+ * re-price itself as the dollar moved, and the line would be the Toman one rescaled, inflation
+ * and all. Data.kt usdHistory.
+ */
+export function usdHistory(history: Record<string, number>, rates: Record<string, number>): Array<[number, number]> {
+  return Object.keys(history).map(Number).sort((a, b) => a - b).flatMap((day): Array<[number, number]> => {
+    const rate = rates[day];
+    return rate > 0 && Number.isFinite(rate) ? [[day, history[day] / rate]] : [];
+  });
+}
+
+/** First point to last, so it is measured from the first day that has both a total and a rate. */
+export function changeAcross(points: Array<[number, number]>): Change | null {
+  if (points.length < 2) return null;
+  const [day, base] = points[0];
+  const delta = points[points.length - 1][1] - base;
+  return { delta, percent: base > 0 ? delta / base * 100 : null, sinceDay: day };
+}
+
+/**
  * Overrides over fetched rates, and rate 1 pinned on top of both for Toman, the bank balances
  * and what she values herself: none of them may be "corrected" to anything else.
  */

@@ -14,7 +14,7 @@ import { KIND_FA, compositionByKind } from './catalog';
 import type { Kind } from './catalog';
 import { CategoryIcon, categoryHue, customGlyphs, glyphOf } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
-import { changeOver, currentEffective, currentList, currentTotals } from './data';
+import { changeAcross, changeOver, currentEffective, currentList, currentTotals, usdHistory } from './data';
 import type { Change } from './data';
 import { ledger, useLedger } from './derived';
 import type { LedgerView } from './derived';
@@ -24,6 +24,7 @@ import { isTotal, worthItAnswers, worthItSummary } from './goals';
 import type { WorthItSummary } from './goals';
 import { Chevron, TrendCaret } from './icons';
 import { DAY_MS, jalaliOf, tehranDay } from './jalali';
+import { faDayMonth } from './loans';
 import { closeSheet, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
 import type { ReportMode } from './nav';
 import { REPORT_SPANS, ReportSpan, buildCashFlow, categoryWindow, memberWindow, reportMonthOf } from './reports';
@@ -66,8 +67,9 @@ const SPEND_TINT = 'var(--on-surface-variant)';
  * rule every amount on this screen keeps. One line scales in one step (width is linear in the
  * size); two lines step down a pixel at a time.
  */
-function Fit({ text, min, max, lines = 1, class: cls = '', color }: {
-  text: string; min: number; max: number; lines?: number; class?: string; color?: string;
+function Fit({ text, min, max, lines = 1, class: cls = '', color, spoken }: {
+  /** What a screen reader says instead of [text] — "$" alone is read as punctuation or skipped. */
+  text: string; min: number; max: number; lines?: number; class?: string; color?: string; spoken?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
@@ -91,7 +93,8 @@ function Fit({ text, min, max, lines = 1, class: cls = '', color }: {
     watch.observe(el);
     return () => watch.disconnect();
   }, [text, min, max, lines]);
-  return <span ref={ref} class={`rp-fit${lines > 1 ? ' wrap' : ''} ${cls}`} style={{ color }}>{text}</span>;
+  const shown = <span ref={ref} class={`rp-fit${lines > 1 ? ' wrap' : ''} ${cls}`} style={{ color }} aria-hidden={spoken ? 'true' : undefined}>{text}</span>;
+  return spoken ? <>{shown}<span class="sr">{spoken}</span></> : shown;
 }
 
 /** A category's mark on its own disc, as everywhere a category leads a row. */
@@ -239,6 +242,13 @@ function AssetReportContent() {
 
   // The shortest window that is at least a month: a week was never what the door was opened to ask.
   const [selected, select] = useState(() => WINDOWS.find(([, d]) => d !== 7 && available(d))?.[0] ?? 'همه');
+  // In Toman the line climbs with inflation almost whatever she does; in dollars it answers
+  // whether she is actually any richer. Toman first, because it is the unit the app keeps.
+  const [inUsd, setUsd] = useState(false);
+  // Today closes the dollar line as it closes the Toman one: the live total at the live rate.
+  const usdRate = currentEffective().usd;
+  const rateHistory = pref('rateHistory');
+  const dollars = usdHistory({ ...history, [now]: current }, usdRate != null ? { ...rateHistory, [now]: usdRate } : rateHistory);
   const reach = WINDOWS.find(([label]) => label === selected)![1];
 
   const change: Change | null = !days.length ? null
@@ -246,26 +256,41 @@ function AssetReportContent() {
       ? { delta: current - history[first], percent: history[first] > 0 ? (current - history[first]) / history[first] * 100 : null, sinceDay: first }
       : changeOver(history, now, reach, current);
   // The window's snapshots, closed with the live total as today's point.
-  const points: Array<[number, number]> = change
-    ? [...days.filter((d) => d >= change.sinceDay && d < now).map((d): [number, number] => [d, history[d]]), [now, current]]
-    : [];
+  const points: Array<[number, number]> = !change ? []
+    : !inUsd ? [...days.filter((d) => d >= change.sinceDay && d < now).map((d): [number, number] => [d, history[d]]), [now, current]]
+      // The same window in dollars, from its first day that has a rate as well as a total.
+      : dollars.filter(([d]) => d >= change.sinceDay);
+  const shown = inUsd ? changeAcross(points) : change;
 
   return (
     <div>
       {/* A window the history is too short to answer is dimmed, not hidden — its absence is data. */}
       <ChipChoice options={WINDOWS.map(([label]) => label)} selected={selected} label={(l) => l}
         enabled={(l) => available(WINDOWS.find(([label]) => label === l)![1])} onSelect={select} scroll />
+      {/* A slicer like the window, so it wears the window's chips — the segment above is the
+          report switcher, and two tracks in one view would read as two screens. */}
+      <div class="rp-m">
+        <ChipChoice options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : 'تومان'} onSelect={setUsd} />
+      </div>
       <div class="rp-xxl">
-        {change == null || points.length < 2 ? <EmptyReport /> : (
+        {shown == null || points.length < 2
+          // Dollars short of a line say why: the rates start on the day the app first recorded
+          // one, which can be long after the Toman history did.
+          ? <EmptyReport body={!inUsd ? 'از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.'
+            : dollars.length ? `نرخ دلار از ${faDayMonth(dollars[0][0], now)} ثبت می‌شه؛ نمودار دلاری از روز دوم شروع می‌شه.`
+              : 'هنوز نرخ دلاری ثبت نشده که دارایی به دلار حساب بشه.'} />
+          : (
           <>
-            <ChangeFigure change={change} windowLabel={selected} now={now} />
+            {/* A dollar line that starts later than the window says how far back it really reaches. */}
+            <ChangeFigure change={shown} windowLabel={selected !== 'همه' && shown.sinceDay === change?.sinceDay ? selected : null}
+              now={now} usd={inUsd} />
             <div class="rp-chart-card">
-              <HistoryChart points={points} tone={changeTone(change)} />
+              <HistoryChart points={points} tone={changeTone(shown)} />
               {/* Time flows left to right inside the chart, so in this RTL row the first
                   caption lands on the right — under the newest end of the line. */}
               <div class="rp-captions">
-                <ChartCaption label="اکنون" value={current} />
-                <ChartCaption label="شروع" value={history[change.sinceDay]} />
+                <ChartCaption label="اکنون" value={points[points.length - 1][1]} usd={inUsd} />
+                <ChartCaption label="شروع" value={points[0][1]} usd={inUsd} />
               </div>
             </div>
             <p class="rp-footnote">هر روز یک نقطه ثبت می‌شه، حتی اگه برنامه رو باز نکنی.</p>
@@ -309,16 +334,18 @@ function CompositionBar({ composition }: { composition: Array<[Kind, number]> })
 }
 
 /** Bigger or smaller, by how much, since when — stacked the way the hero total is. */
-function ChangeFigure({ change, windowLabel, now }: { change: Change; windowLabel: string; now: number }) {
+function ChangeFigure({ change, windowLabel, now, usd }: { change: Change; windowLabel: string | null; now: number; usd: boolean }) {
   const gained = change.delta > 0;
   const flat = Math.abs(change.delta) < 1;
   const tone = changeTone(change);
-  const since = windowLabel === 'همه' ? `از ${faNumber(now - change.sinceDay)} روز پیش` : `نسبت به ${windowLabel} پیش`;
+  // Null names no window: «همه», or a dollar line that starts inside the one she picked.
+  const since = windowLabel == null ? `از ${faNumber(now - change.sinceDay)} روز پیش` : `نسبت به ${windowLabel} پیش`;
+  const delta = Math.abs(change.delta);
   return (
     <div class="rp-fitbox rp-change">
       <p class="rp-since">{since}</p>
-      <Fit text={flat ? 'بدون تغییر' : `${faCompact(Math.abs(change.delta), 3, true)} تومان`} min={22} max={44}
-        class="figure rp-w900" color={tone} />
+      <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 3, true)} تومان`} min={22} max={44}
+        class="figure rp-w900" color={tone} spoken={usd && !flat ? `${faRate(delta)} دلار` : undefined} />
       {!flat && (
         <>
           <div class="rp-verdict">
@@ -328,23 +355,27 @@ function ChangeFigure({ change, windowLabel, now }: { change: Change; windowLabe
             </span>
             <span class="muted">{gained ? 'بیشتر شده' : 'کمتر شده'}</span>
           </div>
-          <p class="figure muted rp-change-exact">{`${faNumber(Math.abs(change.delta))} تومان`}</p>
+          {/* The exact Toman under its magnitude; a dollar figure is short enough to read whole. */}
+          {!usd && <p class="figure muted rp-change-exact">{`${faNumber(delta)} تومان`}</p>}
         </>
       )}
     </div>
   );
 }
 
-function ChartCaption({ label, value }: { label: string; value: number }) {
+function ChartCaption({ label, value, usd }: { label: string; value: number; usd: boolean }) {
   return (
     <div>
       <p class="rp-caption-label">{label}</p>
-      <p class="figure rp-caption-value">{`${faCompact(value)} تومان`}</p>
+      {usd
+        // "$" is read out as punctuation or skipped; the unit has to survive for listeners.
+        ? <p class="figure rp-caption-value"><span aria-hidden="true">{faUsd(value)}</span><span class="sr">{`${faRate(value)} دلار`}</span></p>
+        : <p class="figure rp-caption-value">{`${faCompact(value)} تومان`}</p>}
     </div>
   );
 }
 
-function EmptyReport() {
+function EmptyReport({ body }: { body: string }) {
   return (
     <div class="rp-empty">
       {/* The tab bar's own three bars — the empty state introduces the chart in its own pen. */}
@@ -357,7 +388,7 @@ function EmptyReport() {
         </svg>
       </span>
       <p class="rp-empty-title">هنوز نموداری نیست</p>
-      <p class="rp-empty-body">از امروز هر روز یک نقطه ثبت می‌شه و نمودار کم‌کم کامل می‌شه.</p>
+      <p class="rp-empty-body">{body}</p>
     </div>
   );
 }
