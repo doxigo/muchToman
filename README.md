@@ -75,6 +75,12 @@ Sample data, live rates.
   lists the transactions that could be its payments, the exact amount first. The card shows what is
   paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
   Cash payments go into the ledger by hand and are linked the same way.
+- **Cheques you have written, checked against the account before the date.** A cheque is its amount,
+  the date on it, and the bank account it draws on. As the date nears (the installment reminder's
+  window), the card says in words when that account's balance, read from the bank's messages, will
+  not cover it — «تو حساب ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.» — counting the cheques due
+  earlier on the same account, and it says when it does not know the balance rather than assuming
+  nothing is there. One tap on «پاس شد» clears it. The reminder comes with the installment ones.
 - **Notifications with a voice, witty by default.** Budget warnings and installment reminders keep
   the plain facts in the title and the figures, and carry one line on top: witty out of the box
   («آروم‌تر برون، بودجه پشت سرت نفس‌نفس می‌زنه.»), a roast if you pick بی‌تعارف in Settings
@@ -106,10 +112,17 @@ Sample data, live rates.
   similar ones" switched on files the ones like it the same way from then on.
 - **Your own names.** Any holding can carry a label of your own — "Tether (mine)" beside
   "Tether (joint)". The asset keeps its real name underneath, so the rate still applies.
-- **A year of history.** The total is remembered once a day, with 1/3/6/12-month change.
+- **A year of history.** The total is remembered once a day, with 1/3/6/12-month change. The
+  assets report can show the same history in dollars, each day priced at that day's recorded
+  dollar rate, so inflation does not pass for growth. Days before the rates were recorded have no
+  dollar point.
 - **A backup only you can read.** Everything — messages, balances, every decision — exports to
   one passphrase-encrypted file and restores from it on a new phone. Settings show the last
   successful export and offer an optional reminder after 30 days.
+- **Your ledger in Excel.** The same Settings page exports the ledger as a CSV that opens in Excel
+  with its Persian intact: one row per transaction (split payments as their parts, transfers
+  marked, duplicates left out), with exact Rial and Toman columns. Unlike the backup, this file is
+  not encrypted, and the page says so.
 - **Ledger health.** Settings show retained history, record counts and the last ingestion.
 - **Browser companion.** Correct your own transactions, see unsent changes and switch saved
   households without mixing their records. After the first complete load, the shell works offline.
@@ -199,6 +212,11 @@ Added to the Home Screen, its data is kept; in a plain browser tab iOS may clear
 unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
 Android.
 
+To bring many messages at once, an iOS Shortcuts automation can collect each bank SMS with its
+sender into one text, which you then paste whole: each message is filed under its sender's bank
+from the same sender table Android uses, one-time codes are skipped, and pasting the same text
+again adds nothing. The paste sheet links to the step-by-step setup.
+
 ## Where the prices come from
 
 Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian exchanges
@@ -242,8 +260,8 @@ offer to turn notifications on whenever they have something to tell you. Denying
 costs the alerts and nothing else: the Future tab shows the same figures either way, and the
 badge on Ledger counts the same backlog.
 
-Installment plans, and which transactions paid them, stay on the phone. They are never part of
-the family sync. The same goes for loans: who owes whom, and which transactions they were.
+Installment plans, and which transactions paid them, stay on the phone, and so do the cheques you
+have written. They are never part of the family sync. The same goes for loans: who owes whom, and which transactions they were.
 
 Wallet tracking is opt-in: when enabled, the public address is sent through the configured
 Worker to a public blockchain RPC or indexer. The app never asks for a recovery phrase or private

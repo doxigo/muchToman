@@ -58,8 +58,12 @@ figure, always with `tnum`.
 
 - **ScreenTitle** — 30sp Black, one voice for every root page.
 - **SheetTitle** — 26sp Black, one voice for every sheet.
-- Hero total: Black, autosized 28–60sp, in `Hero.accent`; the words and exact digits always
-  under it. Figures autoshrink, never wrap, never ellipsise mid-number.
+- Hero total: Black, autosized 28–60sp (20–34sp on دارایی's compact header), in `Hero.accent`;
+  the words and exact digits always under it on خانه's card. Figures autoshrink, never wrap,
+  never ellipsise mid-number.
+- A signed figure with a magnitude or unit word sets the word a step down, at every size: 0.58em
+  at display size (the transaction hero), 0.72em at row size (`signedFigure` / `SignedFigure`).
+  At the digits' own size the sign reads as a dash joining two words («میلیون −۱»).
 
 ## Shape & structure
 
@@ -82,11 +86,44 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
   net), then plain rows on the paper. Each row leads with a 44dp circle in the category's
   hue at 16% behind its glyph; merchant 16sp SemiBold; category line under; amount at the
   end. The category sheet reuses the row with `showIcon = false` inside its band.
-- The **hero is a card**, not a field: floats on the paper under the greeting top bar, all
-  corners `Radius.hero`. Transaction and deck pages reuse it via `HeroPanel` (it takes the
-  glass inset and gutter itself).
+- **One title line for the root tabs.** دفتر, دارایی, آینده and گزارش‌ها set `ScreenTitle` on
+  the same 48dp row 12dp under the status bar (`.title-line` / `.screen-head` on the PWA), so the
+  title stays put as she moves between tabs; a room that writes something puts its add pill
+  (`TitleAddButton`: «+ تراکنش», «+ دارایی») on that row. خانه alone opens on her greeting.
+- The **hero is a card**, not a field: floats on the paper under خانه's greeting top bar or
+  دارایی's title line, all corners `Radius.hero`. Transaction and deck pages reuse it via
+  `HeroPanel` (it takes the glass inset and gutter itself).
+- **دارایی opens like دفتر: its title line, then the hero, compact** — a deliberate second
+  reading of the same object (`HeroCard(compact = true)`, `.home-hero.compact`): same
+  `Hero.field`, `Radius.hero` and dark hairline, top padding `Space.l`; whose (the scope toggle,
+  only with a family), then the compact total beside its dollars, then the freshness line —
+  about a third of خانه's card. No greeting bar and no action circles on this tab (its one verb
+  is the title pill); no label, words, exact digits, loans strip or change pill: خانه's card
+  carries those. The lite edition keeps the greeting, the full card and its circles on دارایی,
+  its only screen.
+- **The hero ends on its freshness line**, whose 48dp target already holds ~13dp of air under
+  the words, so the card's bottom padding is a step under its top (`HeroPanel(bottom = …)`:
+  `Space.m` under `Space.xl`, `Space.s` under the compact `Space.l`). Full padding there read
+  bottom-heavy.
+- **The freshness line is the refresh control.** «نرخ‌ها: … پیش» under the total is a
+  full-width, ≥48dp button (`FreshnessLine`, both platforms, and both readings of the hero) with
+  a small pen-drawn ↺ (`ActGlyph.REFRESH`) beside the words. While a fetch runs it reads «در حال
+  تازه کردن…», dims to 38% and spins its mark. There is no «تازه کردن» action circle; pull to
+  refresh on خانه, دارایی and دفتر is the gesture for the same act. The PWA has no pull, so the
+  line is its only control.
 - **Action circles** (`ActionCircle`): 56dp `primaryContainer` discs with labels, fixed
-  108dp cells clustered to the centre — same rhythm at any count.
+  108dp cells clustered to the centre — same rhythm at any count: two on خانه («اضافه کردن»,
+  «تراکنش دستی»). دارایی has none; the lite edition has «اضافه کردن» and «گزارش».
+- **A row on آینده leads with what it is**: a budget with its category's disc, a cheque with
+  the logo of the bank it draws on (`BankLogo`, 36dp, the disc's slot). Goals and installments
+  have no such mark and lead with their name. A cheque's caution follows the budget's: the
+  sentence in ink, amber on the countdown beside its figure, bold `error` only once the date has
+  passed uncovered. A chip that names a bank carries its logo (`bank-chip`, `Chip(lead = …)`).
+- **Choices, three tiers.** `SegmentedChoice` switches the screen (one in view at most);
+  `ChipChoice` slices the data below it; `PillToggle` re-reads one figure (whose total, which
+  unit) and sits on that figure's own line — the chosen word on a small pill, the others bare,
+  drawn about 31dp and touched at 48. On paper the pill is `primary`, never `Cta`; on the hero
+  it is `Hero.well` with `Hero.strong`, `Hero.muted` for the idle word.
 - Tab bar: full-width floor on `surfaceContainerHigh`, hairline on top, M3-sized soft
   `primaryContainer` indicator pill, CTA-green badge. No shadow, no island.
 
@@ -110,7 +147,8 @@ size parameters and no CSS resizes `.pill`: a 2026-10 audit found sheet commits 
 60dp, a Material `Button` beside a pill under the same sheet, and the day stepper at 40dp/12sp —
 one app speaking in five accents. Answers stack full width and all wear `block` (CTA, then the
 way out, then the delete), so «انصراف» is never a size down from the commit it sits under. The one
-family outside the two sizes is دفتر's title line — «تراکنش», the paste and search discs,
+family outside the two sizes is the title line (دفتر, دارایی) — the «+ تراکنش» / «+ دارایی» pill
+(`TitleAddButton`), the paste and search discs,
 «دسته‌ها» and the review pill — a 48dp toolbar on the neutral well, sized as one row; a 44dp pill
 in it would sit visibly short of its neighbours.
 Inside a card, routine acts share a row in equal cells and the one that loses something takes
@@ -149,7 +187,9 @@ stay drawn by hand because no set has them (همسر's ring, the unknown dots, a
 خرج اتینا's, مامان's bun, بابا's سبیل, پارتنر's heart eyes).
 **No emoji as icons**
 — empty states use the drawn glyphs on `primaryContainer` discs; settings rows use drawn
-marks or real logos (banks on white plates).
+marks or real logos (banks on white plates). Settings rows borrow category marks (ENVELOPE, TAG,
+STACK, SWAP, TRAY, HOUSE) plus `SHEET` (Lucide `sheet`, the CSV export's row), which is a row
+mark only and never offered in the category picker.
 
 ## Standing rules the visuals must keep
 

@@ -251,6 +251,11 @@ every form Android hands over for the same line matches (`+989999987641`, `98999
 it matches itself. A lettered sender ID ("Refah Bank") is matched as its whole name, case and
 spacing ignored.
 
+The PWA keeps a mirror of the same table, `BANKS` in [sms.ts](pwa/src/sms.ts), which files each
+message of a pasted Shortcuts bundle (`readBundle` in [paste.ts](pwa/src/paste.ts) documents the
+format) under its sender's bank. `pwa/test/paste.test.ts` reads Sms.kt's `Bank` enum and fails
+unless the two agree, so a new bank or sender lands in both in the same change.
+
 ## Releasing
 
 A signed APK is built and attached to a GitHub Release whenever a tag is pushed, by
@@ -502,6 +507,20 @@ Private only: plans are never `shared`, so the goal sync never publishes them, a
 reads no `installment` decisions. A household plan would need its links to travel, which is a
 new record kind and therefore `sync/` first.
 
+### Cheques
+
+A cheque is a `goal` row with `kind = 'cheque'`, stored like a plan: the amount in `target_rial`,
+the due day in `starts_on`, the `Bank` name it draws on in `category_id`, the optional label in
+`name_fa`, and the day she pressed «پاس شد» in `ends_on` (null while it is open). Private like
+plans — never `shared`, so the goal sync never publishes one, and an arriving `goal` record is
+only ever a budget or a savings goal. The backup already carries the whole goal table.
+
+The warning compares the account's folded balance, counted only when it is anchored, with the
+running need of every open cheque on that account, earliest first; an unanchored or missing
+balance is said as unknown, never as zero. Reminders ride the installment path: same channel
+(renamed «قسط و چک»), same lead days, and `installmentMarks` holds cheque ids too. The date is
+typed as eight digits through `digitsMask` / `DigitsField`, the clock field's mask generalised.
+
 ### Notification lines (quips)
 
 «لحن اعلان‌ها» in تنظیمات picks ساده (every note reads as it always did), شوخ (the default,
@@ -718,7 +737,8 @@ It is a port, file for file, so the Kotlin is the spec and the two read side by 
 | AppVm's ledger actions | `ledger.ts` |
 | `Edits.kt` · `EditsUi.kt` | `edits.ts` · `editsUi.tsx` |
 | `Catalog.kt` · `Data.kt` (holdings, rates, history, wallets) | `catalog.ts` · `data.ts` |
-| `Reports.kt` · `Budget.kt` · `Goals.kt` · `Installments.kt` · AppVm's plan actions + `Notify.kt` | `reports.ts` · `budget.ts` · `goals.ts` · `installments.ts` · `plans.ts` |
+| `Reports.kt` · `Budget.kt` · `Goals.kt` · `Installments.kt` · `Cheques.kt` · AppVm's plan actions + `Notify.kt` | `reports.ts` · `budget.ts` · `goals.ts` · `installments.ts` · `cheques.ts` · `plans.ts` |
+| `Csv.kt` | `csv.ts` |
 | `Sync.kt` · AppVm's family actions | `sync.ts` · `family.ts` (+ `crypto.ts`, `db.ts`) |
 | `Export.kt` | `backup.ts` |
 | `Theme.kt`, `Ui.kt` kit, `TabBar.kt`, `CategoryIcon.kt`, `AssetGlyph.kt`, logos | `app.css`, `ui.tsx`, `icons.tsx`, `categoryIcon.tsx`, `assetGlyph.tsx`, `logos.tsx` |
