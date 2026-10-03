@@ -622,11 +622,11 @@ private fun EventRow(event: LoanEvent, type: (String) -> AssetType, onClick: () 
         }
         Spacer(Modifier.width(Space.m))
         val figure = if (event.typeId.isBlank()) {
-            faSignedCompact(tomanOf(abs(event.rial)), positive = !out)
+            signedFigure(faSignedParts(tomanOf(abs(event.rial)), positive = !out))
         } else {
             val t = type(event.typeId)
             val unit = if (t.unitFa == "عدد") t.fa.substringBefore(' ') else t.unitFa
-            "${ltrFigure((if (out) "−" else "+") + faHeld(abs(event.amount), t.dec))} $unit"
+            signedFigure(ltrFigure((if (out) "−" else "+") + faHeld(abs(event.amount), t.dec)) to unit)
         }
         Text(figure, style = figureStyle(ink, FontWeight.ExtraBold), fontSize = 16.sp, maxLines = 1)
     }

@@ -162,6 +162,8 @@ h1, h2, h3 { margin: 0; }
 .hero .muted { color: var(--hero-muted); }
 .hero-total { color: var(--hero-accent); font-weight: 900; line-height: 1.15; white-space: nowrap; font-size: clamp(28px, calc(100cqi / var(--fit, 8)), 60px); }
 .hero-total .unit, .figure .unit { font-size: .42em; font-weight: 700; opacity: .75; margin-inline-start: .22em; }
+/* A signed figure's word a step down (SignedFigure): row size here, the hero's .58em in timeline.css. */
+.figure .magnitude { font-size: .72em; font-weight: 700; }
 .hero-strip { display: flex; align-items: center; gap: var(--s); margin-top: var(--xl); padding-top: var(--m); border-top: 1px solid var(--hero-hairline); font-size: 13px; color: var(--hero-muted); }
 .hero-strip .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--hero-mint); }
 .hero-strip.warn { color: var(--hero-warn); }

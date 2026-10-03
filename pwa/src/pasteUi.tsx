@@ -15,10 +15,10 @@ import { addPastedSms } from './ledger';
 import { bodyToStore, parsePasted, severalMessages } from './paste';
 import { PICKABLE_BANKS, isBank } from './sms';
 import { BankLogo } from './logos';
-import { bidi, faCompact, faSignedCompact, faWordsToman, tomanOf } from './format';
+import { bidi, faCompact, faSignedParts, faWordsToman, tomanOf } from './format';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
 import { pref } from './state';
-import { PillButton, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { PillButton, Sheet, SheetLabel, SheetTitle, SignedFigure, TextField } from './ui';
 import { openTxn } from './timeline';
 
 function PasteSheet({ text: given = '' }: { text?: string }) {
@@ -95,7 +95,7 @@ function PastePreview({ read }: { read: ReturnType<typeof parsePasted> }) {
         <>
           {/* No sign where the message names no direction: a guessed «−» is a claim. */}
           <p class={`figure paste-amount${incoming ? ' gain' : ''}`}>
-            {read.direction ? faSignedCompact(toman, incoming) : faCompact(toman)}{' '}<span class="unit">تومان</span>
+            {read.direction ? <SignedFigure parts={faSignedParts(toman, incoming)} /> : faCompact(toman)}{' '}<span class="unit">تومان</span>
           </p>
           {faWordsToman(toman) && <p class="muted small">{faWordsToman(toman)}</p>}
         </>

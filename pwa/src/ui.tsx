@@ -44,6 +44,15 @@ export function HeroPanel({ children, class: cls = '' }: { children: ComponentCh
   return <div class={`hero ${cls}`}>{children}</div>;
 }
 
+/**
+ * A signed figure with its word a step down (Theme.kt `signedFigure`): faSignedParts' halves, or an
+ * asset's digits and unit. Set the same size as the digits, the word turns the sign into a dash
+ * joining two words («میلیون −۱»), so `.figure .magnitude` steps it down at every size.
+ */
+export function SignedFigure({ parts: [digits, word] }: { parts: [string, string | null] }) {
+  return <>{digits}{word && <>{' '}<span class="magnitude">{word}</span></>}</>;
+}
+
 /** How loudly a pill speaks — Ui.kt's ButtonVoice. `armed` is only ever set by ArmedButton. */
 export type Voice = 'primary' | 'tonal' | 'hero' | 'danger' | 'armed';
 const VOICE_CLASS: Record<Voice, string> = { primary: ' primary', tonal: '', hero: ' hero-voice', danger: ' danger', armed: ' armed' };

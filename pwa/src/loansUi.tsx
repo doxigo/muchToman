@@ -13,7 +13,7 @@ import type { AssetType } from './catalog';
 import { CategoryIcon, hueCss } from './categoryIcon';
 import { currentEffective } from './data';
 import { useLedger } from './derived';
-import { faCompact, faDay, faHeld, faNumber, faSignedCompact, faWeekdayDate, faWordsToman, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
+import { faCompact, faDay, faHeld, faNumber, faSignedParts, faWeekdayDate, faWordsToman, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
 import { AssetIcon } from './homeSheets';
 import { Chevron, PersonMark, PlusMark } from './icons';
 import { tomanFieldToRial } from './installments';
@@ -29,7 +29,7 @@ import { closePage, closeSheet, navState, openPage, openSheet, registerPage, reg
 import { batch, pref, useData } from './state';
 import {
   AmountField, ChipChoice, EmptyState, PillButton, Screen, ScreenTitle, Section, SegmentedChoice, Sheet, SheetDelete,
-  SheetLabel, SheetTitle, SwitchRow, TextField,
+  SheetLabel, SheetTitle, SignedFigure, SwitchRow, TextField,
 } from './ui';
 import './loans.css';
 
@@ -334,9 +334,9 @@ function EventRow({ event }: { event: LoanEvent }) {
   const out = event.typeId ? event.amount > 0 : event.rial > 0;
   const type = event.typeId ? typeOf(event.typeId) : null;
   const sub = loanEventSubFa(event);
-  const amount = type
-    ? `${ltrFigure((out ? '−' : '+') + faHeld(Math.abs(event.amount), type.dec))} ${unitShortFa(type)}`
-    : faSignedCompact(tomanOf(Math.abs(event.rial)), !out);
+  const amount: [string, string | null] = type
+    ? [ltrFigure((out ? '−' : '+') + faHeld(Math.abs(event.amount), type.dec)), unitShortFa(type)]
+    : faSignedParts(tomanOf(Math.abs(event.rial)), !out);
   const glyph = out ? 'LEND' : 'PAYBACK';
   const open = () => (event.entry
     ? openPage('txn', { txnRef: event.entry.txn.ref })
@@ -352,7 +352,7 @@ function EventRow({ event }: { event: LoanEvent }) {
         <span class="txn-title ellipsis">{loanEventTitleFa(event, typeOf)}</span>
         {sub && <span class="txn-line"><span class="ellipsis">{sub}</span></span>}
       </span>
-      <span class={`figure txn-amount${out ? '' : ' gain'}`}>{amount}</span>
+      <span class={`figure txn-amount${out ? '' : ' gain'}`}><SignedFigure parts={amount} /></span>
     </button>
   );
 }

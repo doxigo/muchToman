@@ -34,7 +34,7 @@ import {
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
 import { CheckMark, PlusMark, SearchMark } from './icons';
-import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, Switch } from './ui';
+import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, SignedFigure, Switch } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
 
 // ---- words ------------------------------------------------------------------------------------
@@ -437,7 +437,7 @@ function DayHeading({ day, today, rows: dayRows }: { day: number; today: number;
     <div class="day-heading">
       <h2 class="grow">{faDay(day, today)}</h2>
       {net !== 0 && moved.length > 1 && (
-        <span class={`figure${net > 0 ? ' gain' : ' muted'}`}>{faSignedCompact(tomanOf(net), net > 0)}</span>
+        <span class={`figure${net > 0 ? ' gain' : ' muted'}`}><SignedFigure parts={faSignedParts(tomanOf(net), net > 0)} /></span>
       )}
     </div>
   );
@@ -491,7 +491,7 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
       </span>
       {rial != null ? (
         <span class={`figure txn-amount${entry.transfer ? ' transfer' : incoming ? ' gain' : ''}`}>
-          {faSignedCompact(tomanOf(rial), incoming)}
+          <SignedFigure parts={faSignedParts(tomanOf(rial), incoming)} />
         </span>
       ) : <span class="muted txn-balance">مانده</span>}
     </button>
@@ -578,8 +578,7 @@ function TransactionHero({ entry, backLabel = 'برگشت', onBack = closePage, 
         <>
           {/* The sign travels with the digits; «میلیون» and «تومان» stay in the RTL line. */}
           <p class="figure txn-figure" style={{ color: incoming ? 'var(--hero-mint)' : 'var(--hero-strong)', '--fit': fit }}>
-            {digits}
-            {magnitude && <>{' '}<span class="magnitude">{magnitude}</span></>}
+            <SignedFigure parts={[digits, magnitude]} />
             {' '}<span class="unit">تومان</span>
           </p>
           {words && <p class="txn-words">{words}</p>}

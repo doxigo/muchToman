@@ -77,15 +77,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -955,7 +951,7 @@ private fun DayHeading(
         // the filter turned a rare bit of redundancy into the dominant pattern on the screen.
         if (net != 0L && moved.size > 1) {
             Text(
-                faSignedCompact(tomanOf(net), net > 0),
+                signedFigure(faSignedParts(tomanOf(net), net > 0)),
                 // A step under the rows it summarises: the day's figure is context for them,
                 // not another entry competing with them.
                 style = figureStyle(
@@ -1179,7 +1175,7 @@ internal fun TimelineRow(
         Spacer(Modifier.width(Space.s))
         if (rial != null) {
             Text(
-                faSignedCompact(tomanOf(rial), incoming),
+                signedFigure(faSignedParts(tomanOf(rial), incoming)),
                 style = figureStyle(tone, FontWeight.Bold),
                 fontSize = 15.sp,
                 textDecoration = if (entry.transfer) TextDecoration.LineThrough else null,
@@ -1845,23 +1841,10 @@ private fun TransactionHero(
             txn.amountRial?.let { rial ->
                 val toman = tomanOf(rial)
                 BasicText(
-                    text = heroFigure(buildAnnotatedString {
-                        // Three steps down, and the first one is what keeps the sign a sign:
-                        // set the same size as the digits, the magnitude turns «−» into a dash
-                        // joining two words. The sign travels with the digits; «میلیون» and
-                        // «تومان» stay in the RTL line so the phrase still ends where a Persian
-                        // sentence ends.
-                        val (digits, magnitude) = faSignedParts(toman, incoming)
-                        append(digits)
-                        // Each word space carries a size of its own; inside a shrunk span it
-                        // shrinks with it and the words end up touching.
-                        magnitude?.let {
-                            withStyle(SpanStyle(fontSize = 0.9.em)) { append(" ") }
-                            withStyle(
-                                SpanStyle(fontSize = 0.58.em, fontWeight = FontWeight.Bold),
-                            ) { append(it) }
-                        }
-                    }, tone),
+                    // Three steps down, and the first one is what keeps the sign a sign. The
+                    // sign travels with the digits; «میلیون» and «تومان» stay in the RTL line so
+                    // the phrase still ends where a Persian sentence ends.
+                    text = heroFigure(signedFigure(faSignedParts(toman, incoming), step = 0.58f), tone),
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 24.sp, maxFontSize = 52.sp),
                     style = figureStyle(tone, FontWeight.Black),

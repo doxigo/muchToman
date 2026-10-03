@@ -265,6 +265,19 @@ class MoneyTest {
     }
 
     @Test
+    fun `a signed row figure says what faSignedCompact says, the magnitude a step down`() {
+        // Same characters as before — TalkBack reads it unchanged — only the word is set smaller.
+        val figure = signedFigure(faSignedParts(400_000_000.0, false))
+        assertEquals(faSignedCompact(400_000_000.0, false), figure.text)
+        val word = figure.spanStyles.single { figure.text.substring(it.start, it.end) == "میلیون" }
+        assertEquals(0.72f, word.item.fontSize.value, 0f)
+        // Under a thousand there is no word, so nothing to step down.
+        val small = signedFigure(faSignedParts(832.0, true))
+        assertEquals(faSignedCompact(832.0, true), small.text)
+        assertTrue(small.spanStyles.isEmpty())
+    }
+
+    @Test
     fun `dollars put the sign on the left of the digits, magnitude outside`() {
         assertEquals("\u2066\$۸۳۲\u2069", faUsd(832.9))
         assertEquals("\u2066\$۱٫۲\u2069 میلیون", faUsd(1_200_000.0))

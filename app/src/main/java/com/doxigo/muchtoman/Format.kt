@@ -286,11 +286,12 @@ fun faSignedCompact(toman: Double, positive: Boolean): String =
     }
 
 /**
- * The same figure, split where a display-sized one needs to set the two halves differently.
+ * The same figure, split so the two halves can be set differently — at every size ([signedFigure]).
  *
- * At 50sp with a magnitude word the same size beside it, the sign sits between two equal runs
- * and stops reading as a sign at all — «۴۰۰ − میلیون» looks like a dash joining two words. The
- * split lets the caller step the magnitude down so the sign clearly belongs to the digits.
+ * With a magnitude word the same size beside it, the sign sits between two equal runs and stops
+ * reading as a sign at all — «۴۰۰ − میلیون» looks like a dash joining two words, at 50sp on the
+ * hero and at 15sp in a ledger row alike. The split lets the caller step the magnitude down so
+ * the sign clearly belongs to the digits.
  * Returns the isolated signed digits, and the magnitude word, which is null under a thousand.
  */
 fun faSignedParts(toman: Double, positive: Boolean): Pair<String, String?> {

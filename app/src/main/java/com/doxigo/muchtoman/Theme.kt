@@ -118,6 +118,24 @@ internal fun heroFigure(figure: AnnotatedString, tone: Color): AnnotatedString =
 }
 
 /**
+ * A signed figure with its word a step down — [faSignedParts]' halves, or an asset's digits and
+ * unit. Set the same size as the digits, the word turns the sign into a dash joining two words
+ * («میلیون −۱» on screen), in a ledger row as much as on the hero, so every size steps it down.
+ * [step] is the word against the digits: the hero's 0.58 at display size, [LoanFigure]'s 0.72 at
+ * row size, where 0.58 of 13sp is too small to read.
+ */
+internal fun signedFigure(parts: Pair<String, String?>, step: Float = 0.72f): AnnotatedString =
+    buildAnnotatedString {
+        append(parts.first)
+        parts.second?.let {
+            // Each word space carries a size of its own; inside a shrunk span it shrinks with it
+            // and the words end up touching.
+            withStyle(SpanStyle(fontSize = 0.9.em)) { append(" ") }
+            withStyle(SpanStyle(fontSize = step.em, fontWeight = FontWeight.Bold)) { append(it) }
+        }
+    }
+
+/**
  * The hero card's own palette. In the light it is Wise's forest with the answer in bright
  * green; in the dark it is what Wise's dark cards actually are — a neutral elevated room the
  * green visits — because a forest slab on a near-black page reads as olive mud, and the
