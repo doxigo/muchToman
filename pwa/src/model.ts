@@ -259,6 +259,8 @@ export interface Prefs {
   disabledBanks: string[];
   /** The last bank the paste sheet read a message as. */
   lastPasteBank: string;
+  /** A Shortcut's sender no table knows (a contact's name), and the bank she said it is. */
+  senderBanks: Record<string, string>;
   /** طلب و بدهی: the people and what she wrote down about them (loans.ts). Backed up, never synced. */
   loans: LoanBook;
   /** WebAuthn credential id (base64url) the lock unlocks with. */
@@ -299,6 +301,7 @@ export const PREF_DEFAULTS: Prefs = {
   backupReminderEnabled: false,
   disabledBanks: [],
   lastPasteBank: '',
+  senderBanks: {},
   loans: { people: [], moves: [] },
   lockCredential: '',
   syncSeq: 0,

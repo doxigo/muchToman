@@ -207,15 +207,20 @@ without opening it, add `https://github.com/doxigo/muchToman` to
 **On an iPhone**, use the PWA: open <https://sync.muchtoman.com> in the browser and add it to the
 Home Screen (Share → Add to Home Screen). It is the same app, installed from the browser — every
 screen and figure above —
-except that iOS lets no app read your SMS, so you paste a bank message into the ledger instead.
+except that iOS lets no app read your SMS, so the bank messages come in through an iOS Shortcut.
 Added to the Home Screen, its data is kept; in a plain browser tab iOS may clear it after weeks
 unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
 Android.
 
-To bring many messages at once, an iOS Shortcuts automation can collect each bank SMS with its
-sender into one text, which you then paste whole: each message is filed under its sender's bank
-from the same sender table Android uses, one-time codes are skipped, and pasting the same text
-again adds nothing. The paste sheet links to the step-by-step setup.
+To have them arrive on their own, build one Shortcut and one automation (the paste sheet links to
+the step-by-step setup). The Shortcut uses Find Message to gather the latest bank messages with
+their senders and dates and opens the app with them; the automation runs it each time a bank SMS
+arrives. Each message is filed under its sender's bank from the same sender table Android uses,
+with no tap; one-time codes are skipped, and a message already in the ledger is never added twice,
+so a run that did not happen is caught up by the next. A bank number saved as a contact comes
+through as the contact's name: the app asks which bank it is once and remembers. If the
+Shortcut's link opens in Safari rather than the Home Screen app, run the Shortcut yourself and
+paste what it copies.
 
 ## Where the prices come from
 

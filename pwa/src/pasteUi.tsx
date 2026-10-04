@@ -9,6 +9,9 @@
  *
  * A Shortcut's bundle (paste.ts `readBundle`) is the other way in: many messages at once, each with
  * its sender, so the bank is read off the phone's own table and asked only for a sender it lacks.
+ * Handed over by link, a bundle whose every sender has a bank is filed without the sheet, as the
+ * phone files what arrives: the Shortcut runs on its own as each message lands, with nobody there
+ * to tap ثبت.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import './timeline.css';
@@ -17,13 +20,29 @@ import { ledger } from './derived';
 import { addPastedBundle, addPastedSms } from './ledger';
 import { bodyToStore, parsePasted, readBundle, severalMessages, writeBundle } from './paste';
 import type { Bundled } from './paste';
-import { PICKABLE_BANKS, bankOf, isBank } from './sms';
+import { PICKABLE_BANKS, bankFa, bankOf, isBank } from './sms';
 import { BankLogo } from './logos';
 import { bidi, faCompact, faDigits, faNumber, faSignedParts, faWordsToman, tomanOf } from './format';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
-import { pref } from './state';
+import { pref, setPref } from './state';
+import { ensureSeeded } from './rules';
 import { PillButton, Sheet, SheetLabel, SheetTitle, SignedFigure, TextField } from './ui';
 import { openTxn } from './timeline';
+
+/** What of a bundle the store would keep: the tests it applies, so one it would refuse is counted and left. */
+const storable = (bundle: Bundled[]): Bundled[] => bundle.filter((r) => !severalMessages(r.body) && bodyToStore(r.body) != null);
+
+/**
+ * A sender's bank: the phone's own table, else what she answered for that sender before. A bank's
+ * number saved as a contact reaches a Shortcut as the contact's name, which no table knows — asked
+ * once, it is filed like any other sender from then on. The guide sheet can forget the answers.
+ */
+function bankFor(sender: string): string | null {
+  const answered = pref('senderBanks')[sender];
+  return bankOf(sender) ?? (answered && isBank(answered) ? answered : null);
+}
+
+const noticeAdded = (added: number): void => showNotice(added ? `${faNumber(added)} پیامک ثبت شد` : 'پیامک تازه‌ای نبود');
 
 function PasteSheet({ text: given = '' }: { text?: string }) {
   const [text, setText] = useState(given);
@@ -40,8 +59,11 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
   // would refuse is counted and left. The bank chips answer for one unknown sender at a time, so
   // one tap never names two senders' messages.
   const bundle = blank ? null : readBundle(text);
-  const keep = bundle?.filter((r) => !severalMessages(r.body) && bodyToStore(r.body) != null) ?? [];
-  const asking = keep.find((r) => bankOf(r.sender) == null)?.sender;
+  const keep = bundle ? storable(bundle) : [];
+  const asking = keep.find((r) => bankFor(r.sender) == null)?.sender;
+  // An unknown sender is answered by a tap, never by the last bank she used: the answer is kept
+  // (bankFor), and a second sender's messages must not be taken for the first's.
+  useLayoutEffect(() => { if (asking != null) setBank(''); }, [asking]);
   // Refused live, the same tests the store applies: several messages at once, a one-time code, or
   // a body naming no money. Several is asked first, so a huge paste is never parsed per keystroke.
   const several = !blank && !bundle && severalMessages(text);
@@ -60,15 +82,15 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
     if (bundle) {
       if (!keep.length || !answered) return;
       setSaving(true);
-      const added = bundleAdded + await addPastedBundle(keep, (sender) => bankOf(sender) ?? (sender === asking ? bank : null));
+      if (asking) setPref('senderBanks', { ...pref('senderBanks'), [asking]: bank });
+      const added = bundleAdded + await addPastedBundle(keep, (sender) => bankFor(sender) ?? (sender === asking ? bank : null));
       setSaving(false);
-      // Another unknown sender's messages stay in the field for their own answer, the chips cleared
-      // so the last answer is not taken for theirs. The count waits for the sheet to close: a notice
-      // now would sit over the commit she taps next.
-      const left = keep.filter((r) => bankOf(r.sender) == null && r.sender !== asking);
-      if (left.length) { setText(writeBundle(left)); setBank(''); setBundleAdded(added); return; }
+      // Another unknown sender's messages stay in the field for their own answer. The count waits
+      // for the sheet to close: a notice now would sit over the commit she taps next.
+      const left = keep.filter((r) => bankFor(r.sender) == null && r.sender !== asking);
+      if (left.length) { setText(writeBundle(left)); setBundleAdded(added); return; }
       closeSheet();
-      showNotice(added ? `${faNumber(added)} پیامک ثبت شد` : 'پیامک تازه‌ای نبود');
+      noticeAdded(added);
       return;
     }
     if (!ok || !isBank(bank)) return;
@@ -95,7 +117,7 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
       {/* Where several at once is the wish: before anything is pasted, and right after she tried. */}
       {(blank || several) && (
         <div class="paste-how">
-          <PillButton label="چطوری چندتا پیامک رو یه‌جا بیارم؟" onClick={() => openSheet('pasteShortcut', { text })} />
+          <PillButton label="چطوری پیامک‌ها خودکار بیان؟" onClick={() => openSheet('pasteShortcut', { text })} />
         </div>
       )}
       {read && <PastePreview read={read} />}
@@ -121,7 +143,7 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
 
 /** What a bundle holds, in one line: «۱۲ پیام از ۳ بانک؛ ۲ تا از فرستنده‌ی ناشناس؛ ۱ تا تراکنش نبود». */
 function bundleLine(keep: Bundled[], skipped: number): string {
-  const banks = keep.map((r) => bankOf(r.sender)).filter((b) => b != null);
+  const banks = keep.map((r) => bankFor(r.sender)).filter((b) => b != null);
   const unknown = keep.length - banks.length;
   return [
     banks.length ? `${faNumber(banks.length)} پیام از ${faNumber(new Set(banks).size)} بانک` : '',
@@ -185,56 +207,82 @@ registerSheet('pasteSms', PasteSheet);
 const En = ({ children }: { children: string }) => <bdi class="ios">{children}</bdi>;
 
 /**
- * How to build the two Shortcuts a bundle comes from (paste.ts `readBundle`): an automation that
- * writes each bank message to a file as it arrives, and a shortcut she runs to copy the file. The
- * labels are Shortcuts' English ones; what differs between iOS versions is said, not promised.
+ * How to build the Shortcut a bundle comes from (paste.ts `readBundle`): it finds the bank messages,
+ * writes them as a bundle and opens this page with it, and an automation runs it as each bank
+ * message lands. The labels are Shortcuts' English ones; what differs between iOS versions is said,
+ * not promised.
  */
 function ShortcutSheet({ text = '' }: { text?: string }) {
+  const answered = Object.entries(pref('senderBanks')).filter(([, bank]) => isBank(bank));
   return (
-    <Sheet label="چندتا پیامک با هم">
-      <SheetTitle>چندتا پیامک با هم</SheetTitle>
+    <Sheet label="پیامک‌ها خودکار">
+      <SheetTitle>پیامک‌ها خودکار</SheetTitle>
       <p class="howto">
-        آیفون پیامک‌ها رو به هیچ اپی نمی‌ده، ولی اپ <En>Shortcuts</En> خود آیفون می‌تونه هر پیامک بانک رو همین
-        که رسید ته یه فایل بنویسه. بعد هر وقت خواستی، همه رو یه‌جا کپی می‌کنی و اینجا می‌چسبونی.
+        آیفون پیامک‌ها رو به هیچ اپی نمی‌ده، ولی اپ <En>Shortcuts</En> خود آیفون می‌تونه پیامک‌های بانک رو پیدا کنه
+        و بیاره اینجا. یه بار درستش کنی، هر پیامک بانک که برسه این صفحه باز می‌شه و خودش ثبتش می‌کنه.
       </p>
 
-      <SheetLabel>جمع کردن پیامک‌ها</SheetLabel>
+      <SheetLabel>ساختن میان‌بر</SheetLabel>
       <ol class="howto">
-        <li>توی <En>Shortcuts</En> برو <En>Automation</En>، دکمه‌ی <En>+</En> رو بزن و <En>Message</En> رو انتخاب کن.</li>
+        <li>توی <En>Shortcuts</En> برو تب <En>Shortcuts</En> و دکمه‌ی <En>+</En> رو بزن.</li>
         <li>
-          جلوی <En>Sender</En> فرستنده‌ی پیامک‌های بانک رو انتخاب کن. <En>Run Immediately</En> رو بزن
+          اکشن <En>Find Message</En> رو اضافه کن. <En>All</En> رو بکن <En>Any</En> و برای هر بانک یه
+          ردیف <En>Sender is</En> بساز، بدون ردیف <En>Date</En>. <En>Sort by</En> رو بذار <En>Date</En> و <En>Latest First</En>، <En>Limit</En> رو روشن
+          کن و بذار ۲۰۰.
+        </li>
+        <li>اکشن <En>Repeat with Each</En> رو اضافه کن.</li>
+        <li>
+          داخلش یه اکشن <En>Text</En> بذار و این دو خط رو توش بساز:
+          <pre class="howto-code" dir="ltr">{'#muchtoman Sender Date\nContent'}</pre>
+          هر سه رو از <En>Repeat Item</En> بردار. روی <En>Date</En> بزن، فرمتش رو
+          بذار <En>ISO 8601</En> و <En>Include ISO 8601 Time</En> رو روشن کن.
+        </li>
+        <li>
+          بعد از <En>End Repeat</En>، اکشن <En>Combine Text</En> رو
+          روی <En>Repeat Results</En> با <En>New Lines</En> بذار، بعد <En>Copy to Clipboard</En>.
+        </li>
+        <li>
+          اکشن <En>URL Encode</En> رو روی <En>Combined Text</En> بذار، بعد <En>Open URLs</En> با این آدرس
+          و خروجی <En>URL Encode</En> ته‌اش:
+          <pre class="howto-code" dir="ltr">{`${location.origin}/#paste=`}</pre>
+        </li>
+      </ol>
+
+      <SheetLabel>خودکار کردنش</SheetLabel>
+      <ol class="howto">
+        <li>توی <En>Shortcuts</En> برو تب <En>Automation</En>، دکمه‌ی <En>+</En> رو بزن و از لیست <En>Message</En> رو انتخاب کن.</li>
+        <li>
+          جلوی <En>Sender</En> فرستنده‌های بانک رو انتخاب کن. <En>Run Immediately</En> رو بزن
           و <En>Notify When Run</En> رو خاموش کن.
         </li>
-        <li>
-          یه اکشن <En>Text</En> اضافه کن و این دو خط رو توش بساز:
-          <pre class="howto-code" dir="ltr">{'#muchtoman Sender Current Date\nContent'}</pre>
-          <En>Sender</En> و <En>Content</En> رو از <En>Shortcut Input</En> بردار. فرمت <En>Current Date</En> رو
-          بذار <En>ISO 8601</En>، تا پیامکی که تاریخ نداره سر روز خودش بشینه.
-        </li>
-        <li>
-          یه اکشن <En>Append to Text File</En> اضافه کن که همین متن رو ته فایل <En>muchtoman.txt</En> بنویسه،
-          با <En>Make New Line</En> روشن.
-        </li>
-        <li>برای هر فرستنده‌ی دیگه‌ی بانک هم همین رو تکرار کن.</li>
+        <li>بزن <En>Next</En> و میان‌بری که ساختی رو انتخاب کن.</li>
       </ol>
 
-      <SheetLabel>آوردن به اینجا</SheetLabel>
-      <ol class="howto">
-        <li>
-          یه میان‌بر معمولی بساز، نه <En>Automation</En>، با سه اکشن: <En>Get File</En> برای <En>muchtoman.txt</En>،
-          بعد <En>Copy to Clipboard</En>، بعد <En>Delete Files</En> با <En>Confirm Before Deleting</En> خاموش.
-        </li>
-        <li>هر وقت خواستی اجراش کن، بیا اینجا و بچسبون. بانک هر پیامک از فرستنده‌اش معلوم می‌شه.</li>
-      </ol>
-
+      <p class="howto muted">
+        پیامکی که یه بار ثبت شده دوباره ثبت نمی‌شه، پس اگه یه بار اجرا نشد، دفعه‌ی بعد جاافتاده‌ها هم میان.
+        اگه باز شدن این صفحه با هر پیامک اذیتت می‌کنه، به‌جای <En>Message</En>، <En>Time of Day</En> رو
+        انتخاب کن تا روزی یه بار بیاد.
+      </p>
+      <p class="howto muted">
+        اگه به‌جای این صفحه <En>Safari</En> باز شد، قدم ۶ رو پاک کن و خودکار کردن رو بی‌خیال شو: هر وقت
+        خواستی میان‌بر رو اجرا کن و متن رو اینجا بچسبون.
+      </p>
       <p class="howto muted">
         بعضی نسخه‌های iOS قبل از اجرای خودکار یه اعلان نشون می‌دن که باید بزنیش؛ اگه <En>Run Immediately</En> رو
-        نمی‌بینی، گوشیت از این‌هاست.
+        نمی‌بینی، گوشیت از این‌هاست. اگه شماره‌ی بانک توی مخاطب‌هاته، به‌جاش اسم مخاطب میاد و فقط بار اول
+        بانکش ازت پرسیده می‌شه.
       </p>
-      <p class="howto muted">
-        پاک کردن فایل واجب نیست: پیامکی که یه بار ثبت شده دوباره ثبت نمی‌شه. اگه شماره‌ی بانک توی مخاطب‌هاته،
-        به‌جاش اسم مخاطب میاد و موقع چسبوندن بانکش ازت پرسیده می‌شه.
-      </p>
+
+      {answered.length > 0 && (
+        <>
+          <SheetLabel>فرستنده‌هایی که بانکشون رو گفتی</SheetLabel>
+          {answered.map(([sender, bank]) => (
+            <div class="detail-row" key={sender}><span>{bidi(faDigits(sender))}</span><span>{bankFa(bank)}</span></div>
+          ))}
+          <p class="howto muted">اگه بانکی رو اشتباه گفتی، فراموششون کن تا دفعه‌ی بعد دوباره بپرسه.</p>
+          <PillButton label="فراموش کن" block onClick={() => setPref('senderBanks', {})} />
+        </>
+      )}
 
       <div class="sheet-actions">
         <PillButton label="برگرد به چسباندن" voice="primary" block onClick={() => openSheet('pasteSms', { text })} />
@@ -244,16 +292,26 @@ function ShortcutSheet({ text = '' }: { text?: string }) {
 }
 registerSheet('pasteShortcut', ShortcutSheet);
 
-/** An iOS Shortcut's hand-off: the message in the hash, read once and taken out of the address. */
-function pasteFromHash(): void {
+/**
+ * An iOS Shortcut's hand-off: the message in the hash, read once and taken out of the address. A
+ * bundle whose every sender has a bank is filed at once; anything that needs her opens the sheet.
+ */
+async function pasteFromHash(): Promise<void> {
   if (!location.hash.startsWith('#paste=')) return;
   const raw = location.hash.slice('#paste='.length);
   let text = raw;
   try { text = decodeURIComponent(raw); } catch { /* a stray % — keep the text as it came */ }
   history.replaceState(history.state, '', location.pathname + location.search);
+  const bundle = readBundle(text);
+  if (bundle) {
+    // The remembered senders and the dedupe both read the store, which may still be loading.
+    await ensureSeeded();
+    const keep = storable(bundle);
+    if (keep.every((r) => bankFor(r.sender) != null)) { noticeAdded(await addPastedBundle(keep, bankFor)); return; }
+  }
   openSheet('pasteSms', { text });
 }
 if (typeof location !== 'undefined') {
-  pasteFromHash();
-  addEventListener('hashchange', pasteFromHash);
+  void pasteFromHash();
+  addEventListener('hashchange', () => void pasteFromHash());
 }

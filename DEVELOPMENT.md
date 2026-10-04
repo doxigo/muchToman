@@ -721,7 +721,8 @@ Dependency advisory checking was intentionally skipped for this review.
 `pwa/` is the Android app for iPhone users — not a companion. **Every feature ships on both, in
 the same change** (AGENTS.md). The one thing a browser cannot do is read the SMS inbox, so the
 دفتر takes a pasted bank message instead («پیامک», `pasteUi.tsx`); a `#paste=<text>` link opens
-that sheet prefilled. Beyond that the standing platform gaps are: no home-screen widget, no
+that sheet prefilled, or files an iOS Shortcut's bundle straight away when every sender has a bank
+(the Shortcut runs on its own as each bank SMS lands, with nobody there to tap ثبت). Beyond that the standing platform gaps are: no home-screen widget, no
 background work or notifications while the page is closed (budget and instalment notes fire while
 it is open, through the service worker), no TSETMC prices (geo-blocked, no CORS), and the app lock
 is a passkey (Face ID / Touch ID) rather than BiometricPrompt. An Android `.mtbak` cannot be

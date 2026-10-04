@@ -212,23 +212,37 @@ test('two messages pasted as one are refused on the paste sheet', async ({ page 
   await expect(sheet).toBeVisible();
 });
 
-test("a shortcut's bundle lands each message under its sender's bank, once", async ({ page }) => {
+test("a shortcut's bundle is filed under each sender's bank without the sheet, once", async ({ page }) => {
   const bundle = [
     `#muchtoman 6104\n${corpus('mellat.json', 'mellat-6104-withdrawal-with-balance')}`,
     `#muchtoman 98700719\n${corpus('saderat.json', 'saderat-paya-deposit-trailing-plus')}`,
     `#muchtoman 0999 992 0000\n${corpus('rejected.json', 'rejected-otp-from-a-real-bank-number')}`,
   ].join('\n');
-  await onboard(page, `/#paste=${encodeURIComponent(bundle)}`);
-  const sheet = page.getByRole('dialog', { name: 'پیامک بانک' });
-  await expect(sheet).toContainText('۲ پیام از ۲ بانک؛ ۱ تا تراکنش نبود');
-  // Every sender known, so no bank is asked.
-  await expect(sheet.getByRole('radiogroup')).toHaveCount(0);
-  await sheet.getByRole('button', { name: 'ثبت', exact: true }).click();
-  await expect(sheet).toHaveCount(0);
-  await expect(page.getByRole('status')).toContainText('۲ پیامک ثبت شد');
+  await onboard(page);
+  // Every sender known: the Shortcut runs on its own, so nothing waits for a tap.
   await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
-  await page.getByRole('dialog', { name: 'پیامک بانک' }).getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('۲ پیامک ثبت شد');
+  await expect(page.getByRole('dialog', { name: 'پیامک بانک' })).toHaveCount(0);
+  await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
   await expect(page.getByRole('status')).toContainText('پیامک تازه‌ای نبود');
+});
+
+test("a sender no table knows is asked once, then filed like the rest", async ({ page }) => {
+  // A bank's number saved as a contact reaches the Shortcut as the contact's name.
+  const first = `#muchtoman Bankino\n${corpus('mellat.json', 'mellat-6104-withdrawal-with-balance')}`;
+  const next = `#muchtoman Bankino\n${corpus('saderat.json', 'saderat-paya-deposit-trailing-plus')}`;
+  await onboard(page);
+  await page.goto(`/#paste=${encodeURIComponent(first)}`);
+  const sheet = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await expect(sheet).toContainText(/پیام‌های \u2068Bankino\u2069 از کدوم بانکه؟/);
+  // Not answered by the last bank she used: that answer would be kept for good.
+  await expect(sheet.getByRole('radio', { checked: true })).toHaveCount(0);
+  await sheet.getByRole('radio', { name: 'بانک ملت' }).click();
+  await sheet.getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('۱ پیامک ثبت شد');
+  await page.goto(`/#paste=${encodeURIComponent(next)}`);
+  await expect(page.getByRole('status')).toContainText('۱ پیامک ثبت شد');
+  await expect(sheet).toHaveCount(0);
 });
 
 test('a budget counts this month against its cap', async ({ page }) => {
