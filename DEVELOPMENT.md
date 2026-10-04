@@ -167,7 +167,7 @@ Everything the app reports about itself, which `Diagnostics.kt` holds on the pho
   dedupe on. Days before the first count get no bar and no row. It never reads the crash dataset.
 - **Feedback.** Not about the app but from her: تنظیمات ← درباره ← بازخورد posts
   `{message, contact, version}` to `POST /feedback` (the PWA through the sync Worker's proxy), and
-  the Worker emails it to hey@muchtoman.com through the `FEEDBACK` `send_email` binding, pinned in
+  the Worker emails it to the developer through the `FEEDBACK` `send_email` binding, pinned in
   `wrangler.jsonc` to that one recipient and to `feedback@muchtoman.com` as the sender. A contact
   that is plainly an address becomes the Reply-To. Nothing is stored and the message is never
   logged. Before the first deploy with it, onboard muchtoman.com to Email Sending (dashboard →

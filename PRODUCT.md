@@ -32,7 +32,7 @@ with the required Persian coverage; tightness comes off the width axis, never tr
   (version + installing store, on the day's first rates request) and a crash report only after
   she says send. The totals are public at muchtoman.com/usage. Anything beyond that is a new
   decision. One was taken on 2026-09-27: the feedback form (تنظیمات ← درباره ← بازخورد) emails
-  what she types, the contact she chooses to leave and the version to hey@muchtoman.com, only
+  what she types, the contact she chooses to leave and the version to the developer, only
   when she presses send.
 - Missing rates are never zero; stale rates are named in words, not colour alone.
 - Gain is green — the convention every Iranian bank app shares.
