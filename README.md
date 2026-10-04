@@ -6,6 +6,12 @@ An Android app that shows what all your money adds up to in Toman, and where it 
 filled from bank SMS, budgets, savings goals, installments and loans, for one person or, if you choose,
 the whole family.
 
+<a href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="docs/bazaar.svg" alt="Download from Cafe Bazaar" height="56"></a>
+
+Get it from [Cafe Bazaar](https://cafebazaar.ir/app/com.doxigo.muchtoman) or as an APK from
+[Releases](https://github.com/doxigo/muchToman/releases); on an iPhone, open <https://sync.muchtoman.com> and
+add it to the Home Screen. [Install](#install) has the details.
+
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
 say them ("4.7 billion Toman", not "4,666,251,136"). Built for a Persian-speaking parent, so
 legibility beats density everywhere.
@@ -181,11 +187,9 @@ whose messages carry an amount, and you say which bank it is.
 
 ## Install
 
-<a href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="docs/bazaar.svg" alt="Download from Cafe Bazaar" height="56"></a>
-
-The full app is on [Cafe Bazaar](https://cafebazaar.ir/app/com.doxigo.muchtoman), which keeps it up to date. The APKs are on
-[Releases](https://github.com/doxigo/muchToman/releases) too; each covers every device, Android 7.0
-(API 24) and newer.
+The full app is on [Cafe Bazaar](https://cafebazaar.ir/app/com.doxigo.muchtoman), which keeps it up to date.
+The APKs are on [Releases](https://github.com/doxigo/muchToman/releases) too; each covers every device,
+Android 7.0 (API 24) and newer.
 
 Two of them are published side by side:
 
