@@ -150,7 +150,9 @@
 
 ## نصب
 
-فایل APK را از بخش [Releases](https://github.com/doxigo/muchToman/releases) بگیرید. هر فایل روی همهٔ دستگاه‌ها با اندروید ۷٫۰ (API 24) و بالاتر نصب می‌شود.
+<a href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="docs/bazaar.svg" alt="دانلود از بازار" height="56"></a>
+
+نسخهٔ کامل در [کافه‌بازار](https://cafebazaar.ir/app/com.doxigo.muchtoman) هست و خودِ بازار به‌روزش نگه می‌دارد. فایل‌های APK هم در بخش [Releases](https://github.com/doxigo/muchToman/releases) هستند؛ هر فایل روی همهٔ دستگاه‌ها با اندروید ۷٫۰ (API 24) و بالاتر نصب می‌شود.
 
 دو نسخه کنار هم منتشر می‌شود:
 

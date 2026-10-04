@@ -183,6 +183,11 @@
       .pill.primary { border-color: transparent; background: var(--cta-fill); color: var(--cta-ink); font-weight: 800; }
       .pill.primary:hover { background: #8edd5f; }
       .pill.small { min-height: 40px; padding: .3rem 1.1rem; font-size: .94rem; }
+      /* The store's own door wears the store's bag, and the bag needs a dark ground in every
+         scheme — its light-green top vanishes on the bright room and on the dark CTA fill. */
+      .pill.bazaar { gap: 10px; border-color: transparent; background: var(--forest); color: var(--bright); font-weight: 800; }
+      .pill.bazaar:hover { background: #214705; }
+      @media (prefers-color-scheme: dark) { .pill.bazaar { border-color: rgba(159, 232, 112, .3); } }
 
       /* ————— rooms: two slabs in the brand pair, the way the store images say it —————
        * The answer up top, privacy near the end; everything between sits on the paper, so the
@@ -253,8 +258,8 @@
       @media (prefers-color-scheme: light) {
         .room.bright .pill { background: transparent; border-color: rgba(22, 51, 0, .35); color: var(--forest); }
         .room.bright .pill:hover { background: rgba(22, 51, 0, .08); }
-        .room.bright .pill.primary { border-color: transparent; background: var(--forest); color: var(--bright); }
-        .room.bright .pill.primary:hover { background: #214705; }
+        .room.bright .pill.primary, .room.bright .pill.bazaar { border-color: transparent; background: var(--forest); color: var(--bright); }
+        .room.bright .pill.primary:hover, .room.bright .pill.bazaar:hover { background: #214705; }
       }
 
       /* ————— hero ————— */
@@ -663,7 +668,8 @@
             <span class="aside">نه <span class="figure">۴٬۶۶۶٬۲۵۱٬۱۳۶</span>.</span>
           </p>
           <div class="ctas">
-            <a class="pill primary" href="/download">دانلود برای اندروید</a>
+            <a class="pill bazaar" href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="/bazaar.svg" alt="" width="26" height="26" />دانلود از بازار</a>
+            <a class="pill" href="/download">دانلود مستقیم</a>
             <a class="pill" href="#iphone">نسخهٔ PWA</a>
           </div>
           <p class="fineprint">اندروید ۷ به بالا · آیفون با نسخهٔ <bdi>PWA</bdi> · متن‌باز · بدون حساب، بدون تبلیغ، بدون ردیابی</p>
@@ -1191,7 +1197,8 @@
               <h3>چقدر تومن</h3>
               <p>نسخهٔ کامل: دفتر و بودجه و هدف و قسط، طلب و بدهی، دفتر خانوادگی و دارایی مشترک.</p>
             </div>
-            <a class="pill primary" href="/download">دانلود مستقیم</a>
+            <a class="pill bazaar" href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="/bazaar.svg" alt="" width="26" height="26" />دانلود از بازار</a>
+            <a class="pill" href="/download">دانلود مستقیم</a>
           </div>
           <div class="build">
             <div class="grow">
@@ -1211,8 +1218,8 @@
           </div>
         </div>
         <p class="aftermath muted">
-          اندروید ۷ به بالا. نسخهٔ تازه به‌صورت یک خط زیر جمع دارایی‌هات پیدا می‌شه، و هر دو
-          نسخهٔ اندروید روی یک گوشی کنار هم جا می‌شن.
+          اندروید ۷ به بالا. نسخهٔ بازار رو خود بازار به‌روز می‌کنه؛ نسخهٔ دانلود مستقیم خبرش رو
+          به‌صورت یک خط زیر جمع دارایی‌هات می‌ده. هر دو نسخهٔ اندروید روی یک گوشی کنار هم جا می‌شن.
         </p>
       </section>
     </main>

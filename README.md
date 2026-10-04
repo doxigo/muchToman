@@ -181,8 +181,11 @@ whose messages carry an amount, and you say which bank it is.
 
 ## Install
 
-Grab the APK from [Releases](https://github.com/doxigo/muchToman/releases). Each covers every
-device, Android 7.0 (API 24) and newer.
+<a href="https://cafebazaar.ir/app/com.doxigo.muchtoman"><img src="docs/bazaar.svg" alt="Download from Cafe Bazaar" height="56"></a>
+
+The full app is on [Cafe Bazaar](https://cafebazaar.ir/app/com.doxigo.muchtoman), which keeps it up to date. The APKs are on
+[Releases](https://github.com/doxigo/muchToman/releases) too; each covers every device, Android 7.0
+(API 24) and newer.
 
 Two of them are published side by side:
 
