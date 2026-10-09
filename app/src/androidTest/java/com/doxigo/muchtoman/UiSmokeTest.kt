@@ -258,13 +258,13 @@ class UiSmokeTest {
     }
 
     /**
-     * A day typed in wrong, corrected on the transaction's own page.
+     * A day typed in wrong, corrected from the transaction's own page.
      *
      * The arithmetic of moving a day is checked on the JVM; what only a real frame can show is
-     * whether the pill is wired to it at all, whether it stays quiet until the stepper actually
-     * disagrees with the ledger, and whether the date on screen afterwards is the one that was
-     * stored. The written-out date is asserted through [faWeekdayDate] — `JalaliTest` is what
-     * pins that function to a real calendar, so what this adds is that the screen prints it.
+     * whether the page's «ویرایش تراکنش» row opens the sheet, whether its stepper is wired to
+     * the save at all, and whether the date on screen afterwards is the one that was stored.
+     * The written-out date is asserted through [faWeekdayDate] — `JalaliTest` is what pins that
+     * function to a real calendar, so what this adds is that the screen prints it.
      */
     @Test
     fun theDayOfAHandEnteredRowCanBeCorrected() {
@@ -278,24 +278,26 @@ class UiSmokeTest {
         waitForText(merchant)
         rule.onNodeWithText(merchant).performClick()
 
-        // The page is a LazyColumn, so the section has to be scrolled into composition before
-        // it can be found at all — `performScrollTo` only reaches nodes that already exist.
+        // The edit row is in the band at the foot of the page, and the page is a LazyColumn, so
+        // the band has to be scrolled into composition before the row can be found at all —
+        // `performScrollTo` only reaches nodes that already exist.
         waitForTextIn("دسته‌بندی")
-        scrollPageTo(hasText("روز قبل"))
-        // Nothing is offered to save yet: the stepper opens on the day the row is filed under.
-        rule.onNodeWithText("ذخیره تاریخ").assertDoesNotExist()
-
+        scrollPageTo(hasText("ویرایش تراکنش"))
+        rule.onNodeWithText("ویرایش تراکنش").performClick()
+        // The sheet's title repeats the row's words, so from here the stepper is the landmark.
+        waitForText("روز قبل")
+        rule.onNodeWithText("روز قبل").performScrollTo().performClick()
         rule.onNodeWithText("روز قبل").performClick()
-        rule.onNodeWithText("روز قبل").performClick()
-        waitForText("ذخیره تاریخ")
-        rule.onNodeWithText("ذخیره تاریخ").performClick()
+        rule.onNodeWithText("ذخیره").performScrollTo().performClick()
+        waitForTextGone("ذخیره")
 
-        // The pill leaving is the receipt: nothing is pending, so what is on screen is what the
-        // ledger holds.
-        waitForTextGone("ذخیره تاریخ")
+        // The sheet leaving says nothing about the ledger — the write happens after it. The
+        // band's own «اصلاح‌شده» is the receipt: the page prints it only once the ledger holds
+        // the edit, and it was not there before.
+        waitForText("اصلاح‌شده")
 
         // And the ledger really moved it — asserted off دفتر rather than off this page, because
-        // the stepper would print the picked day whether or not anything was ever stored. The
+        // the page would print the picked day whether or not anything was ever stored. The
         // row now sits under a day band two days back, named the way a transaction's date is
         // named everywhere it is written out: weekday first.
         scrollPageTo(hasText("برگشت"))
