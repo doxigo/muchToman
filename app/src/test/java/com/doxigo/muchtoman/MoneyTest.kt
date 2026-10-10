@@ -1261,6 +1261,19 @@ class MoneyTest {
         assertEquals(3_500_000.0, bankTotal(accounts, emptySet()), 0.01)
     }
 
+    @Test
+    fun `the background share folds what the scan has not counted, and each message once`() {
+        val start = listOf(BankAccount("SAMAN", balance = 5_000_000.0, updatedAt = 1, anchored = true))
+        val counted = RawSms(SAMAN_NUM, "واریز 10,000,000 ریال", 100)
+        val transfer = RawSms(SAMAN_NUM, "واریز 9,000,000 ریال", 200)
+        val seen = setOf(smsKey(counted.from, counted.body, counted.at))
+        // The scan already folded the first. The second is the transfer the family is waiting on,
+        // and the inbox handing it back twice is still one transfer.
+        val next = foldUnseen(start, seen, listOf(transfer, counted, transfer, RawSms("Hamrah", "سلام", 300)))
+        assertEquals(5_900_000.0, bankTotal(next, emptySet()), 0.01)
+        assertEquals(start, foldUnseen(start, seen, listOf(counted)))
+    }
+
     // ────────── the fold's plausibility gate — the ledger's own rule, applied here too ──────────
 
     @Test

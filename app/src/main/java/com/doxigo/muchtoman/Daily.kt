@@ -173,8 +173,8 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
  *
  * On a phone that belongs to a household, one more thing: the family sync runs here too, so a
  * spend reaches the rest of the family the minute its message lands rather than the next time
- * this phone's owner happens to open the app — and whatever the family pushed while the app was
- * closed is already in the ledger before she next looks.
+ * this phone's owner happens to open the app — her shared دارایی with it — and whatever the family
+ * pushed while the app was closed is already in the ledger before she next looks.
  */
 class LedgerWatchWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
@@ -237,11 +237,13 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         if (session != null) {
             // Best effort, outside the gate — network I/O must not hold up a foreground publish —
             // and outside the retry: offline here is normal, the rows are safe on this phone, and
-            // the next wakeup or app open sends them. No دارایی payload: prices live in the
-            // foreground state, and outgoingRecords leaves the shared record alone when the
-            // switch is on but no prices came.
+            // the next wakeup or app open sends them.
             runCatching {
-                val result = syncNow(durable, derived, session)
+                // Her دارایی rides along. Left to app opens, a transfer into her account reached
+                // the family as a transaction within seconds while her shared balance sat at
+                // her last open for days, and the family total was short by the whole transfer.
+                val assets = runCatching { sharedAssetsNow(app, store, durable) }.getOrNull()
+                val result = syncNow(durable, derived, session, assets = assets)
                 // Pulled rows sit in durable until a derive folds them in, and the foreground
                 // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
                 if (result.received > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
@@ -255,6 +257,29 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         }
         return watched
     }
+}
+
+/**
+ * Her دارایی as the app would share it if she opened it now: the same [assetShareItems], priced
+ * with the rates the app last cached, over her balances with every bank message since her last
+ * open folded in ([foldUnseen] — in memory, so the scan stays the only writer of the balances).
+ * Null while sharing is off or a fold rebuild is pending, which leaves the shared record standing.
+ */
+private suspend fun sharedAssetsNow(context: Context, store: Store, durable: DurableDb): List<AssetShareItem>? {
+    if (!durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean() || store.smsFoldNeedsRefresh) return null
+    val inbox = if (store.smsEnabled) readSmsInbox(context, store.smsScannedTo) else emptyList()
+    val notes = durable.smsSource().fromSince(BLU_APP, store.notifyScannedTo).map { RawSms(it.sender, it.body, it.at) }
+    return assetShareItems(
+        holdings = store.holdings.filterNot { it.id.startsWith(DEMO_PREFIX) },
+        rates = effectiveRates(store.cachedRates, store.overrides, store.cachedStocks),
+        coins = store.cachedRates.coins,
+        stocks = store.cachedStocks.stocks,
+        smsEnabled = store.smsEnabled,
+        bankAccounts = foldUnseen(store.bankAccounts, store.seenSms, inbox + notes, extraLookup(store.extraBankNumbers)),
+        disabledBanks = store.disabledBanks,
+        familyExcluded = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+        notified = canReadNotifications(context),
+    )
 }
 
 /**

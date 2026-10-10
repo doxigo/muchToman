@@ -543,6 +543,25 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
 }
 
 /**
+ * [foldBankSms] over the messages the app's scan has not counted yet, skipped by the same keys it
+ * skips them by — the balances her next app open will land on. Pure and written nowhere: the
+ * background share reads it while the scan stays the only writer of the balances.
+ */
+fun foldUnseen(
+    accounts: List<BankAccount>,
+    seen: Set<String>,
+    messages: List<RawSms>,
+    extra: Map<String, Bank> = emptyMap(),
+): List<BankAccount> {
+    val counted = HashSet<String>()
+    return messages.sortedBy { it.at }.fold(accounts) { folded, m ->
+        val key = smsKey(m.from, m.body, m.at)
+        if (key in seen || legacySmsKey(m.body, m.at) in seen || !counted.add(key)) return@fold folded
+        parseBankSms(m.from, m.body, m.at, extra)?.let { foldBankSms(folded, it) } ?: folded
+    }
+}
+
+/**
  * The one gate over everything that publishes the ledger or read-modify-writes the prefs kept
  * beside it — budget marks, the filing mark, the day-by-day history.
  *

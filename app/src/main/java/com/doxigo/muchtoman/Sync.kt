@@ -1229,9 +1229,10 @@ private suspend fun outgoingRecords(
         assetPublication != null && !assetPublication.deleted &&
         !shareAssets
     ) {
-        // Only her switch unshares. A null with the switch still on is a caller with no prices
-        // to hand — the background worker — and must leave the shared record standing, not
-        // tombstone it and let the next app open flap it back.
+        // Only her switch unshares. A null with the switch still on is a caller that cannot
+        // price her دارایی right now — the background worker while a fold rebuild is pending —
+        // and must leave the shared record standing, not tombstone it and let the next app open
+        // flap it back.
         val updatedAt = nextStamp(assetPublication.updatedAt, now)
         outgoing += PreparedRecord(
             wireRecord(
