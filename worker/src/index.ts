@@ -7,8 +7,9 @@
  * dealt with here.
  *
  *   fiat / gold / coins   bonbast.com (Toman)  ->  tgju.org (Rial, /10)
- *   crypto                bitpin -> tetherland (Toman, real Tehran price)
- *                         -> coingecko -> binance (USD, x the dollar rate)
+ *   crypto                bitpin -> nobitex -> tetherland (Toman, real Tehran price)
+ *                         -> coingecko -> kucoin -> okx (USD, x the dollar rate)
+ *                         (each fallback starts with the source ahead of it, not after)
  *
  * Two independent chains, because they fail independently — and they referee each other
  * before anything is published: the dollar against the USDT-Toman market, gold against the
@@ -49,7 +50,7 @@ const TTL_SECONDS = 600; // 10 minutes; these markets do not move meaningfully f
 const RATES_CACHE_VERSION = 'checked-rates-v4';
 const PUBLIC_ORIGIN = 'https://rates.muchtoman.com';
 // Per source, not per build: a chain runs at most two sources back to back (bonbast's token
-// dance shares one deadline, and Binance starts the moment CoinGecko fails), so a cold build
+// dance shares one deadline, and KuCoin starts the moment CoinGecko fails), so a cold build
 // answers inside ~6 s, under the sync proxy's 8 s abort and the app's 10 s. At 8 s each, a
 // hanging fiat chain alone ran 24 s and every caller gave up on it.
 // ponytail: fixed budgets sized to two-deep chains; a shared build deadline if one grows a third.
@@ -638,22 +639,59 @@ async function fetchBitpin(): Promise<TomanCrypto> {
 }
 
 /**
- * Prices only — no names, no logos. Stands in for the catalogue's USD side when it is down,
- * which covers the coins bitpin has no IRT market for. USDT is treated as USD, as everywhere
- * else here; a fraction of a percent of peg drift is far below the spread on the dollar rate.
+ * Every *-rls market nobitex lists, Rial /10: a second Tehran exchange behind bitpin, whose
+ * catalogue is megabytes from a server in Iran and is the one that times out — and with only
+ * tetherland behind it, that left USDT as the only coin with a price. No Persian names here, so
+ * a build that lands on it sends latin ones; the catalogue's logos and prices are unaffected.
+ * (Wallex would bring names but answers Cloudflare's edge with a 403, checked 2026-10-10.)
  */
-async function fetchBinanceUsd(): Promise<Record<string, number>> {
-  const list = asArray(await getJson('https://api.binance.com/api/v3/ticker/price'));
+async function fetchNobitex(): Promise<TomanCrypto> {
+  const stats = asRecord(asRecord(await getJson('https://apiv2.nobitex.ir/market/stats')).stats);
+  const prices: Record<string, number> = {};
+  for (const [pair, value] of Object.entries(stats)) {
+    const market = asRecord(value);
+    // A delisted market stays in the list, closed, quoting 0 or nothing.
+    if (!pair.endsWith('-rls') || market.isClosed === true) continue;
+    const v = num(market.latest);
+    if (v != null) prices[pair.slice(0, -4)] = v / 10;
+  }
+  if (Object.keys(prices).length === 0) throw new Error('no rls markets found');
+  return { prices, namesFa: {} };
+}
+
+/**
+ * Prices only — no names, no logos. Stands in for the catalogue's USD side when it is down
+ * (CoinGecko answers Cloudflare's shared egress with 429 often), which covers the coins bitpin
+ * has no IRT market for. USDT is treated as USD, as everywhere else here; a fraction of a
+ * percent of peg drift is far below the spread on the dollar rate. Binance used to be here and
+ * answers the edge with a 403 on both of its hosts, checked 2026-10-10.
+ */
+function usdtPairs(list: unknown[], symbolKey: string): Record<string, number> {
   const usd: Record<string, number> = {};
   for (const value of list) {
     const ticker = asRecord(value);
-    const sym = String(ticker.symbol ?? '');
-    if (!sym.endsWith('USDT')) continue;
-    const v = num(ticker.price);
-    if (v != null) usd[sym.slice(0, -4).toLowerCase()] = v;
+    const sym = String(ticker[symbolKey] ?? '');
+    if (!sym.endsWith('-USDT')) continue;
+    const v = num(ticker.last);
+    if (v != null) usd[sym.slice(0, -5).toLowerCase()] = v;
   }
   if (Object.keys(usd).length === 0) throw new Error('no USDT pairs');
   return usd;
+}
+
+const fetchKucoinUsd = async () =>
+  usdtPairs(asArray(asRecord(asRecord(await getJson('https://api.kucoin.com/api/v1/market/allTickers')).data).ticker), 'symbol');
+
+const fetchOkxUsd = async () =>
+  usdtPairs(asArray(asRecord(await getJson('https://www.okx.com/api/v5/market/tickers?instType=SPOT')).data), 'instId');
+
+/**
+ * A fallback started now and awaited later, so it costs no time of its own when the source
+ * ahead of it fails. The catch only marks it handled; awaiting it still throws.
+ */
+function started<T>(run: Promise<T>): () => Promise<T> {
+  run.catch(() => undefined);
+  return () => run;
 }
 
 /** USDT-only, but it is the one crypto price that matters most here. */
@@ -1288,12 +1326,13 @@ function mutableDownload(response: Response, etag: string): Response {
 
 async function buildRates(): Promise<BuiltRates> {
   const geckoRun = fetchCoinGecko();
-  const [fiat, cryptoToman, gecko, release, silver, parsian, binance] = await Promise.allSettled([
+  const [fiat, cryptoToman, gecko, release, silver, parsian, usdFallback] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
       [
         { name: 'bitpin', run: fetchBitpin },
-        { name: 'tetherland', run: fetchTetherland },
+        { name: 'nobitex', run: started(fetchNobitex()) },
+        { name: 'tetherland', run: started(fetchTetherland()) },
       ],
       hasPrices,
     ),
@@ -1303,7 +1342,16 @@ async function buildRates(): Promise<BuiltRates> {
     fetchParsian(),
     // The moment the catalogue fails, not once everything else has settled: waiting on the
     // slowest chain first put a whole third source on the build's critical path.
-    geckoRun.then((): Record<string, number> => ({}), () => fetchBinanceUsd()),
+    geckoRun.then(
+      () => null,
+      () => firstOf(
+        [
+          { name: 'kucoin', run: fetchKucoinUsd },
+          { name: 'okx', run: started(fetchOkxUsd()) },
+        ],
+        () => true,
+      ),
+    ),
   ]);
 
   const toman: Record<string, number> = {};
@@ -1374,14 +1422,17 @@ async function buildRates(): Promise<BuiltRates> {
 
   // The catalogue is a source like any other and fails on its own — and it used to take every
   // crypto price down with it, because pricing ran over `coins`: an empty catalogue published
-  // bitpin's hundreds of perfectly good Toman prices as nothing at all. Binance stands in for
+  // bitpin's hundreds of perfectly good Toman prices as nothing at all. KuCoin stands in for
   // the catalogue's USD side, covering the large caps bitpin has no IRT market for. `coins`
   // stays empty rather than going out degraded — the phone keeps the names and logos it
   // already has, which, unlike a price, have not gone stale.
   let usdVia = 'coingecko';
   if (gecko.status !== 'fulfilled') {
-    usdPrices = binance.status === 'fulfilled' ? binance.value : {};
-    usdVia = Object.keys(usdPrices).length ? 'binance' : 'nothing';
+    const fallback = usdFallback.status === 'fulfilled' ? usdFallback.value : null;
+    usdPrices = fallback?.value ?? {};
+    usdVia = fallback == null ? 'nothing'
+      : fallback.failures.length ? `${fallback.via} (tried first: ${fallback.failures.join('; ')})`
+      : fallback.via;
   }
 
   // Bitcoin's USD side gets absolute rails of its own: a feed quoting cents or satoshis is
@@ -1451,6 +1502,12 @@ async function buildRates(): Promise<BuiltRates> {
     release.status === 'fulfilled'
       ? `ok, ${release.value.name}`
       : `failed, no update note this fetch: ${errorMessage(release.reason)}`;
+
+  // A degraded answer is gone from every cache within ten minutes; this line is what is left
+  // to say which source was down when someone reports «نرخش پیدا نشد».
+  if (Object.values(sources).some((s) => /failed|tried first/.test(s))) {
+    console.error(JSON.stringify({ message: 'rates build degraded', sources }));
+  }
 
   const ok = Object.keys(toman).length > 0;
   const payload = {

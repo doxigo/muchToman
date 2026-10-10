@@ -207,16 +207,19 @@ which link actually answered.
   that chain stops at the first source that answers and bonbast — which answers nearly always
   — quotes neither. tgju's widget API is not used for them: it carries neither, and it returns
   HTTP 200 with an empty body once it decides you have asked too often.
-- **Crypto:** bitpin, with tetherland as its Toman fallback; CoinGecko, with Binance as its USD
-  fallback. The Iranian sources carry the Tehran premium. USD prices are cross-rated through
-  whatever dollar rate the fiat chain produced.
+- **Crypto:** bitpin, with nobitex then tetherland as its Toman fallbacks; CoinGecko, with KuCoin
+  then OKX as its USD fallbacks. Each fallback starts alongside the source ahead of it, so it
+  costs no time when that one fails. The Iranian sources carry the Tehran premium. USD prices
+  are cross-rated through whatever dollar rate the fiat chain produced. A build where any source
+  failed logs `rates build degraded` with its `sources` (Workers Logs).
 - **Wallet balances:** mempool.space for Bitcoin, JSON-RPC for supported EVM networks and
   Solana, and TronGrid for TRON. These calls use public addresses only and are read-only.
 
-Wallex and Nobitex refuse Cloudflare's edge IPs, which is why the chain exists rather than a
-single source. If the fiat chain fails entirely there is no dollar rate, so the Worker drops
-every USD-cross-rated crypto price rather than inventing a conversion; coins with a Tehran
-Toman quote (bitpin/tetherland) keep publishing, because those never needed the dollar.
+Wallex and Binance answer Cloudflare's edge with a 403 and CoinGecko often with a 429 (probed
+from the edge 2026-10-10), which is why the chains exist rather than single sources. If the
+fiat chain fails entirely there is no dollar rate, so the Worker drops every USD-cross-rated
+crypto price rather than inventing a conversion; coins with a Tehran Toman quote
+(bitpin/nobitex/tetherland) keep publishing, because those never needed the dollar.
 
 Every price passes relational plausibility checks before it is published — gold against the
 dollar, mesghal against gold, silver far under gold, سکه against their gold content, پارسیان

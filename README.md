@@ -232,7 +232,7 @@ paste what it copies.
 ## Where the prices come from
 
 Free-market rates only — bonbast/tgju for fiat, gold and coins, and Iranian exchanges
-(bitpin, tetherland) for crypto so the Tehran premium is real rather than a USD conversion.
+(bitpin, nobitex, tetherland) for crypto so the Tehran premium is real rather than a USD conversion.
 
 ## Privacy
 

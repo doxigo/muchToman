@@ -120,11 +120,23 @@ const defaultRoutes = (): Routes => ({
       },
     ]),
   'https://api.coingecko.com/api/v3/coins/list': () => Response.json([]),
-  'https://api.binance.com/api/v3/ticker/price': () =>
-    Response.json([
-      { symbol: 'BTCUSDT', price: '64500' },
-      { symbol: 'ETHUSDT', price: '3300' },
-    ]),
+  'https://apiv2.nobitex.ir/market/stats': () =>
+    Response.json({
+      status: 'ok',
+      stats: {
+        'btc-rls': { isClosed: false, latest: '120610000000' }, // Rial
+        'eth-rls': { isClosed: false, latest: '6175000000' },
+        'usdt-rls': { isClosed: false, latest: '1874500' },
+        'busd-rls': { isClosed: true, latest: '0' }, // delisted, still listed
+        'eth-usdt': { isClosed: false, latest: '3300' }, // not Rial
+      },
+    }),
+  'https://api.kucoin.com/api/v1/market/allTickers': () =>
+    Response.json({
+      data: { ticker: [{ symbol: 'BTC-USDT', last: '64500' }, { symbol: 'ETH-USDT', last: '3300' }] },
+    }),
+  'https://www.okx.com/api/v5/market/tickers': () =>
+    Response.json({ data: [{ instId: 'BTC-USDT', last: '64500' }, { instId: 'ETH-USDT', last: '3300' }] }),
   'https://api.tetherland.com/currencies': () =>
     Response.json({ data: { currencies: { USDT: { price: 187_400 } } } }),
   'https://api.github.com/repos/doxigo/muchToman/releases/latest': () =>
@@ -360,29 +372,56 @@ describe('GET /rates', () => {
     expect(b.body.toman.usd).toBe(187_000);
   });
 
-  it('asks Binance the moment CoinGecko fails, not after the slowest chain', async () => {
+  it('asks KuCoin the moment CoinGecko fails, not after the slowest chain', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    let binanceAsked = false;
+    let kucoinAsked = false;
     const { rates } = setup({
       'https://bonbast.com/': async () => {
         await held;
         return unavailable();
       },
       'https://api.coingecko.com/api/v3/coins/markets': unavailable,
-      'https://api.binance.com/api/v3/ticker/price': () => {
-        binanceAsked = true;
-        return Response.json([{ symbol: 'ETHUSDT', price: '3300' }]);
+      'https://api.kucoin.com/api/v1/market/allTickers': () => {
+        kucoinAsked = true;
+        return Response.json({ data: { ticker: [{ symbol: 'ETH-USDT', last: '3300' }] } });
       },
     });
     const answer = rates();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(binanceAsked).toBe(true); // while the fiat chain is still out
+    expect(kucoinAsked).toBe(true); // while the fiat chain is still out
 
     release();
     const { body } = await answer;
     expect(body.toman.eth).toBe(3_300 * 187_000);
-    expect(body.sources.crypto_pricing).toContain('via binance');
+    expect(body.sources.crypto_pricing).toContain('via kucoin');
+  });
+
+  it('prices every coin from nobitex when bitpin is down, not just tetherland\'s USDT', async () => {
+    const { rates } = setup({
+      'https://api.bitpin.ir/v1/mkt/markets/': unavailable,
+      'https://api.coingecko.com/api/v3/coins/markets': unavailable,
+      'https://api.kucoin.com/api/v1/market/allTickers': unavailable,
+      'https://www.okx.com/api/v5/market/tickers': unavailable,
+    });
+    const { body } = await rates();
+
+    expect(body.toman.eth).toBe(617_500_000);
+    expect(body.toman.btc).toBe(12_061_000_000);
+    expect(body.toman.usdt).toBe(187_450);
+    expect(body.toman.busd).toBeUndefined();
+    expect(body.sources.crypto_toman).toBe('ok via nobitex (tried first: bitpin: HTTP 503)');
+  });
+
+  it('cross-rates through OKX when CoinGecko and KuCoin are both down', async () => {
+    const { rates } = setup({
+      'https://api.coingecko.com/api/v3/coins/markets': () => new Response('{}', { status: 429 }),
+      'https://api.kucoin.com/api/v1/market/allTickers': unavailable,
+    });
+    const { body } = await rates();
+
+    expect(body.toman.eth).toBe(3_300 * 187_000);
+    expect(body.sources.crypto_pricing).toContain('via okx (tried first: kucoin: HTTP 503)');
   });
 
   it('runs the build under waitUntil, so a caller giving up does not cancel it', async () => {
