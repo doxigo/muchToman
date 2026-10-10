@@ -153,10 +153,11 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
       <div class="home-hero compact">
         <HeroPanel>
           {familyAssets.length > 0 && <HeroScopeToggle family={familyMode} onSelect={setFamilyTotal} />}
-          <div class="label-row">
-            <HeroFigure key={figure} figure={figure} max={34} min={20} />
-            {usdAside}
-          </div>
+          {/* The figure has its line to itself and the dollars sit under it, as the exact digits do on
+              خانه's card: beside it they took the width the figure shrinks into, and sat on the
+              headline's line as a second headline. */}
+          <HeroFigure key={figure} figure={figure} max={34} min={20} />
+          {usdAside && <p class="usd-line">{usdAside}</p>}
           <FreshnessLine />
         </HeroPanel>
       </div>

@@ -1635,10 +1635,11 @@ internal fun HeroCard(
                     modifier = Modifier.padding(bottom = Space.xs),
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HeroTotal(total, min = 20.sp, max = 34.sp, Modifier.weight(1f))
-                usd?.let { HeroUsd(it) }
-            }
+            // The figure has its line to itself and the dollars sit under it, as the exact digits do
+            // on خانه's card. Beside it they took the width the figure shrinks into — 24sp on a
+            // small phone — and sat on the headline's line as a second headline.
+            HeroTotal(total, min = 20.sp, max = 34.sp)
+            usd?.let { HeroUsd(it, Modifier.padding(top = 2.dp)) }
         } else {
             // Label and dollar figure share a line, so the top of the card reads as one
             // sentence — "جمع دارایی‌هات $۵۱٬۵۰۰" — and the dollars stay an aside rather
@@ -1662,7 +1663,7 @@ internal fun HeroCard(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                usd?.let { HeroUsd(it) }
+                usd?.let { HeroUsd(it, Modifier.padding(start = Space.s)) }
             }
 
             Spacer(Modifier.height(Space.xs))
@@ -1748,9 +1749,12 @@ private fun HeroTotal(total: Double, min: TextUnit, max: TextUnit, modifier: Mod
     }
 }
 
-/** The total in dollars, an aside at the end of the figure's line rather than a second headline. */
+/**
+ * The total in dollars, an aside rather than a second headline: at the end of the label's line on
+ * خانه's card, under the figure on دارایی's.
+ */
 @Composable
-private fun HeroUsd(usd: Double) {
+private fun HeroUsd(usd: Double, modifier: Modifier = Modifier) {
     Text(
         faUsd(usd),
         fontSize = 14.sp,
@@ -1760,9 +1764,7 @@ private fun HeroUsd(usd: Double) {
         maxLines = 1,
         // "$" is read out as punctuation or skipped entirely; the unit has to
         // survive for anyone listening rather than looking.
-        modifier = Modifier
-            .padding(start = Space.s)
-            .semantics { contentDescription = "${faRate(usd)} دلار" },
+        modifier = modifier.semantics { contentDescription = "${faRate(usd)} دلار" },
     )
 }
 

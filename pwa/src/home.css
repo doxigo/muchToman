@@ -29,13 +29,16 @@
 .freshness .warn { color: var(--hero-warn); }
 .freshness .stale-note { margin-top: var(--xs); font-size: 12px; line-height: 19px; }
 .home-hero .freshness { margin-top: var(--l); border-top: 1px solid var(--hero-hairline); }
-/* دارایی's header: the figure shares the dollars' line, and the freshness line follows with no hairline. */
+/* دارایی's header: the figure on a line of its own, the dollars under it, and the freshness line
+   following with no hairline. */
 /* The freshness line closes the card with a 48px target around a 13px line, air of its own: the
    full padding under it read bottom-heavy (Ui.kt HeroPanel `bottom`). */
 .home-hero .hero { padding-bottom: var(--m); }
 .home-hero.compact .hero { padding-block: var(--l) var(--s); }
 .home-hero.compact .pill-toggle { margin-bottom: var(--xs); }
-.home-hero.compact .fig { flex: 1; min-width: 0; margin-top: 0; }
+.home-hero.compact .fig { margin-top: 0; }
+.home-hero.compact .usd-line { margin-top: 2px; line-height: 20px; }
+.home-hero.compact .usd-line .usd { margin-inline-start: 0; }
 .home-hero.compact .freshness { margin-top: var(--xs); border-top: 0; }
 
 /* Whose total: the shared PillToggle in the field's colours — the bright green is the figure's. */

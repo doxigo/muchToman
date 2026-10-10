@@ -96,11 +96,18 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
 - **دارایی opens like دفتر: its title line, then the hero, compact** — a deliberate second
   reading of the same object (`HeroCard(compact = true)`, `.home-hero.compact`): same
   `Hero.field`, `Radius.hero` and dark hairline, top padding `Space.l`; whose (the scope toggle,
-  only with a family), then the compact total beside its dollars, then the freshness line —
-  about a third of خانه's card. No greeting bar and no action circles on this tab (its one verb
-  is the title pill); no label, words, exact digits, loans strip or change pill: خانه's card
+  only with a family), then the compact total on a line of its own with its dollars under it
+  (beside it they squeezed the figure on a small phone), then the freshness line — about a third
+  of خانه's card. No greeting bar and no action circles on this tab (its one verb
+  is the title pill); no label, words, exact digits, loans door or change pill: خانه's card
   carries those. The lite edition keeps the greeting, the full card and its circles on دارایی,
   its only screen.
+- **The hero's doors share one make.** Under خانه's total, the month's change (`ChangePill`) and
+  طلب و بدهی (`HeroLoans`, `.loan-hero`) are the same row: a 32dp mark on the well — the change's
+  tinted pill, قرض's hand-and-coins on a disc — a 13sp muted sentence with its figure in
+  `Hero.strong`, and a chevron, the row itself the 48dp target. The loans door comes second: beside
+  the total and never in it, it follows the total's own story instead of splitting the total from
+  its change.
 - **The hero ends on its freshness line**, whose 48dp target already holds ~13dp of air under
   the words, so the card's bottom padding is a step under its top (`HeroPanel(bottom = …)`:
   `Space.m` under `Space.xl`, `Space.s` under the compact `Space.l`). Full padding there read
