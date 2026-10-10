@@ -72,7 +72,7 @@ import kotlin.math.abs
 
 /**
  * طلب و بدهی on screen. `Loans.kt` says what the figures are; this file says where she meets them:
- * a strip on the hero beside the total, a door on آینده, one page of people, one page per person,
+ * a door on the hero beside the total, a door on آینده, one page of people, one page per person,
  * and the sheets that write to them.
  *
  * Words carry the side — «بهت بدهکاره», «بهش بدهکاری» — and colour never does: a debt is not an
@@ -109,43 +109,60 @@ private fun LoanFigure(toman: Double, size: TextUnit, color: Color, modifier: Mo
 // ─────────────────────────── on the hero ───────────────────────────
 
 /**
- * «طلبت · بدهیت», beside the total and never in it. A well rather than a line, because it is a
- * door and the card's other doors are wells too; the page it opens starts with the same pair,
- * large, so the tap lands where it pointed.
+ * طلب و بدهی on the hero: beside the total and never in it. So it comes after the total's own
+ * story — its words, its digits, its month — and wears the change line's anatomy, the card's other
+ * door: a 32dp mark on the well, one sentence, a chevron. The mark is قرض's own hand-and-coins, so
+ * the row says what it is before it is read, and the sentence is how she would say it: «۲۱۲٫۴
+ * میلیون طلب داری». A full-width slab here outweighed the change line of the total it serves.
  */
 @Composable
 internal fun HeroLoans(totals: LoanTotals, onOpen: () -> Unit) {
+    val owed = totals.owedToman.takeIf { totals.owedPeople > 0 }
+    val owe = totals.oweToman.takeIf { totals.owePeople > 0 }
     val spoken = "طلب و بدهی: " + listOfNotNull(
-        totals.owedToman.takeIf { totals.owedPeople > 0 }?.let { "${faCompact(it)} تومان طلب" },
-        totals.oweToman.takeIf { totals.owePeople > 0 }?.let { "${faCompact(it)} تومان بدهی" },
+        owed?.let { "${faCompact(it)} تومان طلب" },
+        owe?.let { "${faCompact(it)} تومان بدهی" },
     ).joinToString("، ")
     Row(
         Modifier
-            .padding(top = Space.l)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
-            .background(Hero.well)
+            .clip(RoundedCornerShape(Radius.pill))
             .clickable(role = Role.Button, onClick = onOpen)
-            .padding(horizontal = Space.l, vertical = Space.m)
+            // The mark is 32dp like the change pill above it; the row carries the 48dp target.
+            .heightIn(min = 48.dp)
+            .padding(end = Space.m)
             .semantics(mergeDescendants = true) { contentDescription = spoken },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (totals.owedPeople > 0) HeroLoanFigure("طلبت", totals.owedToman, Modifier.weight(1f))
-        if (totals.owePeople > 0) HeroLoanFigure("بدهیت", totals.oweToman, Modifier.weight(1f))
+        Box(Modifier.size(32.dp).clip(CircleShape).background(Hero.well), contentAlignment = Alignment.Center) {
+            GlyphIcon(CategoryGlyph.LEND, Hero.strong, size = 18.dp, stroke = 1.6.dp)
+        }
+        Spacer(Modifier.width(Space.s))
+        Text(
+            buildAnnotatedString {
+                val figure = SpanStyle(fontFamily = ModamFigures, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Hero.strong)
+                when {
+                    owed != null && owe != null -> {
+                        withStyle(figure) { append(faCompact(owed)) }
+                        append(" طلب، ")
+                        withStyle(figure) { append(faCompact(owe)) }
+                        append(" بدهی")
+                    }
+                    owed != null -> { withStyle(figure) { append(faCompact(owed)) }; append(" طلب داری") }
+                    owe != null -> { withStyle(figure) { append(faCompact(owe)) }; append(" بدهکاری") }
+                }
+            },
+            fontSize = 13.sp,
+            color = Hero.muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
         Icon(
             Icons.AutoMirrored.Rounded.KeyboardArrowRight,
             contentDescription = null,
             tint = Hero.muted,
             modifier = Modifier.size(18.dp),
         )
-    }
-}
-
-@Composable
-private fun HeroLoanFigure(label: String, toman: Double, modifier: Modifier) {
-    Column(modifier) {
-        Text(label, fontSize = 12.sp, color = Hero.muted)
-        LoanFigure(toman, 17.sp, Hero.strong)
     }
 }
 
@@ -158,7 +175,7 @@ private fun HeroLoanFigure(label: String, toman: Double, modifier: Modifier) {
 @Composable
 internal fun LoansDoor(totals: LoanTotals, people: Int, onOpen: () -> Unit, onAdd: () -> Unit) {
     if (people == 0) {
-        BandAddRow("اولین حساب", RoundedCornerShape(Radius.group), onAdd)
+        BandAddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
         return
     }
     Row(
@@ -216,14 +233,13 @@ private fun BandAddRow(label: String, shape: Shape, onClick: () -> Unit) {
 // ─────────────────────────── the people ───────────────────────────
 
 @Composable
-private fun PageHead(title: String, onBack: () -> Unit, extra: (@Composable () -> Unit)? = null) {
+private fun PageHead(title: String, onBack: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         ScreenTitle(title, modifier = Modifier.weight(1f))
-        extra?.invoke()
         PillButton("برگشت", onBack)
     }
 }
@@ -297,7 +313,7 @@ internal fun LoansScreen(
                         modifier = Modifier.padding(top = Space.xs),
                     )
                     Spacer(Modifier.height(Space.xl))
-                    PillButton("حساب تازه", onAdd, voice = ButtonVoice.PRIMARY)
+                    PillButton("یه نفر تازه", onAdd, voice = ButtonVoice.PRIMARY)
                 }
                 return@Column
             }
@@ -337,7 +353,7 @@ internal fun LoansScreen(
                 }
             }
             Spacer(Modifier.height(Space.m))
-            BandAddRow("حساب تازه", RoundedCornerShape(Radius.group), onAdd)
+            BandAddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
         }
     }
 }
@@ -412,7 +428,12 @@ internal fun LoanPersonScreen(
     onEdit: () -> Unit,
     onMove: (giving: Boolean) -> Unit,
     onOpenEntry: (LedgerEntry) -> Unit,
+    holdings: List<Holding>,
+    onEditMove: (move: LoanMove, rial: Long, amount: Double) -> Unit,
     onDeleteMove: (LoanMove) -> Unit,
+    /** The account as it would stand with a line changed — what the line's sheet says first. */
+    afterEdit: (move: LoanMove, edited: LoanMove) -> LoanView?,
+    onDelete: () -> Unit,
     onBack: () -> Unit,
 ) {
     val today = remember { tehranDay(System.currentTimeMillis()) }
@@ -427,7 +448,7 @@ internal fun LoanPersonScreen(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.huge),
         ) {
-            PageHead(view.person.name, onBack) { PillButton("ویرایش", onEdit) }
+            PageHead(view.person.name, onBack)
 
             Text(
                 loanSideFa(view.side),
@@ -438,11 +459,13 @@ internal fun LoanPersonScreen(
             )
             if (view.side != LoanSide.SETTLED) OwedInOwnUnits(view, type)
 
-            // The act that settles is the loud one: a debtor's «پس داد», her own «پس دادم».
+            // The act that settles is the loud one. Every label is hers, in four words that say
+            // which way the money went and why: پس گرفتم / پس دادم settle up, قرض دادم / قرض
+            // گرفتم add to it. «پس داد» beside «بیشتر دادم» left her guessing what each would write.
             val (primary, second) = when (view.side) {
-                LoanSide.OWED -> ("پس داد" to false) to ("بیشتر دادم" to true)
-                LoanSide.OWE -> ("پس دادم" to true) to ("بیشتر گرفتم" to false)
-                LoanSide.SETTLED -> ("دادم" to true) to ("گرفتم" to false)
+                LoanSide.OWED -> ("پس گرفتم" to false) to ("قرض دادم" to true)
+                LoanSide.OWE -> ("پس دادم" to true) to ("قرض گرفتم" to false)
+                LoanSide.SETTLED -> ("قرض دادم" to true) to ("قرض گرفتم" to false)
             }
             Row(Modifier.fillMaxWidth().padding(top = Space.xl), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
                 PillButton(
@@ -486,8 +509,6 @@ internal fun LoanPersonScreen(
                             color = if (days < 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                } else {
-                    PillButton("+ قرار پس دادن", onEdit, Modifier.padding(top = Space.m))
                 }
             }
 
@@ -515,13 +536,26 @@ internal fun LoanPersonScreen(
                     modifier = Modifier.padding(top = Space.m, start = Space.xs),
                 )
             }
+
+            // The transaction page's foot: the person's own acts, and under them, in a band of its
+            // own, the delete — on the page, where she looks for it, not inside the edit sheet.
+            Spacer(Modifier.height(Space.xxl))
+            ActRow("ویرایش اسم و قرار", ActGlyph.PENCIL, RoundedCornerShape(Radius.group), divided = false, onClick = onEdit)
+            Spacer(Modifier.height(Space.l))
+            DeleteRow(view.person.id, onDelete, "حذف از طلب و بدهی")
         }
     }
 
     confirming?.let { event ->
         val move = event.move ?: return@let
-        DeleteMoveSheet(
+        MoveLineSheet(
+            move = move,
+            view = view,
             title = loanEventTitleFa(event, type),
+            holdings = holdings,
+            type = type,
+            after = { edited -> afterEdit(move, edited) },
+            onSave = { rial, amount -> onEditMove(move, rial, amount); confirming = null },
             onDelete = { onDeleteMove(move); confirming = null },
             onDismiss = { confirming = null },
         )
@@ -621,32 +655,103 @@ private fun EventRow(event: LoanEvent, type: (String) -> AssetType, onClick: () 
             }
         }
         Spacer(Modifier.width(Space.m))
+        // «از قبل» is where the account stood, not money that moved: no sign, plain ink. A «−۵
+        // میلیون» beside «از قبل بهت بدهکار بود» read as the opposite of what it says.
+        val opening = event.move?.opening == true
         val figure = if (event.typeId.isBlank()) {
-            signedFigure(faSignedParts(tomanOf(abs(event.rial)), positive = !out))
+            val toman = tomanOf(abs(event.rial))
+            signedFigure(
+                if (opening) faCompact(toman).split(' ', limit = 2).let { it[0] to it.getOrNull(1) } else faSignedParts(toman, positive = !out),
+            )
         } else {
             val t = type(event.typeId)
             val unit = if (t.unitFa == "عدد") t.fa.substringBefore(' ') else t.unitFa
-            signedFigure(ltrFigure((if (out) "−" else "+") + faHeld(abs(event.amount), t.dec)) to unit)
+            val digits = faHeld(abs(event.amount), t.dec)
+            signedFigure(ltrFigure(if (opening) digits else (if (out) "−" else "+") + digits) to unit)
         }
-        Text(figure, style = figureStyle(ink, FontWeight.ExtraBold), fontSize = 16.sp, maxLines = 1)
+        Text(figure, style = figureStyle(if (opening) MaterialTheme.colorScheme.onSurface else ink, FontWeight.ExtraBold), fontSize = 16.sp, maxLines = 1)
     }
 }
 
+/**
+ * A line she wrote, opened from the trail: its size to put right, and its delete. A typo in «از قبل»
+ * or a part payment written as the whole is fixed where it shows, not by deleting the line and
+ * writing it again. The size keeps the line's direction and unit; a line that moved a holding moves
+ * it by the difference, and both effects are said under the figure before she saves.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeleteMoveSheet(title: String, onDelete: () -> Unit, onDismiss: () -> Unit) {
+private fun MoveLineSheet(
+    move: LoanMove,
+    view: LoanView,
+    title: String,
+    holdings: List<Holding>,
+    type: (String) -> AssetType,
+    after: (LoanMove) -> LoanView?,
+    onSave: (rial: Long, amount: Double) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
+    val cash = move.typeId.isBlank()
+    val original = if (cash) rialToField(abs(move.rial)) else fieldNumber(abs(move.amount))
+    var amountText by rememberSaveable(move.id) { mutableStateOf(original) }
+    val rial = if (cash) tomanFieldToRial(amountText) else null
+    val units = if (cash) null else unitAmount(amountText)
+    val edited = if (cash) rial?.let { loanMoveResized(move, it, 0.0) } else units?.let { loanMoveResized(move, 0L, it) }
+    val changed = edited != null && edited != move
+    // Once the old size is back in the holding, the new one has to fit in it.
+    val back = move.holdingKey.takeIf { it.isNotBlank() }?.let { key -> loanHoldingsUndo(holdings, move).firstOrNull { it.key == key } }
+    val short = changed && back != null && edited != null && loanHoldingsEdit(holdings, move, edited) == null
+    val error = if (short) "توی دارایی‌هات فقط ${loanAmountFa(type(back!!.typeId), back.amount)} هست." else null
+    var tried by remember { mutableStateOf(false) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(Modifier.navigationBarsPadding().padding(horizontal = Space.xl).padding(bottom = Space.l)) {
-            SheetTitle("این مورد رو پاک کنم؟")
-            Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(Space.xl))
-            SheetDelete("پاکش کن", onDelete)
+        Column(
+            Modifier
+                .nestedScroll(SheetFlingGuard)
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle(title)
+            Text(
+                listOfNotNull(faDay(move.day), loanEventSubFa(LoanEvent(move.day, move.typeId, move.rial, move.amount, move = move)))
+                    .joinToString("، "),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(Space.l))
+            AmountField(move.typeId, amountText, { amountText = it }, type, error ?: missingAmountFa(move.typeId).takeIf { tried && amountText.isBlank() })
+            if (changed && !short) {
+                listOfNotNull(after(edited!!)?.let { loanStandsFa(view, it, type) }, loanEditHoldingFa(move, edited, type)).forEach {
+                    Text(
+                        it,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = Space.xs, start = Space.xs),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.l))
+            CommitButton("ذخیره") {
+                focus.clearFocus()
+                tried = true
+                if (edited == null || short) return@CommitButton
+                close { if (changed) onSave(rial ?: 0L, units ?: 0.0) else onDismiss() }
+            }
+            SheetDelete("حذف این مورد", onDelete)
         }
     }
 }
@@ -666,6 +771,19 @@ private fun loanUnits(view: LoanView?, holdings: List<Holding>, preset: String?,
         )
         .filter { it.isBlank() || (it != BANK_ID && !type(it).valuedInToman) }
         .distinct()
+
+/**
+ * What a payment back can be in: the parts of the debt that lean the account's way, units first as
+ * the page lists them. A part pulling the other way is not something this payment settles.
+ */
+private fun owedUnits(view: LoanView): List<String> {
+    val sign = if (view.side == LoanSide.OWE) -1.0 else 1.0
+    return view.units.filterValues { it * sign > 0.0 }.keys.toList() + listOfNotNull("".takeIf { view.rial * sign > 0.0 })
+}
+
+/** All of [unit] that is owed, as its field is seeded. */
+private fun owedField(view: LoanView, unit: String): String =
+    if (unit.isBlank()) rialToField(abs(view.rial)) else view.units[unit]?.let { fieldNumber(abs(it)) }.orEmpty()
 
 /** Cash says «نقد»; an asset says its own name. */
 private fun unitLabel(id: String, type: (String) -> AssetType): String = if (id.isBlank()) "نقد" else type(id).fa
@@ -759,9 +877,10 @@ private fun AmountField(unit: String, text: String, onText: (String) -> Unit, ty
 private fun unitAmount(text: String): Double? = parseAmount(text)?.takeIf { it > 0.0 && it.isFinite() }
 
 /**
- * Add or edit a person. Adding also asks what is owed — an account with nothing on it is only an
- * empty row under «تسویه شده» — and never moves a holding for it: that money most often left the
- * drawer long before the app was counting.
+ * Add a person, or change one's name and date. Adding also asks what is owed — an account with
+ * nothing on it is only an empty row under «تسویه شده» — and never moves a holding for it: that
+ * money most often left the drawer long before the app was counting. Deleting is not here: it is
+ * the person page's last row, where it can be found.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -770,7 +889,6 @@ internal fun LoanPersonSheet(
     holdings: List<Holding>,
     type: (String) -> AssetType,
     onSave: (name: String, promise: Long?, opening: LoanMove?) -> Unit,
-    onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -806,7 +924,7 @@ internal fun LoanPersonSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle(if (person == null) "حساب تازه" else "ویرایش حساب")
+            SheetTitle(if (person == null) "یه نفر تازه" else "ویرایش ${person.name}")
             SheetLabel("اسم")
             OutlinedTextField(
                 value = name,
@@ -850,9 +968,6 @@ internal fun LoanPersonSheet(
                 }
                 close { onSave(name.trim(), promise, carried) }
             }
-            if (onDelete != null && person != null) {
-                SheetDelete("پاک کردن حساب") { close(onDelete) }
-            }
         }
     }
 }
@@ -895,6 +1010,11 @@ private fun PromisePicker(promise: Long?, today: Long, onPromise: (Long?) -> Uni
  * Something handed over or taken back that no bank reported. When the unit is one she keeps in
  * دارایی, the same amount leaves or joins it — lending two coins is two coins fewer in the drawer —
  * and the switch says so before she saves, so the total moving is never a surprise.
+ *
+ * Paying back («پس گرفتم», «پس دادم») opens on all of it, in what is owed: settling an account is the
+ * one tap on «ثبت», a part payment is the figure changed, and the line under the figure says where
+ * the account will stand either way. Only what is owed is offered: dollars and gold beside a debt in
+ * cash were choices with no right answer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -905,6 +1025,8 @@ internal fun LoanMoveSheet(
     preset: String?,
     holdings: List<Holding>,
     type: (String) -> AssetType,
+    /** The account as it would stand with this move written: the sentence under the figure. */
+    after: (LoanMove) -> LoanView?,
     onSave: (personId: String?, newName: String?, typeId: String, rial: Long, amount: Double, moveHolding: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -916,9 +1038,11 @@ internal fun LoanMoveSheet(
     var naming by rememberSaveable { mutableStateOf(person == null && people.isEmpty()) }
     var newName by rememberSaveable { mutableStateOf("") }
     val chosen = person ?: people.firstOrNull { it.person.id == who }
-    val units = remember(chosen, holdings, preset) { loanUnits(chosen, holdings, preset, type) }
-    var unit by rememberSaveable { mutableStateOf(preset ?: "") }
-    var amountText by rememberSaveable { mutableStateOf("") }
+    val repaying = person?.let { loanRepays(it.side, giving) } == true
+    val owed = person?.takeIf { repaying }?.let(::owedUnits).orEmpty()
+    val units = remember(chosen, holdings, preset) { owed.ifEmpty { loanUnits(chosen, holdings, preset, type) } }
+    var unit by rememberSaveable { mutableStateOf(preset ?: owed.firstOrNull() ?: "") }
+    var amountText by rememberSaveable { mutableStateOf(person?.takeIf { repaying }?.let { owedField(it, unit) }.orEmpty()) }
     val rial = if (unit.isBlank()) tomanFieldToRial(amountText) else null
     val amount = if (unit.isBlank()) rial?.let { tomanOf(it) } else unitAmount(amountText)
     val holding = loanHoldingFor(holdings, unit, giving)
@@ -927,6 +1051,15 @@ internal fun LoanMoveSheet(
     val short = giving && moveHolding && holding != null && amount != null && amount > holding.amount + 1e-9
     val error = if (short) "توی دارایی‌هات فقط ${loanAmountFa(type(holding.typeId), holding.amount)} هست." else null
     val hasWho = person != null || who != null || (naming && newName.isNotBlank())
+    val preview = chosen?.takeIf { amount != null && !short }?.let { c ->
+        val sign = if (giving) 1 else -1
+        after(
+            LoanMove(
+                id = "", personId = c.person.id, typeId = unit, day = 0L,
+                rial = (rial ?: 0L) * sign, amount = if (unit.isBlank()) 0.0 else (amount ?: 0.0) * sign,
+            ),
+        )?.let { loanStandsFa(c, it, type) }
+    }
     // Raised by a save tap that could not save: from then on every blank answer says so.
     var tried by remember { mutableStateOf(false) }
 
@@ -948,8 +1081,10 @@ internal fun LoanMoveSheet(
             SheetTitle(
                 when {
                     person == null -> "قرض دادم"
-                    giving -> "به ${person.person.name} دادی"
-                    else -> "از ${person.person.name} گرفتی"
+                    // The title says what the button said: «پس گرفتم» opens «از مهدی پس گرفتی».
+                    repaying -> if (giving) "به ${person.person.name} پس دادی" else "از ${person.person.name} پس گرفتی"
+                    giving -> "به ${person.person.name} قرض دادی"
+                    else -> "از ${person.person.name} قرض گرفتی"
                 },
             )
 
@@ -979,10 +1114,25 @@ internal fun LoanMoveSheet(
                 }
             }
 
-            SheetLabel("چی؟")
-            UnitChips(units, unit, type) { unit = it; amountText = "" }
+            // A debt in cash alone has nothing to choose between: the field says «تومان».
+            if (units != listOf("")) {
+                SheetLabel("چی؟")
+                UnitChips(units, unit, type) { picked ->
+                    unit = picked
+                    amountText = person?.takeIf { repaying }?.let { owedField(it, picked) }.orEmpty()
+                }
+            }
             Spacer(Modifier.height(Space.m))
             AmountField(unit, amountText, { amountText = it }, type, error ?: missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
+            preview?.let {
+                Text(
+                    it,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = Space.xs, start = Space.xs),
+                )
+            }
 
             if (offerHolding) {
                 Row(
@@ -1180,11 +1330,7 @@ internal fun LoanLinkRow(entry: LedgerEntry, view: LoanView?, type: (String) -> 
     }
 }
 
-/**
- * The three sheets, wherever they were asked for. Adding a person lands on that person's page,
- * and deleting one leaves an undo, since a person
- * carries every move she wrote down about them.
- */
+/** The three sheets, wherever they were asked for. Adding a person lands on that person's page. */
 @Composable
 internal fun LoanAsks(
     ask: LoanAsk?,
@@ -1194,7 +1340,6 @@ internal fun LoanAsks(
     type: (String) -> AssetType,
     onClose: () -> Unit,
     onPerson: (String) -> Unit,
-    onPersonGone: () -> Unit,
 ) {
     when (ask) {
         null -> Unit
@@ -1206,7 +1351,6 @@ internal fun LoanAsks(
                 onClose()
                 vm.addLoanPerson(name, promise, opening)?.let(onPerson)
             },
-            onDelete = null,
             onDismiss = onClose,
         )
         is LoanAsk.EditPerson -> {
@@ -1220,13 +1364,6 @@ internal fun LoanAsks(
                 holdings = state.holdings,
                 type = type,
                 onSave = { name, promise, _ -> vm.editLoanPerson(person.id, name, promise); onClose() },
-                onDelete = {
-                    vm.deleteLoanPerson(person.id)?.let { (gone, moves) ->
-                        onPersonGone()
-                        notices.show("حساب ${gone.name} پاک شد", "برگردون") { vm.restoreLoanPerson(gone, moves) }
-                    }
-                    onClose()
-                },
                 onDismiss = onClose,
             )
         }
@@ -1237,6 +1374,7 @@ internal fun LoanAsks(
             preset = ask.preset,
             holdings = state.holdings,
             type = type,
+            after = { move -> state.loanViewIf(move.personId, add = move) },
             onSave = { personId, newName, typeId, rial, amount, moveHolding ->
                 val id = personId ?: newName?.let { vm.addLoanPerson(it, null, null) }
                 if (id != null) vm.addLoanMove(id, typeId, rial, amount, ask.giving, moveHolding)

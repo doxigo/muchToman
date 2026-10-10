@@ -2,13 +2,13 @@
    are the ledger's own (.txn-row, .day-heading in timeline.css), and the آینده door and link rows
    wear budgetUi.css's shapes, so none of those are restated here. */
 
-/* ---- the hero strip: beside the total, never in it ------------------------------------------- */
-.loan-strip { display: flex; align-items: center; gap: var(--m); width: 100%; margin-top: var(--l); padding: var(--m) var(--l); border: 0; border-radius: var(--r-card); background: var(--hero-well); color: var(--hero-strong); text-align: start; }
-.loan-strip .grow > span { display: block; }
-.loan-strip .k { font-size: 12px; color: var(--hero-muted); }
-.loan-strip .v { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.loan-strip .v .unit { font-size: 12px; }
-.loan-strip > svg { color: var(--hero-muted); }
+/* ---- the hero's door: beside the total, never in it ------------------------------------------- */
+/* home.css's .hero-door, on a line of its own right under the change line (flex, not inline-flex,
+   so the two never share a row on a wide screen). */
+.hero-door.loan-hero { display: flex; width: max-content; margin-top: 0; }
+.loan-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; margin-inline-end: var(--s); border-radius: 50%; background: var(--hero-well); color: var(--hero-strong); }
+.loan-hero .said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.loan-hero b { font-size: 14px; font-weight: 700; color: var(--hero-strong); }
 
 /* ---- the آینده door ------------------------------------------------------------------------------ */
 .plan-row.loan-door { display: flex; align-items: center; gap: var(--m); }
@@ -70,3 +70,6 @@
 .loan-link-row .radio { margin-top: 12px; }
 .loan-link-row .grow { padding-block: var(--s); }
 .loan-preview { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--primary); }
+/* Under a sheet's figure: where the account will stand, and what moves in دارایی, once she saves. */
+p.loan-preview { margin-top: var(--xs); padding-inline: var(--xs); line-height: 21px; }
+

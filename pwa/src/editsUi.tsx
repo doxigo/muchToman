@@ -246,12 +246,12 @@ export function TxnActs({ entry, onEdit, onSplit, onDelete }: {
           {onSplit && <ActRow title="تقسیم بین دسته‌ها" glyph="SPLIT" value={parts ? `${faNumber(parts)} دسته` : null} onClick={onSplit} />}
         </div>
       )}
-      {onDelete && <div class="set-band"><DeleteRow txnRef={entry.txn.ref} onConfirmed={onDelete} /></div>}
+      {onDelete && <div class="set-band"><DeleteRow id={entry.txn.ref} onConfirmed={onDelete} /></div>}
     </div>
   );
 }
 
-function ActRow({ title, glyph, value, onClick }: { title: string; glyph: ActGlyph; value: string | null; onClick: () => void }) {
+export function ActRow({ title, glyph, value = null, onClick }: { title: string; glyph: ActGlyph; value?: string | null; onClick: () => void }) {
   return (
     <button type="button" class="set-row" onClick={onClick}>
       <span class="set-disc"><ActIcon glyph={glyph} /></span>
@@ -262,17 +262,20 @@ function ActRow({ title, glyph, value, onClick }: { title: string; glyph: ActGly
   );
 }
 
-/** Error ink until the first tap; then the row fills with error and its name becomes the question. */
-function DeleteRow({ txnRef, onConfirmed }: { txnRef: string; onConfirmed: () => void }) {
+/**
+ * Error ink until the first tap; then the row fills with error and its name becomes the question. A
+ * person's page in طلب و بدهی ends on the same row.
+ */
+export function DeleteRow({ id, onConfirmed, label = 'حذف این تراکنش' }: { id: string; onConfirmed: () => void; label?: string }) {
   const [armed, setArmed] = useState(false);
   // A row reused for another transaction never arrives armed.
-  useEffect(() => setArmed(false), [txnRef]);
+  useEffect(() => setArmed(false), [id]);
   return (
     <button type="button" class={`set-row danger${armed ? ' armed' : ''}`}
       onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}>
       <span class="set-disc"><ActIcon glyph="TRASH" /></span>
       <span class="set-text"><span class="set-title" style={{ display: 'block' }} aria-live="polite">
-        {armed ? 'مطمئنی؟ برای حذف دوباره بزن' : 'حذف این تراکنش'}
+        {armed ? 'مطمئنی؟ برای حذف دوباره بزن' : label}
       </span></span>
     </button>
   );

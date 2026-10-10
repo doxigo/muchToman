@@ -798,8 +798,18 @@ private fun AppScreens(
                 onEdit = { loanAsk = LoanAsk.EditPerson(person.person.id) },
                 onMove = { giving -> loanAsk = LoanAsk.Move(person.person.id, giving) },
                 onOpenEntry = { transactionRef = it.txn.ref },
+                holdings = state.holdings,
+                onEditMove = { move, rial, amount -> vm.editLoanMove(move.id, rial, amount) },
                 onDeleteMove = { move ->
-                    vm.deleteLoanMove(move.id)?.let { gone -> notices.show("پاک شد", "برگردون") { vm.restoreLoanMove(gone) } }
+                    vm.deleteLoanMove(move.id)?.let { gone -> notices.show("حذف شد", "برگردون") { vm.restoreLoanMove(gone) } }
+                },
+                afterEdit = { move, edited -> state.loanViewIf(move.personId, add = edited, drop = move) },
+                // A person carries every line she wrote about them, so their delete leaves an undo.
+                onDelete = {
+                    vm.deleteLoanPerson(person.person.id)?.let { (gone, moves) ->
+                        loanPerson = null
+                        notices.show("${gone.name} حذف شد", "برگردون") { vm.restoreLoanPerson(gone, moves) }
+                    }
                 },
                 onBack = { loanPerson = null },
             )
@@ -818,7 +828,6 @@ private fun AppScreens(
             ask = loanAsk, state = state, vm = vm, notices = notices, type = loanType,
             onClose = { loanAsk = null },
             onPerson = { loansPage = true; loanPerson = it },
-            onPersonGone = { loanPerson = null },
         )
         return@SaveableStateProvider
     }
@@ -1468,7 +1477,6 @@ private fun AppScreens(
         ask = loanAsk, state = state, vm = vm, notices = notices, type = loanType,
         onClose = { loanAsk = null },
         onPerson = { loansPage = true; loanPerson = it },
-        onPersonGone = { loanPerson = null },
     )
     }
 }
@@ -1679,10 +1687,6 @@ internal fun HeroCard(
                 modifier = Modifier.padding(top = Space.xs),
             )
 
-            // Beside the answer and never in it. Hers alone, so not on the household's figure,
-            // where it would read as the family's.
-            if (!familyMode && !state.loanTotals.isEmpty) HeroLoans(state.loanTotals, onLoans)
-
             when {
                 change != null -> {
                     Spacer(Modifier.height(Space.m))
@@ -1696,6 +1700,9 @@ internal fun HeroCard(
                 // It says «گزارش دارایی» on it, so that is where it goes.
                 !portfolio -> ReportLink(onClick = { onReport(ReportMode.ASSETS) })
             }
+            // Beside the answer and never in it: after the total's own story, the card's second
+            // door. Hers alone, so not on the household's figure, where it would read as the family's.
+            if (!familyMode && !state.loanTotals.isEmpty) HeroLoans(state.loanTotals, onLoans)
 
             Spacer(Modifier.height(Space.l))
             HorizontalDivider(color = Hero.hairline)

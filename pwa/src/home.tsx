@@ -177,11 +177,12 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
         {/* Digits are quick to scan but easy to misread by a factor of ten; the words are the check. */}
         {words && <p class="words">{words}</p>}
         <p class="full figure">{`${faNumber(total)} تومان`}</p>
-        {/* Beside the total, never in it; and hers alone, so not on the household's reading. */}
-        {!familyMode && <LoansHeroStrip />}
         {shownChange ? <ChangePill change={shownChange} onClick={() => openReport('ASSETS')} />
           // Before thirty days there is no honest figure; the slot keeps its target and drops the number.
           : <ReportLink onClick={() => openReport('ASSETS')} />}
+        {/* Beside the total, never in it: after its own story, the card's second door. Hers alone, so
+            not on the household's reading. */}
+        {!familyMode && <LoansHeroStrip />}
         <FreshnessLine />
       </HeroPanel>
     </div>

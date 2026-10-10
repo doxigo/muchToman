@@ -210,7 +210,8 @@ export function loanView(
   }
   const events: LoanEvent[] = [
     ...held.map((e) => ({ day: e.txn.day, typeId: '', rial: mine.get(e.txn.ref)!.rial, amount: 0, entry: e, move: null })),
-    ...moves.map((m) => ({ day: m.day, typeId: m.typeId, rial: m.rial, amount: m.amount, entry: null, move: m })),
+    // Moves are kept in the order she wrote them; reversed, a day's newest is its first line too.
+    ...[...moves].reverse().map((m) => ({ day: m.day, typeId: m.typeId, rial: m.rial, amount: m.amount, entry: null, move: m })),
   ];
   let olderRial = 0;
   for (const [ref, link] of mine) if (!heldRefs.has(ref)) olderRial += link.rial;
@@ -327,6 +328,30 @@ export function loanHoldingsRedo(holdings: readonly Holding[], move: LoanMove): 
 }
 
 /**
+ * [move] at a new size, in its own direction and unit — what editing a trail line writes. [rial] and
+ * [amount] are magnitudes as she typed them; the sign stays the move's own, so a line written as money
+ * out stays money out.
+ */
+export function loanMoveResized(move: LoanMove, rial: number, amount: number): LoanMove {
+  return blank(move.typeId) ? { ...move, rial: move.rial < 0 ? -rial : rial } : { ...move, amount: move.amount < 0 ? -amount : amount };
+}
+
+/**
+ * Her holdings with [move] changed to [edited]: the old change taken back and the new one made, on the
+ * same holding. Null when the new size takes out more than that holding has once the old one is back —
+ * the coins she hands over have to be coins the app thinks she has, as when lending.
+ */
+export function loanHoldingsEdit(holdings: readonly Holding[], move: LoanMove, edited: LoanMove): Holding[] | null {
+  if (blank(move.holdingKey)) return [...holdings];
+  const back = loanHoldingsUndo(holdings, move);
+  // The holding is gone since: there is nothing left for the move to change.
+  const held = back.find((h) => holdingKey(h) === move.holdingKey);
+  if (!held) return back;
+  if (holdingDelta(edited) > held.amount + UNIT_EPSILON) return null;
+  return loanHoldingsRedo(back, edited);
+}
+
+/**
  * Which holding a move in this unit would change: cash moves the «پول نقد» holding, anything else its
  * own asset's. Null when there is none to change — lending coins she never entered, or cash when she
  * does not count her cash here.
@@ -402,17 +427,51 @@ export function loanSubFa(view: LoanView, today: number, type: (id: string) => A
 }
 
 /**
- * What linking this much to this person would leave, said before she commits: «با این، حسین ۴٫۱
- * میلیون تومان بهت بدهکار می‌شه.» Only the Toman part moves; the sentence is the whole account after it.
+ * What linking this much to this person would leave, said before she commits: «حسین ۴٫۱ میلیون تومان
+ * بهت بدهکار می‌شه.» Only the Toman part moves; the sentence is the whole account after it.
  */
 export function loanAfterFa(view: LoanView, deltaRial: number, type: (id: string) => AssetType): string {
-  const after: LoanView = { ...view, rial: view.rial + deltaRial, toman: view.toman + tomanOf(deltaRial) };
-  const side = sideOf(after.rial, after.units, after.toman);
-  const name = view.person.name;
+  const rial = view.rial + deltaRial;
+  const toman = view.toman + tomanOf(deltaRial);
+  return loanStandsFa(view, { ...view, rial, toman, side: sideOf(rial, view.units, toman) }, type);
+}
+
+const unitCount = (units: ReadonlyMap<string, number>): number => [...units.values()].reduce((sum, v) => sum + Math.abs(v), 0);
+
+/**
+ * Where an account will stand once a change she is about to make is made, measured against where it
+ * stands now: a payment that leaves something says what is *left* («مرتضی هنوز ۵ گرم طلا بهت بدهکار
+ * می‌مونه»), more lent says the new whole («روی هم»), and one that clears it says so. A bare «بدهکار
+ * می‌شه» under a part payment read as a new debt.
+ */
+export function loanStandsFa(before: LoanView, after: LoanView, type: (id: string) => AssetType): string {
+  const name = after.person.name;
   const what = loanWhatFa(after, type);
-  if (side === 'OWED') return `با این، ${name} ${what} بهت بدهکار می‌شه.`;
-  if (side === 'OWE') return `با این، ${what} به ${name} بدهکار می‌شی.`;
-  return `با این، حسابت با ${name} صاف می‌شه.`;
+  const kept = after.side === before.side;
+  // By today's value; units with no rate fall back on their own count.
+  const smaller = kept && (Math.abs(after.toman) < Math.abs(before.toman) ||
+    (after.toman === before.toman && unitCount(after.units) < unitCount(before.units)));
+  if (after.side === 'SETTLED') return `حسابت با ${name} صاف می‌شه.`;
+  if (after.side === 'OWED') {
+    return smaller ? `${name} هنوز ${what} بهت بدهکار می‌مونه.` : kept ? `${name} روی هم ${what} بهت بدهکار می‌شه.` : `${name} ${what} بهت بدهکار می‌شه.`;
+  }
+  return smaller ? `هنوز ${what} به ${name} بدهکار می‌مونی.` : kept ? `روی هم ${what} به ${name} بدهکار می‌شی.` : `${what} به ${name} بدهکار می‌شی.`;
+}
+
+/** Whether a move this way pays the account down — «پس گرفتم», «پس دادم» — rather than adding to it. */
+export const loanRepays = (side: LoanSide, giving: boolean): boolean => (side === 'OWED' && !giving) || (side === 'OWE' && giving);
+
+/**
+ * What resizing [move] to [edited] does to her دارایی, said under the figure before she saves: the
+ * difference, joining or leaving. Null when the move never touched a holding or the size is unchanged.
+ */
+export function loanEditHoldingFa(move: LoanMove, edited: LoanMove, type: (id: string) => AssetType): string | null {
+  if (blank(move.holdingKey)) return null;
+  const cash = blank(move.typeId);
+  const gain = cash ? tomanOf(move.rial - edited.rial) : move.amount - edited.amount;
+  if (Math.abs(gain) <= UNIT_EPSILON) return null;
+  const what = cash ? loanRialFa(move.rial - edited.rial) : loanAmountFa(type(move.typeId), gain);
+  return gain > 0 ? `${what} به دارایی‌هات اضافه می‌شه.` : `${what} از دارایی‌هات کم می‌شه.`;
 }
 
 /**
@@ -534,6 +593,25 @@ export function deleteLoanMove(id: string): LoanMove | null {
     saveLoans({ ...book, moves: book.moves.filter((m) => m !== move) });
   });
   return move;
+}
+
+/**
+ * A line she wrote, at a new size — [rial] for cash, [amount] otherwise, both as typed; the direction
+ * is the line's own. A line that moved a holding moves it again by the difference. False when that
+ * would take out more than the holding has, which the sheet already refused.
+ */
+export function editLoanMove(id: string, rial: number, amount: number): boolean {
+  const book = pref('loans');
+  const move = book.moves.find((m) => m.id === id);
+  if (!move) return false;
+  const edited = loanMoveResized(move, rial, amount);
+  const holdings = loanHoldingsEdit(pref('holdings'), move, edited);
+  if (!holdings) return false;
+  batch(() => {
+    if (!blank(move.holdingKey)) setHoldings(holdings);
+    saveLoans({ ...book, moves: book.moves.map((m) => (m.id === id ? edited : m)) });
+  });
+  return true;
 }
 
 export function restoreLoanMove(move: LoanMove): void {

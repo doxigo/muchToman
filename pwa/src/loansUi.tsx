@@ -1,6 +1,6 @@
 /**
  * طلب و بدهی on screen — the hero's strip, the آینده section, the list page, one person's page, and
- * the four sheets behind them: a person, a move, a move taken back, and «به کی؟» for a bank row.
+ * the four sheets behind them: a person, a move, a line put right or taken back, and «به کی؟» for a bank row.
  * The words and every figure are loans.ts's; this file only lays them out.
  *
  * Pages and sheets resolve their person fresh on every render, as the آینده sheets do: a person
@@ -12,20 +12,24 @@ import { TOMAN_ID, resolveType } from './catalog';
 import type { AssetType } from './catalog';
 import { CategoryIcon, hueCss } from './categoryIcon';
 import { currentEffective } from './data';
+import { ActRow, DeleteRow } from './editsUi';
 import { useLedger } from './derived';
-import { faCompact, faDay, faHeld, faNumber, faSignedParts, faWeekdayDate, faWordsToman, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
+import type { LedgerView } from './derived';
+import { faCompact, faDay, faHeld, faNumber, faSignedParts, faWeekdayDate, faWordsToman, fieldNumber, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
 import { AssetIcon } from './homeSheets';
 import { Chevron, PersonMark, PlusMark } from './icons';
-import { tomanFieldToRial } from './installments';
+import { rialToField, tomanFieldToRial } from './installments';
 import { jalaliMonthsAfter } from './jalali';
 import {
   MAX_LOAN_NAME, addLoanMove, addLoanPerson, addLoanPersonFrom, deleteLoanMove, deleteLoanPerson, editLoanPerson, faDayMonth,
-  loanAfterFa, loanAmountFa, loanEventSubFa, loanEventTitleFa, loanHoldingFor, loanLinkRial, loanRialFa, loanSideFa,
-  loanSubFa, loanTotals, loanViews, loanWhatFa, restoreLoanMove, restoreLoanPerson, setLoanLink, txnTitleFa,
+  loanAfterFa, loanAmountFa, loanEventSubFa, loanEventTitleFa, loanHoldingFor, loanLinkRial, loanRepays, loanRialFa, loanSideFa,
+  loanStandsFa, loanSubFa, loanTotals, loanEditHoldingFa, loanHoldingsEdit, loanHoldingsUndo, loanMoveResized, loanView, loanViews,
+  loanWhatFa, editLoanMove, restoreLoanMove, restoreLoanPerson, setLoanLink, txnTitleFa,
 } from './loans';
-import type { LoanEvent, LoanSide, LoanView } from './loans';
+import type { LoanEvent, LoanMove, LoanPerson, LoanSide, LoanView } from './loans';
+import { holdingKey } from './model';
 import type { LedgerEntry } from './model';
-import { closePage, closeSheet, navState, openPage, openSheet, registerPage, registerSheet, showNotice } from './nav';
+import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, showNotice } from './nav';
 import { batch, pref, useData } from './state';
 import {
   AmountField, ChipChoice, EmptyState, PillButton, Screen, ScreenTitle, Section, SegmentedChoice, Sheet, SheetDelete,
@@ -43,6 +47,16 @@ function useLoans() {
 }
 
 const typeOf = (id: string): AssetType => resolveType(id, pref('rates')?.coins ?? []);
+
+/**
+ * Where a person would stand with [add] written or [drop] taken back — the sentence a sheet says
+ * before she commits, worked out the one way every balance is.
+ */
+function viewIf(ledger: LedgerView, person: LoanPerson, add: LoanMove | null, drop: LoanMove | null): LoanView {
+  const book = pref('loans');
+  const moves = [...book.moves.filter((m) => m !== drop), ...(add ? [add] : [])];
+  return loanView(person, { ...book, moves }, ledger.loanLinks, ledger.entries, currentEffective());
+}
 
 /** loanAmountFa's words without the figure: «سکه امامی», «گرم طلای ۱۸ عیار», «دلار آمریکا». */
 const unitWordsFa = (type: AssetType): string =>
@@ -93,20 +107,26 @@ const openNewPerson = (): void => openSheet('loanAccount');
 // ─────────────────────────── on the hero ───────────────────────────
 
 /**
- * «طلبت» and «بدهیت» under the total, never in it — one well, one tap to the list. Nothing at all
- * until somebody owes or is owed; the caller leaves it out of the household reading.
+ * طلب و بدهی on the hero (LoansUi.kt `HeroLoans`): beside the total and never in it, so it comes
+ * after the total's own story and wears the change line's anatomy — a 32px mark on the well, one
+ * sentence, a chevron. The mark is قرض's own, and the sentence is how she would say it: «۲۱۲٫۴
+ * میلیون طلب داری». Nothing at all until somebody owes or is owed; the caller leaves it out of the
+ * household reading.
  */
 export function LoansHeroStrip() {
   const { totals } = useLoans();
   if (totals.isEmpty) return null;
-  const said = [
-    ...(totals.owedPeople > 0 ? [`${faCompact(totals.owedToman)} تومان طلب`] : []),
-    ...(totals.owePeople > 0 ? [`${faCompact(totals.oweToman)} تومان بدهی`] : []),
-  ];
+  const owed = totals.owedPeople > 0 ? totals.owedToman : null;
+  const owe = totals.owePeople > 0 ? totals.oweToman : null;
+  const said = [...(owed != null ? [`${faCompact(owed)} تومان طلب`] : []), ...(owe != null ? [`${faCompact(owe)} تومان بدهی`] : [])];
   return (
-    <button type="button" class="loan-strip" aria-label={`طلب و بدهی: ${said.join('، ')}`} onClick={() => openPage('loans')}>
-      {totals.owedPeople > 0 && <span class="grow"><span class="k">طلبت</span><Compact toman={totals.owedToman} class="v" /></span>}
-      {totals.owePeople > 0 && <span class="grow"><span class="k">بدهیت</span><Compact toman={totals.oweToman} class="v" /></span>}
+    <button type="button" class="hero-door loan-hero" aria-label={`طلب و بدهی: ${said.join('، ')}`} onClick={() => openPage('loans')}>
+      <span class="loan-mark" aria-hidden="true"><CategoryIcon glyph="LEND" size={18} stroke={1.6} color="currentColor" /></span>
+      <span class="said">
+        {owed != null && owe != null ? <><b class="figure">{faCompact(owed)}</b> طلب، <b class="figure">{faCompact(owe)}</b> بدهی</>
+          : owed != null ? <><b class="figure">{faCompact(owed)}</b> طلب داری</>
+          : <><b class="figure">{faCompact(owe!)}</b> بدهکاری</>}
+      </span>
       <Chevron size={18} />
     </button>
   );
@@ -125,7 +145,7 @@ export function LoansSection() {
           <p class="plan-empty">قرضی که به کسی دادی یا ازش گرفتی، کنار جمع دارایی‌هات نگه داشته می‌شه، نه توش.</p>
           <button type="button" class="plan-row plan-add" style={{ borderRadius: 'var(--r-group)' }} onClick={openNewPerson}>
             <span class="figure plan-plus" aria-hidden="true">+</span>
-            <span>اولین حساب</span>
+            <span>یه نفر تازه</span>
           </button>
         </>
       ) : (
@@ -155,7 +175,7 @@ function LoansPage() {
       <Screen title="طلب و بدهی" back tabs={false}>
         <EmptyState icon={<PersonMark size={28} />} title="هنوز حسابی نداری."
           body="قرضی که دادی یا گرفتی رو اینجا بنویس، یا وقتی یه واریز رو «قرض» می‌زنی بگو مال کی بوده.">
-          <div style={{ marginTop: 'var(--l)' }}><PillButton voice="primary" label="حساب تازه" onClick={openNewPerson} /></div>
+          <div style={{ marginTop: 'var(--l)' }}><PillButton voice="primary" label="یه نفر تازه" onClick={openNewPerson} /></div>
         </EmptyState>
       </Screen>
     );
@@ -189,7 +209,7 @@ function LoansPage() {
         );
       })}
       <div class="band" style={{ marginTop: 'var(--xl)' }}>
-        <button type="button" class="band-row add-row loan-add" onClick={openNewPerson}><PlusMark size={20} />حساب تازه</button>
+        <button type="button" class="band-row add-row loan-add" onClick={openNewPerson}><PlusMark size={20} />یه نفر تازه</button>
       </div>
     </Screen>
   );
@@ -222,20 +242,27 @@ function LoanPersonPage({ id }: { id: string }) {
   const { views } = useLoans();
   const today = tehranToday();
   const view = views.find((v) => v.person.id === id);
-  // Deleted from its own sheet, which closes this page with it.
+  // Deleted from its own last row, which closes this page with it.
   if (!view) return null;
   const { person, side } = view;
   const settled = side === 'SETTLED';
   const edit = () => openSheet('loanAccount', { id });
   const move = (giving: boolean) => openSheet('loanMove', { personId: id, giving });
-  // [label, giving]: the likely next thing first — money back from whoever owes.
-  const [first, second]: Array<[string, boolean]> = side === 'OWED' ? [['پس داد', false], ['بیشتر دادم', true]]
-    : side === 'OWE' ? [['پس دادم', true], ['بیشتر گرفتم', false]]
-    : [['دادم', true], ['گرفتم', false]];
+  // A person carries every line she wrote about them, so their delete leaves an undo.
+  const remove = () => {
+    const gone = deleteLoanPerson(id);
+    closePage();
+    if (gone) showNotice(`${gone[0].name} حذف شد`, { label: 'برگردون', run: () => restoreLoanPerson(...gone) });
+  };
+  // [label, giving]: the likely next thing first — money back from whoever owes. Every label is hers,
+  // in four words that say which way the money went and why: پس گرفتم / پس دادم settle up, قرض دادم /
+  // قرض گرفتم add to it. «پس داد» beside «بیشتر دادم» left her guessing what each would write.
+  const [first, second]: Array<[string, boolean]> = side === 'OWED' ? [['پس گرفتم', false], ['قرض دادم', true]]
+    : side === 'OWE' ? [['پس دادم', true], ['قرض گرفتم', false]]
+    : [['قرض دادم', true], ['قرض گرفتم', false]];
   return (
     <div class="screen no-tabs">
       <div class="loan-top">
-        <PillButton label="ویرایش" onClick={edit} />
         <PillButton label="برگشت" onClick={closePage} />
       </div>
       <div class="loan-who">
@@ -248,10 +275,15 @@ function LoanPersonPage({ id }: { id: string }) {
         <PillButton voice={settled ? 'tonal' : 'primary'} label={first[0]} onClick={() => move(first[1])} />
         <PillButton label={second[0]} onClick={() => move(second[1])} />
       </div>
-      {!settled && (person.promise != null ? <PromiseRow promise={person.promise} today={today} onClick={edit} /> : (
-        <div style={{ marginTop: 'var(--l)' }}><PillButton label="+ قرار پس دادن" onClick={edit} /></div>
-      ))}
+      {/* No lone «+ قرار» pill: the foot's «ویرایش اسم و قرار» sets a date; once set, it shows here. */}
+      {!settled && person.promise != null && <PromiseRow promise={person.promise} today={today} onClick={edit} />}
       <Trail view={view} today={today} />
+      {/* The transaction page's foot: the person's own acts, and under them, in a band of its own,
+          the delete — on the page, where she looks for it, not inside the edit sheet. */}
+      <div class="txn-acts">
+        <div class="set-band"><ActRow title="ویرایش اسم و قرار" glyph="PENCIL" onClick={edit} /></div>
+        <div class="set-band"><DeleteRow id={id} label="حذف از طلب و بدهی" onConfirmed={remove} /></div>
+      </div>
     </div>
   );
 }
@@ -328,19 +360,22 @@ function Trail({ view, today }: { view: LoanView; today: number }) {
 /**
  * One line of the trail, in the ledger's own convention: money out plain with «−», money in green
  * with «+». Cash wears قرض's and پس‌گرفتن قرض's marks; a unit wears its asset's. A bank row opens its
- * transaction; a line she wrote opens the sheet that takes it back.
+ * transaction; a line she wrote opens its own sheet, to put its size right or take it back.
  */
 function EventRow({ event }: { event: LoanEvent }) {
   const out = event.typeId ? event.amount > 0 : event.rial > 0;
   const type = event.typeId ? typeOf(event.typeId) : null;
   const sub = loanEventSubFa(event);
+  // «از قبل» is where the account stood, not money that moved: no sign, plain ink. A «−۵ میلیون»
+  // beside «از قبل بهت بدهکار بود» read as the opposite of what it says.
+  const opening = event.move?.opening === true;
   const amount: [string, string | null] = type
-    ? [ltrFigure((out ? '−' : '+') + faHeld(Math.abs(event.amount), type.dec)), unitShortFa(type)]
-    : faSignedParts(tomanOf(Math.abs(event.rial)), !out);
+    ? [ltrFigure((opening ? '' : out ? '−' : '+') + faHeld(Math.abs(event.amount), type.dec)), unitShortFa(type)]
+    : opening ? compactParts(tomanOf(Math.abs(event.rial))) : faSignedParts(tomanOf(Math.abs(event.rial)), !out);
   const glyph = out ? 'LEND' : 'PAYBACK';
   const open = () => (event.entry
     ? openPage('txn', { txnRef: event.entry.txn.ref })
-    : event.move && openSheet('loanMoveDelete', { moveId: event.move.id }));
+    : event.move && openSheet('loanLine', { moveId: event.move.id }));
   return (
     <button type="button" class="txn-row" onClick={open}>
       {type ? <span class="loan-asset"><AssetIcon type={type} size={44} /></span> : (
@@ -352,7 +387,7 @@ function EventRow({ event }: { event: LoanEvent }) {
         <span class="txn-title ellipsis">{loanEventTitleFa(event, typeOf)}</span>
         {sub && <span class="txn-line"><span class="ellipsis">{sub}</span></span>}
       </span>
-      <span class={`figure txn-amount${out ? '' : ' gain'}`}><SignedFigure parts={amount} /></span>
+      <span class={`figure txn-amount${out || opening ? '' : ' gain'}`}><SignedFigure parts={amount} /></span>
     </button>
   );
 }
@@ -378,13 +413,32 @@ function unitChoices(owed: Iterable<string>): string[] {
   return [...new Set(['', ...owed, ...held, 'usd', 'coin_emami', 'gold18'])];
 }
 
+/**
+ * What a payment back can be in: the parts of the debt that lean the account's way, units first as
+ * the page lists them. A part pulling the other way is not something this payment settles.
+ */
+function owedUnits(view: LoanView): string[] {
+  const sign = view.side === 'OWE' ? -1 : 1;
+  return [...[...view.units].filter(([, v]) => v * sign > 0).map(([id]) => id), ...(view.rial * sign > 0 ? [''] : [])];
+}
+
+/** All of [unit] that is owed, as its field is seeded. */
+function owedField(view: LoanView, unit: string): string {
+  if (!unit) return rialToField(Math.abs(view.rial));
+  const owed = view.units.get(unit);
+  return owed == null ? '' : fieldNumber(Math.abs(owed));
+}
+
 const UNREADABLE = 'این عدد قابل خوندن نیست. فقط عدد وارد کن.';
 const NO_NAME = 'اسمش رو بنویس.';
 const NO_ONE = 'یه نفر رو انتخاب کن.';
 /** A blank amount, in the field's own word: Toman is a sum of money, a coin or a gram is not. */
 const noAmountFa = (unit: string): string => (unit ? 'مقدارش رو بنویس.' : 'مبلغش رو بنویس.');
 
-/** The unit chips and the amount under them, the unit's own word at the field's end. */
+/**
+ * The unit chips and the amount under them, the unit's own word at the field's end. A choice of cash
+ * alone is no choice, so it shows no chips: the field already says «تومان». No units, no chips.
+ */
 function UnitAmount({ units, unit, onUnit, text, onText, error }: {
   units: string[]; unit: string; onUnit: (unit: string) => void; text: string; onText: (text: string) => void; error: string | null;
 }) {
@@ -392,10 +446,11 @@ function UnitAmount({ units, unit, onUnit, text, onText, error }: {
   const suffix = type ? unitShortFa(type) : 'تومان';
   return (
     <>
-      <div style={{ marginTop: 'var(--m)' }}>
-        <ChipChoice options={units} selected={unit} label={(u) => (u ? typeOf(u).fa : 'نقد')} scroll
-          onSelect={(u) => { if (u !== unit) onText(''); onUnit(u); }} />
-      </div>
+      {units.length > 0 && !(units.length === 1 && units[0] === '') && (
+        <div style={{ marginTop: 'var(--m)' }}>
+          <ChipChoice options={units} selected={unit} label={(u) => (u ? typeOf(u).fa : 'نقد')} scroll onSelect={onUnit} />
+        </div>
+      )}
       <div class="loan-amount-field">
         <AmountField key={unit} raw={text} onRaw={onText} decimals={type ? type.dec : 1} words={!type} ariaLabel={`چقدر، به ${suffix}`}
           error={error ?? (text.trim() !== '' && parseMove(unit, text) == null ? UNREADABLE : null)} />
@@ -416,8 +471,9 @@ const promiseDay = (choice: PromiseChoice, today: number): number | null =>
   choice === 'WEEK' ? today + 7 : choice === 'MONTH' ? jalaliMonthsAfter(today, 1) : choice === 'QUARTER' ? jalaliMonthsAfter(today, 3) : null;
 
 /**
- * 'loanAccount' {id?}: a new account — a name, what is owed (nothing owed is only an empty row under
- * «تسویه شده»), and a date if he gave one — or the same person's name and date, and delete. A new one opens straight onto its page.
+ * 'loanAccount' {id?}: a new person — a name, what is owed (nothing owed is only an empty row under
+ * «تسویه شده»), and a date if he gave one — or the same person's name and date. A new one opens
+ * straight onto its page. Deleting is not here: it is the person page's last row, where it can be found.
  */
 function PersonSheet({ id }: { id?: string }) {
   useData();
@@ -436,7 +492,7 @@ function PersonSheet({ id }: { id?: string }) {
 
   const carried = editing ? null : parseMove(unit, text);
   const ready = name.trim() !== '' && (editing != null || carried != null);
-  const title = editing ? 'ویرایش حساب' : 'حساب تازه';
+  const title = editing ? `ویرایش ${editing.name}` : 'یه نفر تازه';
   const picked = PROMISES.find((c) => promiseDay(c, today) === promise) ?? 'CUSTOM';
 
   const save = () => {
@@ -451,14 +507,6 @@ function PersonSheet({ id }: { id?: string }) {
     // The page takes the sheet's place, so back from it lands where she started.
     if (made) openPage('loanPerson', { id: made });
   };
-  const remove = () => {
-    if (!editing) return;
-    const gone = deleteLoanPerson(editing.id);
-    // The page is this person's too: both go, and the notice stands over whatever is under them.
-    if (navState().pages.at(-1)?.id === 'loanPerson') closePage(); else close();
-    if (gone) showNotice(`حساب ${gone[0].name} پاک شد`, { label: 'برگردون', run: () => restoreLoanPerson(...gone) });
-  };
-
   return (
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
@@ -470,7 +518,7 @@ function PersonSheet({ id }: { id?: string }) {
         <>
           <SheetLabel>کی بدهکاره؟</SheetLabel>
           <SegmentedChoice options={OPENINGS} selected={opening} label={(o) => OPENING_FA[o]} onSelect={setOpening} fontSize={14} />
-          <UnitAmount units={unitChoices([])} unit={unit} onUnit={setUnit} text={text} onText={setText}
+          <UnitAmount units={unitChoices([])} unit={unit} onUnit={(u) => { if (u !== unit) setText(''); setUnit(u); }} text={text} onText={setText}
             error={tried && text.trim() === '' ? noAmountFa(unit) : null} />
         </>
       )}
@@ -488,7 +536,6 @@ function PersonSheet({ id }: { id?: string }) {
       <div class="sheet-actions">
         <PillButton voice="primary" block label="ذخیره" onClick={save} />
       </div>
-      {editing && <SheetDelete label="پاک کردن حساب" onConfirmed={remove} />}
     </Sheet>
   );
 }
@@ -498,14 +545,23 @@ const NEW = '\u0000new';
 /**
  * 'loanMove' {personId?, giving, typeId?}: something handed over or taken back that no bank reported.
  * Opened from a holding there is no person yet, so it asks «به کی؟» first; the unit is the holding's.
+ *
+ * Paying back («پس گرفتم», «پس دادم») opens on all of it, in what is owed: settling an account is the
+ * one tap on «ثبت», a part payment is the figure changed, and the line under the figure says where the
+ * account will stand either way. Only what is owed is offered: dollars and gold beside a debt in cash
+ * were choices with no right answer.
  */
 function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: boolean; typeId?: string }) {
-  const { views } = useLoans();
+  const { view: ledger, views } = useLoans();
   const close = useClose();
+  const opened = personId != null ? views.find((v) => v.person.id === personId) ?? null : null;
+  // Fixed at opening, so the sheet does not change its mind under her as the balance moves.
+  const [repaying] = useState(opened != null && loanRepays(opened.side, giving));
+  const [owed] = useState(() => (opened && repaying ? owedUnits(opened) : []));
   const [who, setWho] = useState<string>(personId ?? (views.length === 0 ? NEW : ''));
   const [newName, setNewName] = useState('');
-  const [unit, setUnit] = useState(!typeId || typeId === TOMAN_ID ? '' : typeId);
-  const [text, setText] = useState('');
+  const [unit, setUnit] = useState(!typeId || typeId === TOMAN_ID ? owed[0] ?? '' : typeId);
+  const [text, setText] = useState(() => (opened && repaying ? owedField(opened, unit) : ''));
   const [moveHolding, setMoveHolding] = useState(true);
   // Raised by a save tap that could not save: from then on every blank answer says so.
   const [tried, setTried] = useState(false);
@@ -520,8 +576,22 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
   // In the holding's own units: Toman for cash, the asset's otherwise.
   const size = parsed == null ? null : unit ? parsed.amount : tomanOf(parsed.rial);
   const over = giving && moving && holding != null && size != null && size > holding.amount + 1e-9;
-  const title = personId == null ? 'قرض دادم' : giving ? `به ${person!.person.name} دادی` : `از ${person!.person.name} گرفتی`;
+  const name = person?.person.name ?? '';
+  // The title says what the button said: «پس گرفتم» opens «از مهدی پس گرفتی».
+  const title = personId == null ? 'قرض دادم'
+    : repaying ? (giving ? `به ${name} پس دادی` : `از ${name} پس گرفتی`)
+    : giving ? `به ${name} قرض دادی` : `از ${name} قرض گرفتی`;
   const ready = parsed != null && !over && (person != null || (who === NEW && newName.trim() !== ''));
+  const sign = giving ? 1 : -1;
+  const preview = person && parsed && !over ? loanStandsFa(person, viewIf(ledger, person.person, {
+    id: '', personId: person.person.id, typeId: unit, rial: parsed.rial * sign, amount: parsed.amount * sign,
+    day: 0, holdingKey: '', opening: false,
+  }, null), typeOf) : null;
+  const pick = (u: string) => {
+    if (u === unit) return;
+    setUnit(u);
+    setText(person && repaying ? owedField(person, u) : '');
+  };
 
   const save = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -551,9 +621,10 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
           )}
         </>
       )}
-      <UnitAmount units={unitChoices(person?.units.keys() ?? [])} unit={unit} onUnit={setUnit} text={text} onText={setText}
+      <UnitAmount units={owed.length > 0 ? owed : unitChoices(person?.units.keys() ?? [])} unit={unit} onUnit={pick} text={text} onText={setText}
         error={over ? `توی دارایی‌هات فقط ${loanAmountFa(typeOf(unit || TOMAN_ID), holding!.amount)} هست.`
           : tried && text.trim() === '' ? noAmountFa(unit) : null} />
+      {preview && <p class="loan-preview">{preview}</p>}
       {switchShown && (
         <div style={{ marginTop: 'var(--s)' }}>
           <SwitchRow title={giving ? 'از دارایی‌هام کم کن' : 'به دارایی‌هام اضافه کن'} checked={moveHolding} onChange={setMoveHolding} />
@@ -566,24 +637,58 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
   );
 }
 
-/** 'loanMoveDelete' {moveId}: a line she wrote, taken back — and its coins back where they came from. */
-function MoveDeleteSheet({ moveId }: { moveId: string }) {
-  useData();
+/**
+ * 'loanLine' {moveId}: a line she wrote, opened from the trail — its size to put right, and its delete.
+ * A typo in «از قبل» or a part payment written as the whole is fixed where it shows, not by deleting
+ * the line and writing it again. The size keeps the line's direction and unit; a line that moved a
+ * holding moves it by the difference, and both effects are said under the figure before she saves.
+ */
+function MoveLineSheet({ moveId }: { moveId: string }) {
+  const { view: ledger, views } = useLoans();
   const close = useClose();
   const move = pref('loans').moves.find((m) => m.id === moveId) ?? null;
+  const [text, setText] = useState(() => (move ? (move.typeId ? fieldNumber(Math.abs(move.amount)) : rialToField(Math.abs(move.rial))) : ''));
+  const [tried, setTried] = useState(false);
   useGone(move == null, close);
   if (!move) return null;
   const event: LoanEvent = { day: move.day, typeId: move.typeId, rial: move.rial, amount: move.amount, entry: null, move };
+  const person = views.find((v) => v.person.id === move.personId) ?? null;
+  const parsed = parseMove(move.typeId, text);
+  const edited = parsed && loanMoveResized(move, parsed.rial, parsed.amount);
+  const changed = edited != null && (edited.rial !== move.rial || edited.amount !== move.amount);
+  const holdings = pref('holdings');
+  const short = changed && loanHoldingsEdit(holdings, move, edited) == null;
+  // Once the old size is back in the holding, the new one has to fit in it.
+  const back = short ? loanHoldingsUndo(holdings, move).find((h) => holdingKey(h) === move.holdingKey) : null;
+  const said = changed && !short ? [
+    ...(person ? [loanStandsFa(person, viewIf(ledger, person.person, edited, move), typeOf)] : []),
+    ...[loanEditHoldingFa(move, edited, typeOf)].filter((line) => line != null),
+  ] : [];
+  const title = loanEventTitleFa(event, typeOf);
+  const sub = [faDay(move.day), loanEventSubFa(event)].filter((part) => part != null).join('، ');
+
+  const save = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setTried(true);
+    if (!edited || short) return;
+    close(() => { if (changed) editLoanMove(move.id, parsed.rial, parsed.amount); });
+  };
+
   return (
-    <Sheet onClose={() => close()} label="این مورد رو پاک کنم؟">
-      <SheetTitle>این مورد رو پاک کنم؟</SheetTitle>
-      <p class="loan-sheet-sub">{`${loanEventTitleFa(event, typeOf)}، ${faDay(move.day)}`}</p>
-      <div style={{ marginTop: 'var(--l)' }}>
-        <SheetDelete label="پاکش کن" onConfirmed={() => close(() => {
-          const gone = deleteLoanMove(move.id);
-          if (gone) showNotice('پاک شد', { label: 'برگردون', run: () => restoreLoanMove(gone) });
-        })} />
+    <Sheet onClose={() => close()} label={title}>
+      <SheetTitle>{title}</SheetTitle>
+      <p class="loan-sheet-sub">{sub}</p>
+      <UnitAmount units={[]} unit={move.typeId} onUnit={() => {}} text={text} onText={setText}
+        error={back ? `توی دارایی‌هات فقط ${loanAmountFa(typeOf(back.typeId), back.amount)} هست.`
+          : tried && text.trim() === '' ? noAmountFa(move.typeId) : null} />
+      {said.map((line) => <p key={line} class="loan-preview">{line}</p>)}
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label="ذخیره" onClick={save} />
       </div>
+      <SheetDelete label="حذف این مورد" onConfirmed={() => close(() => {
+        const gone = deleteLoanMove(move.id);
+        if (gone) showNotice('حذف شد', { label: 'برگردون', run: () => restoreLoanMove(gone) });
+      })} />
     </Sheet>
   );
 }
@@ -688,5 +793,5 @@ registerPage('loans', LoansPage);
 registerPage('loanPerson', LoanPersonPage);
 registerSheet('loanAccount', PersonSheet);
 registerSheet('loanMove', MoveSheet);
-registerSheet('loanMoveDelete', MoveDeleteSheet);
+registerSheet('loanLine', MoveLineSheet);
 registerSheet('loanLink', LinkSheet);

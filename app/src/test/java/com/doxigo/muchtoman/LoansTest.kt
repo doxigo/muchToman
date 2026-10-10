@@ -91,10 +91,63 @@ class LoansTest {
         assertEquals(LoanSide.OWE, view.side)
         assertEquals("بهش بدهکاری", loanSideFa(view.side))
         assertEquals(
-            "با این، حسین ۴٫۱ میلیون تومان بهت بدهکار می‌شه.",
+            "حسین ۴٫۱ میلیون تومان بهت بدهکار می‌شه.",
             loanAfterFa(view, 50_000_000, type),
         )
-        assertEquals("با این، حسابت با حسین صاف می‌شه.", loanAfterFa(view, 9_000_000, type))
+        assertEquals("حسابت با حسین صاف می‌شه.", loanAfterFa(view, 9_000_000, type))
+        assertEquals("هنوز ۴۰۰ هزار تومان به حسین بدهکار می‌مونی.", loanAfterFa(view, 5_000_000, type))
+        assertEquals("روی هم ۱٫۴ میلیون تومان به حسین بدهکار می‌شی.", loanAfterFa(view, -5_000_000, type))
+    }
+
+    @Test
+    fun `paying back what is owed says it settles the account, and a part says what is left`() {
+        val coins = LoanMove("o", mahdi.id, typeId = "coin_emami", amount = 2.0, day = today - 9, opening = true)
+        val cash = LoanMove("c", mahdi.id, rial = 40_000_000, day = today - 9)
+        val book = LoanBook(listOf(mahdi), listOf(coins, cash))
+        val rates = mapOf("coin_emami" to 235_500_000.0)
+        val view = loanView(mahdi, book, emptyMap(), emptyList(), rates)
+        assertTrue(loanRepays(view.side, giving = false))
+        assertFalse(loanRepays(view.side, giving = true))
+        assertFalse(loanRepays(LoanSide.SETTLED, giving = false))
+        // The sheet's sentence is the account worked out again with the move written.
+        fun with(vararg more: LoanMove) = loanView(mahdi, book.copy(moves = book.moves + more), emptyMap(), emptyList(), rates)
+        val allBack = with(
+            LoanMove("b1", mahdi.id, typeId = "coin_emami", amount = -2.0, day = today),
+            LoanMove("b2", mahdi.id, rial = -40_000_000, day = today),
+        )
+        assertEquals("حسابت با مهدی صاف می‌شه.", loanStandsFa(view, allBack, type))
+        // A part payment says what is left, never «بدهکار می‌شه», which read as a new debt.
+        val partBack = with(LoanMove("b", mahdi.id, typeId = "coin_emami", amount = -1.0, day = today))
+        assertEquals("مهدی هنوز ۱ سکه امامی و ۴ میلیون تومان بهت بدهکار می‌مونه.", loanStandsFa(view, partBack, type))
+        val more = with(LoanMove("x", mahdi.id, rial = 10_000_000, day = today))
+        assertEquals("مهدی روی هم ۲ سکه امامی و ۵ میلیون تومان بهت بدهکار می‌شه.", loanStandsFa(view, more, type))
+    }
+
+    @Test
+    fun `a day's trail reads newest first`() {
+        val first = LoanMove("a", mahdi.id, rial = 50_000_000, day = today, opening = true)
+        val then = LoanMove("b", mahdi.id, rial = -10_000_000, day = today)
+        val view = loanView(mahdi, LoanBook(listOf(mahdi), listOf(first, then)), emptyMap(), emptyList(), emptyMap())
+        assertEquals(listOf("b", "a"), view.events.map { it.move?.id })
+    }
+
+    @Test
+    fun `a line put right keeps its direction and moves its holding by the difference`() {
+        val opening = LoanMove("o", mahdi.id, rial = -50_000_000, day = today, opening = true)
+        assertEquals(-45_000_000L, loanMoveResized(opening, 45_000_000, 0.0).rial)
+        val lent = LoanMove("m", mahdi.id, typeId = "coin_emami", amount = 1.0, day = today, holdingKey = "h1")
+        val drawer = listOf(Holding("coin_emami", 2.0, id = "h1"))
+        val more = loanMoveResized(lent, 0L, 3.0)
+        // One coin came back for the old line, three left for the new one.
+        assertEquals(0.0, loanHoldingsEdit(drawer, lent, more)!!.single().amount, 0.0)
+        assertNull(loanHoldingsEdit(drawer, lent, loanMoveResized(lent, 0L, 4.0)))
+        assertEquals("۲ سکه امامی از دارایی‌هات کم می‌شه.", loanEditHoldingFa(lent, more, type))
+        val gold = LoanMove("g", mahdi.id, typeId = "gold18", amount = 2.0, day = today, holdingKey = "h3")
+        assertEquals("۰٫۵ گرم طلای ۱۸ عیار به دارایی‌هات اضافه می‌شه.", loanEditHoldingFa(gold, loanMoveResized(gold, 0L, 1.5), type))
+        val back = LoanMove("b", mahdi.id, rial = -10_000_000, day = today, holdingKey = "h2")
+        assertEquals("۱ میلیون تومان به دارایی‌هات اضافه می‌شه.", loanEditHoldingFa(back, loanMoveResized(back, 20_000_000, 0.0), type))
+        assertNull(loanEditHoldingFa(opening, loanMoveResized(opening, 1, 0.0), type))
+        assertNull(loanEditHoldingFa(lent, lent, type))
     }
 
     @Test

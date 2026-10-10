@@ -163,6 +163,14 @@ data class LoanView(
     val olderRial: Long,
 )
 
+/** Which way an account leans. Only unpriced units left: their own sign says which way. */
+private fun sideOf(rial: Long, units: Map<String, Double>, toman: Double): LoanSide = when {
+    rial == 0L && units.isEmpty() -> LoanSide.SETTLED
+    toman > 0.0 -> LoanSide.OWED
+    toman < 0.0 -> LoanSide.OWE
+    else -> if (units.values.sum() >= 0.0) LoanSide.OWED else LoanSide.OWE
+}
+
 fun loanView(
     person: LoanPerson,
     book: LoanBook,
@@ -189,22 +197,16 @@ fun loanView(
         val rate = rates[type]?.takeIf { it > 0.0 && it.isFinite() }
         if (rate == null) missing += type else toman += amount * rate
     }
-    val side = when {
-        rial == 0L && units.isEmpty() -> LoanSide.SETTLED
-        toman > 0.0 -> LoanSide.OWED
-        toman < 0.0 -> LoanSide.OWE
-        // Only unpriced units: their own sign says which way.
-        else -> if (units.values.sum() >= 0.0) LoanSide.OWED else LoanSide.OWE
-    }
+    // Moves are kept in the order she wrote them; reversed, a day's newest is its first line too.
     val events = held.map { LoanEvent(it.txn.day, "", mine.getValue(it.txn.ref).rial, 0.0, entry = it) } +
-        moves.map { LoanEvent(it.day, it.typeId, it.rial, it.amount, move = it) }
+        moves.asReversed().map { LoanEvent(it.day, it.typeId, it.rial, it.amount, move = it) }
     return LoanView(
         person = person,
         rial = rial,
         units = units,
         toman = toman,
         missing = missing,
-        side = side,
+        side = sideOf(rial, units, toman),
         events = events.sortedByDescending { it.day },
         olderRial = mine.filterKeys { it !in heldRefs }.values.sumOf { it.rial },
     )
@@ -313,6 +315,30 @@ fun loanHoldingsRedo(holdings: List<Holding>, move: LoanMove): List<Holding> {
 }
 
 /**
+ * [move] at a new size, in its own direction and unit — what editing a trail line writes. [rial]
+ * and [amount] are magnitudes as she typed them; the sign stays the move's own, so a line written
+ * as money out stays money out.
+ */
+fun loanMoveResized(move: LoanMove, rial: Long, amount: Double): LoanMove =
+    if (move.typeId.isBlank()) move.copy(rial = if (move.rial < 0L) -rial else rial)
+    else move.copy(amount = if (move.amount < 0.0) -amount else amount)
+
+/**
+ * Her holdings with [move] changed to [edited]: the old change taken back and the new one made, on
+ * the same holding. Null when the new size takes out more than that holding has once the old one is
+ * back — the coins she hands over have to be coins the app thinks she has, as when lending.
+ */
+fun loanHoldingsEdit(holdings: List<Holding>, move: LoanMove, edited: LoanMove): List<Holding>? {
+    if (move.holdingKey.isBlank()) return holdings
+    val back = loanHoldingsUndo(holdings, move)
+    // The holding is gone since: there is nothing left for the move to change.
+    val held = back.firstOrNull { it.key == move.holdingKey } ?: return back
+    val out = if (edited.typeId.isBlank()) tomanOf(edited.rial) else edited.amount
+    if (out > held.amount + UNIT_EPSILON) return null
+    return loanHoldingsRedo(back, edited)
+}
+
+/**
  * Which holding a move in this unit would change: cash moves the «پول نقد» holding, anything
  * else its own asset's. Null when there is none to change and nothing should be made — lending
  * coins she never entered, or cash when she does not count her cash here.
@@ -393,26 +419,62 @@ fun loanSubFa(view: LoanView, today: Long, type: (String) -> AssetType): Pair<St
 }
 
 /**
- * What linking this much to this person would leave, said before she commits: «با این، حسین ۴٫۱
- * میلیون تومان بهت بدهکار می‌شه.» Only the Toman part moves, so the sentence is about the whole
- * account after it.
+ * What linking this much to this person would leave, said before she commits: «حسین ۴٫۱ میلیون
+ * تومان بهت بدهکار می‌شه.» Only the Toman part moves, so the sentence is about the whole account
+ * after it.
  */
 fun loanAfterFa(view: LoanView, deltaRial: Long, type: (String) -> AssetType): String {
-    val after = view.copy(rial = view.rial + deltaRial, toman = view.toman + tomanOf(deltaRial))
-    val side = when {
-        after.rial == 0L && after.units.isEmpty() -> LoanSide.SETTLED
-        after.toman > 0.0 -> LoanSide.OWED
-        after.toman < 0.0 -> LoanSide.OWE
-        else -> if (after.units.values.sum() >= 0.0) LoanSide.OWED else LoanSide.OWE
-    }
-    val name = view.person.name
+    val rial = view.rial + deltaRial
+    val toman = view.toman + tomanOf(deltaRial)
+    return loanStandsFa(view, view.copy(rial = rial, toman = toman, side = sideOf(rial, view.units, toman)), type)
+}
+
+/**
+ * Where an account will stand once a change she is about to make is made, measured against where it
+ * stands now: a payment that leaves something says what is *left* («مرتضی هنوز ۵ گرم طلا بهت بدهکار
+ * می‌مونه»), more lent says the new whole («روی هم»), and one that clears it says so. A bare «بدهکار
+ * می‌شه» under a part payment read as a new debt.
+ */
+fun loanStandsFa(before: LoanView, after: LoanView, type: (String) -> AssetType): String {
+    val name = after.person.name
     val what = loanWhatFa(after, type)
-    return when (side) {
-        LoanSide.OWED -> "با این، $name $what بهت بدهکار می‌شه."
-        LoanSide.OWE -> "با این، $what به $name بدهکار می‌شی."
-        LoanSide.SETTLED -> "با این، حسابت با $name صاف می‌شه."
+    val kept = after.side == before.side
+    // By today's value; units with no rate fall back on their own count.
+    val smaller = kept && (
+        abs(after.toman) < abs(before.toman) ||
+            (after.toman == before.toman && after.units.values.sumOf { abs(it) } < before.units.values.sumOf { abs(it) })
+        )
+    return when (after.side) {
+        LoanSide.SETTLED -> "حسابت با $name صاف می‌شه."
+        LoanSide.OWED -> when {
+            smaller -> "$name هنوز $what بهت بدهکار می‌مونه."
+            kept -> "$name روی هم $what بهت بدهکار می‌شه."
+            else -> "$name $what بهت بدهکار می‌شه."
+        }
+        LoanSide.OWE -> when {
+            smaller -> "هنوز $what به $name بدهکار می‌مونی."
+            kept -> "روی هم $what به $name بدهکار می‌شی."
+            else -> "$what به $name بدهکار می‌شی."
+        }
     }
 }
+
+/**
+ * What resizing [move] to [edited] does to her دارایی, said under the figure before she saves: the
+ * difference, joining or leaving. Null when the move never touched a holding or the size is unchanged.
+ */
+fun loanEditHoldingFa(move: LoanMove, edited: LoanMove, type: (String) -> AssetType): String? {
+    if (move.holdingKey.isBlank()) return null
+    val cash = move.typeId.isBlank()
+    val gain = if (cash) tomanOf(move.rial - edited.rial) else move.amount - edited.amount
+    if (abs(gain) <= UNIT_EPSILON) return null
+    val what = if (cash) loanRialFa(move.rial - edited.rial) else loanAmountFa(type(move.typeId), gain)
+    return if (gain > 0.0) "$what به دارایی‌هات اضافه می‌شه." else "$what از دارایی‌هات کم می‌شه."
+}
+
+/** Whether a move this way pays the account down — «پس گرفتم», «پس دادم» — rather than adding to it. */
+fun loanRepays(side: LoanSide, giving: Boolean): Boolean =
+    (side == LoanSide.OWED && !giving) || (side == LoanSide.OWE && giving)
 
 /** A trail line's title: «دادی», «پس داد», «از قبل», or the bank row's own name. */
 fun loanEventTitleFa(event: LoanEvent, type: (String) -> AssetType): String {

@@ -590,7 +590,7 @@ internal fun TxnActs(
 
 /** One act in the band: [IndexRow]'s anatomy with the control's grey disc. */
 @Composable
-private fun ActRow(
+internal fun ActRow(
     title: String,
     glyph: ActGlyph,
     shape: Shape,
@@ -646,10 +646,10 @@ private fun ActRow(
  * The delete, as a row of its own band. Error ink on the band's own ground until the first tap;
  * then the row fills with error and the name becomes the question — the colour confirms, the
  * words carry it, and TalkBack hears it. Keyed by [ref], so a row reused for another transaction
- * never arrives armed.
+ * never arrives armed. A person's page in طلب و بدهی ends on the same row.
  */
 @Composable
-private fun DeleteRow(ref: String, onConfirmed: () -> Unit) {
+internal fun DeleteRow(ref: String, onConfirmed: () -> Unit, label: String = "حذف این تراکنش") {
     var armed by remember(ref) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     val ground by animateColorAsState(
@@ -677,7 +677,7 @@ private fun DeleteRow(ref: String, onConfirmed: () -> Unit) {
             ActIcon(ActGlyph.TRASH, ink)
         }
         Text(
-            if (armed) "مطمئنی؟ برای حذف دوباره بزن" else "حذف این تراکنش",
+            if (armed) "مطمئنی؟ برای حذف دوباره بزن" else label,
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = ink,

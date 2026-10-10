@@ -2305,6 +2305,22 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         return move
     }
 
+    /**
+     * A line she wrote, at a new size — [rial] for cash, [amount] otherwise, both as typed; the
+     * direction is the line's own. A line that moved a holding moves it again by the difference.
+     * False when that would take out more than the holding has, which the sheet already refused.
+     */
+    fun editLoanMove(id: String, rial: Long, amount: Double): Boolean {
+        val book = _state.value.loans
+        val move = book.moves.firstOrNull { it.id == id } ?: return false
+        val edited = loanMoveResized(move, rial, amount)
+        if (move.holdingKey.isNotBlank()) {
+            persist(loanHoldingsEdit(_state.value.holdings, move, edited) ?: return false)
+        }
+        saveLoans(book.copy(moves = book.moves.map { if (it.id == id) edited else it }))
+        return true
+    }
+
     fun restoreLoanMove(move: LoanMove) {
         val book = _state.value.loans
         if (book.moves.any { it.id == move.id }) return
@@ -2969,6 +2985,15 @@ data class UiState(
     /** Every person and where they stand, valued at the same rates the total is. See `Loans.kt`. */
     val loanViews: List<LoanView> by lazy { loanViews(loans, ledger.loanLinks, ledger.entries, effective) }
     val loanTotals: LoanTotals by lazy { loanTotals(loanViews) }
+
+    /**
+     * Where a person would stand with [add] written or [drop] taken back — the sentence a sheet says
+     * before she commits, worked out the one way every balance is.
+     */
+    fun loanViewIf(personId: String, add: LoanMove? = null, drop: LoanMove? = null): LoanView? =
+        loans.people.firstOrNull { it.id == personId }?.let { person ->
+            loanView(person, loans.copy(moves = loans.moves.filter { it != drop } + listOfNotNull(add)), ledger.loanLinks, ledger.entries, effective)
+        }
 }
 
 /** What the backup rows in تنظیمات have to say. Everything user-visible in it is words. */

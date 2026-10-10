@@ -5,8 +5,8 @@ import type { AssetType } from '../src/catalog';
 import { jalaliDay } from '../src/jalali';
 import {
   decodeLoanLink, encodeLoanLink, loanAfterFa, loanAmountFa, loanHoldingFor, loanHoldings, loanHoldingsRedo,
-  loanHoldingsUndo, loanLinkRial, loanLinkable, loanPromiseFa, loanSideFa, loanSubFa, loanTotals, loanView, loanViews,
-  loanWhatFa, newLoanPerson,
+  loanEditHoldingFa, loanHoldingsEdit, loanHoldingsUndo, loanLinkRial, loanLinkable, loanMoveResized, loanPromiseFa, loanRepays,
+  loanSideFa, loanStandsFa, loanSubFa, loanTotals, loanView, loanViews, loanWhatFa, newLoanPerson,
 } from '../src/loans';
 import type { LoanBook, LoanLink, LoanMove, LoanPerson } from '../src/loans';
 import type { Holding, LedgerEntry, WalletLink } from '../src/model';
@@ -81,8 +81,54 @@ describe('loans', () => {
     const view = loanView(hossein, book([hossein]), links, [borrowed], {});
     expect(view.side).toBe('OWE');
     expect(loanSideFa(view.side)).toBe('بهش بدهکاری');
-    expect(loanAfterFa(view, 50_000_000, type)).toBe('با این، حسین ۴٫۱ میلیون تومان بهت بدهکار می‌شه.');
-    expect(loanAfterFa(view, 9_000_000, type)).toBe('با این، حسابت با حسین صاف می‌شه.');
+    expect(loanAfterFa(view, 50_000_000, type)).toBe('حسین ۴٫۱ میلیون تومان بهت بدهکار می‌شه.');
+    expect(loanAfterFa(view, 9_000_000, type)).toBe('حسابت با حسین صاف می‌شه.');
+    expect(loanAfterFa(view, 5_000_000, type)).toBe('هنوز ۴۰۰ هزار تومان به حسین بدهکار می‌مونی.');
+    expect(loanAfterFa(view, -5_000_000, type)).toBe('روی هم ۱٫۴ میلیون تومان به حسین بدهکار می‌شی.');
+  });
+
+  it('paying back what is owed says it settles the account, and a part says what is left', () => {
+    const coins = move('o', mahdi.id, { typeId: 'coin_emami', amount: 2, day: today - 9, opening: true });
+    const cash = move('c', mahdi.id, { rial: 40_000_000, day: today - 9 });
+    const rates = { coin_emami: 235_500_000 };
+    const view = loanView(mahdi, book([mahdi], [coins, cash]), new Map(), [], rates);
+    expect(loanRepays(view.side, false)).toBe(true);
+    expect(loanRepays(view.side, true)).toBe(false);
+    expect(loanRepays('SETTLED', false)).toBe(false);
+    // The sheet's sentence is the account worked out again with the move written.
+    const withMoves = (...more: LoanMove[]) => loanView(mahdi, book([mahdi], [coins, cash, ...more]), new Map(), [], rates);
+    const allBack = withMoves(move('b1', mahdi.id, { typeId: 'coin_emami', amount: -2 }), move('b2', mahdi.id, { rial: -40_000_000 }));
+    expect(loanStandsFa(view, allBack, type)).toBe('حسابت با مهدی صاف می‌شه.');
+    // A part payment says what is left, never «بدهکار می‌شه», which read as a new debt.
+    const partBack = withMoves(move('b', mahdi.id, { typeId: 'coin_emami', amount: -1 }));
+    expect(loanStandsFa(view, partBack, type)).toBe('مهدی هنوز ۱ سکه امامی و ۴ میلیون تومان بهت بدهکار می‌مونه.');
+    const more = withMoves(move('x', mahdi.id, { rial: 10_000_000 }));
+    expect(loanStandsFa(view, more, type)).toBe('مهدی روی هم ۲ سکه امامی و ۵ میلیون تومان بهت بدهکار می‌شه.');
+  });
+
+  it("a day's trail reads newest first", () => {
+    const first = move('a', mahdi.id, { rial: 50_000_000, opening: true });
+    const then = move('b', mahdi.id, { rial: -10_000_000 });
+    const view = loanView(mahdi, book([mahdi], [first, then]), new Map(), [], {});
+    expect(view.events.map((e) => e.move?.id)).toEqual(['b', 'a']);
+  });
+
+  it('a line put right keeps its direction and moves its holding by the difference', () => {
+    const opening = move('o', mahdi.id, { rial: -50_000_000, opening: true });
+    expect(loanMoveResized(opening, 45_000_000, 0).rial).toBe(-45_000_000);
+    const lent = move('m', mahdi.id, { typeId: 'coin_emami', amount: 1, holdingKey: 'h1' });
+    const drawer = [holding('coin_emami', 2, 'h1')];
+    const more = loanMoveResized(lent, 0, 3);
+    // One coin came back for the old line, three left for the new one.
+    expect(loanHoldingsEdit(drawer, lent, more)![0].amount).toBe(0);
+    expect(loanHoldingsEdit(drawer, lent, loanMoveResized(lent, 0, 4))).toBeNull();
+    expect(loanEditHoldingFa(lent, more, type)).toBe('۲ سکه امامی از دارایی‌هات کم می‌شه.');
+    const gold = move('g', mahdi.id, { typeId: 'gold18', amount: 2, holdingKey: 'h3' });
+    expect(loanEditHoldingFa(gold, loanMoveResized(gold, 0, 1.5), type)).toBe('۰٫۵ گرم طلای ۱۸ عیار به دارایی‌هات اضافه می‌شه.');
+    const back = move('b', mahdi.id, { rial: -10_000_000, holdingKey: 'h2' });
+    expect(loanEditHoldingFa(back, loanMoveResized(back, 20_000_000, 0), type)).toBe('۱ میلیون تومان به دارایی‌هات اضافه می‌شه.');
+    expect(loanEditHoldingFa(opening, loanMoveResized(opening, 1, 0), type)).toBeNull();
+    expect(loanEditHoldingFa(lent, lent, type)).toBeNull();
   });
 
   it('an asset with no rate is named and never counted as zero', () => {
