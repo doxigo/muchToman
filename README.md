@@ -180,10 +180,8 @@ again. Other banks' app notifications are not read.
 
 <img src="docs/screenshots/banks.png" width="280">
 
-A bank that starts sending from a new shortcode becomes a suggestion card in the app; your tap
-is what adds it, on that phone only. Some banks never earn a card, because their messages don't name
-the bank or star out the balance. For those, the bank accounts sheet lists every unknown sender
-whose messages carry an amount, and you say which bank it is.
+If a bank starts sending from a new shortcode, the bank accounts sheet lists every unknown sender
+whose messages carry an amount. You say which bank it is, and it's added on that phone only.
 
 ## Install
 

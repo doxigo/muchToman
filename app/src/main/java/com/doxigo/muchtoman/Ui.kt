@@ -1460,13 +1460,11 @@ private fun AppScreens(
             accounts = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified),
             reads = state.readsBanks,
             disabled = state.disabledBanks,
-            strangers = state.strangeSenders,
             onAnchor = vm::setBankBalance,
             onToggle = vm::setBankEnabled,
             onForget = vm::forgetBankAccount,
             onAddNumber = vm::addBankNumber,
             loadSenders = vm::loadSenderCandidates,
-            onDismissSender = vm::dismissSender,
             onRescan = vm::rescanSms,
             onDismiss = { banks = false },
         )
@@ -2513,13 +2511,11 @@ private fun BankSheet(
     /** Whether anything reads her banks. Off, every account here is one she keeps by hand. */
     reads: Boolean,
     disabled: Set<String>,
-    strangers: List<StrangeSender>,
     onAnchor: (String, Double) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onForget: (String) -> Unit,
     onAddNumber: (String, String) -> Unit,
     loadSenders: suspend () -> List<SenderCandidate>?,
-    onDismissSender: (String) -> Unit,
     onRescan: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2598,88 +2594,9 @@ private fun BankSheet(
                 // be tools for something she said no to.
                 if (!reads) return@LazyColumn
 
-                // A message that names one of her banks, arrived from a number the list does
-                // not have — the one silence worth breaking, since without it a bank that adds
-                // a shortcode simply freezes and looks like a reading bug. Her tap is what adds
-                // the number; the message's own text only ever suggests.
-                items(strangers, key = { "s_${it.sender}" }) { stranger ->
-                    val bankFa = runCatching { Bank.valueOf(stranger.bank) }
-                        .getOrDefault(Bank.OTHER).fa
-                    Card(
-                        onClick = { openSmsThread(context, stranger.sender) },
-                        shape = RoundedCornerShape(Radius.card),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(Modifier.padding(Space.l)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                BankLogo(stranger.bank)
-                                Spacer(Modifier.width(Space.s))
-                                Text(
-                                    "یه پیامک شبیه پیامک‌های $bankFa از شماره‌ای رسیده که هنوز توی فهرست نیست:",
-                                    fontSize = 13.sp,
-                                    lineHeight = 20.sp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
-                            }
-                            Text(
-                                bidi(stranger.sender),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.padding(top = Space.xs),
-                            )
-                            Text(
-                                "«${stranger.snippet}»",
-                                fontSize = 12.sp,
-                                lineHeight = 19.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = Space.xs),
-                            )
-                            Text(
-                                "باز کردن پیامک‌ها",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                textDecoration = TextDecoration.Underline,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.padding(top = Space.s),
-                            )
-                            // Stacked answers, full width, like a sheet's: the confirm keeps
-                            // «اضافه‌اش کن» — the words that say what it does — at any width.
-                            Column(
-                                Modifier.padding(top = Space.m),
-                                verticalArrangement = Arrangement.spacedBy(Space.s),
-                            ) {
-                                PillButton(
-                                    "این شماره مال $bankFa هست؛ اضافه‌اش کن",
-                                    { onAddNumber(stranger.bank, stranger.sender) },
-                                    Modifier.fillMaxWidth(),
-                                    voice = ButtonVoice.PRIMARY,
-                                )
-                                // Two taps, as for deleting a holding. This sits right under
-                                // the confirm button and there is no undo: a mistap here
-                                // silences that bank for good.
-                                ArmedButton(
-                                    "رد کردن",
-                                    "برای رد کردن، دوباره بزن",
-                                    { onDismissSender(stranger.sender) },
-                                    Modifier.fillMaxWidth(),
-                                    voice = ButtonVoice.TONAL,
-                                    key = stranger.sender,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // A bank that never names itself (صادرات, پاسارگاد) or stars out its مانده
-                // (خاورمیانه) never earns a suggestion card, so a new number of theirs could not
-                // be added at all. This lists every unknown sender whose messages would be read,
-                // and she names the bank.
+                // A bank that starts sending from a new number simply freezes, which looks like a
+                // reading bug. This lists every unknown sender whose messages would be read, and
+                // she names the bank.
                 // Full-width pills, a gap below the last card: these act on the whole list, not
                 // on the card above them, and two floating green lines read as neither.
                 if (!picking) {
@@ -2694,10 +2611,7 @@ private fun BankSheet(
                         )
                     }
                 } else {
-                    // One card per sender: one that is already a suggestion above stays there.
-                    val offered = found.orEmpty().filterNot { c ->
-                        strangers.any { senderKey(it.sender) == senderKey(c.sender) }
-                    }
+                    val offered = found.orEmpty()
                     item {
                         Text(
                             when {
@@ -2751,8 +2665,8 @@ private fun BankSheet(
 
 /**
  * One sender the picker offers: the newest of its messages that reads as money, and which bank it
- * is. The bank the message names comes preselected. Adding is its own tap, worded as on a
- * suggestion card, because a number cannot be taken back off a bank once it is on one.
+ * is. Nothing comes preselected — she names the bank. Adding is its own tap after that, because a
+ * number cannot be taken back off a bank once it is on one.
  */
 @Composable
 private fun SenderCandidateCard(
@@ -2762,7 +2676,7 @@ private fun SenderCandidateCard(
     onAdd: (Bank) -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    var bank by remember(candidate.sender) { mutableStateOf(candidate.guess) }
+    var bank by remember(candidate.sender) { mutableStateOf<Bank?>(null) }
     var choosing by remember(candidate.sender) { mutableStateOf(false) }
     Card(
         onClick = onOpen,

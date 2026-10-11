@@ -522,13 +522,12 @@ class MoneyTest {
     }
 
     @Test
-    fun `ayandeh sender suggestions are not trusted as another bank`() {
+    fun `ayandeh senders are not trusted as another bank`() {
         assertNull(bankOf("AyandehBank"))
         assertNull(bankOf("+98700745"))
         assertTrue(isIgnoredBankSms("AyandehBank", "مانده 5,000,000 ریال"))
         assertTrue(isIgnoredBankSms("+98700745", "مانده 5,000,000 ریال"))
         assertTrue(isIgnoredBankSms("unknown", "بانک آينده\nمانده 5,000,000 ریال"))
-        assertNull(guessBank("بانک آینده\nانتقال به بانک رفاه\nمانده 5,000,000 ریال"))
     }
 
     @Test
@@ -548,36 +547,6 @@ class MoneyTest {
         }
         assertEquals(1, accounts.size)
         assertEquals(46_072_530.9, bankTotal(accounts, emptySet()), 0.01)
-    }
-
-    @Test
-    fun `only a message naming one of her banks earns a new-number suggestion`() {
-        // The first cut listed every sender whose message contained مانده — which is also how
-        // Irancell announces remaining data — and the sheet filled with red noise. Now the
-        // figure must sit right after the balance word, be big enough to be money, and the
-        // body must name one of the banks we actually read.
-        val atm = "بانک خاورمیانه\nبرداشت وجه از خودپرداز\n-5,025,000\n020/000016703\nمانده 338,185,038"
-        assertTrue(looksLikeBankSms(atm))
-        assertEquals(Bank.KHAVARMIANEH, guessBank(atm))
-        assertEquals(Bank.BLU, guessBank("بلو\nموجودی: 1,007,033,963 ریال"))
-        // A bank listed by name with no numbers of its own is suggestible too, and that is the
-        // whole point of listing it: her tap on the suggestion is the only route by which a
-        // سینا sending number can ever become known to this phone. The cost is that a promotion
-        // naming a bank and quoting a big enough figure now earns one suggestion, dismissed once.
-        assertEquals(Bank.SINA, guessBank("بانک سینا\nخرید اینترنتی\nمانده 5,000,000"))
-        // An operator's مانده is data, not money; a bank nowhere in the list suggests nothing;
-        // a small figure is not a balance; chatter is chatter.
-        assertTrue(!looksLikeBankSms("مانده اینترنت شما: 2,500,000 کیلوبایت"))
-        assertNull(guessBank("جشنواره بانک ملل! مانده 5,000,000"))
-        // مسکن joined the enum, so what used to be the "nowhere in the list" example is now
-        // suggestible like سینا above.
-        assertEquals(Bank.MASKAN, guessBank("جشنواره بانک مسکن! مانده 5,000,000"))
-        // آینده is in the enum but still on IGNORED_BANKS, which wins: being listed by name makes
-        // a bank suggestible, and the ignore list is the separate, deliberate veto over that.
-        assertNull(guessBank("بانک آینده\nخرید اینترنتی\nمانده 5,000,000"))
-        assertTrue(!looksLikeBankSms("مانده وقت شما ۳ روز است"))
-        assertTrue(!looksLikeBankSms("رمز یکبار مصرف شما: 48213"))
-        assertTrue(!looksLikeBankSms("سلام قربونت برم"))
     }
 
     @Test
@@ -602,8 +571,7 @@ class MoneyTest {
 
     @Test
     fun `the picker offers unknown senders whose messages would be read, newest first`() {
-        // صادرات names no bank and خاورمیانه stars out its مانده, so neither ever becomes a
-        // suggestion card. Picking by hand is the only way a new number of theirs gets added.
+        // She names the bank herself: nothing is guessed from the body's wording.
         val recent = listOf(
             RawSms("20004001", "بانک خاورمیانه\nبرداشت وجه از خودپرداز\n-5,025,000\nمانده **********", 9),
             RawSms("+989121234567", "سلام قربونت برم", 8),                         // nothing to read
@@ -616,9 +584,7 @@ class MoneyTest {
         )
         val offered = senderCandidates(recent, extraLookup(mapOf("KHAVARMIANEH" to listOf("MEB2024"))))
         assertEquals(listOf("20004001", "98700799"), offered.map { it.sender })
-        assertEquals(9L, offered[0].at)                     // its newest message, not the older one
-        assertEquals(Bank.KHAVARMIANEH, offered[0].guess)   // it names its bank
-        assertNull(offered[1].guess)                        // صادرات never does
+        assertEquals(9L, offered[0].at)   // its newest message, not the older one
         assertTrue(Bank.OTHER !in PICKABLE_BANKS && Bank.AYANDEH !in PICKABLE_BANKS)
     }
 
@@ -804,17 +770,6 @@ class MoneyTest {
         assertEquals(Bank.SAMAN, bankOf("9123456789", line))
         assertNull(bankOf("3456789", line))
         assertNull(bankOf("989123456789123", line))
-    }
-
-    @Test
-    fun `a bank name inside a longer word suggests nothing`() {
-        // "سامانه" is the portal half of Iran's service messages mention, and it contains
-        // "سامان" — a substring match offered to add a stock portal to her Saman account.
-        assertNull(guessBank("موجودی سهام شما در سامانه ۴۵,۰۰۰,۰۰۰ ریال است"))
-        assertNull(guessBank("فروشگاه رفاهی: موجودی کارت هدیه 5,000,000 ریال"))
-        // The real thing still matches, with or without بانک in front of it.
-        assertEquals(Bank.SAMAN, guessBank("بانک سامان\nمانده 460,725,309"))
-        assertEquals(Bank.REFAH, guessBank("بانک رفاه - مانده 8,000,000 ریال"))
     }
 
     @Test

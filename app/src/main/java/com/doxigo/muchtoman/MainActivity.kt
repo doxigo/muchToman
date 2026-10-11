@@ -107,7 +107,6 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             notified = canReadNotifications(app),
             bankAccounts = store.bankAccounts,
             disabledBanks = store.disabledBanks,
-            strangeSenders = store.strangeSenders,
             dismissedUpdate = store.dismissedUpdate,
             fromStore = installedByStore(app),
             reportExcluded = store.reportExcluded,
@@ -2500,47 +2499,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val messages = (inbox + notes).sortedBy { it.at }
         if (messages.isEmpty()) return
 
-        // Re-keyed through senderKey on the way in: the key function has changed once
-        // already (whitespace collapse), and a dismissal stored under an old key must
-        // stay dismissed. senderKey is a fixpoint over its own output.
-        val dismissed = store.dismissedSenders.map(::senderKey).toSet()
         var accounts = store.bankAccounts
         val seen = if (rebuilding) emptySet() else store.seenSms
         val reparsed = mutableListOf<BankSms>()
         val fresh = mutableListOf<String>()
-        val strangers = store.strangeSenders.toMutableList()
         for (m in messages) {
             val key = smsKey(m.from, m.body, m.at)
             if (key in seen || legacySmsKey(m.body, m.at) in seen || key in fresh) continue
-            val parsed = parseBankSms(m.from, m.body, m.at, extra)
-            if (parsed == null) {
-                // Skipped, and normally that is the end of it. The one silence worth
-                // breaking: a message that names one of HER banks from a number the list
-                // lacks — that is how a bank that adds a shortcode "freezes". It becomes a
-                // one-tap suggestion in the sheet, and her tap is what adds the number.
-                val from = m.from.trim()
-                if (
-                    from.isNotEmpty() &&
-                    senderKey(from) !in dismissed &&
-                    !isIgnoredBankSms(from, m.body) &&
-                    looksLikeBankSms(m.body)
-                ) {
-                    guessBank(m.body)?.let { g ->
-                        // Replace rather than skip. Messages arrive oldest first, so
-                        // keeping the first sighting pinned every active sender to its
-                        // earliest date — and the sort below then buried the sender she is
-                        // actually asking about underneath a dozen one-off promos.
-                        strangers.removeAll { senderKey(it.sender) == senderKey(from) }
-                        strangers += StrangeSender(
-                            sender = from,
-                            bank = g.name,
-                            snippet = snippetOf(m.body),
-                            at = m.at,
-                        )
-                    }
-                }
-                continue
-            }
+            val parsed = parseBankSms(m.from, m.body, m.at, extra) ?: continue
             // Through the plausibility gate, not applyBankSms directly: a garbled twenty-one
             // -digit figure from a matched sender must contribute nothing — see [foldBankSms].
             if (rebuilding) reparsed += parsed else accounts = foldBankSms(accounts, parsed)
@@ -2552,17 +2518,6 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (rebuilding) accounts = rebuildBankAccounts(accounts, reparsed)
         store.bankAccounts = accounts
         store.seenSms = rememberSeen(seen, fresh)
-        // A stranger whose number has since been added resolves and drops off the list, as
-        // does one she dismissed. Newest first, so the message she is asking about — which
-        // is almost always the latest — sits at the top instead of behind old promos.
-        val currentDismissed = store.dismissedSenders.map(::senderKey).toSet()
-        store.strangeSenders = strangers
-            .filter { bankOf(it.sender, extra) == null && senderKey(it.sender) !in currentDismissed }
-            .sortedByDescending { it.at }
-            .take(12)
-        _state.update {
-            it.copy(bankAccounts = accounts, strangeSenders = store.strangeSenders)
-        }
         // Advanced past everything we looked at, parsed or not — an advert from a bank is
         // not worth re-reading on every launch. Never past now, though: one inbox row
         // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
@@ -2592,8 +2547,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         store.seenSms = emptySet()
         store.smsScannedTo = 0L
         store.notifyScannedTo = 0L
-        store.strangeSenders = emptyList()
-        _state.update { it.copy(bankAccounts = kept, strangeSenders = emptyList()) }
+        _state.update { it.copy(bankAccounts = kept) }
     }
 
     /**
@@ -2657,21 +2611,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** She waved a suggestion away. It stays away — across rescans and upgrades too. */
-    fun dismissSender(sender: String) {
-        store.dismissedSenders = store.dismissedSenders + senderKey(sender)
-        store.strangeSenders =
-            store.strangeSenders.filterNot { senderKey(it.sender) == senderKey(sender) }
-        _state.update { it.copy(strangeSenders = store.strangeSenders) }
-    }
-
     /**
-     * She confirmed a stranger: this number is one of her banks. It joins that bank's list on
+     * She named a sender's bank: this number is one of hers. It joins that bank's list on
      * this phone only, and the inbox is read again from the start so the messages it already
      * sent finally count.
      *
-     * Winding the watermark back, not [rescanSms]. Confirming a sender is one tap on a
-     * suggestion card, and it used to forget every balance in the app — including the ones she
+     * Winding the watermark back, not [rescanSms]. Adding a sender is one tap in the
+     * bank sheet, and it used to forget every balance in the app — including the ones she
      * typed in herself. Those cannot be rebuilt: a bank whose messages never state a مانده
      * comes back as the sum of its transactions, unanchored, which is exactly the figure that
      * does not count towards the total. Her net worth would drop by whatever she had anchored,
@@ -2896,7 +2842,6 @@ data class UiState(
     val notified: Boolean = false,
     val bankAccounts: List<BankAccount> = emptyList(),
     val disabledBanks: Set<String> = emptySet(),
-    val strangeSenders: List<StrangeSender> = emptyList(),
     val refreshingWallets: Set<String> = emptySet(),
     val walletErrors: Map<String, String> = emptyMap(),
     val dismissedUpdate: String = "",

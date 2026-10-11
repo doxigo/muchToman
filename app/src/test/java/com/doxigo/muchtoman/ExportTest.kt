@@ -252,7 +252,7 @@ class ExportTest {
                 // month's «$», and a restored phone that kept its totals but lost its rates
                 // would silently re-price every month she has ever read.
                 "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
-                "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
+                "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers",
                 "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
                 // ledgerStartsOn rides because it is hers: a restored phone that forgot where
                 // she started clean would bring back every month she had put behind her.
@@ -269,7 +269,7 @@ class ExportTest {
         )
         // Refetchable caches and this-phone announcement marks stay off other phones for ever.
         assertEquals(
-            listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers", "quipsSeen", "quietMark"),
+            listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "quipsSeen", "quietMark"),
             EXCLUDED_PREFS,
         )
         assertTrue(EXPORTED_PREFS.intersect(EXCLUDED_PREFS.toSet()).isEmpty())

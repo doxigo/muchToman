@@ -67,8 +67,6 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     KESHAVARZI("بانک کشاورزی", listOf("KESHAVARZI")),
     POST_BANK("پست بانک", listOf("POSTBANK", "+9850004940")),
     MASKAN("بانک مسکن", listOf("Bank Maskan")),
-    // Before ایران زمین on purpose: a Mehr Iran body contains «ایران» too, and [guessBank]
-    // takes the first keyword that matches, so «قرض‌الحسنه» has to be asked before «ایران».
     MEHR_IRAN("بانک قرض‌الحسنه مهر ایران", listOf("B.QMEHRIRAN", "+989810008528")),
 
     // ── Known by name only ──────────────────────────────────────────────────────────────────
@@ -82,9 +80,9 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     // that also names money — a purchase code — by its wording, so one worded some way it has
     // never seen would reach the table that the privacy note in [ingestBankSms] says holds none.
     //
-    // Listed anyway, because a named bank is what [guessBank] needs: her own message says
-    // «بانک سینا» in its body, the sheet offers to add the number it came from, and her tap is
-    // what teaches this phone the real one. Nothing is read from these until she does that.
+    // Listed anyway, so she can name one: the bank sheet lists the unknown senders whose messages
+    // carry money, and her pick is what teaches this phone the real number. Nothing is read from
+    // these until she does that.
     AYANDEH("بانک آینده", emptyList()),
     SHAHR("بانک شهر", emptyList()),
     SINA("بانک سینا", emptyList()),
@@ -369,10 +367,9 @@ private val NOT_A_BALANCE = listOf("بدهی", "تسهیلات", "وام", "قس
 private val OPERATOR_WORDS = listOf("اینترنت", "بسته", "گیگ", "مکالمه", "شارژ", "کیف")
 
 /**
- * Both lists together, and one name for them on purpose: the veto used to live only in
- * [looksLikeBankSms], so a promo from a bank's own trusted number could still quote its
- * wallet's موجودی and have it overwrite — and anchor — the account. Every place that reads
- * a مانده as money must refuse the same words.
+ * Both lists together, and one name for them on purpose: a promo from a bank's own trusted
+ * number could otherwise quote its wallet's موجودی and have it overwrite — and anchor — the
+ * account. Every place that reads a مانده as money must refuse the same words.
  */
 private val BALANCE_VETO = NOT_A_BALANCE + OPERATOR_WORDS
 
@@ -969,91 +966,15 @@ fun isIgnoredBankSms(sender: String, body: String): Boolean {
     }
 }
 
-/**
- * Whether a message we are *not* going to read is talking about a real bank balance: a money
- * figure sitting right after مانده/موجودی, big enough to be one, and not an operator's bundle.
- *
- * The first cut of this fired on any مانده anywhere — which is also how Irancell announces the
- * data she has left — and filled the sheet with red noise. It exists because "the app cannot
- * see my bank" and "the app reads my bank wrongly" look identical from the outside, and the
- * first is silent by design: a bank that adds a sending number simply freezes.
- */
-fun looksLikeBankSms(body: String): Boolean {
-    val text = normalise(body)
-    val f = figureAfter(text, BALANCE_WORDS, veto = BALANCE_VETO)
-    return f != null && f.value >= 100_000
-}
-
-/**
- * Which of the banks we read this body claims, by its own words, to be from. A suggestion for
- * her to confirm with a tap, never a reason to move money — matching on wording is exactly
- * what was removed when the sender numbers became the gate, and it stays removed.
- */
-/**
- * The word that names this bank and nothing else — «تجارت» out of «بانک تجارت».
- *
- * Null for [Bank.OTHER] alone, whose name is «بانک» and so has no distinguishing word. That null
- * is what keeps it out of [guessBank]: it is a fallback for balances an older build saved, never
- * something a message can be read as.
- */
-private val Bank.keyword: String? get() = fa.split(' ').firstOrNull { it != "بانک" }
-
-/**
- * Which bank a message *says* it is from, for a sender this phone does not know yet.
- *
- * Deliberately not filtered to banks that have numbers: a bank listed by name only has no number
- * precisely because nobody has told us one, and this is the function that asks. Reached only for a
- * message that already passed [looksLikeBankSms] — a balance word and a figure over a hundred
- * thousand — so a keyword as ordinary as «شهر» or «آینده» costs at worst one suggestion she
- * dismisses, and a dismissal is remembered per sender.
- */
-fun guessBank(body: String): Bank? {
-    if (isIgnoredBankSms("", body)) return null
-    val text = normalise(body)
-    // The keyword is normalised like the text, or «قرض‌الحسنه» — whose ZWNJ the text no
-    // longer has — could never match anything.
-    return Bank.entries.firstOrNull { b ->
-        b.keyword?.let { containsWord(text, normalise(it)) } == true
-    }
-}
-
-/**
- * The word with no letter glued to either side. "سامانه" — the portal half the service
- * messages in Iran mention — contains "سامان", and a plain substring match was offering to
- * add a stock-portal's number to her Saman account.
- */
-private fun containsWord(text: String, word: String): Boolean {
-    var i = text.indexOf(word)
-    while (i >= 0) {
-        val before = text.getOrNull(i - 1)
-        val after = text.getOrNull(i + word.length)
-        if (before?.isLetter() != true && after?.isLetter() != true) return true
-        i = text.indexOf(word, i + 1)
-    }
-    return false
-}
-
-/** One message that named a bank we read, sent from a number the list does not have. */
-@Serializable
-data class StrangeSender(
-    val sender: String,
-    val bank: String,
-    val snippet: String,
-    val at: Long,
-)
-
 fun snippetOf(body: String): String = body.trim().replace(Regex("\\s+"), " ").take(64)
 
 /** A sender she could add by hand, with the newest of its messages that reads as money. */
-data class SenderCandidate(val sender: String, val snippet: String, val at: Long, val guess: Bank?)
+data class SenderCandidate(val sender: String, val snippet: String, val at: Long)
 
 /**
  * The senders in [recent], newest first, that nothing here knows yet but whose messages would be
- * read — what the bank sheet offers when a bank's new number never became a suggestion.
- *
- * A suggestion needs the message to name its bank and state a مانده of a hundred thousand or more,
- * and three banks never manage both: صادرات and پاسارگاد do not name themselves, and خاورمیانه
- * stars its مانده out. A new number from any of them can only ever be added here.
+ * read — what the bank sheet offers, and she names the bank. The app never names it for her: a
+ * guess from the body's wording offered banks to adverts and portals that merely mentioned one.
  *
  * Each message is read as though its sender were already one of hers. [Bank.OTHER] stands in,
  * because which bank it is changes nothing the parser takes, so a sender is offered exactly when
@@ -1071,7 +992,7 @@ fun senderCandidates(recent: List<RawSms>, extra: Map<String, Bank>, limit: Int 
         if (isIgnoredBankSms(sender, m.body)) continue
         parseBankSms(sender, m.body, m.at, mapOf(key to Bank.OTHER)) ?: continue
         offered += key
-        out += SenderCandidate(sender, snippetOf(m.body), m.at, guessBank(m.body))
+        out += SenderCandidate(sender, snippetOf(m.body), m.at)
         if (out.size == limit) break
     }
     return out

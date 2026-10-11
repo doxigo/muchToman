@@ -1086,20 +1086,6 @@ class Store(context: Context) {
         get() = read("extraBankNumbers", emptyMap())
         set(v) = write("extraBankNumbers", v)
 
-    /** Messages that named one of her banks but arrived from a number the list lacks. */
-    var strangeSenders: List<StrangeSender>
-        get() = read("strangers", emptyList())
-        set(v) = write("strangers", v)
-
-    /**
-     * Suggestions she waved away, by sender key. Like the numbers she confirmed, these are her
-     * own statements and survive the schema wipe — a dismissed card must not come back just
-     * because the parser learned something new.
-     */
-    var dismissedSenders: Set<String>
-        get() = read("dismissedSenders", emptySet())
-        set(v) = write("dismissedSenders", v)
-
     /**
      * What this phone has already told her about each budget, and for which window.
      *
@@ -1231,7 +1217,7 @@ class Store(context: Context) {
  */
 val EXPORTED_PREFS: List<String> = listOf(
     "holdings", "overrides", "history", "rateHistory", "bankAccounts", "disabledBanks",
-    "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
+    "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans", "notifyScannedTo",
     "quipTone", "showRial",
@@ -1243,14 +1229,13 @@ val EXPORTED_PREFS: List<String> = listOf(
  * - `rates`, `stocks` — caches of public prices; the restored phone refetches them in seconds.
  * - `budgetMarks`, `filingMark`, `installmentMarks`, `quipsSeen`, `quietMark` — what *this phone* has already announced. Imported onto another
  *   phone they would silence alerts it never said, or say ones it already had.
- * - `strangers` — suggestions read off this phone's inbox; the next scan rebuilds them.
  *
  * The family-sync token and keys are not on either list because they never lived in prefs — they
  * are `durable_meta` rows, stripped from the exported database itself (see BACKUP_STRIPPED_META
  * in Ledger.kt): a restored phone is a new device and must re-pair, or two phones would write to
  * the household as one.
  */
-val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "strangers", "quipsSeen", "quietMark")
+val EXCLUDED_PREFS: List<String> = listOf("rates", "stocks", "budgetMarks", "filingMark", "installmentMarks", "quipsSeen", "quietMark")
 
 /**
  * One preference as the backup stores it, or null for a shape [Store] never writes. Pure, so the
