@@ -6,7 +6,7 @@
  * already holds plus an `installment` decision saying which plan it paid — never a figure typed
  * twice. Always private: `shared` is false, so the sync never publishes these.
  */
-import { faCompact, faDate, faNumber, faOrdinal, parseAmount, today as tehranToday, tomanOf } from './format';
+import { faCompact, faDate, faNumber, faOrdinal, parseAmount, showRial, today as tehranToday, tomanOf, tomanOfShown, moneyUnit } from './format';
 import { GoalKind, GoalPeriod } from './goals';
 import {
   DAY_MS, TEHRAN_OFFSET_MS, jalaliDay, jalaliMonthLength, jalaliMonthsAfter, jalaliMonthsAheadEnd, jalaliOf, tehranDay,
@@ -17,11 +17,12 @@ import { DecisionKind } from './rules';
 import { MAX_PLAUSIBLE_RIAL } from './sms';
 
 /**
- * A Rial figure as a Toman field is pre-filled with (EditsUi.kt): a tenth only when there is one.
- * Whole Toman alone dropped the last Rial, so a re-saved installment never matched its payment again.
+ * A Rial figure as an amount field is pre-filled with (EditsUi.kt): in her unit (showRial); in Toman,
+ * a tenth only when there is one. Whole Toman alone dropped the last Rial, so a re-saved installment
+ * never matched its payment again.
  */
 export const rialToField = (rial: number): string =>
-  rial % 10 === 0 ? String(rial / 10) : `${Math.trunc(rial / 10)}.${rial % 10}`;
+  showRial() ? String(rial) : rial % 10 === 0 ? String(rial / 10) : `${Math.trunc(rial / 10)}.${rial % 10}`;
 
 /**
  * What she typed into a Toman field, as whole Rial — or null when it is not a figure this app will
@@ -29,7 +30,8 @@ export const rialToField = (rial: number): string =>
  * against zero only once it is whole Rial: «0.04» passed as positive and rounded to nothing.
  */
 export function tomanFieldToRial(text: string): number | null {
-  const toman = parseAmount(text);
+  const typed = parseAmount(text);
+  const toman = typed == null ? null : tomanOfShown(typed); // the field is in her unit, Rial when she reads in Rial
   const rial = toman != null && toman <= MAX_PLAUSIBLE_RIAL / 10 ? Math.round(toman * 10) : 0;
   return rial > 0 ? rial : null;
 }
@@ -308,7 +310,7 @@ export function installmentInsight(progress: InstallmentProgress, index: number,
   const due = installmentDueOn(progress.plan, index);
   return {
     text: `سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`,
-    why: `قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، ` +
+    why: `قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} ${moneyUnit()}، ` +
       `قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count)}، ${faDate(due)}.`,
     refs: progress.payments.map((e) => e.txn.ref),
     tone: 'ATTENTION',
@@ -388,7 +390,7 @@ export function installmentReminderTitle(plan: Goal, due: number, today: number)
 
 /** How much, and on which date — what she needs in the banking app. */
 export function installmentReminderBody(plan: Goal, due: number): string {
-  return `${faCompact(tomanOf(plan.targetRial))} تومان • ${faDate(due)}`;
+  return `${faCompact(tomanOf(plan.targetRial))} ${moneyUnit()} • ${faDate(due)}`;
 }
 
 /** The setting's answer, on the تنظیمات row and in its sheet. */
@@ -407,7 +409,7 @@ export function installmentReminderFa(days: number): string {
 export function installmentNoteFa(progress: InstallmentProgress, today: number = tehranToday()): [text: string, loud: boolean] | null {
   if (progress.done) return ['همه‌ی قسط‌ها پرداخت شد.', true];
   if (progress.overdueRial > 0) {
-    return [`${faCompact(tomanOf(progress.overdueRial))} تومان از قسط‌هایی که سررسیدشون گذشته، ` +
+    return [`${faCompact(tomanOf(progress.overdueRial))} ${moneyUnit()} از قسط‌هایی که سررسیدشون گذشته، ` +
       'هنوز پرداخت نشده.', true];
   }
   const next = faOrdinal(progress.paidCount + 1);
@@ -418,6 +420,6 @@ export function installmentNoteFa(progress: InstallmentProgress, today: number =
 
 /** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. */
 export function installmentLineFa(plan: InstallmentProgress): string {
-  return `ماهی ${faCompact(tomanOf(plan.plan.targetRial))} تومان • ` +
+  return `ماهی ${faCompact(tomanOf(plan.plan.targetRial))} ${moneyUnit()} • ` +
     `${faNumber(plan.paidCount)} از ${faNumber(plan.count)} قسط`;
 }

@@ -114,7 +114,7 @@ internal fun heroFigure(figure: AnnotatedString, tone: Color): AnnotatedString =
             fontWeight = FontWeight.Bold,
             color = tone.copy(alpha = 0.75f),
         ),
-    ) { append("تومان") }
+    ) { append(moneyUnit) }
 }
 
 /**

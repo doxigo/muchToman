@@ -74,8 +74,8 @@ fun MonthFlow(story: HomeStory, onOpen: () -> Unit, modifier: Modifier = Modifie
             // One accessibility node, not five: read out separately these are four loose
             // numbers and two labels; together they are the sentence the eye gets in a glance.
             .semantics(mergeDescendants = true) {
-                contentDescription = "این ماه: درآمد ${faCompact(income)} تومان، " +
-                    "خرج ${faCompact(spent)} تومان. برای گزارش کامل باز کن"
+                contentDescription = "این ماه: درآمد ${faCompact(income)} $moneyUnit، " +
+                    "خرج ${faCompact(spent)} $moneyUnit. برای گزارش کامل باز کن"
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

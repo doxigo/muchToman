@@ -29,7 +29,7 @@ import { readPlans, answerWorthIt } from './plans';
 import { currentMonthReport, reportMonthOf } from './reports';
 import { tehranDay, tehranDayStart } from './jalali';
 import {
-  bidi, faCompact, faDay, faDayMoment, faMoment, faNumber, faSignedCompact, faSignedParts, faWordsToman, tomanOf,
+  bidi, faCompact, faDay, faDayMoment, faMoment, faNumber, faSignedCompact, faSignedParts, faWordsToman, tomanOf, moneyUnit,
 } from './format';
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
@@ -141,8 +141,8 @@ function transactionDetails(entry: LedgerEntry): Array<[string, string]> {
   if (txn.printedAt.trim()) out.push(['زمان ثبت', bidi(txn.printedAt)]);
   if (txn.mask.trim()) out.push(['کارت یا حساب', bidi(txn.mask)]);
   if (txn.refNo.trim()) out.push(['شماره پیگیری', bidi(txn.refNo)]);
-  if (txn.balanceRial != null) out.push(['مانده بعد از تراکنش', bidi(`${faCompact(tomanOf(txn.balanceRial))} تومان`)]);
-  if (txn.feeRial != null && txn.feeRial > 0) out.push(['کارمزد', bidi(`${faCompact(tomanOf(txn.feeRial))} تومان`)]);
+  if (txn.balanceRial != null) out.push(['مانده بعد از تراکنش', bidi(`${faCompact(tomanOf(txn.balanceRial))} ${moneyUnit()}`)]);
+  if (txn.feeRial != null && txn.feeRial > 0) out.push(['کارمزد', bidi(`${faCompact(tomanOf(txn.feeRial))} ${moneyUnit()}`)]);
   return out;
 }
 
@@ -457,7 +457,7 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
   // The amber dot is colour alone, so on a waiting row the whole line is restated in words.
   const pendingWords = waiting
     ? [txnTitleFa(txn), categoryFa, ...(owner ? [`از ${entry.ownerName}`] : []),
-      rial != null ? `${faSignedCompact(tomanOf(rial), incoming)} تومان` : 'مانده', 'در انتظار دسته‌بندی'].join('، ')
+      rial != null ? `${faSignedCompact(tomanOf(rial), incoming)} ${moneyUnit()}` : 'مانده', 'در انتظار دسته‌بندی'].join('، ')
     : undefined;
   return (
     <button type="button" class="txn-row" onClick={onClick} aria-label={pendingWords}>
@@ -565,7 +565,7 @@ function TransactionHero({ entry, backLabel = 'برگشت', onBack = closePage, 
           {/* The sign travels with the digits; «میلیون» and «تومان» stay in the RTL line. */}
           <p class="figure txn-figure" style={{ color: incoming ? 'var(--hero-mint)' : 'var(--hero-strong)', '--fit': fit }}>
             <SignedFigure parts={[digits, magnitude]} />
-            {' '}<span class="unit">تومان</span>
+            {' '}<span class="unit">{moneyUnit()}</span>
           </p>
           {words && <p class="txn-words">{words}</p>}
         </>

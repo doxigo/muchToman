@@ -214,7 +214,7 @@ fun landedTitle(entry: LedgerEntry): String {
         "out" -> " رفت"
         else -> ""
     }
-    return "$who: ${faCompact(tomanOf(rial))} تومان$moved"
+    return "$who: ${faCompact(tomanOf(rial))} $moneyUnit$moved"
 }
 
 /**

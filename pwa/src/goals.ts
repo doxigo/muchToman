@@ -6,7 +6,7 @@
  * One table, three shapes: `save` (this file), `cap` (budget.ts) and `installment`
  * (installments.ts). A goal is met by reaching its figure, a budget by not reaching its own.
  */
-import { faCompact, faDate, faNumber, tomanOf } from './format';
+import { faCompact, faDate, faNumber, tomanOf, moneyUnit } from './format';
 import { jalaliMonthsAheadEnd, weekStart } from './jalali';
 import type { Decision, Goal, LedgerEntry } from './model';
 import { spendable, spendableRows } from './reports';
@@ -214,14 +214,14 @@ export function goalWindowFa(progress: GoalProgress): string {
  */
 export function goalNoteFa(progress: GoalProgress): [text: string, loud: boolean] | null {
   if (progress.done) return ['به هدفت رسیدی.', true];
-  if (progress.expired) return [`مهلتش تموم شد و ${faCompact(tomanOf(progress.remainingRial))} تومان مونده بود.`, false];
+  if (progress.expired) return [`مهلتش تموم شد و ${faCompact(tomanOf(progress.remainingRial))} ${moneyUnit()} مونده بود.`, false];
   if (progress.underWater) return ['از وقتی این هدف رو گذاشتی، هنوز چیزی پس‌انداز نشده.', false];
   if (progress.perMonthRial != null) {
-    return [`برای رسیدن به هدف، ماهی ${faCompact(tomanOf(progress.perMonthRial))} تومان لازمه.`, false];
+    return [`برای رسیدن به هدف، ماهی ${faCompact(tomanOf(progress.perMonthRial))} ${moneyUnit()} لازمه.`, false];
   }
   if (progress.daysLeft != null && progress.daysLeft > 0) {
     return [`${faNumber(progress.daysLeft)} روز مونده و ` +
-      `${faCompact(tomanOf(progress.remainingRial))} تومان باقیه.`, false];
+      `${faCompact(tomanOf(progress.remainingRial))} ${moneyUnit()} باقیه.`, false];
   }
   return null;
 }

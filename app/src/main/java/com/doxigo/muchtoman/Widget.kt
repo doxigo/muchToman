@@ -458,7 +458,7 @@ private fun renderFace(
         return views
     }
 
-    val totalText = "${faCompact(model.total, 3, pad = true)} تومان"
+    val totalText = "${faCompact(model.total, 3, pad = true)} $moneyUnit"
     views.setImageViewBitmap(
         R.id.widget_total,
         textBitmap(context, totalText, face.total, R.font.modam_heavy, ACCENT),

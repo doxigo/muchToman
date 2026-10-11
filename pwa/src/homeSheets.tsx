@@ -18,7 +18,7 @@ import {
 } from './data';
 import { useLedger } from './derived';
 import type { BankAccountView } from './derived';
-import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber } from './format';
+import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
 import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
@@ -262,7 +262,10 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const walletBusy = status.refreshingWallets.has(key);
   const walletError = status.walletErrors.get(key) ?? null;
 
-  const current = holding?.amount ?? null;
+  // Cash, a bank and a house are typed as money, so in her unit (showRial). Everything below works in
+  // what the field holds; only this seed and the save convert.
+  const inMoney = valuedInToman(type);
+  const current = holding == null ? null : inMoney ? shownOf(holding.amount) : holding.amount;
   const linkedWallet = holding?.wallet ?? null;
   const walletOptions: WalletOption[] = [];
   for (const o of [...type.wallets, ...(linkedWallet ? [{ network: linkedWallet.network, networkFa: linkedWallet.networkFa, contract: linkedWallet.contract }] : [])]) {
@@ -296,11 +299,11 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
   const linkedSelection = linkedWallet != null && linkedWallet.network === selectedNetwork &&
     linkedWallet.address === walletAddress.trim() && linkedWallet.contract === selectedWallet?.contract;
   const amount = source === 'MANUAL' ? manualAmount : linkedSelection ? current : null;
-  const typedRate = (() => { const r = parseAmount(rateText); return r != null && r > 0 ? r : null; })();
+  const typedRate = (() => { const r = parseAmount(rateText); return r != null && r > 0 ? tomanOfShown(r) : null; })();
   // While she types a rate, the «یعنی …» preview follows it, so the override's effect shows first.
   const previewRate = editingRate ? typedRate ?? rate : rate;
   const editRate = () => {
-    const seed = rate != null ? fieldNumber(rate) : '';
+    const seed = rate != null ? fieldNumber(shownOf(rate)) : '';
     setRateSeed(seed); setRateText(seed); setRateRefusal(null); setEditingRate(true);
   };
   // Never with null: that removed the override, which is «برگشت به نرخ خودکار»'s job — so a tap
@@ -314,8 +317,11 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
     if (rateText !== rateSeed) setOverride(typeId, typedRate);
     setEditingRate(false);
   };
-  const valued = valuedInToman(type);
-  const unit = bidi(type.unitFa);
+  const valued = inMoney;
+  const unitFa = inMoney ? moneyUnit() : type.unitFa;
+  const unit = bidi(unitFa);
+  // A house is a valuation she gives, not an amount she counts.
+  const prompt = type.kind === 'PROPERTY' ? `به نظرت چند ${showRial() ? 'ریال' : 'تومن'} می‌ارزه؟` : `چقدر ${unit} داری؟`;
 
   // The name she typed, written to the row — from ذخیره, ذخیره اسم, and from closing the sheet
   // any way at all (scrim, Esc, the back gesture): swiping a name away is how anyone gives one.
@@ -340,7 +346,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
       setManualSubmitted(true);
       if (manualAmount != null) {
         // After the amount, never before: a name is written onto a row by its key.
-        setHolding(key, typeId, manualAmount);
+        setHolding(key, typeId, inMoney ? tomanOfShown(manualAmount) : manualAmount);
         nameIt();
         closeSheet();
       }
@@ -419,10 +425,9 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
         {source === 'MANUAL' ? (
           <>
-            {/* A house is a valuation she gives, not an amount she counts. */}
-            <SheetLabel>{type.kind === 'PROPERTY' ? 'به نظرت چند تومن می‌ارزه؟' : `چقدر ${unit} داری؟`}</SheetLabel>
+            <SheetLabel>{prompt}</SheetLabel>
             <div class="bare-label big-amount">
-              <AmountField label={type.kind === 'PROPERTY' ? 'به نظرت چند تومن می‌ارزه؟' : `چقدر ${type.unitFa} داری؟`}
+              <AmountField label={prompt}
                 raw={text} decimals={9} words={false} autoFocus={current == null}
                 onRaw={(v) => { setText(v); setManualSubmitted(false); }} onEnter={save}
                 error={amountInvalid ? (text.trim() ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : 'مقدار دارایی رو وارد کن.') : null} />
@@ -432,7 +437,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
               <p class="edit-words">{`${faWords(manualAmount)} ${unit}`}</p>
             )}
             {current != null && (
-              <Adjust dec={type.dec} unitFa={type.unitFa} base={amount ?? current} open={adjusting} onOpen={setAdjusting}
+              <Adjust dec={type.dec} unitFa={unitFa} base={amount ?? current} open={adjusting} onOpen={setAdjusting}
                 onApply={(next) => {
                   // At the finer of the asset's places and the amount's own, which only erases binary
                   // noise (0.1 + 0.2): a dust balance past `dec` is kept.
@@ -469,19 +474,19 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
         {/* Not when the balance card is up: it already carries the Toman line. */}
         {amount != null && previewRate != null && !valued && !balanceCardShown && (
-          <div class="edit-card"><FitLine text={`یعنی ${faCompact(amount * previewRate, 3, true)} تومان`} max={18} min={14} weight={700} /></div>
+          <div class="edit-card"><FitLine text={`یعنی ${faCompact(amount * previewRate, 3, true)} ${moneyUnit()}`} max={18} min={14} weight={700} /></div>
         )}
 
         {!valued && (!editingRate ? (
           <div class="edit-rate">
-            <span>{rate == null ? 'نرخ پیدا نشد' : `هر ${unit}: ${faNumber(rate)} تومان${isOverridden ? '  (دستی وارد شده)' : ''}`}</span>
+            <span>{rate == null ? 'نرخ پیدا نشد' : `هر ${unit}: ${faNumber(shownOf(rate))} ${moneyUnit()}${isOverridden ? '  (دستی وارد شده)' : ''}`}</span>
             <PillButton label="تغییر نرخ" onClick={editRate} />
           </div>
         ) : (
           <div style={{ marginTop: 'var(--m)' }}>
-            <p class="edit-caption" style={{ paddingTop: 0, marginBottom: 'var(--xs)' }}>{`هر ${unit} چند تومان؟`}</p>
+            <p class="edit-caption" style={{ paddingTop: 0, marginBottom: 'var(--xs)' }}>{`هر ${unit} چند ${moneyUnit()}؟`}</p>
             <div class="bare-label">
-              <AmountField label={`هر ${type.unitFa} چند تومان؟`} raw={rateText} onRaw={(v) => { setRateText(v); setRateRefusal(null); }}
+              <AmountField label={`هر ${type.unitFa} چند ${moneyUnit()}؟`} raw={rateText} onRaw={(v) => { setRateText(v); setRateRefusal(null); }}
                 decimals={9} words={false} autoFocus onEnter={saveRate} error={rateRefusal} />
             </div>
             <div class="btn-row">
@@ -531,7 +536,7 @@ function WalletBalanceCard({ held, toman, status, error }: { held: string; toman
       <p style={{ fontSize: '13px', fontWeight: 700 }}>موجودی فعلی</p>
       {/* faHeld, not full precision: the row outside says the same number the same length. */}
       <FitLine text={held} max={30} min={18} weight={800} />
-      {toman != null && <FitLine class="sub" text={`${faCompact(toman, 3, true)} تومان`} max={17} min={13} weight={600} />}
+      {toman != null && <FitLine class="sub" text={`${faCompact(toman, 3, true)} ${moneyUnit()}`} max={17} min={13} weight={600} />}
       <p class={`status${error ? ' error' : ''}`} aria-live={error ? 'polite' : undefined}>{status}</p>
     </div>
   );
@@ -635,7 +640,7 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
   const anchor = () => {
     (document.activeElement as HTMLElement | null)?.blur();
     setMissingDraft(!draft.trim());
-    if (parsed != null) onAnchor(parsed);
+    if (parsed != null) onAnchor(tomanOfShown(parsed));
   };
   const caption = [account.mask.trim() ? bidi(account.mask) : null, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
     .filter((s): s is string => s != null).join('  •  ');
@@ -648,7 +653,7 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
           <RowTitle text={account.bankFa} max={17} class={off ? 'off' : ''} />
           <span>{caption}</span>
         </div>
-        <RowAmount toman={tomanOf(account.balanceRial)} struck={off} unit="تومان" class={off ? 'off' : ''} />
+        <RowAmount toman={tomanOf(account.balanceRial)} struck={off} unit={moneyUnit()} class={off ? 'off' : ''} />
       </div>
       {/* Only for an anchored account: an unanchored one is never counted, and a switch saying
           "counted" above the red line saying it is not would be the card contradicting itself. */}
@@ -663,9 +668,9 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
       {fixing && (
         <>
           {/* A label that stays: while she types a balance, the unit must still be on screen. */}
-          <p class="edit-caption" style={{ marginBottom: 'var(--xs)' }}>موجودی به تومان</p>
+          <p class="edit-caption" style={{ marginBottom: 'var(--xs)' }}>موجودی به {moneyUnit()}</p>
           <div class="bare-label">
-            <AmountField label="موجودی به تومان" raw={draft} onRaw={setDraft} decimals={9} words={false} autoFocus onEnter={anchor}
+            <AmountField label={`موجودی به ${moneyUnit()}`} raw={draft} onRaw={setDraft} decimals={9} words={false} autoFocus onEnter={anchor}
               error={!draft.trim() ? (missingDraft ? 'مبلغش رو بنویس.' : null)
                 : parsed == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
           </div>

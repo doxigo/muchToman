@@ -120,8 +120,8 @@ internal fun HeroLoans(totals: LoanTotals, onOpen: () -> Unit) {
     val owed = totals.owedToman.takeIf { totals.owedPeople > 0 }
     val owe = totals.oweToman.takeIf { totals.owePeople > 0 }
     val spoken = "طلب و بدهی: " + listOfNotNull(
-        owed?.let { "${faCompact(it)} تومان طلب" },
-        owe?.let { "${faCompact(it)} تومان بدهی" },
+        owed?.let { "${faCompact(it)} $moneyUnit طلب" },
+        owe?.let { "${faCompact(it)} $moneyUnit بدهی" },
     ).joinToString("، ")
     Row(
         Modifier
@@ -189,8 +189,8 @@ internal fun LoansDoor(totals: LoanTotals, people: Int, onOpen: () -> Unit, onAd
     ) {
         Column(Modifier.weight(1f)) {
             val lines = listOfNotNull(
-                totals.owedToman.takeIf { totals.owedPeople > 0 }?.let { "${faCompact(it)} تومان طلب داری" },
-                totals.oweToman.takeIf { totals.owePeople > 0 }?.let { "${faCompact(it)} تومان بدهکاری" },
+                totals.owedToman.takeIf { totals.owedPeople > 0 }?.let { "${faCompact(it)} $moneyUnit طلب داری" },
+                totals.oweToman.takeIf { totals.owePeople > 0 }?.let { "${faCompact(it)} $moneyUnit بدهکاری" },
             ).ifEmpty { listOf("حساب همه صافه") }
             lines.forEach {
                 Text(it, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
@@ -575,7 +575,7 @@ private fun OwedInOwnUnits(view: LoanView, type: (String) -> AssetType) {
     } + listOfNotNull(
         view.rial.takeIf { it != 0L }?.let {
             val split = faCompact(tomanOf(abs(it))).split(' ', limit = 2)
-            split[0] to (listOfNotNull(split.getOrNull(1)) + "تومان").joinToString(" ")
+            split[0] to (listOfNotNull(split.getOrNull(1)) + moneyUnit).joinToString(" ")
         },
     )
     parts.forEachIndexed { i, (digits, words) ->
@@ -605,7 +605,7 @@ private fun OwedInOwnUnits(view: LoanView, type: (String) -> AssetType) {
             buildAnnotatedString {
                 append("امروز روی هم ")
                 withStyle(SpanStyle(fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)) {
-                    append("${faCompact(abs(view.toman))} تومان")
+                    append("${faCompact(abs(view.toman))} $moneyUnit")
                 }
             },
             fontSize = 14.sp,
@@ -858,7 +858,7 @@ private fun AmountField(unit: String, text: String, onText: (String) -> Unit, ty
     OutlinedTextField(
         value = text,
         onValueChange = onText,
-        label = { Text(if (cash) "چقدر، به تومان" else "چقدر، به ${type(unit).unitFa}") },
+        label = { Text(if (cash) "چقدر، به $moneyUnit" else "چقدر، به ${type(unit).unitFa}") },
         singleLine = true,
         visualTransformation = GroupedNumber,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1221,7 +1221,7 @@ internal fun LoanLinkSheet(
             SheetTitle(if (delta > 0L) "این پول رو به کی دادی؟" else "این پول رو کی داد؟")
             Text(
                 txnTitleFa(entry.txn) + "، " +
-                    (entry.txn.amountRial?.let { bidi(faCompact(tomanOf(it)) + " تومان") + "، " } ?: "") +
+                    (entry.txn.amountRial?.let { bidi(faCompact(tomanOf(it)) + " $moneyUnit") + "، " } ?: "") +
                     faDay(entry.txn.day),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

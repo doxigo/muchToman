@@ -11,7 +11,7 @@ import { ledger, useLedger } from './derived';
 import { MAX_SPLIT_PARTS } from './edits';
 import type { SplitSpec } from './edits';
 import { useFamily } from './family';
-import { bidi, faCompact, faNumber, tomanOf } from './format';
+import { bidi, faCompact, faNumber, tomanOf, moneyUnit, shownOf } from './format';
 import { rialToField, tomanFieldToRial } from './installments';
 import { editTxn, revertTxnEdits, splitTxn } from './ledger';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, categoryChoices } from './rules';
@@ -54,8 +54,8 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
     <Sheet label="ویرایش تراکنش">
       <SheetTitle>ویرایش تراکنش</SheetTitle>
 
-      <SheetLabel>چقدر، به تومان</SheetLabel>
-      <AmountField ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
+      <AmountField ariaLabel={`مبلغ به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={rial == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
 
       <SheetLabel>کِی؟</SheetLabel>
@@ -137,7 +137,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
       <SheetTitle>تقسیم بین دسته‌ها</SheetTitle>
       {/* Exact, not compact: she is reconciling a receipt, and «۶ میلیون» over parts that add to
           ۶٬۰۱۲٬۰۰۰ would read as a split that does not add up. */}
-      <p class="muted" style={{ marginTop: 'var(--xs)' }}>{bidi(`کل تراکنش ${faNumber(tomanOf(total))} تومان`)}</p>
+      <p class="muted" style={{ marginTop: 'var(--xs)' }}>{bidi(`کل تراکنش ${faNumber(shownOf(tomanOf(total)))} ${moneyUnit()}`)}</p>
 
       {/* Each part in the anatomy دفتر gives the row it becomes — the category's disc, its name —
           so the sheet already shows the rows a save will list. Unchosen, it is the grey dots of a
@@ -163,7 +163,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
                     {sub && <span class={`split-sub${over || id == null ? ' error' : ''}`} role="status">{sub}</span>}
                   </span>
                 </button>
-                {i === 0 && !over && <span class="figure split-figure">{faNumber(tomanOf(firstRial))}</span>}
+                {i === 0 && !over && <span class="figure split-figure">{faNumber(shownOf(tomanOf(firstRial)))}</span>}
                 {i > 0 && ids.length > 2 && (
                   <PillButton label="حذف" voice="danger" onClick={() => {
                     setIds(ids.filter((_, j) => j !== i)); setAmounts(amounts.filter((_, j) => j !== i)); setPicking(null);
@@ -178,7 +178,7 @@ function SplitSheet({ txnRef }: { txnRef: string }) {
               )}
               {i > 0 && (
                 <div class="split-amount">
-                  <AmountField label="چقدر، به تومان" ariaLabel={`مبلغ ${name ?? `بخش ${faNumber(i + 1)}`}`} raw={amounts[i]}
+                  <AmountField label={`چقدر، به ${moneyUnit()}`} ariaLabel={`مبلغ ${name ?? `بخش ${faNumber(i + 1)}`}`} raw={amounts[i]}
                     decimals={1} onRaw={(v) => setAmounts(setAt(amounts, i, v))}
                     error={!amounts[i].trim() ? (missing ? 'مبلغش رو بنویس.' : null)
                       : rest[i - 1] == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
@@ -219,7 +219,7 @@ export function SplitPanel({ split }: { split: SplitPart[] }) {
         return (
           <div class="detail-row split-panel-row" key={p.categoryId}>
             <span><CategoryIcon glyph={glyph} size={18} color={hueCss(glyph)} />{p.categoryFa}</span>
-            <span class="figure">{bidi(`${faCompact(tomanOf(p.rial))} تومان`)}</span>
+            <span class="figure">{bidi(`${faCompact(tomanOf(p.rial))} ${moneyUnit()}`)}</span>
           </div>
         );
       })}

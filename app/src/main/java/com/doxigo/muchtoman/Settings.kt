@@ -147,6 +147,8 @@ fun SettingsScreen(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    /** Toman or Rial — see [showRial], which the row reads for itself. */
+    onShowRialChange: (Boolean) -> Unit,
     /** Days ahead an installment is reminded of, -1 for never — see [INSTALLMENT_REMINDER_DAYS]. */
     installmentReminder: Int,
     onInstallmentReminderChange: (Int) -> Unit,
@@ -198,6 +200,7 @@ fun SettingsScreen(
             onCompanion = onCompanion,
             onNameChange = onNameChange,
             onThemeChange = onThemeChange,
+            onShowRialChange = onShowRialChange,
             installmentReminder = installmentReminder,
             onInstallmentReminderChange = onInstallmentReminderChange,
             quipTone = quipTone,
@@ -269,6 +272,7 @@ private fun SettingsIndex(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onShowRialChange: (Boolean) -> Unit,
     installmentReminder: Int,
     onInstallmentReminderChange: (Int) -> Unit,
     quipTone: QuipTone,
@@ -279,6 +283,7 @@ private fun SettingsIndex(
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     var themeSheet by remember { mutableStateOf(false) }
+    var unitSheet by remember { mutableStateOf(false) }
     var reminderSheet by remember { mutableStateOf(false) }
     var toneSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -342,14 +347,21 @@ private fun SettingsIndex(
             IndexRow(
                 title = "ظاهر برنامه",
                 value = themeMode.fa,
-                shape = bandShape(0, if (full) 4 else 2),
+                shape = bandShape(0, if (full) 5 else 3),
                 divided = true,
                 onClick = { themeSheet = true },
             ) { AppearanceGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
             IndexRow(
+                title = "واحد پول",
+                value = moneyUnit,
+                shape = bandShape(1, if (full) 5 else 3),
+                divided = true,
+                onClick = { unitSheet = true },
+            ) { GlyphIcon(CategoryGlyph.PIGGY, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+            IndexRow(
                 title = "قفل و امنیت",
                 value = if (lockEnabled) "روشن" else "خاموش",
-                shape = bandShape(1, if (full) 4 else 2),
+                shape = bandShape(2, if (full) 5 else 3),
                 divided = full,
                 onClick = { onOpen(SettingsRoom.SECURITY) },
             ) { LockGlyph(MaterialTheme.colorScheme.onPrimaryContainer) }
@@ -357,7 +369,7 @@ private fun SettingsIndex(
                 IndexRow(
                     title = "یادآوری قسط و چک",
                     value = installmentReminderFa(installmentReminder),
-                    shape = bandShape(2, 4),
+                    shape = bandShape(3, 5),
                     divided = true,
                     onClick = { reminderSheet = true },
                 ) { GlyphIcon(CategoryGlyph.INSTALMENT, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
@@ -365,7 +377,7 @@ private fun SettingsIndex(
                 IndexRow(
                     title = "لحن اعلان‌ها",
                     value = quipTone.fa,
-                    shape = bandShape(3, 4),
+                    shape = bandShape(4, 5),
                     onClick = { toneSheet = true },
                 ) { GlyphIcon(CategoryGlyph.MUSIC, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             }
@@ -446,6 +458,12 @@ private fun SettingsIndex(
             current = themeMode,
             onPick = { onThemeChange(it); themeSheet = false },
             onDismiss = { themeSheet = false },
+        )
+    }
+    if (unitSheet) {
+        MoneyUnitSheet(
+            onPick = { onShowRialChange(it); unitSheet = false },
+            onDismiss = { unitSheet = false },
         )
     }
     if (reminderSheet) {
@@ -772,6 +790,46 @@ private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismis
     }
 }
 
+/**
+ * «واحد پول» — [ThemeSheet]'s shape, two choices. Every figure and every amount field follows it;
+ * what is stored never changes, so flipping it back and forth costs nothing.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MoneyUnitSheet(onPick: (Boolean) -> Unit, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.l),
+        ) {
+            SheetTitle("واحد پول")
+            Text(
+                "همهٔ مبلغ‌ها با همین واحد نشون داده می‌شن و با همین واحد وارد می‌شن.",
+                fontSize = 13.sp,
+                lineHeight = 22.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.l))
+            SegmentedChoice(
+                options = listOf(false, true),
+                selected = showRial,
+                label = { if (it) "ریال" else "تومان" },
+                onSelect = onPick,
+                fontSize = 16.sp,
+            )
+        }
+    }
+}
+
 /** How far ahead an installment is reminded of — [ThemeSheet]'s shape, four choices instead of three. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1038,7 +1096,7 @@ private fun SmsPage(
             val accounts = shown.filter { it.bank == bank }
             SettingCard(
                 title = accounts.first().bankFa,
-                subtitle = "${faCompact(accounts.sumOf { it.balance })} تومان" + when {
+                subtitle = "${faCompact(accounts.sumOf { it.balance })} $moneyUnit" + when {
                     accounts.any { !it.trusted } -> "  •  نیاز به بررسی"
                     // «دستی», the asset sheet's word, because nothing will move this figure but her.
                     accounts.all { it.manual } -> "  •  دستی"
@@ -1226,10 +1284,10 @@ private fun BankBalanceStep(bank: Bank, onOther: () -> Unit, onSave: (Double) ->
         // with the keyboard out of the way of the words.
         focus.clearFocus()
         submitted = true
-        amount?.let(onSave)
+        amount?.let { onSave(tomanOfShown(it)) }
         Unit
     }
-    val prompt = "چقدر تومان توی این حساب داری؟"
+    val prompt = "چقدر $moneyUnit توی این حساب داری؟"
 
     Column(
         Modifier
@@ -1259,13 +1317,16 @@ private fun BankBalanceStep(bank: Bank, onOther: () -> Unit, onSave: (Double) ->
         }
 
         SheetLabel(prompt)
-        Text(
-            "اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.",
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = Space.xs, end = Space.xs, bottom = Space.s),
-        )
+        // Only while she counts in Toman: in Rial the bank's own figure is already the one to type.
+        if (!showRial) {
+            Text(
+                "اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.",
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Space.xs, end = Space.xs, bottom = Space.s),
+            )
+        }
         val invalid = amount == null && (text.isNotBlank() || submitted)
         OutlinedTextField(
             value = text,
@@ -1296,7 +1357,7 @@ private fun BankBalanceStep(bank: Bank, onOther: () -> Unit, onSave: (Double) ->
         )
         // The figure she just typed, in words.
         if (amount != null && amount % 1.0 == 0.0 && amount >= 1000) {
-            faWordsToman(amount)?.let {
+            faWordsToman(tomanOfShown(amount))?.let {
                 Text(
                     it,
                     fontSize = 14.sp,

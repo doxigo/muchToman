@@ -13,12 +13,14 @@ import { ensureSeeded } from './rules';
 import { ledger } from './derived';
 import { configureWealth, refreshIfStale } from './data';
 import { announce } from './plans';
+import { readShowRialFrom } from './format';
 import { acceptPairing, familyState, loadFamily, requestFamilySync } from './family';
 import { openPage, selectTab, showNotice, TABS } from './nav';
 import type { Tab } from './nav';
 import './screens';
 
 setWriteErrorHandler(() => showNotice('ذخیره نشد. فضای مرورگر رو چک کن و دوباره امتحان کن.'));
+readShowRialFrom(() => pref('showRial'));
 
 /** A pairing link's fragment carries the household key; it leaves the address bar at once. */
 async function takePairing(): Promise<void> {

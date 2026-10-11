@@ -15,7 +15,7 @@ import { currentEffective } from './data';
 import { ActRow, DeleteRow } from './editsUi';
 import { useLedger } from './derived';
 import type { LedgerView } from './derived';
-import { faCompact, faDay, faHeld, faNumber, faSignedParts, faWeekdayDate, faWordsToman, fieldNumber, ltrFigure, parseAmount, today as tehranToday, tomanOf } from './format';
+import { faCompact, faDay, faHeld, faNumber, faSignedParts, faWeekdayDate, faWordsToman, fieldNumber, ltrFigure, parseAmount, today as tehranToday, tomanOf, moneyUnit } from './format';
 import { AssetIcon } from './homeSheets';
 import { Chevron, PersonMark, PlusMark } from './icons';
 import { rialToField, tomanFieldToRial } from './installments';
@@ -118,7 +118,7 @@ export function LoansHeroStrip() {
   if (totals.isEmpty) return null;
   const owed = totals.owedPeople > 0 ? totals.owedToman : null;
   const owe = totals.owePeople > 0 ? totals.oweToman : null;
-  const said = [...(owed != null ? [`${faCompact(owed)} تومان طلب`] : []), ...(owe != null ? [`${faCompact(owe)} تومان بدهی`] : [])];
+  const said = [...(owed != null ? [`${faCompact(owed)} ${moneyUnit()} طلب`] : []), ...(owe != null ? [`${faCompact(owe)} ${moneyUnit()} بدهی`] : [])];
   return (
     <button type="button" class="hero-door loan-hero" aria-label={`طلب و بدهی: ${said.join('، ')}`} onClick={() => openPage('loans')}>
       <span class="loan-mark" aria-hidden="true"><CategoryIcon glyph="LEND" size={18} stroke={1.6} color="currentColor" /></span>
@@ -151,8 +151,8 @@ export function LoansSection() {
       ) : (
         <button type="button" class="plan-row loan-door" style={{ borderRadius: 'var(--r-group)' }} onClick={() => openPage('loans')}>
           <span class="grow">
-            {totals.owedPeople > 0 && <span class="loan-door-line">{`${faCompact(totals.owedToman)} تومان طلب داری`}</span>}
-            {totals.owePeople > 0 && <span class="loan-door-line">{`${faCompact(totals.oweToman)} تومان بدهکاری`}</span>}
+            {totals.owedPeople > 0 && <span class="loan-door-line">{`${faCompact(totals.owedToman)} ${moneyUnit()} طلب داری`}</span>}
+            {totals.owePeople > 0 && <span class="loan-door-line">{`${faCompact(totals.oweToman)} ${moneyUnit()} بدهکاری`}</span>}
             {totals.isEmpty && <span class="loan-door-line">حساب همه صافه</span>}
             <span class="loan-people">{`${faNumber(views.length)} نفر`}</span>
           </span>
@@ -300,7 +300,7 @@ function Answer({ view }: { view: LoanView }) {
   const cash = tomanOf(Math.abs(view.rial));
   if (view.rial !== 0) {
     const [digits, magnitude] = compactParts(cash);
-    parts.push([digits, magnitude ? `${magnitude} تومان` : 'تومان']);
+    parts.push([digits, magnitude ? `${magnitude} ${moneyUnit()}` : moneyUnit()]);
   }
   const words = view.units.size === 0 ? faWordsToman(cash) : null;
   return (
@@ -312,7 +312,7 @@ function Answer({ view }: { view: LoanView }) {
       {view.units.size > 0 && (
         <p class="loan-value">
           <span class="dot" aria-hidden="true" />
-          <span>امروز روی هم <b class="figure">{`${faCompact(Math.abs(view.toman))} تومان`}</b></span>
+          <span>امروز روی هم <b class="figure">{`${faCompact(Math.abs(view.toman))} ${moneyUnit()}`}</b></span>
         </p>
       )}
       {view.missing.length > 0 && <p class="loan-value caution">{`نرخ ${namesFa(view.missing)} نرسیده`}</p>}
@@ -443,7 +443,7 @@ function UnitAmount({ units, unit, onUnit, text, onText, error }: {
   units: string[]; unit: string; onUnit: (unit: string) => void; text: string; onText: (text: string) => void; error: string | null;
 }) {
   const type = unit ? typeOf(unit) : null;
-  const suffix = type ? unitShortFa(type) : 'تومان';
+  const suffix = type ? unitShortFa(type) : moneyUnit();
   return (
     <>
       {units.length > 0 && !(units.length === 1 && units[0] === '') && (
@@ -718,7 +718,7 @@ function LinkSheet({ txnRef }: { txnRef: string }) {
 
   const delta = loanLinkRial(entry);
   const title = entry.txn.direction === 'in' ? 'این پول رو کی داد؟' : 'این پول رو به کی دادی؟';
-  const amount = entry.txn.amountRial != null ? [`${faCompact(tomanOf(entry.txn.amountRial))} تومان`] : [];
+  const amount = entry.txn.amountRial != null ? [`${faCompact(tomanOf(entry.txn.amountRial))} ${moneyUnit()}`] : [];
   const save = () => {
     (document.activeElement as HTMLElement | null)?.blur();
     setTried(true);

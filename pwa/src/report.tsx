@@ -19,7 +19,7 @@ import type { Change } from './data';
 import { ledger, useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { setReportExcluded, useFamily } from './family';
-import { MONTHS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf } from './format';
+import { MONTHS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf, moneyUnit, shownOf } from './format';
 import { isTotal, worthItAnswers, worthItSummary } from './goals';
 import type { WorthItSummary } from './goals';
 import { Chevron, TrendCaret } from './icons';
@@ -278,7 +278,7 @@ function AssetReportContent() {
             dollars short of a line must still be able to switch back to Toman. */}
         <div class="rp-since">
           <span>{since}</span>
-          <PillToggle options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : 'تومان'} onSelect={setUsd} />
+          <PillToggle options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : moneyUnit()} onSelect={setUsd} />
         </div>
         {shown == null
           // Dollars short of a line say why: the rates start on the day the app first recorded
@@ -331,7 +331,7 @@ function CompositionBar({ composition }: { composition: Array<[Kind, number]> })
           <span class="rp-legend-dot" style={{ background: BAR_TINT[kind] }} />
           <span class="grow">{KIND_FA[kind]}</span>
           {/* Parentheses, not a middot: beside Persian digits «·» reads as a zero. */}
-          <span class="muted">{`${faCompact(value, 3, true)} تومان (${faNumber(roundEven(value / total * 100))}٪)`}</span>
+          <span class="muted">{`${faCompact(value, 3, true)} ${moneyUnit()} (${faNumber(roundEven(value / total * 100))}٪)`}</span>
         </div>
       ))}
     </div>
@@ -346,7 +346,7 @@ function ChangeFigure({ change, usd }: { change: Change; usd: boolean }) {
   const delta = Math.abs(change.delta);
   return (
     <div class="rp-fitbox rp-change">
-      <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 3, true)} تومان`} min={22} max={44}
+      <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 3, true)} ${moneyUnit()}`} min={22} max={44}
         class="figure rp-w900" color={tone} spoken={usd && !flat ? `${faRate(delta)} دلار` : undefined} />
       {!flat && (
         <>
@@ -358,7 +358,7 @@ function ChangeFigure({ change, usd }: { change: Change; usd: boolean }) {
             <span class="muted">{gained ? 'بیشتر شده' : 'کمتر شده'}</span>
           </div>
           {/* The exact Toman under its magnitude; a dollar figure is short enough to read whole. */}
-          {!usd && <p class="figure muted rp-change-exact">{`${faNumber(delta)} تومان`}</p>}
+          {!usd && <p class="figure muted rp-change-exact">{`${faNumber(shownOf(delta))} ${moneyUnit()}`}</p>}
         </>
       )}
     </div>
@@ -372,7 +372,7 @@ function ChartCaption({ label, value, usd }: { label: string; value: number; usd
       {usd
         // "$" is read out as punctuation or skipped; the unit has to survive for listeners.
         ? <p class="figure rp-caption-value"><span aria-hidden="true">{faUsd(value)}</span><span class="sr">{`${faRate(value)} دلار`}</span></p>
-        : <p class="figure rp-caption-value">{`${faCompact(value)} تومان`}</p>}
+        : <p class="figure rp-caption-value">{`${faCompact(value)} ${moneyUnit()}`}</p>}
     </div>
   );
 }
@@ -583,7 +583,7 @@ function MonthSummary({ month, current, today, usdRate, rateHistory }: {
         {/* The figure yields, not the label: it is the half that grows by orders of magnitude. */}
         <div class="rp-fitbox grow"><Fit text={bidi(faCompact(tomanOf(net)))} min={15} max={22} class="figure rp-w800 rp-end" color={tone} /></div>
       </div>
-      <p class="figure muted rp-net-exact">{`${faNumber(tomanOf(net))} تومان`}</p>
+      <p class="figure muted rp-net-exact">{`${faNumber(shownOf(tomanOf(net)))} ${moneyUnit()}`}</p>
       <UsdAside rial={net} rate={rate} end />
       <SpendPace month={month} today={today} />
     </Panel>
@@ -612,7 +612,7 @@ function PaceLine({ label, rial }: { label: string; rial: number }) {
     <div class="rp-pace">
       <span class="muted">{label}</span>
       {/* Compact only: the exact Rial of an average is precision the division never had. */}
-      <div class="rp-fitbox grow"><Fit text={bidi(`${faCompact(tomanOf(rial))} تومان`)} min={11} max={14} class="figure rp-w700 rp-end" /></div>
+      <div class="rp-fitbox grow"><Fit text={bidi(`${faCompact(tomanOf(rial))} ${moneyUnit()}`)} min={11} max={14} class="figure rp-w700 rp-end" /></div>
     </div>
   );
 }
@@ -624,7 +624,7 @@ function FlowSide({ label, rial, tone, rate }: { label: string; rial: number; to
       <Fit text={label} min={10} max={12} class="muted" />
       <Fit text={bidi(faCompact(tomanOf(rial)))} min={13} max={26} class="figure rp-w800 rp-side-figure" color={tone} />
       {/* faCompact truncates, so the magnitude is never more than she has; the exact is right here. */}
-      <Fit text={`${faNumber(tomanOf(rial))} تومان`} min={8} max={11} class="figure muted rp-side-exact" />
+      <Fit text={`${faNumber(shownOf(tomanOf(rial)))} ${moneyUnit()}`} min={8} max={11} class="figure muted rp-side-exact" />
       <UsdAside rial={rial} rate={rate} />
     </div>
   );
@@ -690,7 +690,7 @@ function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindo
             : cash.range.count === 1 && report.month.equals(cash.selected);
           const inWindow = cash.range.containsMonth(report.month);
           const label = `${weekly ? report.range.fa : report.month.fa}: ` +
-            `درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، خرج ${faCompact(tomanOf(report.spentRial))} تومان` +
+            `درآمد ${faCompact(tomanOf(report.incomeRial))} ${moneyUnit()}، خرج ${faCompact(tomanOf(report.spentRial))} ${moneyUnit()}` +
             (inWindow && markWindow ? '، در بازهٔ انتخاب‌شده' : '');
           return (
             <button type="button" role="tab" aria-selected={only} aria-label={label}
@@ -792,7 +792,7 @@ function CategoryDetail({ period }: { period: PeriodReport }) {
 function AsideCategoryRow({ name, rial, onOpen }: { name: string; rial: number; onOpen: () => void }) {
   return (
     <button type="button" class="rp-btn rp-share" onClick={onOpen}
-      aria-label={`${name}: ${faCompact(tomanOf(rial))} تومان، در جمع حساب نشده`}>
+      aria-label={`${name}: ${faCompact(tomanOf(rial))} ${moneyUnit()}، در جمع حساب نشده`}>
       <span class="rp-share-row">
         <CategoryDisc name={name} size={32} icon={17} stroke={1.5} fill={10} ink={70} />
         <span class="rp-share-name muted">{name}</span>
@@ -862,7 +862,7 @@ function ShareRow({ name, rial, total, tint, lead, onOpen }: {
       <span class="rp-track"><span style={{ width: `${share * 100}%`, background: tint ?? 'var(--primary)' }} /></span>
     </>
   );
-  const label = `${name}: ${faCompact(tomanOf(rial))} تومان، ${percent} درصد`;
+  const label = `${name}: ${faCompact(tomanOf(rial))} ${moneyUnit()}، ${percent} درصد`;
   return onOpen
     ? <button type="button" class="rp-btn rp-share" aria-label={label} onClick={onOpen}>{body}</button>
     : <div class="rp-share" role="group" aria-label={label}>{body}</div>;
@@ -894,7 +894,7 @@ function WorthItLine({ label, rial, tone }: { label: string; rial: number; tone:
   return (
     <div class="rp-worth-line">
       <span class="grow">{label}</span>
-      <span class="figure rp-w700" style={{ color: tone }}>{bidi(`${faCompact(tomanOf(rial))} تومان`)}</span>
+      <span class="figure rp-w700" style={{ color: tone }}>{bidi(`${faCompact(tomanOf(rial))} ${moneyUnit()}`)}</span>
     </div>
   );
 }
@@ -948,7 +948,7 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
         </div>
       </div>
       <div class="rp-fitbox rp-l">
-        <Fit text={bidi(`${faCompact(tomanOf(win.totalRial))} تومان`)} min={22} max={34} class="figure rp-w900"
+        <Fit text={bidi(`${faCompact(tomanOf(win.totalRial))} ${moneyUnit()}`)} min={22} max={34} class="figure rp-w900"
           color={income ? INCOME_TINT : 'var(--on-surface)'} />
       </div>
       {win.share != null && (

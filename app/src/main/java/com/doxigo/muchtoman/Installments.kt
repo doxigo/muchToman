@@ -307,7 +307,7 @@ fun installmentInsight(progress: InstallmentProgress, index: Int, today: Long): 
     val due = installmentDueOn(progress.plan, index)
     return Insight(
         text = "سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.",
-        why = "قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، " +
+        why = "قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit، " +
             "قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count.toDouble())}، ${faDate(due)}.",
         refs = progress.payments.map { it.txn.ref },
         tone = Insight.Tone.ATTENTION,
@@ -395,7 +395,7 @@ fun installmentReminderTitle(plan: Goal, due: Long, today: Long): String =
 
 /** How much, and on which date — what she needs in the banking app. */
 fun installmentReminderBody(plan: Goal, due: Long): String =
-    "${faCompact(tomanOf(plan.targetRial))} تومان • ${faDate(due)}"
+    "${faCompact(tomanOf(plan.targetRial))} $moneyUnit • ${faDate(due)}"
 
 /** The setting's answer, on the تنظیمات row and in its sheet. */
 fun installmentReminderFa(days: Int): String = when {

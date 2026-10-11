@@ -96,11 +96,11 @@ fun chequeWarningFa(
         }
         .sumOf { it.targetRial }
     val account = accounts.firstOrNull { it.bank == cheque.categoryId && it.anchored }
-        ?: return "موجودی حساب $bank رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), dec = 3)} تومان توش هست."
+        ?: return "موجودی حساب $bank رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), dec = 3)} $moneyUnit توش هست."
     val balanceRial = Math.round(account.balance * 10.0)
     if (balanceRial >= need) return null
     val earlier = if (need > cheque.targetRial) "با چک‌های زودتر همین حساب، " else ""
-    return "تو حساب $bank ${faCompact(tomanOf(balanceRial))} تومان هست؛ " +
+    return "تو حساب $bank ${faCompact(tomanOf(balanceRial))} $moneyUnit هست؛ " +
         "$earlier${faCompact(tomanOf(need - balanceRial), dec = 3)} کمه."
 }
 
@@ -156,7 +156,7 @@ fun chequeReminderTitle(cheque: Goal, today: Long): String =
 
 /** «۵۰ میلیون تومان از بانک ملت» — the cheque in one line. */
 fun chequeLineFa(cheque: Goal): String =
-    "${faCompact(tomanOf(cheque.targetRial), dec = 3)} تومان از ${bankNameOf(cheque.categoryId.orEmpty())}"
+    "${faCompact(tomanOf(cheque.targetRial), dec = 3)} $moneyUnit از ${bankNameOf(cheque.categoryId.orEmpty())}"
 
 /** The warning when there is one; otherwise how much, from where, and when. */
 fun chequeReminderBody(cheque: Goal, open: List<Goal>, accounts: List<BankAccount>, today: Long, daysBefore: Int): String =

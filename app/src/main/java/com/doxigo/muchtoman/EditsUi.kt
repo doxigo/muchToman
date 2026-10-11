@@ -80,9 +80,12 @@ internal fun CoroutineScope.hideThen(sheetState: SheetState, then: () -> Unit) {
     launch { sheetState.hide() }.invokeOnCompletion { then() }
 }
 
-/** A Rial figure as the amount field holds it: Toman digits, a tenth only when there is one. */
-internal fun rialToField(rial: Long): String =
-    if (rial % 10 == 0L) (rial / 10).toString() else "${rial / 10}.${rial % 10}"
+/** A Rial figure as the amount field holds it: in her unit ([showRial]); in Toman, a tenth only when there is one. */
+internal fun rialToField(rial: Long): String = when {
+    showRial -> rial.toString()
+    rial % 10 == 0L -> (rial / 10).toString()
+    else -> "${rial / 10}.${rial % 10}"
+}
 
 /**
  * «ویرایش تراکنش» — the figure, the day, and in a household whose spending it was.
@@ -130,7 +133,7 @@ fun EditTxnSheet(
         ) {
             SheetTitle("ویرایش تراکنش")
 
-            SheetLabel("چقدر، به تومان")
+            SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -144,7 +147,7 @@ fun EditTxnSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ به تومان" },
+                    .semantics { contentDescription = "مبلغ به $moneyUnit" },
             )
 
             SheetLabel("کِی؟")
@@ -311,7 +314,7 @@ fun SplitSheet(
             // Exact, not compact: she is reconciling a receipt, and «۶ میلیون» over parts that
             // add to ۶٬۰۱۲٬۰۰۰ would read as a split that does not add up.
             Text(
-                bidi("کل تراکنش ${faNumber(tomanOf(total))} تومان"),
+                bidi("کل تراکنش ${faNumber(shownOf(tomanOf(total)))} $moneyUnit"),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -335,7 +338,7 @@ fun SplitSheet(
                     ) { picking = if (picking == i) null else i }
                     if (i == 0 && !over) {
                         Text(
-                            faNumber(tomanOf(firstRial)),
+                            faNumber(shownOf(tomanOf(firstRial))),
                             style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold),
                             fontSize = 15.sp,
                             modifier = Modifier.padding(start = Space.s, end = Space.xs),
@@ -368,7 +371,7 @@ fun SplitSheet(
                         isError = parsed == null && (!blank || missing),
                         visualTransformation = GroupedNumber,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        label = { Text("چقدر، به تومان") },
+                        label = { Text("چقدر، به $moneyUnit") },
                         supportingText = when {
                             blank && missing -> ({
                                 Text(
@@ -534,7 +537,7 @@ internal fun SplitPanel(split: List<SplitPart>) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    bidi("${faCompact(tomanOf(part.rial))} تومان"),
+                    bidi("${faCompact(tomanOf(part.rial))} $moneyUnit"),
                     style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold),
                     fontSize = 14.sp,
                 )

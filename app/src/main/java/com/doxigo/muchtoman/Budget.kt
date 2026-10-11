@@ -495,10 +495,10 @@ fun budgetAlertTitle(budget: BudgetProgress): String = when {
 fun budgetAlertBody(budget: BudgetProgress): String {
     val head = when {
         budget.over ->
-            "${faCompact(tomanOf(budget.overRial))} بیشتر از ${faCompact(tomanOf(budget.capRial))} تومان"
+            "${faCompact(tomanOf(budget.overRial))} بیشتر از ${faCompact(tomanOf(budget.capRial))} $moneyUnit"
         budget.leftRial <= 0L -> "چیزی از بودجه نمونده"
         else ->
-            "${faCompact(tomanOf(budget.leftRial))} از ${faCompact(tomanOf(budget.capRial))} تومان مونده"
+            "${faCompact(tomanOf(budget.leftRial))} از ${faCompact(tomanOf(budget.capRial))} $moneyUnit مونده"
     }
     return "$head • ${budgetDaysLeftFa(budget)}"
 }
@@ -637,8 +637,8 @@ fun budgetNoteFa(budget: BudgetProgress): String = when {
     budget.leftRial <= 0L -> "بودجهٔ ${budget.window.fa} تموم شد."
     budget.daysLeft <= 1 -> budgetDaysLeftFa(budget) + "."
     budget.outpacing && budget.perDayRial != null ->
-        "تا آخر ${budget.period.fa} روزی ${faCompact(tomanOf(budget.perDayRial))} تومان جا داری."
+        "تا آخر ${budget.period.fa} روزی ${faCompact(tomanOf(budget.perDayRial))} $moneyUnit جا داری."
     budget.level >= BudgetLevel.NEAR && budget.perDayRial != null ->
-        "${faCompact(tomanOf(budget.leftRial))} تومان مونده، روزی ${faCompact(tomanOf(budget.perDayRial))} تومان."
+        "${faCompact(tomanOf(budget.leftRial))} $moneyUnit مونده، روزی ${faCompact(tomanOf(budget.perDayRial))} $moneyUnit."
     else -> ""
 }

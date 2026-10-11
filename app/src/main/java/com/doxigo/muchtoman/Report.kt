@@ -342,7 +342,7 @@ private fun AssetReportContent(
             PillToggle(
                 options = listOf(false, true),
                 selected = inUsd,
-                label = { if (it) "دلار" else "تومان" },
+                label = { if (it) "دلار" else moneyUnit },
                 onSelect = { inUsd = it },
             )
         }
@@ -470,7 +470,7 @@ private fun CompositionBar(composition: List<Pair<Kind, Double>>) {
                 Text(kind.fa, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(
                     // Parentheses, not a middot: beside Persian digits «·» reads as a zero.
-                    "${faCompact(value, 3, pad = true)} تومان (${faNumber(round(value / total * 100))}٪)",
+                    "${faCompact(value, 3, pad = true)} $moneyUnit (${faNumber(round(value / total * 100))}٪)",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -532,7 +532,7 @@ private fun ChangeFigure(change: Change, usd: Boolean) {
             text = when {
                 flat -> "بدون تغییر"
                 usd -> faUsd(abs(change.delta))
-                else -> "${faCompact(abs(change.delta), 3, pad = true)} تومان"
+                else -> "${faCompact(abs(change.delta), 3, pad = true)} $moneyUnit"
             },
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 44.sp),
@@ -573,7 +573,7 @@ private fun ChangeFigure(change: Change, usd: Boolean) {
             // The exact Toman under its magnitude; a dollar figure is short enough to read whole.
             if (!usd) {
                 Text(
-                    "${faNumber(abs(change.delta))} تومان",
+                    "${faNumber(shownOf(abs(change.delta)))} $moneyUnit",
                     fontSize = 12.sp,
                     fontFamily = ModamFigures,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -589,7 +589,7 @@ private fun ChartCaption(label: String, value: Double, usd: Boolean) {
     Column {
         Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            if (usd) faUsd(value) else "${faCompact(value)} تومان",
+            if (usd) faUsd(value) else "${faCompact(value)} $moneyUnit",
             fontSize = 14.sp,
             fontFamily = ModamFigures,
             fontWeight = FontWeight.Bold,
@@ -1109,7 +1109,7 @@ private fun MonthSummary(
             )
         }
         Text(
-            "${faNumber(tomanOf(abs(month.netRial)))} تومان",
+            "${faNumber(shownOf(tomanOf(abs(month.netRial))))} $moneyUnit",
             fontSize = 11.sp,
             fontFamily = ModamFigures,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1171,7 +1171,7 @@ private fun PaceLine(label: String, rial: Long) {
         // a Row measures its unweighted children first, so whichever carries the weight is the
         // one that yields — and the figure is the half that grows by orders of magnitude.
         BasicText(
-            text = bidi("${faCompact(tomanOf(rial))} تومان"),
+            text = bidi("${faCompact(tomanOf(rial))} $moneyUnit"),
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 14.sp),
             style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold)
@@ -1226,7 +1226,7 @@ private fun FlowSide(
         // reason it shrinks rather than ellipsising: «۹۳۹,۵۵۳,۹۳۳ تو…» is the exact figure with
         // its unit cut off, on the one line that exists to be exact.
         BasicText(
-            text = "${faNumber(tomanOf(rial))} تومان",
+            text = "${faNumber(shownOf(tomanOf(rial)))} $moneyUnit",
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = 11.sp),
             style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal),
@@ -1403,8 +1403,8 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                         .padding(vertical = Space.s)
                         .semantics(mergeDescendants = true) {
                             contentDescription = "${if (weekly) report.range.fa else report.month.fa}: " +
-                                "درآمد ${faCompact(tomanOf(report.incomeRial))} تومان، " +
-                                "خرج ${faCompact(tomanOf(report.spentRial))} تومان" +
+                                "درآمد ${faCompact(tomanOf(report.incomeRial))} $moneyUnit، " +
+                                "خرج ${faCompact(tomanOf(report.spentRial))} $moneyUnit" +
                                 if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
                         },
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1624,7 +1624,7 @@ private fun AsideCategoryRow(
             .clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، در جمع حساب نشده"
+                contentDescription = "$name: ${faCompact(tomanOf(rial))} $moneyUnit، در جمع حساب نشده"
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1772,7 +1772,7 @@ private fun MemberShareRow(
             )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "${member.name}: ${faCompact(tomanOf(rial))} تومان، " +
+                contentDescription = "${member.name}: ${faCompact(tomanOf(rial))} $moneyUnit، " +
                     "${faNumber(round(share * 100.0))} درصد"
             },
     ) {
@@ -1855,7 +1855,7 @@ private fun CategoryShare(
             )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$name: ${faCompact(tomanOf(rial))} تومان، " +
+                contentDescription = "$name: ${faCompact(tomanOf(rial))} $moneyUnit، " +
                     "${faNumber(round(share * 100.0))} درصد"
             },
     ) {
@@ -2000,7 +2000,7 @@ private fun CategorySheet(
                 }
                 Spacer(Modifier.height(Space.l))
                 BasicText(
-                    text = bidi("${faCompact(tomanOf(window.totalRial))} تومان"),
+                    text = bidi("${faCompact(tomanOf(window.totalRial))} $moneyUnit"),
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 34.sp),
                     style = figureStyle(
@@ -2184,7 +2184,7 @@ private fun WorthItLine(label: String, rial: Long, tone: Color) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            bidi("${faCompact(tomanOf(rial))} تومان"),
+            bidi("${faCompact(tomanOf(rial))} $moneyUnit"),
             style = figureStyle(tone, FontWeight.Bold),
             fontSize = 14.sp,
         )

@@ -262,6 +262,8 @@ class ExportTest {
                 "notifyScannedTo",
                 // The voice she chose for her notes is hers; which lines this phone said is not.
                 "quipTone",
+                // Toman or Rial is how she reads every figure; left behind, a restored phone quietly reverts.
+                "showRial",
             ),
             EXPORTED_PREFS,
         )

@@ -7,7 +7,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { closePage, closeSheet } from './nav';
-import { faWordsToman, groupDigits, parseAmount } from './format';
+import { faWordsToman, groupDigits, moneyUnit, parseAmount, tomanOfShown } from './format';
 import { PlusMark } from './icons';
 
 export function ScreenTitle({ children }: { children: ComponentChildren }) {
@@ -276,7 +276,7 @@ export function AmountField({ label, raw, onRaw, decimals = 0, error, words = tr
     el.value = groupDigits(next);
   };
   const value = parseAmount(raw);
-  const spelled = words && value != null && Number.isInteger(value) && value >= 1000 ? faWordsToman(value) : null;
+  const spelled = words && value != null && Number.isInteger(value) && value >= 1000 ? faWordsToman(tomanOfShown(value)) : null;
   return (
     <div>
       <label class={`field${error ? ' error' : ''}`}>
@@ -307,6 +307,6 @@ export function Section({ title, trailing }: { title: ComponentChildren; trailin
 }
 
 /** The hero figure: `heroFigure` — digits, then «تومان» at 0.42em and 75%. `fit` is its length in ems. */
-export function TomanFigure({ text, class: cls = '', unit = 'تومان' }: { text: string; class?: string; unit?: string | null }) {
+export function TomanFigure({ text, class: cls = '', unit = moneyUnit() }: { text: string; class?: string; unit?: string | null }) {
   return <span class={`figure ${cls}`} style={{ '--fit': Math.max(6, [...text].length * .62 + (unit ? 2.4 : 0)) }}>{text}{unit && <span class="unit">{unit}</span>}</span>;
 }

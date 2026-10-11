@@ -249,6 +249,8 @@ export interface Prefs {
   installmentMarks: Record<string, number>;
   /** The voice notes speak in. Hers, so backed up. Unset — every browser before it existed — is شوخ. */
   quipTone: QuipTone;
+  /** Figures shown and typed in Rial rather than Toman (format.ts showRial). Hers, so backed up. */
+  showRial: boolean;
   /** Which lines this browser already said (quips.ts pickQuip) — a mark, kept out of backups. */
   quipsSeen: string[];
   /** The spend the quiet note last asked about (quips.ts quietDays) — a mark too. */
@@ -295,6 +297,7 @@ export const PREF_DEFAULTS: Prefs = {
   budgetMarks: [],
   installmentMarks: {},
   quipTone: 'WITTY',
+  showRial: false,
   quipsSeen: [],
   quietMark: 0,
   lastBackupAt: 0,

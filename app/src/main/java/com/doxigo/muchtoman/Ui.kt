@@ -715,6 +715,7 @@ private fun AppScreens(
             onCompanion = { companion = true },
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
+            onShowRialChange = vm::setShowRial,
             installmentReminder = state.installmentReminder,
             // Switching it on is the moment to ask for notifications if they are off, as the
             // messages switch does for its own permissions.
@@ -1681,7 +1682,7 @@ internal fun HeroCard(
                 )
             }
             Text(
-                "${faNumber(total)} تومان",
+                "${faNumber(shownOf(total))} $moneyUnit",
                 fontSize = 13.sp,
                 fontFamily = ModamFigures,
                 color = Hero.muted,
@@ -2836,7 +2837,7 @@ private fun BankAccountRow(
                     account.balance,
                     color = if (off) muted else MaterialTheme.colorScheme.onSurface,
                     struck = off,
-                    unit = "تومان",
+                    unit = moneyUnit,
                 )
             }
 
@@ -2885,7 +2886,7 @@ private fun BankAccountRow(
                 // A label that stays, not a placeholder that vanishes at the first digit —
                 // while she types a balance, the unit must still be on screen.
                 Text(
-                    "موجودی به تومان",
+                    "موجودی به $moneyUnit",
                     fontSize = 14.sp,
                     color = muted,
                     modifier = Modifier.padding(top = Space.s),
@@ -2913,7 +2914,7 @@ private fun BankAccountRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Space.xs)
-                        .semantics { contentDescription = "موجودی به تومان" },
+                        .semantics { contentDescription = "موجودی به $moneyUnit" },
                 )
             }
 
@@ -2938,7 +2939,7 @@ private fun BankAccountRow(
                                 // that cannot save says why, with the keyboard out of the way.
                                 focus.clearFocus()
                                 missingDraft = draft.isBlank()
-                                parseAmount(draft)?.let(onAnchor)
+                                parseAmount(draft)?.let { onAnchor(tomanOfShown(it)) }
                             },
                             Modifier.weight(1f),
                             voice = ButtonVoice.PRIMARY,
@@ -3005,7 +3006,7 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
             Text(
                 // Three decimals, like the rows it sits above: a header reading ۱٫۴ over rows
                 // that add up to ۱٫۴۰۹ looks like one of the two is wrong.
-                "${faCompact(it, 3, pad = true)} تومان",
+                "${faCompact(it, 3, pad = true)} $moneyUnit",
                 fontSize = 13.sp,
                 fontFamily = ModamFigures,
                 fontWeight = FontWeight.SemiBold,
@@ -3170,14 +3171,14 @@ private fun HoldingRow(
                             }
                             rate == null ->
                                 Text("نرخش پیدا نشد", fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
-                            else -> RowAmount(amount * rate, color = strong, unit = "تومان")
+                            else -> RowAmount(amount * rate, color = strong, unit = moneyUnit)
                         }
                     }
                 }
 
                 val held = "${faHeld(amount, type.dec)} ${bidi(type.unitFa)}"
                 // null when this line is a sentence rather than an amount-and-rate pair.
-                val shownRate = rate?.takeIf { note == null && !type.valuedInToman }?.let(::faRate)
+                val shownRate = rate?.takeIf { note == null && !type.valuedInToman }?.let { faRate(shownOf(it)) }
                 if (shownRate == null) {
                     Text(
                         when {
@@ -3301,7 +3302,7 @@ private fun FamilyAssetBand(shared: FamilyAssetView, modifier: Modifier = Modifi
             ) {
                 RowTitle(item.name, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(Space.s))
-                RowAmount(item.toman, color = MaterialTheme.colorScheme.onSurface, unit = "تومان")
+                RowAmount(item.toman, color = MaterialTheme.colorScheme.onSurface, unit = moneyUnit)
             }
             if (i < shared.items.lastIndex) {
                 HorizontalDivider(
@@ -4082,7 +4083,11 @@ private fun EditSheet(
     /** «به کسی قرض دادم» — null where this holding is not something one lends. See `Loans.kt`. */
     onLend: (() -> Unit)? = null,
 ) {
-    val current = holding?.amount
+    // Cash, a bank and a house are typed as money, so in her unit ([showRial]). Everything below
+    // works in what the field holds; only this seed and the save convert.
+    val inMoney = type.valuedInToman
+    val current = holding?.amount?.let { if (inMoney) shownOf(it) else it }
+    val unitFa = if (inMoney) moneyUnit else type.unitFa
     val linkedWallet = holding?.wallet
     val linkedOption = linkedWallet?.let {
         WalletOption(it.network, it.networkFa, it.contract)
@@ -4132,7 +4137,7 @@ private fun EditSheet(
         linkedWallet.contract == selectedWallet?.contract
     val amount = if (source == AmountSource.MANUAL) manualAmount
     else current?.takeIf { linkedSelection }
-    val typedRate = parseAmount(rateText)?.takeIf { it > 0 }
+    val typedRate = parseAmount(rateText)?.takeIf { it > 0 }?.let(::tomanOfShown)
     // While she is typing a manual rate, the "می‌شود …" preview follows what she types, so
     // the consequence of the override is visible before it is committed.
     val previewRate = if (editingRate) typedRate ?: rate else rate
@@ -4321,8 +4326,8 @@ private fun EditSheet(
                 // house: what is being asked for there is a valuation, and she is the only one
                 // who can give it.
                 val prompt =
-                    if (type.kind == Kind.PROPERTY) "به نظرت چند تومن می‌ارزه؟"
-                    else "چقدر ${bidi(type.unitFa)} داری؟"
+                    if (type.kind == Kind.PROPERTY) if (showRial) "به نظرت چند ریال می‌ارزه؟" else "به نظرت چند تومن می‌ارزه؟"
+                    else "چقدر ${bidi(unitFa)} داری؟"
                 SheetLabel(prompt)
                 val amountInvalid = manualAmount == null && (text.isNotBlank() || manualSubmitted)
                 OutlinedTextField(
@@ -4358,7 +4363,7 @@ private fun EditSheet(
             // The figure she just typed, in words — the guard against an extra zero.
             if (manualAmount != null && manualAmount % 1.0 == 0.0 && manualAmount >= 1000) {
                 Text(
-                    "${faWords(manualAmount.toLong())} ${bidi(type.unitFa)}",
+                    "${faWords(manualAmount.toLong())} ${bidi(unitFa)}",
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4415,7 +4420,7 @@ private fun EditSheet(
                             .fillMaxWidth()
                             .focusRequester(deltaFocus)
                             .semantics {
-                                contentDescription = "مقدار تغییر ${type.unitFa}"
+                                contentDescription = "مقدار تغییر $unitFa"
                             },
                     )
                     val base = amount ?: current
@@ -4553,7 +4558,7 @@ private fun EditSheet(
                             // not a separate finding.
                             previewRate?.let { rate ->
                                 BasicText(
-                                    text = "${faCompact(current * rate, 3, pad = true)} تومان",
+                                    text = "${faCompact(current * rate, 3, pad = true)} $moneyUnit",
                                     maxLines = 1,
                                     autoSize = TextAutoSize.StepBased(
                                         minFontSize = 13.sp,
@@ -4611,7 +4616,7 @@ private fun EditSheet(
                     // Same figure the row shows, so it carries the same three decimals — and
                     // shrinks rather than wrapping, since it is one sentence.
                     BasicText(
-                        text = "یعنی ${faCompact(amount * previewRate, 3, pad = true)} تومان",
+                        text = "یعنی ${faCompact(amount * previewRate, 3, pad = true)} $moneyUnit",
                         maxLines = 1,
                         autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
                         style = TextStyle(
@@ -4629,7 +4634,7 @@ private fun EditSheet(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             if (rate == null) "نرخ پیدا نشد"
-                            else "هر ${bidi(type.unitFa)}: ${faNumber(rate)} تومان" +
+                            else "هر ${bidi(type.unitFa)}: ${faNumber(shownOf(rate))} $moneyUnit" +
                                 if (isOverridden) "  (دستی وارد شده)" else "",
                             fontSize = 14.sp,
                             color = muted,
@@ -4637,7 +4642,7 @@ private fun EditSheet(
                         )
                         Spacer(Modifier.width(Space.s))
                         PillButton("تغییر نرخ", {
-                            rateSeed = rate?.let(::fieldNumber).orEmpty()
+                            rateSeed = rate?.let { fieldNumber(shownOf(it)) }.orEmpty()
                             rateText = rateSeed
                             rateRefusal = null
                             editingRate = true
@@ -4648,7 +4653,7 @@ private fun EditSheet(
                     // not silently keep appending to the amount above.
                     val rateFocus = remember { FocusRequester() }
                     LaunchedEffect(Unit) { rateFocus.requestFocus() }
-                    Text("هر ${bidi(type.unitFa)} چند تومان؟", fontSize = 14.sp, color = muted)
+                    Text("هر ${bidi(type.unitFa)} چند $moneyUnit؟", fontSize = 14.sp, color = muted)
                     Spacer(Modifier.height(Space.xs))
                     OutlinedTextField(
                         value = rateText,
@@ -4669,7 +4674,7 @@ private fun EditSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(rateFocus)
-                            .semantics { contentDescription = "هر ${type.unitFa} چند تومان؟" },
+                            .semantics { contentDescription = "هر ${type.unitFa} چند $moneyUnit؟" },
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(Space.s),
@@ -4751,7 +4756,7 @@ private fun EditSheet(
                     // and while adding there is no such row until this save makes one.
                     if (source == AmountSource.MANUAL) {
                         manualSubmitted = true
-                        if (manualAmount != null) close { onSaveManual(manualAmount); nameIt() }
+                        if (manualAmount != null) close { onSaveManual(if (inMoney) tomanOfShown(manualAmount) else manualAmount); nameIt() }
                     } else {
                         // Never null here: the network choice always holds one of its options.
                         val option = selectedWallet ?: return@PillButton

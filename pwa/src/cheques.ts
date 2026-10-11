@@ -11,7 +11,7 @@
  * figure missing. ponytail: outgoing only, settled by her tap.
  */
 import type { BankAccountView } from './derived';
-import { faCompact, faDate, faNumber, tomanOf } from './format';
+import { faCompact, faDate, faNumber, tomanOf, moneyUnit } from './format';
 import { GoalKind, GoalPeriod } from './goals';
 import { installmentWhenFa, remindAwake } from './installments';
 import { jalaliDay, jalaliMonthLength, jalaliOf, tehranDay } from './jalali';
@@ -65,10 +65,10 @@ export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: r
     .filter((c) => c.id !== cheque.id && c.categoryId === cheque.categoryId && bySooner(c, cheque) < 0)
     .reduce((sum, c) => sum + c.targetRial, 0);
   const account = accounts.find((a) => a.bank === cheque.categoryId && a.anchored);
-  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 3)} تومان توش هست.`;
+  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 3)} ${moneyUnit()} توش هست.`;
   if (account.balanceRial >= need) return null;
   const earlier = need > cheque.targetRial ? 'با چک‌های زودتر همین حساب، ' : '';
-  return `تو حساب ${bank} ${faCompact(tomanOf(account.balanceRial))} تومان هست؛ ` +
+  return `تو حساب ${bank} ${faCompact(tomanOf(account.balanceRial))} ${moneyUnit()} هست؛ ` +
     `${earlier}${faCompact(tomanOf(need - account.balanceRial), 3)} کمه.`;
 }
 
@@ -122,7 +122,7 @@ export const chequeReminderTitle = (cheque: Goal, today: number): string =>
 
 /** «۵۰ میلیون تومان از بانک ملت» — the cheque in one line. */
 export const chequeLineFa = (cheque: Goal): string =>
-  `${faCompact(tomanOf(cheque.targetRial), 3)} تومان از ${bankFa(cheque.categoryId ?? '')}`;
+  `${faCompact(tomanOf(cheque.targetRial), 3)} ${moneyUnit()} از ${bankFa(cheque.categoryId ?? '')}`;
 
 /** The warning when there is one; otherwise how much, from where, and when. */
 export const chequeReminderBody = (cheque: Goal, open: readonly Goal[], accounts: readonly ChequeAccount[], today: number, daysBefore: number): string =>

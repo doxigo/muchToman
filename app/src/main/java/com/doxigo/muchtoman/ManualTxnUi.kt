@@ -187,7 +187,7 @@ fun ManualTxnSheet(
                 onSelect = { outgoing = it },
             )
 
-            SheetLabel("چقدر، به تومان")
+            SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -214,7 +214,7 @@ fun ManualTxnSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ به تومان" },
+                    .semantics { contentDescription = "مبلغ به $moneyUnit" },
             )
 
             SheetLabel("بابت چی؟")

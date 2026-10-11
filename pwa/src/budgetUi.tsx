@@ -29,7 +29,7 @@ import type { CategoryGlyph } from './categoryIcon';
 import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { requestFamilySync, useFamily } from './family';
-import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekdayDate, parseAmount, today as tehranToday, tomanOf } from './format';
+import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekdayDate, parseAmount, today as tehranToday, tomanOf, moneyUnit } from './format';
 import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
@@ -330,7 +330,7 @@ function BudgetCard({ budget, radius, custom, onOpen }: {
   const subtitle = [budget.period.everyFa, budget.window.fa, budgetScopeFa(budget)].filter((s) => s !== '').join(' • ');
   const spent = faCompact(tomanOf(budget.spentRial));
   const cap = faCompact(tomanOf(budget.capRial));
-  const label = `${budget.categoryFa}، ${subtitle}: ${spent} از ${cap} تومان، ${faNumber(budget.percent)} درصد. ` +
+  const label = `${budget.categoryFa}، ${subtitle}: ${spent} از ${cap} ${moneyUnit()}، ${faNumber(budget.percent)} درصد. ` +
     `${budgetDaysLeftFa(budget)}. ${note}`;
   return (
     <BandCard radius={radius} onOpen={onOpen} label={label} tone={budgetTone(budget.level)}>
@@ -392,7 +392,7 @@ function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentPr
       <span class="plan-head">
         <span class="grow">
           <span class="plan-name">{progress.plan.nameFa}</span>
-          <span class="plan-sub">ماهی {faCompact(tomanOf(progress.plan.targetRial))} تومان</span>
+          <span class="plan-sub">ماهی {faCompact(tomanOf(progress.plan.targetRial))} {moneyUnit()}</span>
         </span>
         <EditHint label="پرداخت‌ها" />
       </span>
@@ -435,7 +435,7 @@ function ChequeCard({ cheque, warning, today, radius, onOpen }: {
           <EditHint />
         </span>
         <span class="plan-figure-row mt-m">
-          <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 3)} تومان`)} />
+          <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 3)} ${moneyUnit()}`)} />
           <span class={`cheque-when${warning ? ' warned' : ''}`}>{chequeWhenFa(cheque.startsOn, today)}</span>
         </span>
         {warning && <span class={`plan-note mt-xs${late ? ' loud' : ''}`}>{warning}</span>}
@@ -453,8 +453,8 @@ function InstallmentSummaryLines({ summary }: { summary: InstallmentSummary | nu
   if (!summary) return null;
   return (
     <div class="inst-summary">
-      <FitFigure text={bidi(`ماهی ${faCompact(tomanOf(summary.monthlyRial))} تومان قسط`)} />
-      <p class="plan-lede">{faCompact(tomanOf(summary.leftRial))} تومان مونده، تا {faDate(summary.lastDue)}</p>
+      <FitFigure text={bidi(`ماهی ${faCompact(tomanOf(summary.monthlyRial))} ${moneyUnit()} قسط`)} />
+      <p class="plan-lede">{faCompact(tomanOf(summary.leftRial))} {moneyUnit()} مونده، تا {faDate(summary.lastDue)}</p>
       {summary.dueThisMonth > 0 && (
         <p class="plan-lede">این ماه {faNumber(summary.paidThisMonth)} از {faNumber(summary.dueThisMonth)} قسط پرداخت شده.</p>
       )}
@@ -588,8 +588,8 @@ function BudgetSheet({ id }: { id?: string }) {
       <SheetLabel>هر چه مدت؟</SheetLabel>
       <SegmentedChoice options={[...BUDGET_PERIODS]} selected={period} label={(p) => p.everyFa} onSelect={setPeriod} />
 
-      <SheetLabel>سقف خرج، به تومان</SheetLabel>
-      <AmountField label="مثلاً ۵ میلیون" ariaLabel="سقف خرج به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>سقف خرج، به {moneyUnit()}</SheetLabel>
+      <AmountField label="مثلاً ۵ میلیون" ariaLabel={`سقف خرج به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'سقفش رو بنویس.' : null) : capRial == null ? UNREADABLE : null} />
 
       {paired && <WhoseChoice shared={shared} wasShared={editing?.shared === true} onChange={setShared} />}
@@ -599,7 +599,7 @@ function BudgetSheet({ id }: { id?: string }) {
           <p class="plan-conflict" role="status">
             {'برای همین دسته، دوره و افراد، بودجهٔ دیگه‌ای هست: ' +
               conflicts.map((g) => faCompact(tomanOf(g.targetRial))).join('، ') +
-              ' تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.'}
+              ` ${moneyUnit()}. برای تغییر سقف، همون بودجه رو ویرایش کن.`}
           </p>
           {editing && period === editing.period && shared === editing.shared && (
             // Error ink: the way out of the clash deletes the other budgets. A block: the label is a sentence.
@@ -660,8 +660,8 @@ function GoalSheet({ id }: { id?: string }) {
       <SheetLabel>هدفت چیه؟</SheetLabel>
       <TextField label="مثلاً سفر، یا پیش‌پرداخت خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
         error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
-      <SheetLabel>چقدر، به تومان</SheetLabel>
-      <AmountField label="مبلغ هدف" ariaLabel="مبلغ هدف به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
+      <AmountField label="مبلغ هدف" ariaLabel={`مبلغ هدف به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : targetRial == null ? UNREADABLE : null} />
       <SheetLabel>تا کِی؟</SheetLabel>
       <SegmentedChoice<GoalHorizon | null> options={[...GOAL_HORIZONS]} selected={horizon} label={(h) => h?.fa ?? ''}
@@ -717,8 +717,8 @@ function ChequeSheet({ id }: { id?: string }) {
   return (
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
-      <SheetLabel>چقدر، به تومان</SheetLabel>
-      <AmountField label="مبلغ چک" ariaLabel="مبلغ چک به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
+      <AmountField label="مبلغ چک" ariaLabel={`مبلغ چک به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : amountRial == null ? UNREADABLE : null} />
       <SheetLabel>سررسیدش کِیه؟</SheetLabel>
       <DigitsField digits={dateDigits} onDigits={setDateDigits} length={8} sep="/" at={[4, 6]} label="مثلاً ۱۴۰۵/۰۹/۱۵"
@@ -791,8 +791,8 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
       <SheetLabel>قسطِ چی؟</SheetLabel>
       <TextField label="مثلاً گوشی، یا وام خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
         error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
-      <SheetLabel>هر قسط چقدره، به تومان</SheetLabel>
-      <AmountField label="مبلغ هر قسط" ariaLabel="مبلغ هر قسط به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>هر قسط چقدره، به {moneyUnit()}</SheetLabel>
+      <AmountField label="مبلغ هر قسط" ariaLabel={`مبلغ هر قسط به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : paymentRial == null ? UNREADABLE : null} />
       <SheetLabel>{firstDue != null ? 'چند قسط، با همین یکی؟' : 'چند قسط مونده؟'}</SheetLabel>
       {/* The range names the fix for a blank count as well as a wrong one. */}
@@ -856,7 +856,7 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
     <Sheet onClose={() => close()} label={plan.nameFa}>
       <SheetTitle>{plan.nameFa}</SheetTitle>
       <p class="plan-lede">
-        ماهی {faCompact(tomanOf(plan.targetRial))} تومان، از {faDate(plan.startsOn)} تا {faDate(plan.endsOn ?? plan.startsOn)}
+        ماهی {faCompact(tomanOf(plan.targetRial))} {moneyUnit()}، از {faDate(plan.startsOn)} تا {faDate(plan.endsOn ?? plan.startsOn)}
       </p>
       <InstallmentSchedule progress={progress} />
       {(progress.payments.length > 0 || progress.olderRial > 0) && (
@@ -864,7 +864,7 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
           <SheetLabel>پرداخت‌هایی که وصل کردی</SheetLabel>
           {progress.payments.map((entry) => <PaymentRow key={entry.txn.ref} entry={entry} paid onChange={(v) => change(entry, v)} />)}
           {progress.olderRial > 0 && (
-            <p class="plan-older">{faCompact(tomanOf(progress.olderRial))} تومان هم از پرداخت‌های قدیمی‌تری حساب شده که دیگه توی دفتر نیستن.</p>
+            <p class="plan-older">{faCompact(tomanOf(progress.olderRial))} {moneyUnit()} هم از پرداخت‌های قدیمی‌تری حساب شده که دیگه توی دفتر نیستن.</p>
           )}
         </>
       )}
@@ -928,7 +928,7 @@ function PaymentRow({ entry, paid, onChange }: { entry: LedgerEntry; paid: boole
         <span class="plan-title ellipsis">{entry.txn.merchant.trim() ? entry.txn.merchant : entry.categoryFa}</span>
         <span class="plan-sub">{faDay(entry.txn.day)}</span>
       </span>
-      {entry.txn.amountRial != null && <span class="figure pay-amount">{bidi(`${faCompact(tomanOf(entry.txn.amountRial))} تومان`)}</span>}
+      {entry.txn.amountRial != null && <span class="figure pay-amount">{bidi(`${faCompact(tomanOf(entry.txn.amountRial))} ${moneyUnit()}`)}</span>}
     </label>
   );
 }
@@ -981,7 +981,7 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
     <Sheet onClose={() => close()} label="پرداخت کدوم قسطه؟">
       <SheetTitle>پرداخت کدوم قسطه؟</SheetTitle>
       <p class="plan-lede">
-        {txnTitleFa(entry.txn) + '، ' + (amount != null ? bidi(`${faCompact(tomanOf(amount))} تومان`) + '، ' : '') + faDay(entry.txn.day)}
+        {txnTitleFa(entry.txn) + '، ' + (amount != null ? bidi(`${faCompact(tomanOf(amount))} ${moneyUnit()}`) + '، ' : '') + faDay(entry.txn.day)}
       </p>
       {offered.length === 0 ? (
         <>
@@ -1046,7 +1046,7 @@ export function WorthItCard({ entry, onAnswer, class: cls = '' }: { entry: Ledge
     <Panel class={`worth-it ${cls}`}>
       <p class="plan-sub">{faDay(entry.txn.day)}</p>
       <p class="worth-title">{entry.txn.merchant.trim() ? entry.txn.merchant : entry.categoryFa}</p>
-      {entry.txn.amountRial != null && <p class="figure worth-amount">{bidi(`${faCompact(tomanOf(entry.txn.amountRial))} تومان`)}</p>}
+      {entry.txn.amountRial != null && <p class="figure worth-amount">{bidi(`${faCompact(tomanOf(entry.txn.amountRial))} ${moneyUnit()}`)}</p>}
       <p class="worth-ask">ارزش داشت؟</p>
       <div class="worth-answers">
         {/* Three routine answers, so three equal cells of one row — none of them is the commit. */}

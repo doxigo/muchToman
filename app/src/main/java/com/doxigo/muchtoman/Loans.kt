@@ -375,7 +375,7 @@ fun loanAmountFa(type: AssetType, amount: Double): String {
 }
 
 /** «۲٫۵ میلیون تومان». */
-fun loanRialFa(rial: Long): String = "${faCompact(tomanOf(abs(rial)))} تومان"
+fun loanRialFa(rial: Long): String = "${faCompact(tomanOf(abs(rial)))} $moneyUnit"
 
 /** Everything one person owes or is owed, in its own units: «۲ سکه امامی و ۲٫۵ میلیون تومان». */
 fun loanWhatFa(view: LoanView, type: (String) -> AssetType): String =

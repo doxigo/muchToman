@@ -21,7 +21,7 @@ import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { familyAssetViews, setFamilyTotal, useFamily } from './family';
 import type { FamilyAssetView } from './family';
-import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf } from './format';
+import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf, moneyUnit, shownOf } from './format';
 import { Chevron, PersonMark, PlusMark, TabIcon, TrendCaret } from './icons';
 import { DAY_MS, tehranDay } from './jalali';
 import { holdingKey } from './model';
@@ -101,7 +101,7 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
           {familyAssets.map((shared) => (
             <div key={shared.memberId}>
               <Section title={`دارایی ${shared.name}`}
-                trailing={shared.items.length > 1 ? <span class="sub figure">{`${faCompact(shared.totalToman, 3, true)} تومان`}</span> : undefined} />
+                trailing={shared.items.length > 1 ? <span class="sub figure">{`${faCompact(shared.totalToman, 3, true)} ${moneyUnit()}`}</span> : undefined} />
               <FamilyAssetBand shared={shared} />
             </div>
           ))}
@@ -177,7 +177,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
         <HeroFigure key={figure} figure={figure} />
         {/* Digits are quick to scan but easy to misread by a factor of ten; the words are the check. */}
         {words && <p class="words">{words}</p>}
-        <p class="full figure">{`${faNumber(total)} تومان`}</p>
+        <p class="full figure">{`${faNumber(shownOf(total))} ${moneyUnit()}`}</p>
         {shownChange ? <ChangePill change={shownChange} onClick={() => openReport('ASSETS')} />
           // Before thirty days there is no honest figure; the slot keeps its target and drops the number.
           : <ReportLink onClick={() => openReport('ASSETS')} />}
@@ -230,7 +230,7 @@ export function FreshnessLine() {
  */
 function HeroFigure({ figure, max = 60, min = 28 }: { figure: string; max?: number; min?: number }) {
   const ref = useAutoSize<HTMLSpanElement>(max, min, figure);
-  return <span ref={ref} class="hero-total figure fig">{figure}<span class="unit">تومان</span></span>;
+  return <span ref={ref} class="hero-total figure fig">{figure}<span class="unit">{moneyUnit()}</span></span>;
 }
 
 /** Whose money the headline counts, in the label's own slot and the field's own colours. */
@@ -321,7 +321,7 @@ export function MonthFlow({ story, onOpen }: { story: HomeStory; onOpen: () => v
   const spent = tomanOf(month.spentRial);
   return (
     <button type="button" class="month-flow" onClick={onOpen}
-      aria-label={`این ماه: درآمد ${faCompact(income)} تومان، خرج ${faCompact(spent)} تومان. برای گزارش کامل باز کن`}>
+      aria-label={`این ماه: درآمد ${faCompact(income)} ${moneyUnit()}، خرج ${faCompact(spent)} ${moneyUnit()}. برای گزارش کامل باز کن`}>
       <span class="head"><span>این ماه</span><Chevron size={18} /></span>
       <span class="halves">
         <FlowHalf label="درآمد" rial={month.incomeRial} tone="var(--tertiary)" />
@@ -381,7 +381,7 @@ function Holdings({ list, effective, coins, view, refreshing, errors }: {
         return (
           <div key={kind}>
             {sections.length > 1
-              ? <Section title={KIND_FA[kind]} trailing={counted > 1 ? <span class="sub figure">{`${faCompact(sum.toman, 3, true)} تومان`}</span> : undefined} />
+              ? <Section title={KIND_FA[kind]} trailing={counted > 1 ? <span class="sub figure">{`${faCompact(sum.toman, 3, true)} ${moneyUnit()}`}</span> : undefined} />
               : <div class="band-gap" />}
             <div class="band holdings">
               {held.map((h) => {
@@ -427,7 +427,7 @@ function HoldingRow({ type, name, amount, rate, excluded, onClick, note, wallet,
   const valued = valuedInToman(type);
   const held = `${faHeld(amount, type.dec)} ${bidi(type.unitFa)}`;
   // Null when this line is a sentence rather than an amount-and-rate pair.
-  const shownRate = rate != null && note == null && !valued ? faRate(rate) : null;
+  const shownRate = rate != null && note == null && !valued ? faRate(shownOf(rate)) : null;
   const visibleStatus = wallet && (walletRefreshing ? `در حال گرفتن از ${wallet.networkFa}`
     : walletError != null ? 'به‌روز نشد  •  موجودی قبلی نشون داده می‌شه'
       : `${wallet.networkFa}  •  ${bidi(shortWalletAddress(wallet.address))}`);
@@ -449,7 +449,7 @@ function HoldingRow({ type, name, amount, rate, excluded, onClick, note, wallet,
                   <span class="state">توی جمع حساب نشده</span>
                 </>
               ) : rate == null ? <span class="missing">نرخش پیدا نشد</span>
-                : <RowAmount toman={amount * rate} unit="تومان" />}
+                : <RowAmount toman={amount * rate} unit={moneyUnit()} />}
             </span>
           </span>
           {shownRate == null ? (
@@ -476,7 +476,7 @@ function FamilyAssetBand({ shared }: { shared: FamilyAssetView }) {
       {shared.items.map((item, i) => (
         <div class="band-row" key={i}>
           <span class="grow"><RowTitle text={item.name} /></span>
-          <RowAmount toman={item.toman} unit="تومان" />
+          <RowAmount toman={item.toman} unit={moneyUnit()} />
         </div>
       ))}
     </div>

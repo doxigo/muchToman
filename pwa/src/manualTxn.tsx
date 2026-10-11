@@ -10,7 +10,7 @@ import { addManualTxn } from './ledger';
 import { MAX_NOTE_CHARS, categoryChoices } from './rules';
 import { tomanFieldToRial } from './installments';
 import { tehranDay, tehranDayStart } from './jalali';
-import { faClock, faDay, faWeekdayDate } from './format';
+import { faClock, faDay, faWeekdayDate, moneyUnit } from './format';
 import { closeSheet, openSheet, registerSheet } from './nav';
 import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 import './timeline.css';
@@ -160,9 +160,9 @@ function ManualTxnSheet() {
       <SheetLabel>خرج بود یا دخل؟</SheetLabel>
       <SegmentedChoice options={[true, false]} selected={outgoing} label={(it) => (it ? 'خرج' : 'دخل')} onSelect={setOutgoing} />
 
-      <SheetLabel>چقدر، به تومان</SheetLabel>
+      <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
       {/* Spelled out under it, like every amount field: digits are easy to misread by ten. */}
-      <AmountField label="مثلاً ۴۵۰ هزار" ariaLabel="مبلغ به تومان" raw={amount} onRaw={setAmount} decimals={1}
+      <AmountField label="مثلاً ۴۵۰ هزار" ariaLabel={`مبلغ به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={!amount.trim() ? (missingAmount ? 'مبلغش رو بنویس.' : null)
           : rial == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
 

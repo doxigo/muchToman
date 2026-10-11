@@ -1,5 +1,8 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.NumberFormat
@@ -54,14 +57,36 @@ fun faDecimal(value: Double, decimals: Int, pad: Boolean = false): String {
  */
 fun tomanOf(rial: Long): Double = rial / 10.0
 
-fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String {
-    val n = abs(toman)
+/**
+ * Whether figures are shown, and typed, in Rial rather than Toman — her choice in تنظیمات
+ * ([Store.showRial] writes it). Display only, like Toman itself: storage is Rial and the sums are
+ * Toman whatever this says, so flipping it rewrites no figure. Snapshot state, so every screen
+ * that read a figure redraws the moment she flips it; set from prefs whenever a [Store] is made,
+ * which the widget and the workers do before they write a word.
+ */
+var showRial by mutableStateOf(false)
+
+/** «تومان» or «ریال»: the word after a figure. */
+val moneyUnit: String get() = if (showRial) "ریال" else "تومان"
+
+/** A Toman figure in the unit she reads in. */
+fun shownOf(toman: Double): Double = if (showRial) toman * 10 else toman
+
+/** A figure she typed, in her unit, back in Toman — [shownOf] undone. */
+fun tomanOfShown(typed: Double): Double = if (showRial) typed / 10 else typed
+
+/** A Toman figure in her unit ([shownOf]), the magnitude said as a word. */
+fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String = faMagnitude(shownOf(toman), dec, pad)
+
+/** [faCompact] for a figure that is not Toman — a dollar, which [showRial] must never multiply. */
+private fun faMagnitude(value: Double, dec: Int = 1, pad: Boolean = false): String {
+    val n = abs(value)
     val (unit, div) = when {
         n >= 1_000_000_000_000.0 -> "همت" to 1_000_000_000_000.0   // هزار میلیارد
         n >= 1_000_000_000.0 -> "میلیارد" to 1_000_000_000.0
         n >= 1_000_000.0 -> "میلیون" to 1_000_000.0
         n >= 1_000.0 -> "هزار" to 1_000.0
-        else -> return faNumber(toman)
+        else -> return faNumber(value)
     }
     // Truncated, never rounded. Rounding is what made 10.8 million read as "۱۱ میلیون", and
     // rounding to one decimal still turns 2.95 into "۳". For money there is only one safe
@@ -80,7 +105,7 @@ fun faCompact(toman: Double, dec: Int = 1, pad: Boolean = false): String {
     // directly rendered «۱٫۰۰۶ میلیون»: a thousand Toman she really has, eaten by
     // representation error. Settling at SETTLE_SCALE first erases the noise; DOWN then
     // enforces the one safe direction.
-    val q = toman / div
+    val q = value / div
     val t = if (!q.isFinite()) q // NaN/∞ cannot enter BigDecimal; formatted as before
     else BigDecimal(q)
         .setScale(SETTLE_SCALE, RoundingMode.HALF_UP)
@@ -157,15 +182,16 @@ fun faOrdinal(n: Int): String {
     }
 }
 
-/** Words for a Toman figure, or null when spelling it out would not help. */
-fun faWordsToman(value: Double): String? {
+/** Words for a Toman figure, in her unit ([shownOf]), or null when spelling it out would not help. */
+fun faWordsToman(toman: Double): String? {
+    val value = shownOf(toman)
     if (value <= 0 || value >= 1e15) return null
     // Settled, then cut — the words sit under digits that truncate, and rounding here spelled
     // 999,999.6 as «یک میلیون» above «۹۹۹٬۹۹۹».
     val words = faWords(
         BigDecimal(value).setScale(SETTLE_SCALE, RoundingMode.HALF_UP).setScale(0, RoundingMode.DOWN).toLong(),
     )
-    return if (words.isBlank()) null else "$words تومان"
+    return if (words.isBlank()) null else "$words $moneyUnit"
 }
 
 /**
@@ -223,7 +249,7 @@ fun faHeld(amount: Double, dec: Int): String {
  * a gold coin does not ("۱۸۰ میلیون" beats nine digits).
  */
 fun faRate(rate: Double): String =
-    if (rate >= 1_000_000) faCompact(rate) else faNumber(rate)
+    if (rate >= 1_000_000) faMagnitude(rate) else faNumber(rate)
 
 /**
  * «$۸۳۲»: the "$" on the left of its digits, the way a dollar figure is written even inside a

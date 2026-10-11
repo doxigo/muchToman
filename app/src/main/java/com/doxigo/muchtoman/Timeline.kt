@@ -1030,7 +1030,7 @@ internal fun TimelineRow(
             append(categoryFa)
             if (entry.ownerName.isNotBlank()) append("، از ${entry.ownerName}")
             if (rial != null) {
-                append("، ${faSignedCompact(tomanOf(rial), incoming)} تومان")
+                append("، ${faSignedCompact(tomanOf(rial), incoming)} $moneyUnit")
             } else {
                 append("، مانده")
             }
@@ -1630,8 +1630,8 @@ private fun transactionDetails(entry: LedgerEntry): List<Pair<String, String>> {
         txn.printedAt.takeIf { it.isNotBlank() }?.let { add("زمان ثبت" to bidi(it)) }
         txn.mask.takeIf { it.isNotBlank() }?.let { add("کارت یا حساب" to bidi(it)) }
         txn.refNo.takeIf { it.isNotBlank() }?.let { add("شماره پیگیری" to bidi(it)) }
-        txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} تومان")) }
-        txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} تومان")) }
+        txn.balanceRial?.let { add("مانده بعد از تراکنش" to bidi("${faCompact(tomanOf(it))} $moneyUnit")) }
+        txn.feeRial?.takeIf { it > 0 }?.let { add("کارمزد" to bidi("${faCompact(tomanOf(it))} $moneyUnit")) }
     }
 }
 

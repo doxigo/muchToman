@@ -58,16 +58,36 @@ export function faDecimal(value: number, decimals: number, pad = false): string 
 
 export const tomanOf = (rial: number): number => rial / 10;
 
-/** «۳۰۰ میلیون» — the magnitude said out loud, truncated. */
+/**
+ * Whether figures are shown, and typed, in Rial rather than Toman (Format.kt showRial). Display
+ * only: storage is Rial and the sums are Toman whatever this says. main.tsx points it at the
+ * `showRial` pref, so it is read live and every screen that redraws after setPref follows it.
+ */
+let rialShown = (): boolean => false;
+export const readShowRialFrom = (read: () => boolean): void => { rialShown = read; };
+export const showRial = (): boolean => rialShown();
+/** «تومان» or «ریال»: the word after a figure. */
+export const moneyUnit = (): string => (rialShown() ? 'ریال' : 'تومان');
+/** A Toman figure in the unit she reads in. */
+export const shownOf = (toman: number): number => (rialShown() ? toman * 10 : toman);
+/** A figure she typed, in her unit, back in Toman — shownOf undone. */
+export const tomanOfShown = (typed: number): number => (rialShown() ? typed / 10 : typed);
+
+/** «۳۰۰ میلیون» — a Toman figure in her unit (shownOf), the magnitude said out loud, truncated. */
 export function faCompact(toman: number, dec = 1, pad = false): string {
-  const n = Math.abs(toman);
+  return faMagnitude(shownOf(toman), dec, pad);
+}
+
+/** faCompact for a figure that is not Toman — a dollar, which showRial must never multiply. */
+function faMagnitude(value: number, dec = 1, pad = false): string {
+  const n = Math.abs(value);
   let unit: string; let div: number;
   if (n >= 1e12) { unit = 'همت'; div = 1e12; }
   else if (n >= 1e9) { unit = 'میلیارد'; div = 1e9; }
   else if (n >= 1e6) { unit = 'میلیون'; div = 1e6; }
   else if (n >= 1e3) { unit = 'هزار'; div = 1e3; }
-  else return faNumber(toman);
-  const q = toman / div;
+  else return faNumber(value);
+  const q = value / div;
   if (!Number.isFinite(q)) return `${faNumber(q)} ${unit}`;
   const cut = settleDown(q, dec);
   const whole = !/\.\d*[1-9]/.test(cut);
@@ -119,11 +139,13 @@ export function faOrdinal(n: number): string {
   return `${words}م`;
 }
 
-export function faWordsToman(value: number): string | null {
+/** Words for a Toman figure, in her unit (shownOf), or null when spelling it out would not help. */
+export function faWordsToman(toman: number): string | null {
+  const value = shownOf(toman);
   if (value <= 0 || value >= 1e15) return null;
   // Settled, then cut, like the digits above it: rounding spelled 999,999.6 as «یک میلیون».
   const words = faWords(Number(settleDown(value, 0)));
-  return words.trim() ? `${words} تومان` : null;
+  return words.trim() ? `${words} ${moneyUnit()}` : null;
 }
 
 /** Persian, Arabic-Indic or Latin digits, ٫ or . for a decimal, separators ignored; null on anything else. */
@@ -152,7 +174,7 @@ export function faHeld(amount: number, dec: number): string {
 }
 
 export function faRate(rate: number): string {
-  return rate >= 1_000_000 ? faCompact(rate) : faNumber(rate);
+  return rate >= 1_000_000 ? faMagnitude(rate) : faNumber(rate);
 }
 
 /** «$۸۳۲»: "$" and digits as one LTR island, a magnitude word outside it — as faSignedParts. */

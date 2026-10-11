@@ -23,7 +23,7 @@ import { downloadLedgerCsv } from './csv';
 import { ledger, useLedger } from './derived';
 import type { LedgerHealth } from './derived';
 import { useFamily } from './family';
-import { bidi, faAgo, faCompact, faDate, faNumber, parseAmount, tomanOf } from './format';
+import { bidi, faAgo, faCompact, faDate, faNumber, moneyUnit, parseAmount, showRial, tomanOf, tomanOfShown } from './format';
 import { Chevron, PersonMark, PlusMark } from './icons';
 import { INSTALLMENT_REMINDER_DAYS, installmentReminderFa } from './installments';
 import { tehranDay } from './jalali';
@@ -210,6 +210,7 @@ function SettingsIndex() {
       <SectionLabel>برنامه</SectionLabel>
       <Band>
         <IndexRow title="ظاهر برنامه" value={THEME_FA[pref('themeMode')]} onClick={() => openSheet('theme')} mark={<AppearanceGlyph />} />
+        <IndexRow title="واحد پول" value={moneyUnit()} onClick={() => openSheet('moneyUnit')} mark={<Glyph glyph="PIGGY" />} />
         <IndexRow title="قفل و امنیت" value={pref('lockEnabled') ? 'روشن' : 'خاموش'} onClick={() => openRoom('SECURITY')} mark={<LockGlyph />} />
         <IndexRow title="یادآوری قسط و چک" value={installmentReminderFa(pref('installmentReminder'))} onClick={() => openSheet('installmentReminder')}
           mark={<Glyph glyph="INSTALMENT" />} />
@@ -267,6 +268,20 @@ function ThemeSheet() {
       <div style={{ height: 'var(--l)' }} />
       <SegmentedChoice options={THEMES} selected={pref('themeMode')} label={(t) => THEME_FA[t]} fontSize={16}
         onSelect={(t) => { setPref('themeMode', t); closeSheet(); }} />
+    </Sheet>
+  );
+}
+
+/** Toman or Rial (Settings.kt MoneyUnitSheet). What is stored never changes, so flipping it costs nothing. */
+function MoneyUnitSheet() {
+  useData();
+  return (
+    <Sheet label="واحد پول">
+      <SheetTitle>واحد پول</SheetTitle>
+      <p class="sheet-body">همهٔ مبلغ‌ها با همین واحد نشون داده می‌شن و با همین واحد وارد می‌شن.</p>
+      <div style={{ height: 'var(--l)' }} />
+      <SegmentedChoice options={[false, true]} selected={showRial()} label={(rial) => (rial ? 'ریال' : 'تومان')} fontSize={16}
+        onSelect={(rial) => { setPref('showRial', rial); closeSheet(); }} />
     </Sheet>
   );
 }
@@ -346,7 +361,7 @@ function SmsPage() {
           // «دستی», the word the asset sheet uses, because nothing will move this figure but her.
           const note = accounts.some((a) => !a.trusted) ? '  •  نیاز به بررسی' : accounts.every((a) => a.manual) ? '  •  دستی' : '';
           return (
-            <SettingCard key={bank} title={accounts[0].bankFa} subtitle={`${faCompact(tomanOf(rial))} تومان${note}`}
+            <SettingCard key={bank} title={accounts[0].bankFa} subtitle={`${faCompact(tomanOf(rial))} ${moneyUnit()}${note}`}
               checked={!accounts[0].disabled} onChange={() => toggleBankDisabled(bank)} badge={<BankLogo bank={bank} size={44} />} />
           );
         })}
@@ -407,7 +422,7 @@ function BankBalanceStep({ bank, onOther }: { bank: Bank; onOther: () => void })
   const [submitted, setSubmitted] = useState(false);
   const amount = parseAmount(text);
   const invalid = amount == null && (text.trim() !== '' || submitted);
-  const prompt = 'چقدر تومان توی این حساب داری؟';
+  const prompt = `چقدر ${moneyUnit()} توی این حساب داری؟`;
   // Never greyed out — a dead button explains nothing — so a tap that cannot save says why.
   const save = () => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -417,7 +432,7 @@ function BankBalanceStep({ bank, onOther }: { bank: Bank; onOther: () => void })
     // was in the bank before she told the app about it.
     const before = currentTotals();
     if (pref('disabledBanks').includes(bank.name)) toggleBankDisabled(bank.name);
-    setBankBalance(bank.name, Math.round(amount * 10));
+    setBankBalance(bank.name, Math.round(tomanOfShown(amount) * 10));
     recordSnapshot(before);
     closeSheet();
   };
@@ -429,7 +444,8 @@ function BankBalanceStep({ bank, onOther }: { bank: Bank; onOther: () => void })
         <PillButton label="بانک دیگه" onClick={onOther} />
       </div>
       <SheetLabel>{prompt}</SheetLabel>
-      <p class="set-note" style={{ padding: '0 var(--xs) var(--s)' }}>اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.</p>
+      {/* Only while she counts in Toman: in Rial the bank's own figure is already the one to type. */}
+      {!showRial() && <p class="set-note" style={{ padding: '0 var(--xs) var(--s)' }}>اپ بانک‌ها معمولاً ریال نشون می‌دن؛ یه صفرش رو بردار تا تومان بشه.</p>}
       <div class="bare-label big-amount">
         <AmountField label={prompt} raw={text} decimals={9} autoFocus onEnter={save}
           onRaw={(v) => { setText(v); setSubmitted(false); }}
@@ -843,6 +859,7 @@ function Settings({ room = 'INDEX' }: { room?: Room }) {
 registerPage('settings', Settings);
 registerSheet('name', NameSheet);
 registerSheet('theme', ThemeSheet);
+registerSheet('moneyUnit', MoneyUnitSheet);
 registerSheet('installmentReminder', InstallmentReminderSheet);
 registerSheet('quipTone', QuipToneSheet);
 registerSheet('exportPass', ExportPassSheet);

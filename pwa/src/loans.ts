@@ -29,7 +29,7 @@
 import { TOMAN_ID } from './catalog';
 import type { AssetType } from './catalog';
 import { newHoldingId, setHoldings } from './data';
-import { MONTHS, faCompact, faDigits, faHeld, faNumber, tomanOf } from './format';
+import { MONTHS, faCompact, faDigits, faHeld, faNumber, tomanOf, moneyUnit } from './format';
 import { jalaliOf, tehranDay } from './jalali';
 import { holdingKey } from './model';
 import type { Decision, Holding, LedgerEntry, Txn } from './model';
@@ -388,7 +388,7 @@ export function loanAmountFa(type: AssetType, amount: number): string {
 }
 
 /** «۲٫۵ میلیون تومان». */
-export const loanRialFa = (rial: number): string => `${faCompact(tomanOf(Math.abs(rial)))} تومان`;
+export const loanRialFa = (rial: number): string => `${faCompact(tomanOf(Math.abs(rial)))} ${moneyUnit()}`;
 
 /** Everything one person owes or is owed, in its own units: «۲ سکه امامی و ۲٫۵ میلیون تومان». */
 export function loanWhatFa(view: LoanView, type: (id: string) => AssetType): string {

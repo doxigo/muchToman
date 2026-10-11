@@ -659,7 +659,7 @@ private fun BudgetCard(budget: BudgetProgress, shape: Shape, divided: Boolean, o
         onOpen = onOpen,
         modifier = Modifier.semantics(mergeDescendants = true) {
             contentDescription = "${budget.categoryFa}، $subtitle: " +
-                "${faCompact(tomanOf(budget.spentRial))} از ${faCompact(tomanOf(budget.capRial))} تومان، " +
+                "${faCompact(tomanOf(budget.spentRial))} از ${faCompact(tomanOf(budget.capRial))} $moneyUnit، " +
                 "${faNumber(budget.percent.toDouble())} درصد. " +
                 budgetDaysLeftFa(budget) + ". " + note
         },
@@ -861,14 +861,14 @@ private fun goalNoteFa(progress: GoalProgress): Pair<String, Boolean>? = when {
     progress.expired ->
         // Not «نرسیدی». What happened is that the date passed with something still to save, and
         // the useful half of that sentence is the figure, not the verdict.
-        "مهلتش تموم شد و ${faCompact(tomanOf(progress.remainingRial))} تومان مونده بود." to false
+        "مهلتش تموم شد و ${faCompact(tomanOf(progress.remainingRial))} $moneyUnit مونده بود." to false
     progress.underWater ->
         "از وقتی این هدف رو گذاشتی، هنوز چیزی پس‌انداز نشده." to false
     progress.perMonthRial != null ->
-        "برای رسیدن به هدف، ماهی ${faCompact(tomanOf(progress.perMonthRial))} تومان لازمه." to false
+        "برای رسیدن به هدف، ماهی ${faCompact(tomanOf(progress.perMonthRial))} $moneyUnit لازمه." to false
     progress.daysLeft != null && progress.daysLeft > 0 ->
         "${faNumber(progress.daysLeft.toDouble())} روز مونده و " +
-            "${faCompact(tomanOf(progress.remainingRial))} تومان باقیه." to false
+            "${faCompact(tomanOf(progress.remainingRial))} $moneyUnit باقیه." to false
     else -> null
 }
 
@@ -897,7 +897,7 @@ private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان",
+                    "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -952,13 +952,13 @@ private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided
 @Composable
 private fun InstallmentSummaryLines(summary: InstallmentSummary) {
     BasicText(
-        text = bidi("ماهی ${faCompact(tomanOf(summary.monthlyRial))} تومان قسط"),
+        text = bidi("ماهی ${faCompact(tomanOf(summary.monthlyRial))} $moneyUnit قسط"),
         maxLines = 1,
         autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
         style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
     )
     Text(
-        "${faCompact(tomanOf(summary.leftRial))} تومان مونده، تا ${faDate(summary.lastDue)}",
+        "${faCompact(tomanOf(summary.leftRial))} $moneyUnit مونده، تا ${faDate(summary.lastDue)}",
         fontSize = 13.sp,
         lineHeight = 22.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -985,7 +985,7 @@ private fun installmentNoteFa(
 ): Pair<String, Boolean>? = when {
     progress.done -> "همه‌ی قسط‌ها پرداخت شد." to true
     progress.overdueRial > 0L ->
-        "${faCompact(tomanOf(progress.overdueRial))} تومان از قسط‌هایی که سررسیدشون گذشته، " +
+        "${faCompact(tomanOf(progress.overdueRial))} $moneyUnit از قسط‌هایی که سررسیدشون گذشته، " +
             "هنوز پرداخت نشده." to true
     progress.nextDue == today -> "سررسید قسط ${faOrdinal(progress.paidCount + 1)} امروزه." to false
     progress.nextDue != null -> "قسط ${faOrdinal(progress.paidCount + 1)}: ${faDate(progress.nextDue)}" to false
@@ -1039,7 +1039,7 @@ private fun ChequeCard(
         Spacer(Modifier.height(Space.m))
         Row(verticalAlignment = Alignment.Bottom) {
             BasicText(
-                text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 3)} تومان"),
+                text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 3)} $moneyUnit"),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
@@ -1368,7 +1368,7 @@ private fun BudgetSheet(
                 onSelect = { period = it },
             )
 
-            SheetLabel("سقف خرج، به تومان")
+            SheetLabel("سقف خرج، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -1390,7 +1390,7 @@ private fun BudgetSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "سقف خرج به تومان" },
+                    .semantics { contentDescription = "سقف خرج به $moneyUnit" },
             )
 
             if (hasHousehold) {
@@ -1400,7 +1400,7 @@ private fun BudgetSheet(
             if (chosen && conflicts.isNotEmpty()) {
                 Text(
                     "برای همین دسته، دوره و افراد، بودجهٔ دیگه‌ای هست: " +
-                        conflicts.joinToString("، ") { faCompact(tomanOf(it.targetRial)) } + " تومان. برای تغییر سقف، همون بودجه رو ویرایش کن.",
+                        conflicts.joinToString("، ") { faCompact(tomanOf(it.targetRial)) } + " $moneyUnit. برای تغییر سقف، همون بودجه رو ویرایش کن.",
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 13.sp,
                     modifier = Modifier
@@ -1531,7 +1531,7 @@ private fun GoalSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SheetLabel("چقدر، به تومان")
+            SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -1551,7 +1551,7 @@ private fun GoalSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ هدف به تومان" },
+                    .semantics { contentDescription = "مبلغ هدف به $moneyUnit" },
             )
 
             SheetLabel("تا کِی؟")
@@ -1674,7 +1674,7 @@ private fun InstallmentSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SheetLabel("هر قسط چقدره، به تومان")
+            SheetLabel("هر قسط چقدره، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -1692,7 +1692,7 @@ private fun InstallmentSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ هر قسط به تومان" },
+                    .semantics { contentDescription = "مبلغ هر قسط به $moneyUnit" },
             )
 
             SheetLabel(if (firstDue != null) "چند قسط، با همین یکی؟" else "چند قسط مونده؟")
@@ -1829,7 +1829,7 @@ private fun ChequeSheet(
         ) {
             SheetTitle(if (editing != null) "ویرایش چک" else "چک تازه")
 
-            SheetLabel("چقدر، به تومان")
+            SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -1847,7 +1847,7 @@ private fun ChequeSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ چک به تومان" },
+                    .semantics { contentDescription = "مبلغ چک به $moneyUnit" },
             )
 
             SheetLabel("سررسیدش کِیه؟")
@@ -1964,7 +1964,7 @@ private fun InstallmentPaymentsSheet(
         ) {
             SheetTitle(progress.plan.nameFa)
             Text(
-                "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} تومان، " +
+                "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit، " +
                     "از ${faDate(progress.plan.startsOn)} تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1979,7 +1979,7 @@ private fun InstallmentPaymentsSheet(
                 }
                 if (progress.olderRial > 0L) {
                     Text(
-                        "${faCompact(tomanOf(progress.olderRial))} تومان هم از پرداخت‌های قدیمی‌تری " +
+                        "${faCompact(tomanOf(progress.olderRial))} $moneyUnit هم از پرداخت‌های قدیمی‌تری " +
                             "حساب شده که دیگه توی دفتر نیستن.",
                         fontSize = 12.sp,
                         lineHeight = 20.sp,
@@ -2095,7 +2095,7 @@ private fun PaymentRow(entry: LedgerEntry, paid: Boolean, onChange: (Boolean) ->
         entry.txn.amountRial?.let {
             Spacer(Modifier.width(Space.s))
             Text(
-                bidi(faCompact(tomanOf(it)) + " تومان"),
+                bidi(faCompact(tomanOf(it)) + " $moneyUnit"),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold),
                 fontSize = 14.sp,
             )
@@ -2165,7 +2165,7 @@ internal fun InstallmentLinkSheet(
             SheetTitle("پرداخت کدوم قسطه؟")
             Text(
                 txnTitleFa(entry.txn) + "، " +
-                    (amount?.let { bidi(faCompact(tomanOf(it)) + " تومان") + "، " } ?: "") +
+                    (amount?.let { bidi(faCompact(tomanOf(it)) + " $moneyUnit") + "، " } ?: "") +
                     faDay(entry.txn.day),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2241,7 +2241,7 @@ internal fun InstallmentLinkSheet(
 
 /** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. */
 internal fun installmentLineFa(plan: InstallmentProgress): String =
-    "ماهی ${faCompact(tomanOf(plan.plan.targetRial))} تومان • " +
+    "ماهی ${faCompact(tomanOf(plan.plan.targetRial))} $moneyUnit • " +
         "${faNumber(plan.paidCount.toDouble())} از ${faNumber(plan.count.toDouble())} قسط"
 
 /**
@@ -2292,6 +2292,7 @@ internal fun InstallmentLinkRow(current: InstallmentProgress?, onOpen: () -> Uni
  */
 internal fun tomanFieldToRial(text: String): Long? =
     parseAmount(text)
+        ?.let(::tomanOfShown) // the field is in her unit, Rial when she reads in Rial
         ?.takeIf { it <= MAX_PLAUSIBLE_RIAL / 10.0 }
         ?.let { (it * 10.0).roundToLong() }
         ?.takeIf { it > 0 }
@@ -2322,7 +2323,7 @@ fun WorthItCard(entry: LedgerEntry, onAnswer: (String) -> Unit, modifier: Modifi
         entry.txn.amountRial?.let {
             Spacer(Modifier.height(Space.xs))
             Text(
-                bidi(faCompact(tomanOf(it)) + " تومان"),
+                bidi(faCompact(tomanOf(it)) + " $moneyUnit"),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
                 fontSize = 24.sp,
             )

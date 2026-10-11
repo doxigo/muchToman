@@ -1587,4 +1587,24 @@ class MoneyTest {
         val c = changeOver(mapOf(50L to 0.0), today = 100, windowDays = 30, current = 12.0)!!
         assertNull(c.percent)
     }
+
+    @Test
+    fun `in Rial every Toman figure and field gains its zero, and dollars do not`() {
+        try {
+            showRial = true
+            assertEquals("ریال", moneyUnit)
+            assertEquals("۱۲٫۳ میلیون", faCompact(1_234_567.8))           // ۱۲٬۳۴۵٬۶۷۸ Rial, truncated
+            assertEquals("−۱۲٫۳ میلیون", faSignedCompact(1_234_567.8, positive = false).filter { it.code !in 0x2066..0x2069 })
+            assertEquals("دوازده هزار و سیصد و چهل و پنج ریال", faWordsToman(1_234.5))
+            assertEquals("\u2066\$۱٫۲\u2069 میلیون", faUsd(1_234_567.0)) // dollars are dollars in either unit
+            // Fields: typed in Rial, stored in Rial, and back out to the same digits.
+            assertEquals(123_457L, tomanFieldToRial("۱۲۳٬۴۵۷"))
+            assertEquals("123457", rialToField(123_457L))
+            assertEquals(12_345.7, tomanOfShown(123_457.0), 1e-9)
+        } finally {
+            showRial = false
+        }
+        assertEquals("۱٫۲ میلیون", faCompact(1_234_567.8))
+        assertEquals("12345.7", rialToField(123_457L))
+    }
 }

@@ -22,7 +22,7 @@ import { bodyToStore, parsePasted, readBundle, severalMessages, writeBundle } fr
 import type { Bundled } from './paste';
 import { PICKABLE_BANKS, bankFa, bankOf, isBank } from './sms';
 import { BankLogo } from './logos';
-import { bidi, faCompact, faDigits, faNumber, faSignedParts, faWordsToman, tomanOf } from './format';
+import { bidi, faCompact, faDigits, faNumber, faSignedParts, faWordsToman, tomanOf, moneyUnit } from './format';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
 import { pref, setPref } from './state';
 import { ensureSeeded } from './rules';
@@ -158,8 +158,8 @@ function PastePreview({ read }: { read: ReturnType<typeof parsePasted> }) {
   const toman = read.amountRial == null ? null : tomanOf(read.amountRial);
   const rows: Array<[string, string]> = [];
   if (read.direction) rows.push(['نوع', incoming ? 'واریز' : 'برداشت']);
-  if (read.balanceRial != null) rows.push(['مانده بعد از تراکنش', bidi(`${faCompact(tomanOf(read.balanceRial))} تومان`)]);
-  if (read.feeRial != null && read.feeRial > 0) rows.push(['کارمزد', bidi(`${faCompact(tomanOf(read.feeRial))} تومان`)]);
+  if (read.balanceRial != null) rows.push(['مانده بعد از تراکنش', bidi(`${faCompact(tomanOf(read.balanceRial))} ${moneyUnit()}`)]);
+  if (read.feeRial != null && read.feeRial > 0) rows.push(['کارمزد', bidi(`${faCompact(tomanOf(read.feeRial))} ${moneyUnit()}`)]);
   if (read.printedAt.trim()) rows.push(['زمان ثبت', bidi(read.printedAt)]);
   if (read.mask.trim()) rows.push(['کارت یا حساب', bidi(read.mask)]);
   if (toman == null && !rows.length) return null;
@@ -169,7 +169,7 @@ function PastePreview({ read }: { read: ReturnType<typeof parsePasted> }) {
         <>
           {/* No sign where the message names no direction: a guessed «−» is a claim. */}
           <p class={`figure paste-amount${incoming ? ' gain' : ''}`}>
-            {read.direction ? <SignedFigure parts={faSignedParts(toman, incoming)} /> : faCompact(toman)}{' '}<span class="unit">تومان</span>
+            {read.direction ? <SignedFigure parts={faSignedParts(toman, incoming)} /> : faCompact(toman)}{' '}<span class="unit">{moneyUnit()}</span>
           </p>
           {faWordsToman(toman) && <p class="muted small">{faWordsToman(toman)}</p>}
         </>

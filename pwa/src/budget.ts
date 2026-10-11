@@ -7,7 +7,7 @@
  *  - Spending here is the same number the report shows ([budgetRows]).
  *  - It states facts, never verdicts, and never celebrates spending fewer Toman.
  */
-import { MONTHS, faCompact, faNumber, tomanOf } from './format';
+import { MONTHS, faCompact, faNumber, tomanOf, moneyUnit } from './format';
 import { GoalKind, isTotal, scopedTo } from './goals';
 import {
   jalaliMonthEnd, jalaliMonthStart, jalaliOf, jalaliQuarter, jalaliQuarterEnd, jalaliQuarterStart, weekEnd, weekStart,
@@ -301,9 +301,9 @@ export function budgetAlertTitle(budget: BudgetProgress): string {
 /** The line under it: what is left (or how far past), and how long the window still runs. */
 export function budgetAlertBody(budget: BudgetProgress): string {
   let head: string;
-  if (budget.over) head = `${faCompact(tomanOf(budget.overRial))} بیشتر از ${faCompact(tomanOf(budget.capRial))} تومان`;
+  if (budget.over) head = `${faCompact(tomanOf(budget.overRial))} بیشتر از ${faCompact(tomanOf(budget.capRial))} ${moneyUnit()}`;
   else if (budget.leftRial <= 0) head = 'چیزی از بودجه نمونده';
-  else head = `${faCompact(tomanOf(budget.leftRial))} از ${faCompact(tomanOf(budget.capRial))} تومان مونده`;
+  else head = `${faCompact(tomanOf(budget.leftRial))} از ${faCompact(tomanOf(budget.capRial))} ${moneyUnit()} مونده`;
   return `${head} • ${budgetDaysLeftFa(budget)}`;
 }
 
@@ -375,10 +375,10 @@ export function budgetNoteFa(budget: BudgetProgress): string {
   if (budget.leftRial <= 0) return `بودجهٔ ${budget.window.fa} تموم شد.`;
   if (budget.daysLeft <= 1) return budgetDaysLeftFa(budget) + '.';
   if (budget.outpacing && budget.perDayRial != null) {
-    return `تا آخر ${budget.period.fa} روزی ${faCompact(tomanOf(budget.perDayRial))} تومان جا داری.`;
+    return `تا آخر ${budget.period.fa} روزی ${faCompact(tomanOf(budget.perDayRial))} ${moneyUnit()} جا داری.`;
   }
   if (budget.level >= BudgetLevel.NEAR && budget.perDayRial != null) {
-    return `${faCompact(tomanOf(budget.leftRial))} تومان مونده، روزی ${faCompact(tomanOf(budget.perDayRial))} تومان.`;
+    return `${faCompact(tomanOf(budget.leftRial))} ${moneyUnit()} مونده، روزی ${faCompact(tomanOf(budget.perDayRial))} ${moneyUnit()}.`;
   }
   return '';
 }

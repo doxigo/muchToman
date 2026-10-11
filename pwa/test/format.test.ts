@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faSignedParts, faUsd, faWords, faWordsToman, fieldNumber, groupDigits, parseAmount } from '../src/format';
+import { faCompact, faHeld, faNumber, faOrdinal, faSignedCompact, faSignedParts, faUsd, faWords, faWordsToman, fieldNumber, groupDigits, moneyUnit, parseAmount, readShowRialFrom, tomanOfShown } from '../src/format';
+import { rialToField, tomanFieldToRial } from '../src/installments';
 
 /** The phone's own FormatTest expectations, verbatim where they are literal. */
 describe('format', () => {
@@ -63,5 +64,25 @@ describe('format', () => {
     expect(faSignedParts(832, true)).toEqual(['⁦+۸۳۲⁩', null]);
     expect(faUsd(832.9)).toBe('\u2066$۸۳۲\u2069');
     expect(faUsd(1_200_000)).toBe('\u2066$۱٫۲\u2069 میلیون');
+  });
+
+  it('in Rial every Toman figure and field gains its zero, and dollars do not (MoneyTest.kt)', () => {
+    let rial = true;
+    readShowRialFrom(() => rial);
+    try {
+      expect(moneyUnit()).toBe('ریال');
+      expect(faCompact(1_234_567.8)).toBe('۱۲٫۳ میلیون');
+      expect(faSignedCompact(1_234_567.8, false)).toBe('⁦−۱۲٫۳⁩ میلیون');
+      expect(faWordsToman(1_234.5)).toBe('دوازده هزار و سیصد و چهل و پنج ریال');
+      expect(faUsd(1_234_567)).toBe('\u2066$۱٫۲\u2069 میلیون');
+      expect(tomanFieldToRial('۱۲۳٬۴۵۷')).toBe(123_457);
+      expect(rialToField(123_457)).toBe('123457');
+      expect(tomanOfShown(123_457)).toBeCloseTo(12_345.7, 9);
+      rial = false;
+      expect(faCompact(1_234_567.8)).toBe('۱٫۲ میلیون');
+      expect(rialToField(123_457)).toBe('12345.7');
+    } finally {
+      readShowRialFrom(() => false);
+    }
   });
 });

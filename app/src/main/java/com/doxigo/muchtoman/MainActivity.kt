@@ -585,6 +585,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(lockEnabled = on, locked = false) }
     }
 
+    /** Toman or Rial on every figure — see [showRial]. The screens redraw on their own; the widget is told. */
+    fun setShowRial(on: Boolean) {
+        store.showRial = on
+        updateTotalWidget(getApplication())
+    }
+
     /** The widget's own mask, independent of the app lock. Takes effect on the spot. */
     fun setWidgetLock(on: Boolean) {
         store.widgetLock = on

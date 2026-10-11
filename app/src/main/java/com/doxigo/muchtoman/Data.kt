@@ -796,6 +796,7 @@ class Store(context: Context) {
         if (prefs.getInt("smsSchema", 0) != SMS_SCHEMA) {
             prefs.edit().putInt("smsSchema", SMS_SCHEMA).putBoolean("smsFoldNeedsRefresh", true).apply()
         }
+        com.doxigo.muchtoman.showRial = showRial
     }
 
     /**
@@ -933,6 +934,14 @@ class Store(context: Context) {
         get() = runCatching { ThemeMode.valueOf(prefs.getString("themeMode", "")!!) }
             .getOrDefault(ThemeMode.SYSTEM)
         set(v) { prefs.edit().putString("themeMode", v.name).apply() }
+
+    /** Figures in Rial rather than Toman — see the top-level [com.doxigo.muchtoman.showRial] it drives. Hers, so exported. */
+    var showRial: Boolean
+        get() = prefs.getBoolean("showRial", false)
+        set(v) {
+            prefs.edit().putBoolean("showRial", v).apply()
+            com.doxigo.muchtoman.showRial = v
+        }
 
     /** Whether the app hides itself behind fingerprint / device PIN. */
     var lockEnabled: Boolean
@@ -1183,7 +1192,7 @@ val EXPORTED_PREFS: List<String> = listOf(
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers", "dismissedSenders",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans", "notifyScannedTo",
-    "quipTone",
+    "quipTone", "showRial",
 )
 
 /**
