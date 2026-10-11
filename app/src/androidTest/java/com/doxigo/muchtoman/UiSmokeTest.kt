@@ -143,6 +143,11 @@ class UiSmokeTest {
         it.config.getOrNull(SemanticsActions.OnClick)?.label == "اضافه کردن دارایی"
     }
 
+    /** خانه's greeting-row pill, found the same way: its word is «تراکنش», its act «تراکنش دستی». */
+    private val addTxnPill = SemanticsMatcher("click label «تراکنش دستی»") {
+        it.config.getOrNull(SemanticsActions.OnClick)?.label == "تراکنش دستی"
+    }
+
     /**
      * Walks the picker into an [EditSheet] for [typeFa] and saves [amountFa] — typed in Persian
      * digits, because that is what her keyboard produces and what [parseAmount] must read.
@@ -206,7 +211,7 @@ class UiSmokeTest {
         rule.onNodeWithText("گزارش‌ها").assertIsDisplayed()
 
         tab("خانه").performClick()
-        rule.onNodeWithContentDescription("تراکنش دستی").assertIsDisplayed()
+        rule.onNode(addTxnPill).assertIsDisplayed()
     }
 
     @Test
@@ -248,7 +253,7 @@ class UiSmokeTest {
      */
     private fun addManualTxn(merchantFa: String, amountFa: String, categoryFa: String) {
         tab("خانه").performClick()
-        rule.onNodeWithContentDescription("تراکنش دستی").performClick()
+        rule.onNode(addTxnPill).performClick()
         waitForText("ثبت تراکنش")
         rule.onNodeWithContentDescription("مبلغ به تومان").performTextInput(amountFa)
         rule.onAllNodes(hasSetTextAction())[1].performTextInput(merchantFa)

@@ -1,6 +1,8 @@
 /* خانه and دارایی (Ui.kt 906-1190, Home.kt) and their sheets. Tokens only; sizes are Compose's dp/sp. */
 
 /* ---- the top bar: her, and the door to تنظیمات ---------------------------------------------- */
+.home-top-line { display: flex; align-items: center; justify-content: space-between; gap: var(--s); }
+.home-top-line > .home-top { min-width: 0; }
 .home-top { display: inline-flex; align-items: center; gap: var(--m); min-height: 48px; max-width: 100%; padding: 0; padding-inline-end: var(--s); background: none; border: 0; border-radius: var(--r-pill); color: var(--on-surface); }
 .home-top .disc { width: 40px; height: 40px; background: var(--surface-variant); }
 .home-top .name { font-size: 17px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -55,21 +57,81 @@
 .home .action-circle > span:last-child { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- خانه: the month, the story ----------------------------------------------------------------- */
-.month-flow { display: block; width: 100%; margin-top: var(--xl); padding: var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); text-align: start; }
-.month-flow .head { display: flex; align-items: center; font-size: 15px; font-weight: 800; }
-.month-flow .head > span { flex: 1; }
-.month-flow .head > svg { color: var(--on-surface-variant); }
-.month-flow .halves { display: flex; gap: var(--m); margin-top: var(--m); }
+/* Every card on خانه is this make (Home.kt HomeCard): a door with its title and chevron on top. */
+.home-card { display: block; width: 100%; padding: var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); text-align: start; }
+.home-card .head { display: flex; align-items: center; margin-bottom: var(--m); font-size: 15px; font-weight: 800; }
+.home-card .head > span { flex: 1; }
+.home-card .head > svg { color: var(--on-surface-variant); }
+.home-card .lead { display: flex; align-items: center; gap: var(--s); }
+.home-card .lead-figure { display: inline-flex; align-items: center; gap: 6px; font-size: 26px; font-weight: 800; line-height: 1.3; white-space: nowrap; }
+.home-card .lead-tail { min-width: 0; font-size: 13px; line-height: 20px; color: var(--on-surface-variant); }
+.month-flow { margin-top: var(--xl); }
+.month-flow .halves { display: flex; gap: var(--m); }
 .month-flow .half { flex: 1; min-width: 0; }
 .month-flow .half > span { display: block; font-size: 12px; color: var(--on-surface-variant); }
 .month-flow .half > div { margin-top: var(--xs); font-size: 26px; font-weight: 800; line-height: 1.3; white-space: nowrap; overflow: hidden; }
 .flow-bar { display: flex; gap: 3px; height: 8px; margin-top: var(--l); }
 .flow-bar > span { border-radius: var(--r-pill); }
 
-.quiet-start { margin-top: var(--xl); }
+/* The card is itself surface-variant, so the share tracks take the paper. */
+.top-spend { display: block; margin-top: var(--l); }
+.top-spend .caption { display: block; font-size: 12px; color: var(--on-surface-variant); }
+.top-spend .rp-track { background: var(--bg); }
 
-.story { display: flex; gap: var(--m); margin-top: var(--m); }
-.story > * { flex: 1; min-width: 0; }
+/* به دلار: two moves on one scale, tracks starting on one edge. */
+.lens-bars { display: block; margin-top: var(--l); }
+.lens-bar { display: flex; align-items: center; gap: var(--s); }
+.lens-bar + .lens-bar { margin-top: var(--s); }
+.lens-label { min-width: 64px; font-size: 13px; color: var(--on-surface-variant); }
+.lens-track { flex: 1; height: 8px; border-radius: var(--r-pill); background: var(--bg); overflow: hidden; }
+.lens-track > span { display: block; height: 100%; border-radius: var(--r-pill); }
+.lens-pct { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--xs); min-width: 56px; font-size: 13px; font-weight: 700; color: var(--on-surface); }
+
+/* پولت کجاست: the composition, largest first, and a two-column key. */
+.where-bar { display: flex; gap: 2px; height: 12px; margin-top: var(--l); border-radius: var(--r-pill); overflow: hidden; }
+.home-card .lead + .where-bar { margin-top: var(--l); }
+.home-card .head + .where-bar { margin-top: 0; }
+.where-bar > span { flex-basis: 0; }
+.where-legend { display: grid; grid-template-columns: 1fr 1fr; gap: var(--xs) 0; margin-top: var(--m); }
+.where-kind { display: flex; align-items: center; gap: var(--s); padding: 2px var(--xs); font-size: 14px; }
+.where-kind .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.where-kind .figure { font-size: 13px; font-weight: 700; color: var(--on-surface-variant); }
+
+.home-card .lead-note { display: block; margin-top: var(--xs); font-size: 13px; line-height: 21px; color: var(--on-surface-variant); }
+
+/* ---- خانه's sections: one per tab, in the bar's order; the head is the door (Home.kt TabSectionHead) ---- */
+.tab-section { margin-top: var(--xxl); }
+.tab-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s); }
+.tab-door { display: inline-flex; align-items: center; gap: var(--s); min-height: 48px; padding: 0; padding-inline-end: var(--s); border: 0; border-radius: var(--r-pill); background: none; color: var(--on-surface); }
+.tab-door h2 { font-size: 18px; font-weight: 800; }
+.tab-door > svg:last-child { color: var(--on-surface-variant); }
+/* A group's air between the cards of a section, a step less under the head. */
+.tab-section > * + * { margin-top: var(--m); }
+.tab-section > .tab-section-head + * { margin-top: var(--s); }
+
+/* آینده: what falls due soon, then the caps furthest along (Home.kt FutureSummary). */
+.future-gap { display: block; height: var(--s); }
+.due-row { display: flex; align-items: center; gap: var(--m); width: 100%; padding: var(--s) var(--xs); border: 0; border-radius: var(--r-field); background: none; color: var(--on-surface); text-align: start; }
+.due-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-variant); color: var(--on-surface-variant); }
+.due-text { display: flex; flex-direction: column; }
+.due-title { font-size: 16px; font-weight: 600; }
+.due-line { margin-top: 2px; font-size: 13px; line-height: 20px; color: var(--on-surface-variant); }
+.due-line.warned { color: var(--on-surface); }
+.due-line.late { font-weight: 700; color: var(--error); }
+.due-end { display: flex; flex: none; flex-direction: column; align-items: flex-end; }
+.due-amount { font-size: 15px; font-weight: 700; }
+.due-when { margin-top: 2px; font-size: 12px; color: var(--secondary); }
+.due-when.late { font-weight: 700; color: var(--error); }
+.budget-line { display: block; width: 100%; padding: var(--s) var(--xs); border: 0; border-radius: var(--r-field); background: none; color: var(--on-surface); text-align: start; }
+.budget-line-row { display: flex; align-items: center; gap: var(--m); font-size: 15px; }
+.budget-said { font-size: 13px; font-weight: 700; color: var(--on-surface-variant); }
+.budget-line .rp-track { margin-top: var(--xs); }
+.budget-note { display: block; margin-top: var(--xs); font-size: 12px; line-height: 19px; color: var(--on-surface-variant); }
+
+/* دفتر: the newest rows on the paper, under plain day names. */
+.recent-day { margin: var(--s) var(--xs) 0; font-size: 13px; font-weight: 700; color: var(--on-surface-variant); }
+
+
 .missing-note { margin-top: var(--l); padding: var(--l); border-radius: var(--r-card); background: var(--error-container); color: var(--on-error-container); font-size: 13px; line-height: 21px; }
 
 /* ---- دارایی: the bands ---------------------------------------------------------------------------- */

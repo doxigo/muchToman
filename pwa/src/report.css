@@ -27,6 +27,8 @@
 
 .rp-heading { font-size: 15px; font-weight: 800; }
 .rp-row-head { display: flex; align-items: center; gap: var(--m); margin-bottom: var(--m); }
+/* The chart's key on its own line, so the heading's line can hold the unit toggle. */
+.rp-keys { display: flex; gap: var(--m); margin: calc(var(--m) * -1 + var(--xs)) 0 var(--m); }
 .rp-note { font-size: 13px; line-height: 21px; color: var(--on-surface-variant); }
 .rp-none { font-size: 14px; padding: var(--m) 0; }
 .rp-rule { border: 0; border-top: 1px solid var(--outline-variant); margin-bottom: var(--m); }
@@ -135,3 +137,19 @@
 .rp-trend > div > span { display: block; width: 100%; border-radius: 6px 6px 0 0; }
 .rp-trend p { margin-top: var(--xs); font-size: 10px; color: var(--on-surface-variant); white-space: nowrap; }
 .rp-flow { display: flex; flex-wrap: wrap; gap: var(--s); }
+
+/* ---- ریتم خرج (Report.kt RhythmDetail): a week of three-hour blocks, the hours left to right ---- */
+.rp-rhythm-finding { margin-top: var(--s); font-size: 16px; line-height: 26px; font-weight: 700; color: var(--on-bg); }
+.rp-rhythm-hours { margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); }
+.rp-rhythm-grid { display: flex; flex-direction: column; gap: 3px; margin-top: var(--l); }
+.rp-rhythm-row { display: flex; align-items: center; }
+.rp-rhythm-day { flex: none; width: 20px; font-size: 11px; color: var(--on-surface-variant); }
+.rp-rhythm-day.busiest { font-weight: 700; color: var(--on-surface); }
+.rp-rhythm-cells { display: flex; flex: 1; direction: ltr; gap: 3px; }
+.rp-rhythm-cells > span { flex: 1; height: 20px; border-radius: 4px; }
+.rp-rhythm-clock { display: flex; flex: 1; direction: ltr; font-size: 11px; color: var(--on-surface-variant); }
+.rp-rhythm-clock > span { flex: 1; text-align: left; }
+.rp-rhythm-source { margin-top: var(--s); font-size: 12px; color: var(--on-surface-variant); }
+
+/* What the report leaves out, as the door to where that is chosen (Report.kt ReportExclusions). */
+.rp-exclusion-door { display: flex; align-items: center; gap: var(--s); width: 100%; padding: var(--s) 0; border: 0; border-radius: var(--r-field); background: none; color: var(--on-surface-variant); text-align: start; }

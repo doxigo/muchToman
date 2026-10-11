@@ -196,6 +196,15 @@ fun TabBar(
     }
 }
 
+/** One tab's own mark outside the bar: خانه's section heads wear the glyph of the tab they open. */
+@Composable
+internal fun TabGlyph(tab: Tab, tint: Color, modifier: Modifier = Modifier) {
+    // Its own layer for the same reason as in the bar: two glyphs cut a hole in themselves.
+    Canvas(modifier.size(24.dp).graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) {
+        drawTabIcon(tab, tint)
+    }
+}
+
 /**
  * Drawn, not imported.
  *

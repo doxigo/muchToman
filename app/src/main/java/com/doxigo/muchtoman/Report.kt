@@ -48,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -74,6 +76,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -139,8 +142,9 @@ fun ReportScreen(
     categories: List<Category> = emptyList(),
     /** Category ids this report leaves out — the household's shared set on a paired phone. */
     excluded: Set<String> = emptySet(),
-    onExcluded: (Set<String>) -> Unit = {},
-    /** Whether the phone is in a family — then editing [excluded] moves every member's report. */
+    /** To تنظیمات, where [excluded] is chosen — the report only says what it leaves out. */
+    onEditExclusions: () -> Unit = {},
+    /** Whether the phone is in a family — then the set is every member's. */
     householdShared: Boolean = false,
     /**
      * Whether she keeps a cap on «کل خرج», which is the one figure outside this screen that the
@@ -226,7 +230,7 @@ fun ReportScreen(
                     bottomInset = bottomInset,
                     categories = categories,
                     excluded = excluded,
-                    onExcluded = onExcluded,
+                    onEditExclusions = onEditExclusions,
                     householdShared = householdShared,
                     capsTotal = capsTotal,
                     usdRate = usdRate,
@@ -412,7 +416,7 @@ private fun AssetReportContent(
  * crypto segment read as an empty track. These are the app's green-to-gold family, fixed so
  * they hold on both themes; gold stays reserved for the gold kinds.
  */
-private fun barTint(kind: Kind): Color = when (kind) {
+internal fun barTint(kind: Kind): Color = when (kind) {
     Kind.CASH -> Color(0xFF2F7D3F)
     Kind.FIAT -> Color(0xFF79B989)
     Kind.CRYPTO -> Color(0xFFA3BBA6)
@@ -708,7 +712,7 @@ private fun CashFlowReportContent(
     bottomInset: Dp,
     categories: List<Category> = emptyList(),
     excluded: Set<String> = emptySet(),
-    onExcluded: (Set<String>) -> Unit = {},
+    onEditExclusions: () -> Unit = {},
     householdShared: Boolean = false,
     /** Whether she keeps a cap on «کل خرج» — see [ReportExclusions]. */
     capsTotal: Boolean = false,
@@ -762,7 +766,7 @@ private fun CashFlowReportContent(
         // with the month itself — and the empty neighbours draw as bare floating numerals.
         if (cash.series.count { it.incomeRial > 0 || it.spentRial > 0 } > 1) {
             Spacer(Modifier.height(Space.xxl))
-            MonthBars(cash, onWindow)
+            MonthBars(cash, onWindow, usdRate, rateHistory)
         }
 
         // Present when anything moved — the counted window, or money an exclusion is holding
@@ -787,10 +791,17 @@ private fun CashFlowReportContent(
             ReportExclusions(
                 categories = categories,
                 excluded = excluded,
-                onExcluded = onExcluded,
+                onEdit = onEditExclusions,
                 householdShared = householdShared,
                 capsTotal = capsTotal,
             )
+        }
+
+        // After what she spent on and who spent it, when she spends: the same window, through the
+        // same exclusions just above it. Absent on a window too short to call a habit.
+        cash.rhythm?.let {
+            Spacer(Modifier.height(Space.xxl))
+            RhythmDetail(it, cash.range.nameFa(cash.current), mine = cash.members.isNotEmpty())
         }
 
         if (worthIt.total > 0) {
@@ -1321,13 +1332,37 @@ private const val BAR_FLOOR = 0.03f
  * read out as twelve loose numbers are not a chart.
  */
 @Composable
-private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit) {
+private fun MonthBars(
+    cash: CashFlowReport,
+    onWindow: (Long, ReportSpan) -> Unit,
+    /** Today's dollar, for the column she is standing in — see [MonthSummary]'s same rule. */
+    usdRate: Double? = null,
+    /** The recorded rates every closed column is frozen at — see [ReportRange.usdRate]. */
+    rateHistory: Map<Long, Double> = emptyMap(),
+) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
     // Over «۱ هفته» every column is a week, so everything month-shaped below — the heading, the
     // selection test, the label, the spoken sentence — reads the week instead. Same chart, same
     // scale rule, one unit down.
     val weekly = cash.range.week != null
-    val top = cash.series.maxOf { maxOf(it.incomeRial, it.spentRial) }.coerceAtLeast(1L)
+    // In Toman both sides climb with inflation almost whatever she does; in dollars the chart says
+    // whether she is earning, or spending, any more. The asset chart's own control, for the same
+    // reason. Each column at its own window's recorded rate — a closed month keeps the dollars it
+    // was worth then — and the one she is standing in at today's.
+    var inUsd by rememberSaveable { mutableStateOf(false) }
+    val rates = remember(cash, usdRate, rateHistory) {
+        cash.series.map { r ->
+            (if (cash.today in r.range) usdRate else r.range.usdRate(rateHistory))?.takeIf { it > 0.0 && it.isFinite() }
+        }
+    }
+    val priced = rates.count { it != null } >= 2
+    // Absent, never zero, for a column with no rate on file: borrowing a neighbour's would be the
+    // re-pricing the rates are kept to refuse.
+    fun shown(i: Int, rial: Long): Double? =
+        if (!(inUsd && priced)) tomanOf(rial) else rates[i]?.let { tomanOf(rial) / it }
+    val top = cash.series.indices
+        .maxOf { i -> maxOf(shown(i, cash.series[i].incomeRial) ?: 0.0, shown(i, cash.series[i].spentRial) ?: 0.0) }
+        .takeIf { it > 0.0 } ?: 1.0
     // A year of months is twice what this row was built for, so the bars thin out to keep twelve
     // of them on a narrow phone, and the month names below them give way to numerals.
     val crowded = cash.series.size > 8
@@ -1350,6 +1385,18 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                     .weight(1f)
                     .semantics { heading() },
             )
+            // Only once two columns have a dollar to show: one is not a comparison.
+            if (priced) {
+                PillToggle(
+                    options = listOf(false, true),
+                    selected = inUsd,
+                    label = { if (it) "دلار" else moneyUnit },
+                    onSelect = { inUsd = it },
+                )
+            }
+        }
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.CenterVertically) {
             BarKey("درآمد", INCOME_TINT)
             Spacer(Modifier.width(Space.m))
             BarKey("خرج", spend)
@@ -1361,7 +1408,7 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            cash.series.forEach { report ->
+            cash.series.forEachIndexed { i, report ->
                 // Read as one month, or read as part of a longer window. Only the first is a
                 // selection — at «۶ ماه» nothing here is selected, six months are simply
                 // being counted together, and telling a screen reader otherwise would make
@@ -1402,10 +1449,16 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                         .heightIn(min = 48.dp)
                         .padding(vertical = Space.s)
                         .semantics(mergeDescendants = true) {
-                            contentDescription = "${if (weekly) report.range.fa else report.month.fa}: " +
-                                "درآمد ${faCompact(tomanOf(report.incomeRial))} $moneyUnit، " +
-                                "خرج ${faCompact(tomanOf(report.spentRial))} $moneyUnit" +
-                                if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
+                            val name = if (weekly) report.range.fa else report.month.fa
+                            contentDescription = if (inUsd && priced) {
+                                rates[i]?.let { rate ->
+                                    "$name: درآمد ${faRate(tomanOf(report.incomeRial) / rate)} دلار، " +
+                                        "خرج ${faRate(tomanOf(report.spentRial) / rate)} دلار"
+                                } ?: "$name: نرخ دلارش ثبت نشده"
+                            } else {
+                                "$name: درآمد ${faCompact(tomanOf(report.incomeRial))} $moneyUnit، " +
+                                    "خرج ${faCompact(tomanOf(report.spentRial))} $moneyUnit"
+                            } + if (inWindow && markWindow) "، در بازهٔ انتخاب‌شده" else ""
                         },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -1414,8 +1467,8 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.Bottom,
                     ) {
-                        Bar(report.incomeRial, top, INCOME_TINT, barWidth)
-                        Bar(report.spentRial, top, spend, barWidth)
+                        Bar(shown(i, report.incomeRial), top, INCOME_TINT, barWidth)
+                        Bar(shown(i, report.spentRial), top, spend, barWidth)
                     }
                     Spacer(Modifier.height(Space.s))
                     // The month's name, stepped down rather than cut when a column is narrow:
@@ -1449,20 +1502,29 @@ private fun MonthBars(cash: CashFlowReport, onWindow: (Long, ReportSpan) -> Unit
                 }
             }
         }
+        if (inUsd && priced && rates.any { it == null }) {
+            Text(
+                "${if (weekly) "هفته‌هایی" else "ماه‌هایی"} که نرخ دلارشون ثبت نشده، ستون ندارن.",
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s),
+            )
+        }
     }
 }
 
 /** One bar, against the chart's own ceiling. Nothing at all is what nothing looks like. */
 @Composable
-private fun Bar(rial: Long, top: Long, tone: Color, width: Dp) {
-    if (rial <= 0L) {
+private fun Bar(value: Double?, top: Double, tone: Color, width: Dp) {
+    if (value == null || value <= 0.0) {
         Spacer(Modifier.width(width))
         return
     }
     Box(
         Modifier
             .width(width)
-            .fillMaxHeight((rial.toFloat() / top).coerceIn(BAR_FLOOR, 1f))
+            .fillMaxHeight((value / top).toFloat().coerceIn(BAR_FLOOR, 1f))
             .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
             .background(tone),
     )
@@ -1832,12 +1894,14 @@ private fun MemberShareRow(
  * comparable with each other and with nothing else.
  */
 @Composable
-private fun CategoryShare(
+internal fun CategoryShare(
     name: String,
     rial: Long,
     total: Long,
     tint: Color?,
     onOpen: (() -> Unit)? = null,
+    /** The bar's empty part. خانه's month card is itself `surfaceVariant`, so it passes the paper. */
+    track: Color = MaterialTheme.colorScheme.surfaceVariant,
 ) {
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
     Column(
@@ -1919,7 +1983,7 @@ private fun CategoryShare(
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(track),
         ) {
             Box(
                 Modifier
@@ -2111,6 +2175,105 @@ private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
     }
 }
 
+/** The calendar's own one-letter days, شنبه first — what a Persian week grid labels its rows with. */
+private val WEEKDAY_MARKS = listOf("ش", "ی", "د", "س", "چ", "پ", "ج")
+
+private fun blockFa(block: Int): String = "${faNumber(block * 3.0)} تا ${faNumber(block * 3.0 + 3)}"
+
+/**
+ * When she buys, as a week of three-hour blocks: the darker the block, the more often she buys
+ * then. The sentence is the grid's one finding — a weekday that clearly stands out, or else the
+ * hours that do — and the grid is the evidence. Hours run left to right like every chart here.
+ */
+@Composable
+private fun RhythmDetail(rhythm: SpendRhythm, windowFa: String, mine: Boolean) {
+    // A day has to lead by a clear margin to be called one; otherwise the hours are the habit.
+    val dayStands = rhythm.dayRatio >= 1.3
+    val finding = if (dayStands) {
+        "${WEEKDAYS[rhythm.busiestDay]}‌ها ${faDecimal(rhythm.dayRatio, 1)} برابر روزهای دیگه خرید می‌کنی."
+    } else {
+        "بیشتر بین ساعت ${blockFa(rhythm.busiestBlock)} خرید می‌کنی."
+    }
+    // «خودت» only where the report around it is a household's — elsewhere every row is hers anyway.
+    val source = if (mine) "از خریدهای خودت در $windowFa" else "از خریدهای $windowFa"
+    Column(
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "ریتم خرج: $finding" +
+                (if (dayStands) " شلوغ‌ترین ساعت‌ها ${blockFa(rhythm.busiestBlock)}." else "") + " $source."
+        },
+    ) {
+        Text(
+            "ریتم خرج",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.s))
+        Text(finding, fontSize = 16.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
+        if (dayStands) {
+            Text(
+                "شلوغ‌ترین ساعت‌ها: ${blockFa(rhythm.busiestBlock)}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Spacer(Modifier.height(Space.l))
+        val top = rhythm.grid.maxOf { it.max() }.takeIf { it > 0.0 } ?: 1.0
+        val ink = MaterialTheme.colorScheme.primary
+        val empty = MaterialTheme.colorScheme.surfaceVariant
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            rhythm.grid.forEachIndexed { day, blocks ->
+                val busiest = dayStands && day == rhythm.busiestDay
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        WEEKDAY_MARKS[day],
+                        fontSize = 11.sp,
+                        fontWeight = if (busiest) FontWeight.Bold else FontWeight.Normal,
+                        color = if (busiest) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(20.dp),
+                    )
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            blocks.forEach { v ->
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .height(20.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (v <= 0.0) empty else ink.copy(alpha = 0.15f + 0.85f * (v / top).toFloat())),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            // The clock under the grid, at the blocks' left edges: ۰, ۶, ۱۲, ۱۸.
+            Row {
+                Spacer(Modifier.width(20.dp))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(Modifier.weight(1f)) {
+                        listOf(0, 6, 12, 18).forEach { hour ->
+                            Text(
+                                faNumber(hour.toDouble()),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            source,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Space.s),
+        )
+    }
+}
+
 /**
  * «به نظر خودت» — what she answered when the deck asked «ارزش داشت؟», summed over this window.
  *
@@ -2192,21 +2355,21 @@ private fun WorthItLine(label: String, rial: Long, tone: Color) {
 }
 
 /**
- * What this report is deliberately not counting, and the door to changing that.
+ * What this report is deliberately not counting — and, as a door, where that is chosen.
  *
  * The note is the honesty half and it is not optional: every figure above — the sides, the
  * shares, the savings rate, the bars — is computed without these categories, and a report that
  * hid money without saying so would be lying in exactly the way the pass-through card exists to
- * prevent. What each one moved anyway is stated under دسته‌ها, so the note now says where to
- * look rather than being the only trace. The door stays quiet when nothing is excluded, because
- * then there is nothing to confess — only an offer.
+ * prevent. What each one moved anyway is stated under دسته‌ها, so the note says where to look.
+ *
+ * The choosing lives in تنظیمات: the same set governs خانه's month, the runway and the rhythm,
+ * and the household shares it, so it is a setting rather than a control of this screen. The
+ * sentence is the way there. With nothing excluded there is nothing to confess, and no line.
  *
  * Two clauses ride on the base sentence when they apply. On a paired phone the set is the
  * household's, so the note says so. And «کل خرج» earns a clause when she keeps one, because that
  * is the only figure this set governs that is not on this screen: a roof is a cap over what this
- * report counts — see [budgetRows] — so a category set aside here is out from under it too, and
- * she would otherwise have to work that out from two screens that never mention each other.
- * Neither is said when it does not apply, where it would describe a feature she has not used.
+ * report counts — see [budgetRows] — so a category set aside here is out from under it too.
  */
 @Composable
 private fun ReportExclusions(
@@ -2214,41 +2377,38 @@ private fun ReportExclusions(
     excluded: Set<String>,
     /** Whether «کل خرج» is a figure she keeps — see above. */
     capsTotal: Boolean,
-    onExcluded: (Set<String>) -> Unit,
+    onEdit: () -> Unit,
     /** Whether this phone is in a household — then the set is the family's, not just hers. */
     householdShared: Boolean = false,
 ) {
-    var choosing by rememberSaveable { mutableStateOf(false) }
     val names = remember(categories, excluded) {
         categories.filter { it.id in excluded }.map { it.nameFa }
     }
-
-    Column {
-        if (names.isNotEmpty()) {
-            Text(
-                "دسته‌های ${names.joinToString("، ")} توی جمع‌های این گزارش حساب نشدن؛ " +
-                    "خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی." +
-                    (if (capsTotal) " و زیر سقف کل خرجت هم نمی‌رن." else "") +
-                    (if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else ""),
-                fontSize = 13.sp,
-                lineHeight = 21.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = Space.m),
-            )
-        }
-        PillButton(
-            if (excluded.isEmpty()) "کنار گذاشتن دسته‌ها از گزارش" else "ویرایش دسته‌های کنارگذاشته",
-            { choosing = true },
+    if (names.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.field))
+            .clickable(role = Role.Button, onClickLabel = "تغییر در تنظیمات", onClick = onEdit)
+            .padding(vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "دسته‌های ${names.joinToString("، ")} توی جمع‌های این گزارش حساب نشدن؛ " +
+                "خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی." +
+                (if (capsTotal) " و زیر سقف کل خرجت هم نمی‌رن." else "") +
+                (if (householdShared) " این انتخاب بین اعضای خانواده مشترکه." else "") +
+                " از تنظیمات عوضش کن.",
+            fontSize = 13.sp,
+            lineHeight = 21.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
         )
-    }
-
-    if (choosing) {
-        ExcludeSheet(
-            categories = categories,
-            excluded = excluded,
-            onExcluded = onExcluded,
-            onDismiss = { choosing = false },
-            householdShared = householdShared,
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -2263,7 +2423,7 @@ private fun ReportExclusions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ExcludeSheet(
+internal fun ExcludeSheet(
     categories: List<Category>,
     excluded: Set<String>,
     onExcluded: (Set<String>) -> Unit,

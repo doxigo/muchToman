@@ -19,16 +19,16 @@ import type { Change } from './data';
 import { ledger, useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { setReportExcluded, useFamily } from './family';
-import { MONTHS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf, moneyUnit, shownOf } from './format';
+import { MONTHS, WEEKDAYS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf, moneyUnit, shownOf } from './format';
 import { isTotal, worthItAnswers, worthItSummary } from './goals';
 import type { WorthItSummary } from './goals';
 import { Chevron, TrendCaret } from './icons';
 import { DAY_MS, jalaliOf, tehranDay } from './jalali';
 import { faDayMonth } from './loans';
-import { closeSheet, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
+import { closeSheet, openPage, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
 import type { ReportMode } from './nav';
 import { REPORT_SPANS, ReportSpan, buildCashFlow, categoryWindow, memberWindow, reportMonthOf } from './reports';
-import type { CashFlowReport, Insight, MemberShare, PeriodReport, ReportRange } from './reports';
+import type { CashFlowReport, Insight, MemberShare, PeriodReport, ReportRange, SpendRhythm } from './reports';
 import { CAT_UNCATEGORISED } from './rules';
 import { pref, rows } from './state';
 import { FilterCategoryChip, MemberFace, TimelineRow, openTxn } from './timeline';
@@ -37,7 +37,7 @@ import { ChipChoice, Panel, PillButton, PillToggle, ScreenTitle, SegmentedChoice
 // ─────────────────────────── small shared pieces ───────────────────────────
 
 /** Kotlin's `round`: half to even, so a share of exactly 12.5٪ prints as the phone prints it. */
-function roundEven(x: number): number {
+export function roundEven(x: number): number {
   const r = Math.round(x);
   return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
 }
@@ -312,7 +312,7 @@ function AssetReportContent() {
  * The bar's own palette, fixed so it holds on both themes: the icon discs' container tints all
  * but vanish on the dark background. Gold stays reserved for the gold kinds.
  */
-const BAR_TINT: Record<Kind, string> = {
+export const BAR_TINT: Record<Kind, string> = {
   CASH: '#2F7D3F', FIAT: '#79B989', CRYPTO: '#A3BBA6', GOLD: '#F7C948',
   SILVER: '#AEB6BD', COIN: '#C99B2C', STOCK: '#4C8A5E', PROPERTY: '#8C7B6B',
 };
@@ -448,6 +448,7 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
   const today = tehranDay(Date.now());
   const excludedIds = pref('reportExcluded');
   const excluded = useMemo(() => new Set(excludedIds), [excludedIds]);
+  const rateHistory = pref('rateHistory');
   const cash = useMemo(() => buildCashFlow(view.entries, view.bankTotalRial, today, reportMonthOf(anchor ?? today), {
     span,
     // The exclusion set is the one gate: قرض و همسر ride it as the shipped default.
@@ -455,7 +456,9 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
     excluded,
     // «۱ هفته» is the one span that needs the day itself.
     anchorDay: anchor,
-  }), [view, today, anchor, span, excluded]);
+    mineId: view.mineId,
+    rateHistory,
+  }), [view, today, anchor, span, excluded, rateHistory]);
   // Her «ارزش داشت؟» answers over exactly this window — a summary ignoring the picker would be
   // the one section describing different months from every figure around it.
   const worthIt = useMemo(
@@ -480,11 +483,11 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
         {period.transactions === 0 && !heldApart
           // This window empty yet is a thing to do; a past one may simply be older than the ledger.
           ? cash.current ? <QuietStart named={cash.range.recentFa} /> : <EmptyMonth range={cash.range} />
-          : <MonthSummary month={period} current={cash.current} today={cash.today} usdRate={usdRate} rateHistory={pref('rateHistory')} />}
+          : <MonthSummary month={period} current={cash.current} today={cash.today} usdRate={usdRate} rateHistory={rateHistory} />}
       </div>
       {/* Two windows with something in them is the least a comparison can be made of. */}
       {cash.series.filter((r) => r.incomeRial > 0 || r.spentRial > 0).length > 1 && (
-        <div class="rp-xxl"><MonthBars cash={cash} onWindow={onWindow} /></div>
+        <div class="rp-xxl"><MonthBars cash={cash} onWindow={onWindow} usdRate={usdRate} rateHistory={rateHistory} /></div>
       )}
       {(period.transactions > 0 || heldApart) && <div class="rp-xxl"><CategoryDetail period={period} /></div>}
       {cash.members.length > 0 && <div class="rp-xxl"><MemberDetail members={cash.members} period={period} excluded={excluded} /></div>}
@@ -496,7 +499,10 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
             capsTotal={rows('goals').some((g) => !g.deleted && isTotal(g))} />
         </div>
       )}
-      {worthIt.total > 0 && <div class="rp-xxl"><WorthItDetail summary={worthIt} range={cash.range} /></div>}
+      {/* After what she spent on and who spent it, when she spends: the same window, through the same
+          exclusions just above it. Absent on a window too short to call a habit. */}
+      {cash.rhythm && <div class="rp-xxl"><RhythmDetail rhythm={cash.rhythm} windowFa={cash.range.nameFa(cash.current)} mine={cash.members.length > 0} /></div>}
+            {worthIt.total > 0 && <div class="rp-xxl"><WorthItDetail summary={worthIt} range={cash.range} /></div>}
       {/* Findings and wins in one grid: paired by kind, each run could end on a lone card. */}
       {cards.length > 0 && <div class="rp-xxl"><InsightGrid insights={cards} /></div>}
     </div>
@@ -666,9 +672,22 @@ const BAR_FLOOR = 0.03;
  * Each column is a control: tapping reads that month alone, with the span dropping to «۱ ماه»
  * visibly (a week stays a week).
  */
-function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindow }) {
+function MonthBars({ cash, onWindow, usdRate, rateHistory }: {
+  cash: CashFlowReport; onWindow: OnWindow; usdRate: number | null; rateHistory: Readonly<Record<string, number>>;
+}) {
   const weekly = cash.range.week != null;
-  const top = Math.max(...cash.series.map((r) => Math.max(r.incomeRial, r.spentRial)), 1);
+  // In Toman both sides climb with inflation; in dollars the chart says whether she is earning, or
+  // spending, any more (Report.kt MonthBars). Each column at its own window's recorded rate, the one
+  // she is standing in at today's; absent, never zero, where no rate is on file.
+  const [inUsd, setUsd] = useState(false);
+  const rates = useMemo(() => cash.series.map((r) => {
+    const rate = r.range.contains(cash.today) ? usdRate : r.range.usdRate(rateHistory);
+    return rate != null && rate > 0 && Number.isFinite(rate) ? rate : null;
+  }), [cash, usdRate, rateHistory]);
+  const priced = rates.filter((r) => r != null).length >= 2;
+  const usd = inUsd && priced;
+  const shown = (i: number, rial: number): number | null => (!usd ? tomanOf(rial) : rates[i] != null ? tomanOf(rial) / rates[i]! : null);
+  const top = Math.max(...cash.series.map((r, i) => Math.max(shown(i, r.incomeRial) ?? 0, shown(i, r.spentRial) ?? 0))) || 1;
   // A year of months thins the bars to keep twelve on a narrow phone, and names give way to numerals.
   const crowded = cash.series.length > 8;
   const barWidth = crowded ? 7 : 12;
@@ -679,26 +698,35 @@ function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindo
       <div class="rp-row-head">
         {/* Not «شش ماه اخیر»: near the ledger's start the window holds fewer. */}
         <h2 class="rp-heading grow">{weekly ? 'هفته به هفته' : 'ماه به ماه'}</h2>
+        {/* Only once two columns have a dollar to show: one is not a comparison. */}
+        {priced && <PillToggle options={[false, true]} selected={inUsd} label={(u) => u ? 'دلار' : moneyUnit()} onSelect={setUsd} />}
+      </div>
+      <div class="rp-keys">
         <BarKey label="درآمد" tone={INCOME_TINT} />
         <BarKey label="خرج" tone={SPEND_TINT} />
       </div>
       <div class="rp-bars" role="tablist">
-        {cash.series.map((report) => {
+        {cash.series.map((report, i) => {
           // Read alone is a selection; counted into a longer window is not. A week is compared
           // by its own start day, since several weeks share a month.
           const only = weekly ? report.range.startDay === cash.range.startDay
             : cash.range.count === 1 && report.month.equals(cash.selected);
           const inWindow = cash.range.containsMonth(report.month);
-          const label = `${weekly ? report.range.fa : report.month.fa}: ` +
-            `درآمد ${faCompact(tomanOf(report.incomeRial))} ${moneyUnit()}، خرج ${faCompact(tomanOf(report.spentRial))} ${moneyUnit()}` +
+          const name = weekly ? report.range.fa : report.month.fa;
+          const rate = rates[i];
+          const label = (!usd
+            ? `${name}: درآمد ${faCompact(tomanOf(report.incomeRial))} ${moneyUnit()}، خرج ${faCompact(tomanOf(report.spentRial))} ${moneyUnit()}`
+            : rate != null
+              ? `${name}: درآمد ${faRate(tomanOf(report.incomeRial) / rate)} دلار، خرج ${faRate(tomanOf(report.spentRial) / rate)} دلار`
+              : `${name}: نرخ دلارش ثبت نشده`) +
             (inWindow && markWindow ? '، در بازهٔ انتخاب‌شده' : '');
           return (
             <button type="button" role="tab" aria-selected={only} aria-label={label}
               class={`rp-bar-col${only || (inWindow && markWindow) ? ' marked' : ''}${only ? ' only' : ''}`}
               onClick={() => onWindow(report.range.startDay, weekly ? ReportSpan.WEEK : ReportSpan.MONTH)}>
               <span class="rp-bar-box">
-                <Bar rial={report.incomeRial} top={top} tone={INCOME_TINT} width={barWidth} />
-                <Bar rial={report.spentRial} top={top} tone={SPEND_TINT} width={barWidth} />
+                <Bar value={shown(i, report.incomeRial)} top={top} tone={INCOME_TINT} width={barWidth} />
+                <Bar value={shown(i, report.spentRial)} top={top} tone={SPEND_TINT} width={barWidth} />
               </span>
               {/* The month's name, stepped down rather than cut; twelve bars leave no room for one, so
                   a year falls back to numerals. A week is named by the day its شنبه falls on. */}
@@ -710,14 +738,18 @@ function MonthBars({ cash, onWindow }: { cash: CashFlowReport; onWindow: OnWindo
           );
         })}
       </div>
+      {usd && rates.some((r) => r == null) && (
+        <p class="rp-note rp-s">{`${weekly ? 'هفته‌هایی' : 'ماه‌هایی'} که نرخ دلارشون ثبت نشده، ستون ندارن.`}</p>
+      )}
     </div>
   );
 }
 
 /** One bar against the chart's ceiling. Nothing at all is what nothing looks like. */
-function Bar({ rial, top, tone, width }: { rial: number; top: number; tone: string; width: number }) {
-  const height = rial > 0 ? Math.min(Math.max(Math.fround(rial) / top, BAR_FLOOR), 1) : 0;
-  return <span class="rp-bar" style={{ width: `${width}px`, height: `${height * 100}%`, background: rial > 0 ? tone : 'transparent' }} />;
+function Bar({ value, top, tone, width }: { value: number | null; top: number; tone: string; width: number }) {
+  const some = value != null && value > 0;
+  const height = some ? Math.min(Math.max(Math.fround(value) / top, BAR_FLOOR), 1) : 0;
+  return <span class="rp-bar" style={{ width: `${width}px`, height: `${height * 100}%`, background: some ? tone : 'transparent' }} />;
 }
 
 function BarKey({ label, tone }: { label: string; tone: string }) {
@@ -868,6 +900,54 @@ function ShareRow({ name, rial, total, tint, lead, onOpen }: {
     : <div class="rp-share" role="group" aria-label={label}>{body}</div>;
 }
 
+/** The calendar's own one-letter days, شنبه first. */
+const WEEKDAY_MARKS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
+const blockFa = (block: number): string => `${faNumber(block * 3)} تا ${faNumber(block * 3 + 3)}`;
+
+/**
+ * When she buys, as a week of three-hour blocks (Report.kt RhythmDetail): the darker, the more
+ * often. The sentence is the grid's one finding — a weekday that clearly stands out, or else the hours.
+ */
+function RhythmDetail({ rhythm, windowFa, mine }: { rhythm: SpendRhythm; windowFa: string; mine: boolean }) {
+  const dayStands = rhythm.dayRatio >= 1.3;
+  const finding = dayStands
+    ? `${WEEKDAYS[rhythm.busiestDay]}‌ها ${faDecimal(rhythm.dayRatio, 1)} برابر روزهای دیگه خرید می‌کنی.`
+    : `بیشتر بین ساعت ${blockFa(rhythm.busiestBlock)} خرید می‌کنی.`;
+  // «خودت» only where the report around it is a household's.
+  const source = mine ? `از خریدهای خودت در ${windowFa}` : `از خریدهای ${windowFa}`;
+  const top = Math.max(...rhythm.grid.flat()) || 1;
+  return (
+    <section aria-label={`ریتم خرج: ${finding}${dayStands ? ` شلوغ‌ترین ساعت‌ها ${blockFa(rhythm.busiestBlock)}.` : ''} ${source}.`}>
+      <h2 class="rp-heading">ریتم خرج</h2>
+      <p class="rp-rhythm-finding">{finding}</p>
+      {dayStands && <p class="rp-rhythm-hours">{`شلوغ‌ترین ساعت‌ها: ${blockFa(rhythm.busiestBlock)}`}</p>}
+      <div class="rp-rhythm-grid" aria-hidden="true">
+        {rhythm.grid.map((blocks, day) => (
+          <div key={day} class="rp-rhythm-row">
+            <span class={`rp-rhythm-day${dayStands && day === rhythm.busiestDay ? ' busiest' : ''}`}>{WEEKDAY_MARKS[day]}</span>
+            {/* The hours run left to right, like time on every chart in the app. */}
+            <span class="rp-rhythm-cells">
+              {blocks.map((v, b) => (
+                <span key={b} style={{ background: v <= 0 ? 'var(--surface-variant)' : `color-mix(in srgb, var(--primary) ${Math.round((0.15 + 0.85 * v / top) * 100)}%, transparent)` }} />
+              ))}
+            </span>
+          </div>
+        ))}
+        <div class="rp-rhythm-row">
+          <span class="rp-rhythm-day" />
+          <span class="rp-rhythm-clock">{[0, 6, 12, 18].map((h) => <span key={h}>{faNumber(h)}</span>)}</span>
+        </div>
+      </div>
+      <p class="rp-rhythm-source">{source}</p>
+    </section>
+  );
+}
+
+/** One spending category the way دسته‌ها draws it, for خانه's month card (Home.kt MonthFlow). */
+export function CategoryShareRow({ name, rial, total }: { name: string; rial: number; total: number }) {
+  return <ShareRow name={name} rial={rial} total={total} lead={<CategoryDisc name={name} size={32} icon={17} stroke={1.5} />} />;
+}
+
 /**
  * «به نظر خودت» — her «ارزش داشت؟» answers, summed over this window. Zero rows are skipped: a
  * Persian zero at this size is a floating dot, not a figure.
@@ -900,25 +980,27 @@ function WorthItLine({ label, rial, tone }: { label: string; rial: number; tone:
 }
 
 /**
- * What this report is deliberately not counting, and the door to changing that. The note is the
- * honesty half; its two clauses ride only where they apply — «کل خرج» when she keeps one (the
- * one figure off this screen the set governs), the household when the set is shared.
+ * What this report is deliberately not counting (Report.kt ReportExclusions) — and, as a door, where
+ * that is chosen. The choosing lives in تنظیمات: the set governs خانه's month, the runway and the
+ * rhythm too, and the household shares it. The note is the honesty half and stays; with nothing
+ * excluded there is nothing to confess and no line. Its clauses ride only where they apply.
  */
 function ReportExclusions({ excluded, capsTotal, householdShared }: { excluded: string[]; capsTotal: boolean; householdShared: boolean }) {
   const view = useLedger();
   const names = view.categories.filter((c) => excluded.includes(c.id)).map((c) => c.nameFa);
+  if (!names.length) return null;
   return (
-    <div>
-      {names.length > 0 && (
-        <p class="rp-note rp-exclusions">
-          {`دسته‌های ${names.join('، ')} توی جمع‌های این گزارش حساب نشدن؛ ` +
-            'خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی.' +
-            (capsTotal ? ' و زیر سقف کل خرجت هم نمی‌رن.' : '') +
-            (householdShared ? ' این انتخاب بین اعضای خانواده مشترکه.' : '')}
-        </p>
-      )}
-      <PillButton label={excluded.length ? 'ویرایش دسته‌های کنارگذاشته' : 'کنار گذاشتن دسته‌ها از گزارش'} onClick={() => openSheet('exclude')} />
-    </div>
+    <button type="button" class="rp-exclusion-door"
+      onClick={() => { openPage('settings'); openSheet('exclude'); }}>
+      <span class="rp-note grow">
+        {`دسته‌های ${names.join('، ')} توی جمع‌های این گزارش حساب نشدن؛ ` +
+          'خرج و درآمدی که داشتن رو جدا، ته فهرست دسته‌ها، می‌بینی.' +
+          (capsTotal ? ' و زیر سقف کل خرجت هم نمی‌رن.' : '') +
+          (householdShared ? ' این انتخاب بین اعضای خانواده مشترکه.' : '') +
+          ' از تنظیمات عوضش کن.'}
+      </span>
+      <Chevron size={18} />
+    </button>
   );
 }
 

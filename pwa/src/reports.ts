@@ -18,8 +18,8 @@ import { chequeInsight, pressingCheque } from './cheques';
 import type { ChequeAccount } from './cheques';
 import { INSTALLMENT_REMINDER_DEFAULT, installmentInsight, pressingInstallment } from './installments';
 import type { InstallmentProgress } from './installments';
-import { MONTHS, faDigits, faNumber } from './format';
-import { jalaliDay, jalaliMonthLength, jalaliOf, weekStart } from './jalali';
+import { MONTHS, faDigits, faNumber, faRate, tomanOf } from './format';
+import { DAY_MS, TEHRAN_OFFSET_MS, jalaliDay, jalaliMonthLength, jalaliOf, weekStart } from './jalali';
 import type { Goal, LedgerEntry } from './model';
 import { PASS_THROUGH_CATEGORIES } from './rules';
 
@@ -747,12 +747,18 @@ export interface CashFlowReport {
   canGoBack: boolean;
   canGoForward: boolean;
   range: ReportRange;
+  /** When in the week she buys, over this window (Reports.kt spendRhythm); null on a short one. */
+  rhythm: SpendRhythm | null;
 }
 
 export interface CashFlowOptions extends ReadingOptions {
   span?: ReportSpan;
   /** The day a WEEK span reads the week of; month spans ignore it. Null anchors at today. */
   anchorDay?: number | null;
+  /** This device's member, so the rhythm is her own purchases. */
+  mineId?: string;
+  /** The recorded dollar rates, for the income-in-dollars line (Reports.kt incomeInDollars). */
+  rateHistory?: Readonly<Record<string, number>>;
 }
 
 export function buildCashFlow(
@@ -760,7 +766,7 @@ export function buildCashFlow(
   liquidRial: number,
   today: number,
   selected: ReportMonth,
-  { span = ReportSpan.MONTH, countPassThrough = false, excluded = NONE, anchorDay = null }: CashFlowOptions = {},
+  { span = ReportSpan.MONTH, countPassThrough = false, excluded = NONE, anchorDay = null, mineId = '', rateHistory = {} }: CashFlowOptions = {},
 ): CashFlowReport {
   if (span === ReportSpan.WEEK) return buildWeekly(entries, liquidRial, today, anchorDay, countPassThrough, excluded);
   const available = availableReportMonths(entries, today);
@@ -790,7 +796,12 @@ export function buildCashFlow(
     // Six bars under a shorter window, the window's own length once longer.
     series: chartWindow(available, month, Math.max(use.months, 6))
       .map((m) => monthReport(entries, m, countPassThrough, excluded)),
-    insights: narrate(report, had, entries, buffer, current),
+    insights: [
+      ...narrate(report, had, entries, buffer, current),
+      // The newest finished month: the one she is standing in is still arriving.
+      ...[incomeInDollars(entries, current ? month.previous() : month, rateHistory, countPassThrough, excluded)]
+        .filter((x): x is Insight => x != null),
+    ],
     wins: quietWins(report, had, buffer, current),
     members: memberShares(entries, range, countPassThrough, excluded),
     bufferDays: buffer,
@@ -799,6 +810,84 @@ export function buildCashFlow(
     canGoBack: month.compareTo(available[0]) > 0,
     canGoForward: month.compareTo(available[available.length - 1]) < 0,
     range,
+    rhythm: spendRhythm(entries, range, today, mineId, excluded, countPassThrough),
+  };
+}
+
+/**
+ * Her income in dollars: [month] against the mean of up to five months before it, each at its own
+ * month's recorded rate (Reports.kt incomeInDollars). The mean, because income is lumpy; through
+ * the report's own gates. Null without a rate for the month or two earlier months to compare.
+ */
+export function incomeInDollars(entries: LedgerEntry[], month: ReportMonth, rateHistory: Readonly<Record<string, number>>,
+  countPassThrough = false, excluded: ReadonlySet<string> = NONE): Insight | null {
+  const usd = (m: ReportMonth): number | null => {
+    const income = monthReport(entries, m, countPassThrough, excluded).incomeRial;
+    const rate = new ReportRange(m, m).usdRate(rateHistory);
+    return rate != null && income > 0 ? tomanOf(income) / rate : null;
+  };
+  const now = usd(month);
+  if (now == null) return null;
+  const before = [1, 2, 3, 4, 5].map((b) => usd(month.back(b))).filter((x): x is number => x != null);
+  if (before.length < 2) return null;
+  const change = now / (before.reduce((a, b) => a + b, 0) / before.length) - 1;
+  const against = `میانگین ${faNumber(before.length)} ماه قبلش`;
+  return {
+    text: `درآمد ${MONTHS[month.month - 1]} ${faRate(now)} دلار بود؛ ` + (Math.abs(change) < 0.01 ? `مثل ${against}.`
+      : change > 0 ? `${faPercent(change)}٪ بیشتر از ${against}.` : `${faPercent(-change)}٪ کمتر از ${against}.`),
+    why: 'هر ماه با نرخ دلار همون ماه حساب شده؛ پولی که بین حساب‌های خودت جابه‌جا کردی، حساب نشده.',
+    refs: spendable(entries).filter((e) => e.txn.day >= month.startDay && e.txn.day < month.endDay && (e.txn.signedRial ?? 0) > 0)
+      .map((e) => e.txn.ref),
+    // A raise the dollar did not eat is worth marking; a fall is a reading, not a task.
+    tone: change > 0.05 ? 'GOOD' : 'NEUTRAL',
+  };
+}
+
+/** When she buys: purchases per weekday occurrence (شنبه first) and three-hour block (midnight first). */
+export interface SpendRhythm {
+  grid: number[][];
+  busiestDay: number;
+  dayRatio: number;
+  busiestBlock: number;
+}
+
+const weekdayOf = (day: number): number => day - weekStart(day);
+
+/**
+ * When she buys over the report's own window, through its exclusions and its قرض و همسر switch
+ * (Reports.kt spendRhythm). Counted, not summed — by Toman the rent's one morning would be her
+ * busiest hour of the week. Hers only. Null under four watched weeks or thirty purchases.
+ */
+export function spendRhythm(entries: LedgerEntry[], range: ReportRange, today: number, mineId: string,
+  excluded: ReadonlySet<string> = NONE, countPassThrough = false): SpendRhythm | null {
+  const first = entries.length ? Math.min(...entries.map((e) => e.txn.day)) : today;
+  const from = Math.max(range.startDay, first);
+  const to = Math.min(range.endDay - 1, today);
+  if (to - from + 1 < 28) return null;
+  // goals.ts scopedTo(…, false), inlined: goals.ts imports this module.
+  const bought = spendableRows(entries).filter((e) => e.ownerMemberId === mineId
+    && e.txn.day >= from && e.txn.day <= to && (e.txn.signedRial ?? 0) < 0 && e.txn.at > 0
+    && !excluded.has(e.categoryId) && (countPassThrough || !PASS_THROUGH_CATEGORIES.has(e.categoryId)));
+  if (bought.length < 30) return null;
+  const occurs = new Array<number>(7).fill(0);
+  for (let day = from; day <= to; day++) occurs[weekdayOf(day)]++;
+  const counts = Array.from({ length: 7 }, () => new Array<number>(8).fill(0));
+  for (const e of bought) {
+    const hour = Math.floor((((e.txn.at + TEHRAN_OFFSET_MS) % DAY_MS) + DAY_MS) % DAY_MS / 3_600_000);
+    counts[weekdayOf(e.txn.day)][Math.floor(hour / 3)]++;
+  }
+  const grid = counts.map((row, d) => row.map((c) => c / Math.max(occurs[d], 1)));
+  const perDay = grid.map((row) => row.reduce((a, b) => a + b, 0));
+  // The first of the highest, as Kotlin's maxBy picks.
+  const busiest = perDay.reduce((best, v, i) => (v > perDay[best] ? i : best), 0);
+  const others = perDay.filter((_, i) => i !== busiest);
+  const mean = others.reduce((a, b) => a + b, 0) / others.length;
+  const byBlock = Array.from({ length: 8 }, (_, b) => counts.reduce((sum, row) => sum + row[b], 0));
+  return {
+    grid,
+    busiestDay: busiest,
+    dayRatio: mean > 0 ? perDay[busiest] / mean : 0,
+    busiestBlock: byBlock.reduce((best, v, i) => (v > byBlock[best] ? i : best), 0),
   };
 }
 
@@ -851,6 +940,8 @@ function buildWeekly(
     canGoBack: week > floor,
     canGoForward: week < thisWeek,
     range,
+    // A week is never a habit: spendRhythm wants four of them.
+    rhythm: null,
   };
 }
 

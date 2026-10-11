@@ -451,6 +451,8 @@ private fun AppScreens(
     // process death: the drafts are saveable now, for the lock — see `unlocked` — but the plain
     // flags here that open their sheets are not, so the sheet does not come back to hold them.)
     var settings by rememberSaveable { mutableStateOf(false) }
+    // تنظیمات opened from the report's note on what it leaves out, straight onto that choice.
+    var exclusionsSheet by remember { mutableStateOf(false) }
     // A page of تنظیمات, not a peer of it: `companion` is only ever read while `settings` is
     // true, so closing it lands back on the settings page she opened it from rather than on
     // whatever tab is underneath both.
@@ -701,8 +703,13 @@ private fun AppScreens(
 
     if (settings) {
         // The system back button must step back to the list, not out of the app.
-        BackHandler { settings = false }
+        BackHandler { settings = false; exclusionsSheet = false }
         SettingsScreen(
+            categories = state.ledger.categories,
+            reportExcluded = state.reportExcluded,
+            onReportExcluded = vm::setReportExcluded,
+            exclusionsSheet = exclusionsSheet,
+            onExclusionsSheet = { exclusionsSheet = it },
             name = state.name,
             themeMode = state.themeMode,
             lockEnabled = state.lockEnabled,
@@ -747,7 +754,7 @@ private fun AppScreens(
                 vm.rescanInbox()
                 notices.show("در حال بازخوانی…")
             },
-            onBack = { settings = false },
+            onBack = { settings = false; exclusionsSheet = false },
         )
         return@SaveableStateProvider
     }
@@ -871,6 +878,26 @@ private fun AppScreens(
     val holdingSections = remember(state.listHoldings, dynamicTypes) {
         holdingsByKind(state.listHoldings, dynamicTypes)
     }
+    // خانه's two readings of the total that the month cannot give — see [DollarLensCard] and
+    // [WhereMoneyIs]. Hers alone, like the change pill: the history never recorded the household's.
+    val lens = remember(state.history, state.rateHistory, state.totals.toman, effective["usd"]) {
+        dollarLens(
+            state.history, state.rateHistory, System.currentTimeMillis() / DAY_MS,
+            state.totals.toman, effective["usd"],
+        )
+    }
+    val composition = remember(state.listHoldings, state.coins, effective, state.stocks) {
+        compositionByKind(state.listHoldings, state.coins, effective, state.stocks)
+    }
+    val recent = remember(state.ledger.entries) { recentEntries(state.ledger.entries) }
+    // آینده's next two weeks — or the reminder's own window, where she has set a longer one.
+    val due = remember(state.ledger, state.bankAccounts, state.installmentReminder) {
+        dueSoon(
+            state.ledger.cheques, state.ledger.installments, state.bankAccounts,
+            tehranDay(System.currentTimeMillis()), state.installmentReminder,
+            days = maxOf(14, state.installmentReminder),
+        )
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -991,6 +1018,7 @@ private fun AppScreens(
             reportMonth,
             reportSpan,
             state.reportExcluded,
+            state.rateHistory,
         ) {
             val today = tehranDay(System.currentTimeMillis())
             buildCashFlow(
@@ -1006,6 +1034,8 @@ private fun AppScreens(
                 // The same remembered day the month above was read from — «۱ هفته» is the one
                 // span that needs the day itself.
                 anchorDay = reportMonth,
+                mineId = state.ledger.mineId,
+                rateHistory = state.rateHistory,
             )
         }
         // Her «می‌ارزید؟» answers, over exactly the window the rest of the report reads — a
@@ -1031,7 +1061,8 @@ private fun AppScreens(
               bottomInset = pad.calculateBottomPadding(),
               categories = state.ledger.categories,
               excluded = state.reportExcluded,
-              onExcluded = vm::setReportExcluded,
+              // Chosen in تنظیمات, which opens on the choice: the report only says what it leaves out.
+              onEditExclusions = { exclusionsSheet = true; settings = true },
               // Paired is what makes the exclusion set a household setting — the sheet says so.
               householdShared = state.family.paired,
               // The one figure off this screen that the same set governs — see [budgetRows].
@@ -1114,15 +1145,30 @@ private fun AppScreens(
                     }
                 } else {
                     // Her, above the money, on the paper — the greeting is the door to تنظیمات,
-                    // the way every phone on the planet gets you to your own account.
-                    HomeTopBar(
-                        name = state.name,
-                        onSettings = { settings = true },
-                        modifier = Modifier
+                    // the way every phone on the planet gets you to your own account. خانه writes
+                    // one thing, and it writes it where every room does: the add pill at the end of
+                    // its top line. Cash paid at the till belongs to no tab, so it stays one tap
+                    // from here; an asset is دارایی's to add. Not in the lite edition, which keeps
+                    // no ledger to write in.
+                    Row(
+                        Modifier
                             .statusBarsPadding()
                             .padding(edge)
-                            .padding(top = Space.s),
-                    )
+                            .padding(top = Space.s)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        HomeTopBar(
+                            name = state.name,
+                            onSettings = { settings = true },
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (!portfolio) {
+                            Spacer(Modifier.width(Space.s))
+                            TitleAddButton("تراکنش", "تراکنش دستی", onClick = { addingTxn = true })
+                        }
+                    }
                 }
             }
 
@@ -1178,10 +1224,13 @@ private fun AppScreens(
                 }
             }
 
-            // What she might do next, directly under the number that prompts it — real verbs
-            // only, each a circle with its name under it. Not under دارایی's compact header: its
-            // one verb is the pill beside the title.
-            if (!compact) item(key = "actions") {
+            // The circles stay where a page has no title line to hold its verbs: the lite edition's
+            // only screen («اضافه کردن», and «گزارش», its one door to the report), and خانه before she
+            // holds anything, where adding the first asset is the one thing the page can ask for.
+            // Otherwise خانه is a reading — its one verb is the pill on the greeting row, and the
+            // asset is دارایی's to add.
+            val firstAsset = !portfolio && state.listHoldings.isEmpty()
+            if (!compact && (portfolio || firstAsset)) item(key = "actions") {
                 // Fixed cells clustered to the centre, not thirds of the screen: two circles
                 // spread to three slots' positions read as a row with a button missing, and
                 // the sibling heroes have to share one rhythm whatever their count.
@@ -1191,19 +1240,13 @@ private fun AppScreens(
                 ) {
                     val cell = Modifier.width(108.dp)
                     ActionCircle(
-                        label = "اضافه کردن",
+                        // Alone on خانه, beside the greeting's «+ تراکنش», «اضافه کردن» would not say what
+                        // it adds.
+                        label = if (firstAsset) "اضافه کردن دارایی" else "اضافه کردن",
                         icon = Icons.Rounded.Add,
                         onClick = addAsset,
                         modifier = cell,
                     )
-                    if (!portfolio) {
-                        // Money no message will report, written down where she is standing.
-                        ActionCircle(
-                            label = "تراکنش دستی",
-                            onClick = { addingTxn = true },
-                            modifier = cell,
-                        ) { tint -> Canvas(Modifier.size(24.dp)) { inset(3.dp.toPx()) { drawLedger(tint) } } }
-                    }
                     if (tabs.size == 1) {
                         // The lite edition has no bar, so this is the report's only door.
                         ActionCircle(
@@ -1228,61 +1271,72 @@ private fun AppScreens(
             }
 
             if (!portfolio) {
-                // The story, and then it stops. One meaningful change, the month's flow, the
-                // runway, and at most one thing asking for her — the inventory is behind the
-                // row at the bottom, because what she opened the app for is how things are
-                // going, not a list of what she owns.
+                // خانه is the app's index: under the total, one section per tab, in the bar's own
+                // order, each headed by that tab's mark and name. The head is the door to the tab and
+                // what sits under it is that tab at a glance. A tab with nothing to say yet has no
+                // section, rather than a heading over an empty space — except گزارش, whose quiet
+                // start is the thing to do on a ledger that has nothing in it.
                 val story = state.story
-                // The month as its own card — the cash-flow report's opening paragraph, and the
-                // door to the rest of it. Nothing recorded yet is not a status but a thing to
-                // do, so that case gets the quiet-start card instead.
-                if (story.month.transactions > 0) {
-                    item(key = "month") {
-                        Box(Modifier.padding(edge).padding(top = Space.xl)) {
-                            MonthFlow(story, onOpen = { openReport(ReportMode.CASH_FLOW) })
-                        }
-                    }
-                } else {
-                    item(key = "flow") {
-                        Box(Modifier.padding(edge).padding(top = Space.xl)) {
-                            QuietStart(state.readsBanks)
+                val waiting = state.ledger.review.size
+
+                // دفتر: the newest rows, and the review queue on the head's line — the pill دفتر's
+                // own title line carries, opening the same deck.
+                if (recent.isNotEmpty()) {
+                    item(key = "tab_ledger") {
+                        Column(Modifier.padding(edge).padding(top = Space.xxl)) {
+                            TabSectionHead(Tab.LEDGER, onOpen = { tab = Tab.LEDGER }) {
+                                if (waiting > 0) ReviewPill(waiting) { deck = true }
+                            }
+                            RecentActivity(recent, onOpen = { transactionRef = it.txn.ref })
                         }
                     }
                 }
-                // Side by side, and each without its «why»: this is the glance surface, and the
-                // sentence behind the sentence is on the report where there is room to read it.
-                // A lone card of the two still takes the whole row.
-                if (story.headline != null || story.attention != null) {
-                    item(key = "story") {
-                        Row(
-                            Modifier
-                                .padding(edge)
-                                .padding(top = Space.m)
-                                .height(IntrinsicSize.Min),
-                            horizontalArrangement = Arrangement.spacedBy(Space.m),
-                        ) {
-                            story.headline?.let {
-                                InsightCard(it, Modifier.weight(1f).fillMaxHeight())
-                            }
-                            story.attention?.let {
-                                // This one leaves the screen, so it says where it goes — and where
-                                // it goes depends on what is asking. A button reading «دفتر رو باز
-                                // کن» under a line about a budget is a button that lies.
-                                val cheque = story.attentionCheque != null
-                                val budget = !cheque && story.attentionBudget != null
-                                val plan = !cheque && !budget && story.attentionInstallment != null
-                                InsightCard(
-                                    it,
-                                    Modifier.weight(1f).fillMaxHeight(),
-                                    action = when {
-                                        cheque -> "چک‌ها رو باز کن"
-                                        budget -> "بودجه رو باز کن"
-                                        plan -> "قسط‌ها رو باز کن"
-                                        else -> "دفتر رو باز کن"
-                                    },
-                                    onAction = { tab = if (cheque || budget || plan) Tab.BUDGET else Tab.LEDGER },
+                // آینده: what falls due soon, with the warnings آینده's own cards carry, and the caps
+                // furthest along. The one thing asking for her used to be a card of its own here;
+                // now it is the row it is about, said in that row.
+                if (due.isNotEmpty() || state.ledger.budgets.isNotEmpty()) {
+                    item(key = "tab_future") {
+                        Column(Modifier.padding(edge).padding(top = Space.xxl)) {
+                            TabSectionHead(Tab.BUDGET, onOpen = { tab = Tab.BUDGET })
+                            FutureSummary(due, state.ledger.budgets, onOpen = { tab = Tab.BUDGET })
+                        }
+                    }
+                }
+                // دارایی: the total against the dollar, and what it is made of — with what its
+                // Toman share cost. The cards open the asset report, where both are drawn in full.
+                if (lens != null || composition.size > 1) {
+                    item(key = "tab_assets") {
+                        Column(Modifier.padding(edge).padding(top = Space.xxl)) {
+                            TabSectionHead(Tab.ASSETS, onOpen = { tab = Tab.ASSETS })
+                            Spacer(Modifier.height(Space.s))
+                            lens?.let { DollarLensCard(it, onOpen = { openReport(ReportMode.ASSETS) }) }
+                            if (composition.size > 1) {
+                                if (lens != null) Spacer(Modifier.height(Space.m))
+                                WhereMoneyIs(
+                                    composition,
+                                    onOpen = { openReport(ReportMode.ASSETS) },
+                                    lens = lens,
+                                    usdNow = effective["usd"],
                                 )
                             }
+                        }
+                    }
+                }
+                // گزارش: the month — the cash-flow report's opening paragraph and the door to the rest
+                // of it — and the one sentence worth leading with, its «why» left to the report.
+                // Nothing recorded yet is not a status but a thing to do: the quiet start.
+                item(key = "tab_report") {
+                    Column(Modifier.padding(edge).padding(top = Space.xxl)) {
+                        TabSectionHead(Tab.REPORT, onOpen = { openReport(ReportMode.CASH_FLOW) })
+                        Spacer(Modifier.height(Space.s))
+                        if (story.month.transactions > 0) {
+                            MonthFlow(story, onOpen = { openReport(ReportMode.CASH_FLOW) })
+                        } else {
+                            QuietStart(state.readsBanks)
+                        }
+                        story.headline?.let {
+                            Spacer(Modifier.height(Space.m))
+                            InsightCard(it)
                         }
                     }
                 }
@@ -1387,7 +1441,7 @@ private fun AppScreens(
     }
 
     // At this level rather than inside دفتر: the sheet opens from the ledger's own header and
-    // from the action row on خانه — paying cash at the till is not a moment she is standing in
+    // from the pill on خانه's greeting row — paying cash at the till is not a moment she is standing in
     // any particular tab for — and either way its row lands in the same book.
     if (addingTxn) {
         ManualTxnSheet(

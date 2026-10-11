@@ -1216,4 +1216,41 @@ class ReportsTest {
         val food = categoryWindow(rows, "خوراک", income = false, range, sideRial = 0L)
         assertTrue(food.breakdown.isEmpty())
     }
+
+    private fun at(e: LedgerEntry, hour: Int) = e.copy(txn = e.txn.copy(at = e.txn.at + hour * 3_600_000L))
+
+    @Test
+    fun `the rhythm counts purchases per weekday occurrence, over the report's own window`() {
+        // A whole quarter ending on a جمعه, one purchase every noon and two more every پنج‌شنبه evening.
+        val range = ReportRange(ReportMonth(1405, 4), ReportMonth(1405, 6))
+        val today = range.endDay - 1
+        val rows = (range.startDay..today).flatMap { day ->
+            listOf(at(entry(day, -10_000), 12)) +
+                if (day - weekStart(day) == 5L) listOf(at(entry(day, -10_000), 19), at(entry(day, -10_000), 20)) else emptyList()
+        }
+        val r = spendRhythm(rows, range, today, mineId = "")!!
+        assertEquals(5, r.busiestDay)
+        assertEquals(3.0, r.dayRatio, 1e-9)
+        assertEquals(4, r.busiestBlock) // 12:00–15:00, every day
+        assertEquals(2.0, r.grid[5][6], 1e-9) // two per پنج‌شنبه in 18:00–21:00
+        // A lent sum is no purchase unless the switch counts it, and a week is no habit.
+        assertNull(spendRhythm(rows.map { it.copy(categoryId = CAT_LOAN) }, range, today, ""))
+        assertNull(spendRhythm(rows, weekRange(weekStart(today)), today, ""))
+    }
+
+    @Test
+    fun `income in dollars is the month against the mean of the ones before it, each at its own rate`() {
+        val mehr = ReportMonth(1405, 7)
+        val months = (4 downTo 0).map { mehr.back(it) } // خرداد … مهر
+        // 40M Toman a month for four months at 100k a dollar ($400), then 44M in مهر at 110k ($400).
+        val rows = months.map { m -> entry(m.startDay + 2, if (m == mehr) 440_000_000L else 400_000_000L) }
+        val rates = months.associate { m -> (m.startDay + 2) to if (m == mehr) 110_000.0 else 100_000.0 }
+        val line = incomeInDollars(rows, mehr, rates)!!
+        assertEquals("درآمد مهر ۴۰۰ دلار بود؛ مثل میانگین ۴ ماه قبلش.", line.text)
+        // The raise the Toman figure shows, read against a dollar that moved more.
+        val worse = rates + ((mehr.startDay + 2) to 125_000.0)
+        assertTrue(incomeInDollars(rows, mehr, worse)!!.text.endsWith("۱۲٪ کمتر از میانگین ۴ ماه قبلش."))
+        // One earlier month is no mean to compare against.
+        assertNull(incomeInDollars(rows.takeLast(2), mehr, rates))
+    }
 }

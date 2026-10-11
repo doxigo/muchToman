@@ -106,6 +106,46 @@ fun chequeWarningFa(
 
 // ─────────────────────────── on home ───────────────────────────
 
+/** One thing آینده has falling due soon, as خانه's آینده section lists it. */
+data class DueItem(
+    val title: String,
+    val day: Long,
+    val rial: Long,
+    /** The bank a cheque draws on, for its logo; null for a plan's payment. */
+    val bank: String?,
+    /** The sentence that needs her — a cheque its account cannot cover, a payment behind — or null. */
+    val warning: String?,
+)
+
+/**
+ * What falls due in the next [days], soonest first: every open cheque, and the first unpaid
+ * payment of every plan — one already behind sorts first of all, its day having passed, and is
+ * stated at what is behind rather than at one payment.
+ *
+ * A cheque's warning is [chequeWarningFa]'s own on the reminder's window, so خانه and the cheque's
+ * card say the same thing about the same account.
+ */
+fun dueSoon(
+    cheques: List<Goal>,
+    installments: List<InstallmentProgress>,
+    accounts: List<BankAccount>,
+    today: Long,
+    daysBefore: Int,
+    days: Int = 14,
+): List<DueItem> {
+    val open = cheques.filter { it.endsOn == null }
+    val owed = open.filter { it.startsOn <= today + days }.map {
+        DueItem(chequeTitleFa(it), it.startsOn, it.targetRial, it.categoryId, chequeWarningFa(it, open, accounts, today, daysBefore))
+    }
+    val payments = installments.mapNotNull { p ->
+        val due = p.nextDue?.takeIf { !p.done && it <= today + days } ?: return@mapNotNull null
+        val behind = p.overdueRial > 0L
+        DueItem(p.plan.nameFa, due, if (behind) p.overdueRial else p.plan.targetRial, null, "عقب افتاده".takeIf { behind })
+    }
+    return (owed + payments).sortedBy { it.day }
+}
+
+
 /** The cheque worth home's attention card: inside the window, one the account cannot cover first. */
 fun pressingCheque(open: List<Goal>, accounts: List<BankAccount>, today: Long, daysBefore: Int): Goal? {
     val near = open.filter { it.startsOn - today <= daysBefore.coerceAtLeast(0) }

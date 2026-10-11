@@ -89,7 +89,9 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
 - **One title line for the root tabs.** دفتر, دارایی, آینده and گزارش‌ها set `ScreenTitle` on
   the same 48dp row 12dp under the status bar (`.title-line` / `.screen-head` on the PWA), so the
   title stays put as she moves between tabs; a room that writes something puts its add pill
-  (`TitleAddButton`: «+ تراکنش», «+ دارایی») on that row. خانه alone opens on her greeting.
+  (`TitleAddButton`: «+ تراکنش», «+ دارایی») on that row. خانه alone opens on her greeting, and
+  it writes one thing, on the same terms: «+ تراکنش» at the end of the greeting row, because
+  cash paid at the till belongs to no tab. Not in the lite edition, which keeps no ledger.
 - The **hero is a card**, not a field: floats on the paper under خانه's greeting top bar or
   دارایی's title line, all corners `Radius.hero`. Transaction and deck pages reuse it via
   `HeroPanel` (it takes the glass inset and gutter itself).
@@ -119,8 +121,53 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
   refresh on خانه, دارایی and دفتر is the gesture for the same act. The PWA has no pull, so the
   line is its only control.
 - **Action circles** (`ActionCircle`): 56dp `primaryContainer` discs with labels, fixed
-  108dp cells clustered to the centre — same rhythm at any count: two on خانه («اضافه کردن»,
-  «تراکنش دستی»). دارایی has none; the lite edition has «اضافه کردن» and «گزارش».
+  108dp cells clustered to the centre — same rhythm at any count. Only where a page has no title
+  line to hold its verbs: the lite edition's one screen («اضافه کردن», «گزارش»), and خانه before
+  she holds anything («اضافه کردن دارایی», named in full beside «+ تراکنش»). Otherwise خانه is a
+  reading with no circles, and دارایی has none.
+- **خانه is the app's index: one section per tab, in the bar's order.** Under the hero, دفتر,
+  آینده, دارایی and گزارش each get a section headed by `TabSectionHead` (`.tab-section-head`): the
+  tab's own glyph from the bar (`TabGlyph`), its name at 18sp ExtraBold — a size over the cards
+  inside — and the chevron, the three one door to that tab. A tab with nothing to say has no
+  section, except گزارش, whose quiet start is the thing to do on an empty ledger. Sections are
+  `Space.xxl` apart; the head sits `Space.s` over its first card, cards `Space.m` apart.
+  - **دفتر**: the newest four rows on the paper under plain day names (never a day total — four
+    rows are not a whole day), and دفتر's own review pill on the head's line, opening the deck.
+  - **آینده**: what falls due in two weeks (or the reminder's window, if longer) — cheques with
+    their bank's logo, each plan's next payment — with the cheque card's own warning in ink under
+    the name and the countdown in amber beside the figure, bold `error` once past; then the three
+    caps furthest along, each with the budget card's own sentence under its bar
+    (`budgetNoteFa`), so amber is never colour alone. This is where the old attention card went:
+    the thing asking for her is said in the row it is about.
+  - **دارایی**: «به دلار» (the change pill's 30 days in Toman against the dollar's rate over the
+    same days, and what that leaves in dollars) and «پولت کجاست» (the composition, largest first,
+    led by the Toman share and what that Toman would have bought at the dollar of 30 days ago, in
+    the report's `barTint`). Both open the asset report.
+  - **گزارش**: «این ماه» (income and spending, their bar, the three biggest spending categories as
+    the report's own `CategoryShare` rows) and the one headline sentence under it.
+
+  Every card is one make (`HomeCard`, `.home-card`): `surfaceVariant`, `Radius.card`, a 15sp
+  ExtraBold title with the chevron, the whole card the door, and one spoken sentence for all of
+  it. A card that answers leads with the answer (`LeadFigure`: the figure at 26sp, its sentence a
+  step down beside it), then the evidence. Tracks on these cards are the paper (`background`).
+- **What the reports leave out is a setting.** «کنار گذاشته از گزارش‌ها» is a row in تنظیمات's
+  «دفترت» band, opening the choice (`ExcludeSheet`); the set governs دخل و خرج, خانه's month,
+  the runway and the rhythm, and the household shares it. The report keeps the honesty half: a
+  line naming what it is not counting, which is the door to that row (it opens تنظیمات onto the
+  choice). With nothing left out there is no line.
+- **«ریتم خرج» lives in دخل و خرج, not on خانه**, after the categories, the members and the
+  exclusions: her own purchases by weekday and three-hour block over the report's window,
+  counted rather than summed (by Toman the rent's one morning would be her busiest hour), one
+  finding on top and the grid under it, hours left to right, empty blocks `surfaceVariant`. A
+  habit barely moves from one day to the next, so it is a thing to read rather than to glance
+  at; under four watched weeks or thirty purchases (every «۱ هفته») it is absent.
+- **Income in dollars is the report's too**: «ماه به ماه» carries the asset chart's «تومان / دلار»
+  `PillToggle` on its heading line (the key drops to the line under it), offered once two
+  columns have a recorded rate. In dollars every column is read at its own window's recorded
+  rate and the current one at today's; a column with no rate has no bar, and a line under the
+  chart says so. The sentence is an insight card: the newest finished month's «درآمد» in dollars
+  against the mean of up to five before it (`incomeInDollars`), the mean because income is
+  lumpy.
 - **A row on آینده leads with what it is**: a budget with its category's disc, a cheque with
   the logo of the bank it draws on (`BankLogo`, 36dp, the disc's slot). Goals and installments
   have no such mark and lead with their name. A cheque's caution follows the budget's: the

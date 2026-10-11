@@ -222,6 +222,41 @@ export function changeAcross(points: Array<[number, number]>): Change | null {
 }
 
 /**
+ * Her total against the dollar over one window, in percent: what the Toman figure did, what the
+ * dollar's rate did, and what that leaves her with in dollars. In Toman the total climbs with
+ * inflation almost whatever she does; the rate's own move beside it says whether she is richer.
+ */
+export interface DollarLens { wealth: number; dollar: number; real: number; sinceDay: number }
+
+/**
+ * From changeOver's own day, so «دارایی‌ات» states the change pill's figure. Null when that day has
+ * no recorded rate — a neighbour's would be the re-pricing usdHistory refuses. Data.kt dollarLens.
+ */
+export function dollarLens(history: Record<string, number>, rateHistory: Record<string, number>, today: number,
+  current: number, usdNow: number | null | undefined, windowDays = 30): DollarLens | null {
+  if (usdNow == null || !(usdNow > 0) || !Number.isFinite(usdNow) || !(current > 0)) return null;
+  const day = changeOver(history, today, windowDays, current)?.sinceDay;
+  if (day == null) return null;
+  const base = history[day];
+  const rate = rateHistory[day];
+  if (!(base > 0) || !(rate > 0) || !Number.isFinite(rate)) return null;
+  return {
+    wealth: (current / base - 1) * 100,
+    dollar: (usdNow / rate - 1) * 100,
+    real: ((current / usdNow) / (base / rate) - 1) * 100,
+    sinceDay: day,
+  };
+}
+
+/**
+ * What the Toman she holds today lost against the dollar over the lens's window, in dollars: today's
+ * balance read at two rates, so it claims nothing about what she held then. Negative when the
+ * dollar fell. Data.kt heldTomanCostUsd.
+ */
+export const heldTomanCostUsd = (lens: DollarLens, toman: number, usdNow: number): number =>
+  toman / usdNow * lens.dollar / 100;
+
+/**
  * Overrides over fetched rates, and rate 1 pinned on top of both for Toman, the bank balances
  * and what she values herself: none of them may be "corrected" to anything else.
  */

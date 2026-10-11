@@ -9,7 +9,7 @@ import { jalaliDay, jalaliMonthLength, weekStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
 import {
   REPORT_SPANS, ReportMonth, ReportRange, ReportSpan, availableReportMonths, bufferDays, buildCashFlow, buildStory,
-  categoryWindow, chartWindow, memberShares, memberWindow, monthReport, narrate, periodReport, quietWins, weekRange,
+  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, periodReport, quietWins, spendRhythm, weekRange,
 } from '../src/reports';
 import type { PeriodReport } from '../src/reports';
 import { entry as row } from './plans-fixture';
@@ -773,5 +773,39 @@ describe('reports', () => {
     expect(spent.breakdown.reduce((s, [, rial]) => s + rial, 0)).toBe(spent.totalRial);
     expect(memberWindow(rows, amir, true, range, amir.incomeRial).breakdown).toEqual([['حقوق', 50_000_000]]);
     expect(categoryWindow(rows, 'خوراک', false, range, 0).breakdown).toEqual([]);
+  });
+});
+
+describe('spend rhythm (ReportsTest.kt)', () => {
+  const at = (e: LedgerEntry, hour: number): LedgerEntry => ({ ...e, txn: { ...e.txn, at: e.txn.at + hour * 3_600_000 } });
+  it("counts purchases per weekday occurrence, over the report's own window", () => {
+    const range = new ReportRange(new ReportMonth(1405, 4), new ReportMonth(1405, 6));
+    const today = range.endDay - 1;
+    const rows: LedgerEntry[] = [];
+    for (let day = range.startDay; day <= today; day++) {
+      rows.push(at(entry(day, -10_000), 12));
+      if (day - weekStart(day) === 5) rows.push(at(entry(day, -10_000), 19), at(entry(day, -10_000), 20));
+    }
+    const r = spendRhythm(rows, range, today, '')!;
+    expect(r.busiestDay).toBe(5);
+    expect(r.dayRatio).toBeCloseTo(3, 9);
+    expect(r.busiestBlock).toBe(4);
+    expect(r.grid[5][6]).toBeCloseTo(2, 9);
+    // A lent sum is no purchase unless the switch counts it, and a week is no habit.
+    expect(spendRhythm(rows.map((e) => ({ ...e, categoryId: CAT_LOAN })), range, today, '')).toBeNull();
+    expect(spendRhythm(rows, weekRange(weekStart(today)), today, '')).toBeNull();
+  });
+});
+
+describe('income in dollars (ReportsTest.kt)', () => {
+  it('is the month against the mean of the ones before it, each at its own rate', () => {
+    const mehr = new ReportMonth(1405, 7);
+    const months = [4, 3, 2, 1, 0].map((b) => mehr.back(b));
+    const rows = months.map((m) => entry(m.startDay + 2, m.equals(mehr) ? 440_000_000 : 400_000_000));
+    const rates: Record<number, number> = Object.fromEntries(months.map((m) => [m.startDay + 2, m.equals(mehr) ? 110_000 : 100_000]));
+    expect(incomeInDollars(rows, mehr, rates)!.text).toBe('درآمد مهر ۴۰۰ دلار بود؛ مثل میانگین ۴ ماه قبلش.');
+    const worse = { ...rates, [mehr.startDay + 2]: 125_000 };
+    expect(incomeInDollars(rows, mehr, worse)!.text.endsWith('۱۲٪ کمتر از میانگین ۴ ماه قبلش.')).toBe(true);
+    expect(incomeInDollars(rows.slice(-2), mehr, rates)).toBeNull();
   });
 });

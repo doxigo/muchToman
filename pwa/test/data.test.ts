@@ -10,7 +10,7 @@ import {
   effectiveRates, fetchRates, fetchWalletBalance, isWalletAddressFormatValid, isWalletBalanceValid,
   isWalletContractFormatValid, listHoldings, mergeRates, nameOr, rebaseHistory, recordDay, refreshWallets,
   reinstateHolding, removeHolding, sanitizeRates, setExcluded, setHolding, setLabel, setOverride, snapshotDay,
-  snapshotHistory, walletErrorMessage, wealthStatus, timeoutSignal, usdHistory, changeAcross,
+  snapshotHistory, walletErrorMessage, wealthStatus, timeoutSignal, usdHistory, changeAcross, dollarLens, heldTomanCostUsd,
 } from '../src/data';
 import type { Totals } from '../src/data';
 import { DAY_MS } from '../src/jalali';
@@ -146,6 +146,26 @@ describe('history', () => {
     // One day with both is no line.
     expect(changeAcross(usdHistory(history, { 95: 20 }))).toBeNull();
     expect(changeAcross(usdHistory(history, {}))).toBeNull();
+  });
+});
+
+describe('dollar lens (DollarLensTest)', () => {
+  it('toman up, dollar up more, so she is poorer in dollars', () => {
+    // Day 70: 100 Toman at 10 a dollar = $10. Today: 108 Toman at 12 a dollar = $9.
+    const lens = dollarLens({ 65: 90, 70: 100 }, { 70: 10 }, 100, 108, 12)!;
+    expect(lens.sinceDay).toBe(70);
+    expect(lens.wealth).toBeCloseTo(8, 9);
+    expect(lens.dollar).toBeCloseTo(20, 9);
+    expect(lens.real).toBeCloseTo(-10, 9);
+  });
+  it('no rate on the base day is no card, never a neighbour\'s rate', () => {
+    expect(dollarLens({ 70: 100 }, { 69: 10, 71: 10 }, 100, 108, 12)).toBeNull();
+    expect(dollarLens({ 70: 100 }, { 70: 10 }, 100, 108, null)).toBeNull();
+    expect(dollarLens({ 90: 100 }, { 90: 10 }, 100, 108, 12)).toBeNull();
+  });
+  it("the held toman's cost reads today's balance at two rates", () => {
+    const lens = { wealth: 0, dollar: 10, real: 0, sinceDay: 0 };
+    expect(heldTomanCostUsd(lens, 100_000_000, 110_000)).toBeCloseTo(1000 - 100_000_000 / 110_000, 6);
   });
 });
 

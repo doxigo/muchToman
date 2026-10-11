@@ -220,7 +220,7 @@ internal enum class LedgerLens(val fa: String, val emptyFa: String) {
  * first moment she can be looking at a stale «امروز».
  */
 @Composable
-private fun rememberTehranDay(): Long {
+internal fun rememberTehranDay(): Long {
     var day by remember { mutableStateOf(tehranDay(System.currentTimeMillis())) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -934,7 +934,7 @@ private fun DayHeading(
  * gives the day bands the top of the list back.
  */
 @Composable
-private fun ReviewPill(waiting: Int, onReview: () -> Unit) {
+internal fun ReviewPill(waiting: Int, onReview: () -> Unit) {
     // The title line's own 48dp family — [TitleAddButton]'s pill, the paste and search discs — in
     // the CTA fill, rather than a 44dp PillButton sitting a size short of its neighbours.
     Box(

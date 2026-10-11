@@ -954,6 +954,8 @@ data class CashFlowReport(
      */
     val canGoBack: Boolean,
     val canGoForward: Boolean,
+    /** When in the week she buys, over this window — see [spendRhythm]. Null on a short one. */
+    val rhythm: SpendRhythm? = null,
 ) {
     val range: ReportRange get() = period.range
 }
@@ -974,6 +976,10 @@ fun buildCashFlow(
      * caller that thinks in months keeps working unchanged; null anchors the week at [today].
      */
     anchorDay: Long? = null,
+    /** This phone's member, so the rhythm is her own purchases — see [spendRhythm]. */
+    mineId: String = "",
+    /** The recorded dollar rates, for the income-in-dollars line — see [incomeInDollars]. */
+    rateHistory: Map<Long, Double> = emptyMap(),
 ): CashFlowReport {
     if (span == ReportSpan.WEEK) {
         return buildWeekly(entries, liquidRial, today, anchorDay, countPassThrough, excluded)
@@ -1021,7 +1027,10 @@ fun buildCashFlow(
         // against the ones around it; the window's own length once it is longer than that.
         series = chartWindow(available, month, maxOf(use.months, 6))
             .map { monthReport(entries, it, countPassThrough, excluded) },
-        insights = narrate(report, had, entries, buffer, current),
+        insights = narrate(report, had, entries, buffer, current) + listOfNotNull(
+            // The newest finished month: the one she is standing in is still arriving.
+            incomeInDollars(entries, if (current) month.previous() else month, rateHistory, countPassThrough, excluded),
+        ),
         wins = quietWins(report, had, buffer, current),
         members = memberShares(entries, range, countPassThrough, excluded),
         bufferDays = buffer,
@@ -1029,8 +1038,117 @@ fun buildCashFlow(
         today = today,
         canGoBack = month > available.first(),
         canGoForward = month < available.last(),
+        rhythm = spendRhythm(entries, range, today, mineId, excluded, countPassThrough),
     )
 }
+
+/**
+ * Her income in dollars: [month] against the mean of up to five months before it, each read at
+ * its own month's recorded rate, so a closed month keeps the dollars it was worth.
+ *
+ * In Toman an income only climbs; in dollars it says whether it kept up. The mean, not the oldest
+ * month, because income is lumpy — an عیدی doubles اسفند — and one odd month must not decide the
+ * sentence. Through the report's own gates, so the figure is the «درآمد» the report states, in
+ * dollars. Null without a rate for [month] or two earlier months to compare it with.
+ */
+fun incomeInDollars(
+    entries: List<LedgerEntry>,
+    month: ReportMonth,
+    rateHistory: Map<Long, Double>,
+    countPassThrough: Boolean = false,
+    excluded: Set<String> = emptySet(),
+): Insight? {
+    fun usd(m: ReportMonth): Double? {
+        val income = monthReport(entries, m, countPassThrough, excluded).incomeRial
+        val rate = ReportRange(m, m).usdRate(rateHistory) ?: return null
+        return if (income > 0L) tomanOf(income) / rate else null
+    }
+    val now = usd(month) ?: return null
+    val before = (1..5).mapNotNull { usd(month.back(it)) }
+    if (before.size < 2) return null
+    val change = now / before.average() - 1
+    val name = MONTHS[month.month - 1]
+    val against = "میانگین ${faNumber(before.size.toDouble())} ماه قبلش"
+    return Insight(
+        text = "درآمد $name ${faRate(now)} دلار بود؛ " + when {
+            abs(change) < 0.01 -> "مثل $against."
+            change > 0 -> "${faPercent(change)}٪ بیشتر از $against."
+            else -> "${faPercent(-change)}٪ کمتر از $against."
+        },
+        why = "هر ماه با نرخ دلار همون ماه حساب شده؛ پولی که بین حساب‌های خودت جابه‌جا کردی، حساب نشده.",
+        refs = spendable(entries)
+            .filter { it.txn.day in month.startDay until month.endDay && (it.txn.signedRial ?: 0L) > 0L }
+            .map { it.txn.ref },
+        // A raise the dollar did not eat is worth marking; a fall is a reading, not a task.
+        tone = if (change > 0.05) Insight.Tone.GOOD else Insight.Tone.NEUTRAL,
+    )
+}
+
+/**
+ * When she buys, over a window: purchases per weekday and three-hour block.
+ *
+ * Counted, not summed. The rent and the instalment land on one morning a month, and by Toman they
+ * would paint that morning as her busiest hour of the week; by count the grid is her habits —
+ * the Thursday-night groceries, the lunchtime coffees. [grid] is purchases per occurrence of the
+ * weekday, so a window that holds one more Saturday than Friday does not tilt the week.
+ */
+data class SpendRhythm(
+    /** Seven rows, شنبه first; eight blocks of three hours each, midnight first. */
+    val grid: List<List<Double>>,
+    /** The weekday with the most purchases per occurrence, 0 = شنبه. */
+    val busiestDay: Int,
+    /** That weekday's rate over the mean of the other six — «۱٫۸ برابر». */
+    val dayRatio: Double,
+    /** The three-hour block with the most purchases across the week, 0 = midnight to three. */
+    val busiestBlock: Int,
+)
+
+/**
+ * The report's own window, through the gates every figure on it walks: the exclusions, and the
+ * قرض و همسر switch — lending is not a purchase unless she has asked for it to be counted as one.
+ * Her own rows only ([scopedTo]): a household's purchases are several people's habits in one
+ * grid, and the sentence over it says «تو».
+ *
+ * Null under four watched weeks or thirty purchases — a single busy Thursday would be stated as a
+ * habit. So «۱ هفته» never has one, and a month only once it is mostly lived.
+ */
+fun spendRhythm(
+    entries: List<LedgerEntry>,
+    range: ReportRange,
+    today: Long,
+    mineId: String,
+    excluded: Set<String> = emptySet(),
+    countPassThrough: Boolean = false,
+): SpendRhythm? {
+    // From the ledger's first row, not its first purchase: days she bought nothing are days watched.
+    val from = maxOf(range.startDay, entries.minOfOrNull { it.txn.day } ?: today)
+    val to = minOf(range.endDay - 1, today)
+    if (to - from + 1 < 28) return null
+    val bought = scopedTo(spendableRows(entries), mineId, shared = false).filter {
+        it.txn.day in from..to && (it.txn.signedRial ?: 0L) < 0L && it.txn.at > 0L &&
+            it.categoryId !in excluded && (countPassThrough || it.categoryId !in PASS_THROUGH_CATEGORIES)
+    }
+    if (bought.size < 30) return null
+    val occurs = IntArray(7)
+    for (day in from..to) occurs[weekdayOf(day)]++
+    val counts = Array(7) { IntArray(8) }
+    for (row in bought) {
+        val hour = Math.floorMod(row.txn.at + TEHRAN_OFFSET_MS, DAY_MS) / 3_600_000L
+        counts[weekdayOf(row.txn.day)][(hour / 3).toInt()]++
+    }
+    val grid = (0 until 7).map { d -> (0 until 8).map { b -> counts[d][b].toDouble() / occurs[d].coerceAtLeast(1) } }
+    val perDay = grid.map { it.sum() }
+    val busiest = perDay.indices.maxBy { perDay[it] }
+    val others = perDay.filterIndexed { i, _ -> i != busiest }.average()
+    return SpendRhythm(
+        grid = grid,
+        busiestDay = busiest,
+        dayRatio = if (others > 0.0) perDay[busiest] / others else 0.0,
+        busiestBlock = (0 until 8).maxBy { b -> (0 until 7).sumOf { counts[it][b] } },
+    )
+}
+
+private fun weekdayOf(day: Long): Int = (day - weekStart(day)).toInt()
 
 /** How many weeks the weekly chart lines up — the same six the month chart draws. */
 private const val WEEK_BARS = 6

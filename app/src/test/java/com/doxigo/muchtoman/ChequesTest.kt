@@ -3,6 +3,7 @@ package com.doxigo.muchtoman
 import androidx.compose.ui.text.AnnotatedString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** «چک‌ها»: the warning in words, the reminder's once-per-date, and the date as she types it. */
@@ -117,5 +118,22 @@ class ChequesTest {
         assertEquals(listOf(4, 4, 6, 6, 8), listOf(4, 5, 7, 8, 10).map(drawn.offsetMapping::transformedToOriginal))
         // Never a trailing separator.
         assertEquals("۱۴۰۵", digitsMask('/', 4, 6).filter(AnnotatedString("1405")).text.text)
+    }
+
+    @Test
+    fun `home's due list is the soonest first, with the cheque card's own warning`() {
+        val soon = cheque(id = "soon", day = due - 1, name = "قسط ماشین", rial = 10_000_000)
+        val later = cheque(id = "later", day = due + 5)
+        val tooFar = cheque(id = "far", day = due + 40)
+        val cheques = listOf(later, tooFar, soon)
+        val list = dueSoon(cheques, emptyList(), listOf(mellat), today = due - 2, daysBefore = 3)
+        assertEquals(listOf(soon.startsOn, later.startsOn), list.map { it.day })
+        assertEquals("MELLAT", list[0].bank)
+        assertNull(list[0].warning) // a million Toman, covered by the thirty in the account
+        assertNull(list[1].warning) // a week off, outside a three-day reminder
+        // Inside the window, the card's own sentence: fifty million and the earlier one, against thirty.
+        val warned = dueSoon(cheques, emptyList(), listOf(mellat), today = due - 2, daysBefore = 10)[1].warning
+        assertEquals(chequeWarningFa(later, cheques, listOf(mellat), due - 2, 10), warned)
+        assertTrue(warned != null)
     }
 }

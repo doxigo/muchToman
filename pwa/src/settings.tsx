@@ -187,6 +187,8 @@ function SettingsIndex() {
   useData();
   const family = useFamily();
   const name = pref('name').trim();
+  const excluded = pref('reportExcluded');
+  const excludedCount = ledger().categories.filter((c) => excluded.includes(c.id)).length;
   return (
     // «برگشت», not «ذخیره»: every setting here commits the moment it is touched.
     <Screen title="تنظیمات" back tabs={false}>
@@ -202,6 +204,11 @@ function SettingsIndex() {
       <Band>
         <IndexRow title="پیامک‌های بانک" onClick={() => openRoom('SMS')} mark={<Glyph glyph="ENVELOPE" />} />
         <IndexRow title="دسته‌بندی‌ها" onClick={() => openPage('categories')} mark={<Glyph glyph="TAG" />} />
+        {/* Beside the categories it is a choice about: which of them the reports, and خانه's month,
+            leave out. It governs more than one screen and changes a few times a year, so it is a
+            setting; the report still says, in a line of its own, what it leaves out (Settings.kt). */}
+        <IndexRow title="کنار گذاشته از گزارش‌ها" value={excludedCount > 0 ? `${faNumber(excludedCount)} دسته` : 'هیچ‌کدوم'}
+          onClick={() => openSheet('exclude')} mark={<Glyph glyph="CHART" />} />
         {/* No value until there is a household: an unpaired browser is simply somebody's own book. */}
         <IndexRow title="خانواده" value={family.paired ? `${faNumber(family.members.length)} عضو` : null}
           onClick={() => openPage('family')} mark={<Glyph glyph="HOUSE" />} />

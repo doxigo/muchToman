@@ -3,7 +3,8 @@
  * the total on خانه and the holdings banded by kind on دارایی.
  *
  * On خانه: her, above the money; the answer as the one deep-green object on the page; the verbs
- * she might reach for next, right under the number that prompts them; then how the month is going.
+ * she might reach for next, right under the number that prompts them; then how the month is going
+ * and its newest rows, and last the total against the dollar and what it is made of.
  * On دارایی: the title line with its add pill, the compact hero, then what she owns. The sheets
  * behind the list are in homeSheets.tsx.
  *
@@ -11,30 +12,39 @@
  * the total is the labelled control either way), the APK update card, and the stocks refresh the
  * picker kicks.
  */
+import type { ComponentChildren } from 'preact';
 import { useMemo } from 'preact/hooks';
-import { ActIcon } from './categoryIcon';
-import { BANK_ID, KIND_FA, holdingsByKind, resolveType, valuedInToman } from './catalog';
-import type { AssetType } from './catalog';
-import { changeOver, computeTotals, backupReminderDue, currentEffective, currentList, nameOr, refreshAll, useWealthStatus } from './data';
-import type { Change, Totals } from './data';
+import { ActIcon, CategoryIcon, categoryHue, customGlyphs, glyphOf } from './categoryIcon';
+import type { CategoryGlyph } from './categoryIcon';
+import { BANK_ID, KIND_FA, compositionByKind, holdingsByKind, resolveType, valuedInToman } from './catalog';
+import type { AssetType, Kind } from './catalog';
+import { changeOver, computeTotals, backupReminderDue, currentEffective, currentList, dollarLens, heldTomanCostUsd, nameOr, refreshAll, useWealthStatus } from './data';
+import type { Change, DollarLens, Totals } from './data';
 import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { familyAssetViews, setFamilyTotal, useFamily } from './family';
 import type { FamilyAssetView } from './family';
-import { bidi, faAgo, faCompact, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf, moneyUnit, shownOf } from './format';
+import { bidi, faAgo, faCompact, faDay, faDecimal, faHeld, faNumber, faRate, faUsd, faWordsToman, tomanOf, usdOf, moneyUnit, shownOf } from './format';
 import { Chevron, PersonMark, PlusMark, TabIcon, TrendCaret } from './icons';
+import type { TabId } from './icons';
 import { DAY_MS, tehranDay } from './jalali';
 import { holdingKey } from './model';
-import type { Coin, Holding, WalletLink } from './model';
+import type { Coin, Holding, LedgerEntry, WalletLink } from './model';
 import { openPage, openReport, openSheet, registerTab, selectTab } from './nav';
 import { readPlans } from './plans';
+import { BudgetLevel, budgetNoteFa } from './budget';
+import type { BudgetProgress } from './budget';
+import { chequeWhenFa, dueSoon } from './cheques';
+import type { DueItem } from './cheques';
+import { BankLogo } from './logos';
 import { buildStory } from './reports';
 import type { HomeStory } from './reports';
-import { InsightCard, QuietStart } from './report';
+import { BAR_TINT, CategoryShareRow, InsightCard, QuietStart, roundEven } from './report';
 import { pref, useData } from './state';
 import { ActionCircle, HeroPanel, PillToggle, ScreenTitle, Section, TitleAddButton } from './ui';
 import { AssetIcon, RowAmount, RowTitle, rateIn, useAutoSize, useNow } from './homeSheets';
 import { LoansHeroStrip } from './loansUi';
+import { TimelineRow, openTxn, useTehranDay } from './timeline';
 import './home.css';
 
 // ---- the list -----------------------------------------------------------------------------------
@@ -60,8 +70,12 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
           <TitleAddButton word="دارایی" label="اضافه کردن دارایی" onClick={() => openSheet('pickType')} />
         </div>
       ) : (
-        // Her, above the money: the greeting is the door to تنظیمات.
-        <HomeTopBar name={pref('name')} />
+        // Her, above the money: the greeting is the door to تنظیمات. خانه writes one thing, where every
+        // room does — the add pill at the end of its top line: cash paid at the till belongs to no tab.
+        <div class="home-top-line">
+          <HomeTopBar name={pref('name')} />
+          <TitleAddButton word="تراکنش" label="تراکنش دستی" onClick={() => openSheet('manualTxn')} />
+        </div>
       )}
 
       {backupReminderDue(pref('backupReminderEnabled'), pref('lastBackupAt'), Date.now()) && (
@@ -74,20 +88,18 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
 
       <HeroCard totals={totals} usdRate={rateIn(effective, 'usd')} portfolio={portfolio} familyAssets={familyAssets} />
 
-      {/* Real verbs only, fixed cells clustered to the centre so two circles never read as three with
-          one missing. Not under دارایی's compact header: its one verb is the pill beside the title. */}
-      {!portfolio && (
+      {/* خانه is a reading; its one verb is the greeting row's pill and the asset is دارایی's to add. The
+          circle stays only before she holds anything, where adding the first asset is the one thing the
+          page can ask for — named in full, since «اضافه کردن» beside «+ تراکنش» would not say what. */}
+      {!portfolio && list.length === 0 && (
         <div class="action-circles">
-          <ActionCircle label="اضافه کردن" icon={<PlusMark size={24} />} onClick={() => openSheet('pickType')} />
-          {/* Money no message will report, written down where she is standing. */}
-          <ActionCircle label="تراکنش دستی" icon={<TabIcon tab="LEDGER" />} onClick={() => openSheet('manualTxn')} />
-          {/* No «تازه کردن» circle: the freshness line on the card above is that control. */}
+          <ActionCircle label="اضافه کردن دارایی" icon={<PlusMark size={24} />} onClick={() => openSheet('pickType')} />
         </div>
       )}
 
       {!portfolio ? (
         <>
-          <Story view={view} />
+          <TabSections view={view} total={totals.toman} effective={effective} list={list} coins={coins} />
           {totals.missing.length > 0 && <MissingNote missing={totals.missing} coins={coins} />}
         </>
       ) : (
@@ -274,43 +286,158 @@ function ChangePill({ change, onClick }: { change: Change; onClick: () => void }
  * The month as its own card, then one good line and at most one thing asking for her — and then it
  * stops. Every figure comes out of buildStory, so what she reads and what the tests check agree.
  */
-function Story({ view }: { view: LedgerView }) {
+/**
+ * خانه as the app's index (Ui.kt's home list): under the total, one section per tab in the bar's own
+ * order, each headed by that tab's mark and name — the head is the door, what sits under it is the
+ * tab at a glance. A tab with nothing to say has no section, except گزارش, whose quiet start is the
+ * thing to do on an empty ledger.
+ */
+function TabSections({ view, total, effective, list, coins }: {
+  view: LedgerView; total: number; effective: Record<string, number>; list: Holding[]; coins: Coin[];
+}) {
   const reportExcluded = pref('reportExcluded');
   const installmentDays = pref('installmentReminder');
-  const story = useMemo<HomeStory>(() => {
-    const plans = readPlans(view.allEntries, view.entries);
-    return buildStory(view.entries, view.bankTotalRial, tehranDay(Date.now()), {
-      budgets: plans.budgets,
-      // The one gate دخل و خرج reads: قرض و همسر are its shipped default, not a mechanism of their own.
-      countPassThrough: true,
-      excluded: new Set(reportExcluded),
-      mineId: view.mineId,
-      installments: plans.installments,
-      installmentDays,
-      cheques: plans.cheques,
-      accounts: view.bankAccounts,
-    });
-  }, [view, reportExcluded, installmentDays]);
-  const cheque = story.attentionCheque != null;
-  const budget = !cheque && story.attentionBudget != null;
-  const plan = !cheque && !budget && story.attentionInstallment != null;
+  const plans = useMemo(() => readPlans(view.allEntries, view.entries), [view]);
+  const story = useMemo<HomeStory>(() => buildStory(view.entries, view.bankTotalRial, tehranDay(Date.now()), {
+    budgets: plans.budgets,
+    // The one gate دخل و خرج reads: قرض و همسر are its shipped default, not a mechanism of their own.
+    countPassThrough: true,
+    excluded: new Set(reportExcluded),
+    mineId: view.mineId,
+    installments: plans.installments,
+    installmentDays,
+    cheques: plans.cheques,
+    accounts: view.bankAccounts,
+  }), [view, plans, reportExcluded, installmentDays]);
+  // آینده's next two weeks — or the reminder's own window, where she has set a longer one.
+  const due = useMemo(() => dueSoon(plans.cheques, plans.installments, view.bankAccounts, tehranDay(Date.now()),
+    installmentDays, Math.max(14, installmentDays)), [plans, view, installmentDays]);
+  const recent = recentEntries(view.entries);
+  const waiting = view.review.length;
+  const history = pref('history');
+  const rateHistory = pref('rateHistory');
+  const usd = rateIn(effective, 'usd');
+  const lens = useMemo(() => dollarLens(history, rateHistory, Math.trunc(Date.now() / DAY_MS), total, usd),
+    [history, rateHistory, total, usd]);
+  const composition = compositionByKind(list, coins, effective);
   return (
     <>
-      {story.month.transactions > 0 ? <MonthFlow story={story} onOpen={() => openReport('CASH_FLOW')} />
-        : <div class="quiet-start"><QuietStart /></div>}
-      {(story.headline || story.attention) && (
-        // Side by side, each without its «why»: the sentence behind it is on the report.
-        <div class="story">
-          {story.headline && <InsightCard insight={story.headline} />}
-          {story.attention && (
-            // It leaves the screen, so it says where it goes — and that depends on what is asking.
-            <InsightCard insight={story.attention}
-              action={cheque ? 'چک‌ها رو باز کن' : budget ? 'بودجه رو باز کن' : plan ? 'قسط‌ها رو باز کن' : 'دفتر رو باز کن'}
-              onAction={() => selectTab(cheque || budget || plan ? 'BUDGET' : 'LEDGER')} />
-          )}
-        </div>
+      {/* دفتر: the newest rows, and the review queue on the head's line — دفتر's own pill, its own deck. */}
+      {recent.length > 0 && (
+        <section class="tab-section">
+          <TabSectionHead tab="LEDGER" onOpen={() => selectTab('LEDGER')}>
+            {waiting > 0 && <button type="button" class="pill primary ledger-pill" onClick={() => openPage('deck')}>{`مرور ${faNumber(waiting)} مورد`}</button>}
+          </TabSectionHead>
+          <RecentActivity entries={recent} />
+        </section>
       )}
+      {/* آینده: what falls due soon, with the cheque card's own warnings, and the caps furthest along. */}
+      {(due.length > 0 || plans.budgets.length > 0) && (
+        <section class="tab-section">
+          <TabSectionHead tab="BUDGET" onOpen={() => selectTab('BUDGET')} />
+          <FutureSummary due={due} budgets={plans.budgets} custom={customGlyphs(view.categories)} />
+        </section>
+      )}
+      {/* دارایی: the total against the dollar, and what it is made of — with what its Toman share cost. */}
+      {(lens || composition.length > 1) && (
+        <section class="tab-section">
+          <TabSectionHead tab="ASSETS" onOpen={() => selectTab('ASSETS')} />
+          {lens && <DollarLensCard lens={lens} />}
+          {composition.length > 1 && <WhereMoneyIs composition={composition} lens={lens} usdNow={usd} />}
+        </section>
+      )}
+      {/* گزارش: the month, and the one sentence worth leading with — its «why» left to the report. */}
+      <section class="tab-section">
+        <TabSectionHead tab="REPORT" onOpen={() => openReport('CASH_FLOW')} />
+        {story.month.transactions > 0 ? <MonthFlow story={story} onOpen={() => openReport('CASH_FLOW')} /> : <QuietStart />}
+        {story.headline && <InsightCard insight={story.headline} />}
+      </section>
     </>
+  );
+}
+
+/**
+ * A section's head (Home.kt TabSectionHead): the tab's own mark from the bar, its name and the chevron,
+ * one door to the tab; a size over the cards' titles beneath it. [children] is that tab's one act.
+ */
+function TabSectionHead({ tab, onOpen, children }: { tab: TabId; onOpen: () => void; children?: ComponentChildren }) {
+  return (
+    <div class="tab-section-head">
+      <button type="button" class="tab-door" onClick={onOpen} aria-label={`${TAB_FA[tab]} رو باز کن`}>
+        <TabIcon tab={tab} />
+        <h2>{TAB_FA[tab]}</h2>
+        <Chevron size={18} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
+const TAB_FA: Record<TabId, string> = { HOME: 'خانه', LEDGER: 'دفتر', BUDGET: 'آینده', ASSETS: 'دارایی', REPORT: 'گزارش' };
+
+/** How many of آینده's dues and caps خانه lists — the soonest and the furthest along. */
+const FUTURE_ROWS = 4;
+const FUTURE_CAPS = 3;
+
+/** آینده at a glance (Home.kt FutureSummary): what falls due soon, then the caps furthest along. */
+function FutureSummary({ due, budgets, custom }: { due: DueItem[]; budgets: BudgetProgress[]; custom: Record<string, CategoryGlyph> }) {
+  const today = useTehranDay();
+  const caps = [...budgets].sort((a, b) => b.percent - a.percent).slice(0, FUTURE_CAPS);
+  return (
+    <div class="future">
+      {due.slice(0, FUTURE_ROWS).map((item) => <DueRow key={`${item.title}:${item.day}`} item={item} today={today} />)}
+      {caps.length > 0 && due.length > 0 && <span class="future-gap" />}
+      {caps.map((b) => <BudgetLine key={b.goal.id} budget={b} custom={custom} />)}
+    </div>
+  );
+}
+
+/**
+ * One due (Home.kt DueRow): a warning takes the line under the name in ink, in the cheque card's own
+ * words, and the day moves beside the figure in caution amber; bold `error` once the day has passed.
+ */
+function DueRow({ item, today }: { item: DueItem; today: number }) {
+  const late = item.day < today;
+  const when = chequeWhenFa(item.day, today);
+  return (
+    <button type="button" class="due-row" onClick={() => selectTab('BUDGET')}>
+      {item.bank ? <BankLogo bank={item.bank} size={36} /> : <span class="due-mark"><CategoryIcon glyph="INSTALMENT" size={20} /></span>}
+      <span class="grow due-text">
+        <span class="due-title ellipsis">{item.title}</span>
+        <span class={`due-line${item.warning ? ' warned' : late ? ' late' : ''}`}>{item.warning ?? when}</span>
+      </span>
+      <span class="due-end">
+        <span class="figure due-amount">{bidi(faCompact(tomanOf(item.rial)))}</span>
+        {item.warning && <span class={`due-when${late ? ' late' : ''}`}>{when}</span>}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * One cap (Home.kt BudgetLine), with the budget card's own sentence under its bar — the words that
+ * say why it is amber — so colour only confirms: the selection colour on pace, caution amber ahead of
+ * its days or near the cap, `error` once over.
+ */
+function BudgetLine({ budget, custom }: { budget: BudgetProgress; custom: Record<string, CategoryGlyph> }) {
+  const over = budget.overRial > 0;
+  const tone = over ? 'var(--error)' : budget.level >= BudgetLevel.NEAR || budget.outpacing ? 'var(--secondary)' : 'var(--primary)';
+  const hue = categoryHue(budget.categoryFa, custom);
+  const said = over ? 'از سقف گذشتی' : `${faNumber(budget.percent)}٪`;
+  const note = budgetNoteFa(budget);
+  return (
+    <button type="button" class="budget-line" onClick={() => selectTab('BUDGET')}
+      aria-label={`${budget.categoryFa}: ${over ? 'از سقف گذشتی' : `${faNumber(budget.percent)} درصد از سقف رفته`}${note ? `. ${note}` : ''}`}>
+      <span class="budget-line-row">
+        <span class="disc" style={{ width: '32px', height: '32px', background: `color-mix(in srgb, ${hue} 16%, transparent)` }}>
+          <CategoryIcon glyph={glyphOf(budget.categoryFa, custom)} size={17} stroke={1.5} color={hue} />
+        </span>
+        <span class="grow ellipsis">{budget.categoryFa}</span>
+        <span class="figure budget-said" style={over ? { color: tone } : undefined}>{said}</span>
+      </span>
+      <span class="rp-track"><span style={{ width: `${Math.min(1, Math.max(0.02, budget.share)) * 100}%`, background: tone }} /></span>
+      {note && <span class="budget-note">{note}</span>}
+    </button>
   );
 }
 
@@ -319,16 +446,53 @@ export function MonthFlow({ story, onOpen }: { story: HomeStory; onOpen: () => v
   const month = story.month;
   const income = tomanOf(month.incomeRial);
   const spent = tomanOf(month.spentRial);
+  // Where the خرج went, three deep: the report's own category rows, the long list one tap away.
+  const top = month.spentRial > 0 ? month.spendingByCategory.slice(0, 3) : [];
   return (
-    <button type="button" class="month-flow" onClick={onOpen}
-      aria-label={`این ماه: درآمد ${faCompact(income)} ${moneyUnit()}، خرج ${faCompact(spent)} ${moneyUnit()}. برای گزارش کامل باز کن`}>
-      <span class="head"><span>این ماه</span><Chevron size={18} /></span>
+    <HomeCard title="این ماه" class="month-flow" onOpen={onOpen}
+      label={`این ماه: درآمد ${faCompact(income)} ${moneyUnit()}، خرج ${faCompact(spent)} ${moneyUnit()}`
+        + top.map(([name, rial]) => `، ${name} ${faCompact(tomanOf(rial))} ${moneyUnit()}`).join('')
+        + '. برای گزارش کامل باز کن'}>
       <span class="halves">
         <FlowHalf label="درآمد" rial={month.incomeRial} tone="var(--tertiary)" />
         <FlowHalf label="خرج" rial={month.spentRial} tone="var(--on-surface)" />
       </span>
       {(month.incomeRial > 0 || month.spentRial > 0) && <FlowBar incomeRial={month.incomeRial} spentRial={month.spentRial} />}
+      {top.length > 0 && (
+        <span class="top-spend">
+          <span class="caption">بیشترین خرج‌ها</span>
+          {top.map(([name, rial]) => <CategoryShareRow key={name} name={name} rial={rial} total={month.spentRial} />)}
+        </span>
+      )}
+    </HomeCard>
+  );
+}
+
+/**
+ * The make every card on خانه shares (Home.kt HomeCard): a 15px title with the chevron that says
+ * the card is a door, and one spoken sentence for the whole of it.
+ */
+function HomeCard({ title, label, onOpen, class: cls = '', children }: {
+  title: string; label: string; onOpen: () => void; class?: string; children: ComponentChildren;
+}) {
+  return (
+    <button type="button" class={`home-card ${cls}`} onClick={onOpen} aria-label={label}>
+      <span class="head"><span>{title}</span><Chevron size={18} /></span>
+      {children}
     </button>
+  );
+}
+
+/** A card's answer before its evidence: the figure at FlowHalf's size, its sentence a step down. */
+function LeadFigure({ figure, tone, tail, up }: { figure: string; tone: string; tail: string; up?: boolean }) {
+  return (
+    <span class="lead">
+      <span class="lead-figure figure" style={{ color: tone }}>
+        {up != null && <TrendCaret up={up} color={tone} size={10} />}
+        {figure}
+      </span>
+      <span class="lead-tail">{tail}</span>
+    </span>
   );
 }
 
@@ -499,3 +663,125 @@ const HomeTab = () => <HomeList portfolio={false} />;
 const AssetsTab = () => <HomeList portfolio />;
 registerTab('HOME', { Component: HomeTab });
 registerTab('ASSETS', { Component: AssetsTab });
+
+// ---- خانه: the total's own story ------------------------------------------------------------------
+
+/**
+ * Whether she is any richer, or the dollar simply went up (Home.kt DollarLensCard): the answer
+ * first, then the two moves on one scale — hers in the spending-share colour, the dollar's muted,
+ * because the dollar is the yardstick and not a second account.
+ */
+function DollarLensCard({ lens }: { lens: DollarLens }) {
+  const flat = Math.abs(lens.real) < 0.05;
+  const tone = flat ? 'var(--on-surface-variant)' : lens.real > 0 ? 'var(--tertiary)' : 'var(--error)';
+  const figure = flat ? 'بدون تغییر' : `${faDecimal(Math.abs(lens.real), 1)}٪`;
+  const tail = flat ? 'در ۳۰ روز گذشته' : lens.real > 0 ? 'بیشتر از ۳۰ روز پیش' : 'کمتر از ۳۰ روز پیش';
+  const top = Math.max(Math.abs(lens.wealth), Math.abs(lens.dollar));
+  return (
+    <HomeCard title="به دلار" onOpen={() => openReport('ASSETS')}
+      label={`به دلار: ${figure} ${tail}. دارایی‌ات ${lensWords(lens.wealth)}، نرخ دلار ${lensWords(lens.dollar)}. برای گزارش دارایی باز کن`}>
+      <LeadFigure figure={figure} tone={tone} tail={tail} up={flat ? undefined : lens.real > 0} />
+      <span class="lens-bars">
+        <LensBar label="دارایی‌ات" percent={lens.wealth} top={top} tint="var(--primary)" />
+        <LensBar label="نرخ دلار" percent={lens.dollar} top={top} tint="var(--on-surface-variant)" />
+      </span>
+    </HomeCard>
+  );
+}
+
+const lensWords = (percent: number): string =>
+  Math.abs(percent) < 0.05 ? 'بدون تغییر'
+    : percent > 0 ? `${faDecimal(percent, 1)} درصد بیشتر` : `${faDecimal(-percent, 1)} درصد کمتر`;
+
+/** The shortest a lens bar is drawn while it still reads as a move rather than as none. */
+const LENS_FLOOR = 0.04;
+
+function LensBar({ label, percent, top, tint }: { label: string; percent: number; top: number; tint: string }) {
+  const flat = Math.abs(percent) < 0.05;
+  const width = flat || top <= 0 ? 0 : Math.min(1, Math.max(LENS_FLOOR, Math.abs(percent) / top));
+  return (
+    <span class="lens-bar">
+      <span class="lens-label">{label}</span>
+      <span class="lens-track">{width > 0 && <span style={{ width: `${width * 100}%`, background: tint }} />}</span>
+      <span class="lens-pct figure">
+        {!flat && <TrendCaret up={percent > 0} color="var(--on-surface-variant)" size={8} />}
+        {`${faDecimal(Math.abs(percent), 1)}٪`}
+      </span>
+    </span>
+  );
+}
+
+/** A share as she would say it: whole percents, with a decimal only where the whole would be «۰». */
+const sharePercent = (share: number): string =>
+  share < 0.01 ? faDecimal(share * 100, 1) : faNumber(roundEven(share * 100));
+
+/**
+ * What the total is made of, largest first (Home.kt WhereMoneyIs), led by the share that matters
+ * most in a rial economy: how much of it is still Toman.
+ */
+function WhereMoneyIs({ composition, lens, usdNow }: {
+  composition: Array<[Kind, number]>; lens: DollarLens | null; usdNow: number | null;
+}) {
+  const total = composition.reduce((sum, [, v]) => sum + v, 0);
+  if (total <= 0) return null;
+  const parts = [...composition].sort((a, b) => b[1] - a[1]);
+  const toman = composition.find(([kind]) => kind === 'CASH')?.[1];
+  // The share's price: today's Toman at the dollar of the lens's first day. Under a twentieth of a
+  // percent, or under a dollar, it is a sentence about nothing.
+  const cost = toman != null && lens && usdNow != null && usdNow > 0 && Math.abs(lens.dollar) >= 0.05
+    ? heldTomanCostUsd(lens, toman, usdNow) : null;
+  const costWords = cost != null && Math.abs(cost) >= 1
+    ? `با نرخ دلار ۳۰ روز پیش، همین پول تومنی ${bidi(faUsd(Math.abs(cost)))} ${cost > 0 ? 'بیشتر' : 'کمتر'} می‌ارزید.` : null;
+  return (
+    <HomeCard title="پولت کجاست" onOpen={() => openReport('ASSETS')}
+      label={`پولت کجاست: ${parts.map(([kind, v]) => `${KIND_FA[kind]} ${sharePercent(v / total)} درصد`).join('، ')}. ${costWords ? `${costWords} ` : ''}برای گزارش دارایی باز کن`}>
+      {toman != null && <LeadFigure figure={`${sharePercent(toman / total)}٪`} tone="var(--on-surface)" tail="از دارایی‌ات به تومانه" />}
+      {toman != null && costWords && <span class="lead-note">{costWords}</span>}
+      {/* Floored like the month's bar: a sliver under the gap would be a kind she holds drawn as none. */}
+      <span class="where-bar">
+        {parts.map(([kind, v]) => <span key={kind} style={{ flexGrow: Math.max(v / total, 0.015), background: BAR_TINT[kind] }} />)}
+      </span>
+      <span class="where-legend">
+        {parts.map(([kind, v]) => (
+          <span key={kind} class="where-kind">
+            <span class="dot" style={{ background: BAR_TINT[kind] }} />
+            <span class="name">{KIND_FA[kind]}</span>
+            <span class="figure">{`${sharePercent(v / total)}٪`}</span>
+          </span>
+        ))}
+      </span>
+    </HomeCard>
+  );
+}
+
+/** How many rows خانه shows of دفتر — enough to see the day moving, few enough to stay a glance. */
+const RECENT_ROWS = 4;
+
+/** The newest RECENT_ROWS of the ledger, as دفتر lists them: hidden duplicates left out. */
+export const recentEntries = (entries: LedgerEntry[]): LedgerEntry[] =>
+  entries.filter((e) => !e.duplicate).sort((a, b) => b.txn.at - a.txn.at).slice(0, RECENT_ROWS);
+
+/**
+ * The newest few rows of دفتر, on the paper (Home.kt RecentActivity); the section head above is the
+ * door to the rest. Under a plain day name and never the ledger's day total: four rows are not a whole day.
+ */
+function RecentActivity({ entries }: { entries: LedgerEntry[] }) {
+  const today = useTehranDay();
+  if (!entries.length) return null;
+  const days: Array<[number, LedgerEntry[]]> = [];
+  for (const e of entries) {
+    const last = days[days.length - 1];
+    if (last && last[0] === e.txn.day) last[1].push(e);
+    else days.push([e.txn.day, [e]]);
+  }
+  return (
+    <div class="recent">
+      {days.map(([day, rows]) => (
+        <div key={day}>
+          <h3 class="recent-day">{faDay(day, today)}</h3>
+          {rows.map((e) => <TimelineRow key={`${e.txn.ref}:${e.categoryId}`} entry={e} onClick={() => openTxn(e.txn.ref)} />)}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -14,6 +14,7 @@ import type { BankAccountView } from './derived';
 import { faCompact, faDate, faNumber, tomanOf, moneyUnit } from './format';
 import { GoalKind, GoalPeriod } from './goals';
 import { installmentWhenFa, remindAwake } from './installments';
+import type { InstallmentProgress } from './installments';
 import { jalaliDay, jalaliMonthLength, jalaliOf, tehranDay } from './jalali';
 import type { Goal } from './model';
 import type { Insight } from './reports';
@@ -73,6 +74,38 @@ export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: r
 }
 
 // ─────────────────────────── on home ───────────────────────────
+
+/** One thing آینده has falling due soon, as خانه's آینده section lists it (Cheques.kt DueItem). */
+export interface DueItem {
+  title: string;
+  day: number;
+  rial: number;
+  /** The bank a cheque draws on, for its logo; null for a plan's payment. */
+  bank: string | null;
+  /** The sentence that needs her — a cheque its account cannot cover, a payment behind — or null. */
+  warning: string | null;
+}
+
+/**
+ * What falls due in the next [days], soonest first: every open cheque, and the first unpaid payment of
+ * every plan — one already behind sorts first, stated at what is behind. A cheque's warning is the
+ * card's own, on the reminder's window (Cheques.kt dueSoon).
+ */
+export function dueSoon(cheques: readonly Goal[], installments: readonly InstallmentProgress[], accounts: readonly ChequeAccount[],
+  today: number, daysBefore: number, days = 14): DueItem[] {
+  const open = cheques.filter((c) => c.endsOn == null);
+  const owed = open.filter((c) => c.startsOn <= today + days).map((c): DueItem => ({
+    title: chequeTitleFa(c), day: c.startsOn, rial: c.targetRial, bank: c.categoryId ?? null,
+    warning: chequeWarningFa(c, open, accounts, today, daysBefore),
+  }));
+  const payments = installments.flatMap((p): DueItem[] => {
+    if (p.done || p.nextDue == null || p.nextDue > today + days) return [];
+    const behind = p.overdueRial > 0;
+    return [{ title: p.plan.nameFa, day: p.nextDue, rial: behind ? p.overdueRial : p.plan.targetRial, bank: null, warning: behind ? 'عقب افتاده' : null }];
+  });
+  // Stable, as Kotlin's sortedBy is: cheques before payments on the same day.
+  return [...owed, ...payments].sort((a, b) => a.day - b.day);
+}
 
 /** The cheque worth home's attention card: inside the window, one the account cannot cover first. */
 export function pressingCheque(open: readonly Goal[], accounts: readonly ChequeAccount[], today: number, daysBefore: number): Goal | null {

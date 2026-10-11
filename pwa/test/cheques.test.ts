@@ -1,7 +1,7 @@
 /** ChequesTest.kt, literally: the warning in words, the reminder's once-per-date, and the date as she types it. */
 import { describe, expect, it } from 'vitest';
 import {
-  chequeDateDigits, chequeNews, chequeReminderBody, chequeReminderTitle, chequeWarningFa, chequeWhenFa, newCheque,
+  chequeDateDigits, chequeNews, chequeReminderBody, chequeReminderTitle, chequeWarningFa, chequeWhenFa, dueSoon, newCheque,
   openCheques, parseChequeDate, pressingCheque,
 } from '../src/cheques';
 import type { ChequeAccount } from '../src/cheques';
@@ -97,5 +97,22 @@ describe('cheques', () => {
     expect(parseChequeDate('14050731')).toBeNull(); // مهر has thirty days
     expect(parseChequeDate('1405091')).toBeNull();
     expect(parseChequeDate('14051315')).toBeNull();
+  });
+});
+
+describe("home's due list (ChequesTest.kt)", () => {
+  it("is the soonest first, with the cheque card's own warning", () => {
+    const soon = cheque('soon', 10_000_000, due - 1, 'قسط ماشین');
+    const later = cheque('later', 500_000_000, due + 5);
+    const tooFar = cheque('far', 500_000_000, due + 40);
+    const cheques = [later, tooFar, soon];
+    const list = dueSoon(cheques, [], [mellat], due - 2, 3);
+    expect(list.map((d) => d.day)).toEqual([soon.startsOn, later.startsOn]);
+    expect(list[0].bank).toBe('MELLAT');
+    expect(list[0].warning).toBeNull();
+    expect(list[1].warning).toBeNull();
+    const warned = dueSoon(cheques, [], [mellat], due - 2, 10)[1].warning;
+    expect(warned).toBe(chequeWarningFa(later, cheques, [mellat], due - 2, 10));
+    expect(warned).not.toBeNull();
   });
 });

@@ -168,6 +168,14 @@ fun SettingsScreen(
     /** Reads the whole inbox again, keeping her hand-typed anchors — see [AppVm.rescanInbox]. */
     onRescanInbox: () -> Unit,
     onBack: () -> Unit,
+    /** The live categories, for choosing what the reports leave out. */
+    categories: List<Category> = emptyList(),
+    /** Category ids the reports and خانه's month leave out — the household's set on a paired phone. */
+    reportExcluded: Set<String> = emptySet(),
+    onReportExcluded: (Set<String>) -> Unit = {},
+    /** Whether that choice is open — hoisted, so the report's note can open تنظیمات onto it. */
+    exclusionsSheet: Boolean = false,
+    onExclusionsSheet: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var page by rememberSaveable { mutableStateOf(SettingsRoom.INDEX) }
@@ -206,6 +214,8 @@ fun SettingsScreen(
             quipTone = quipTone,
             onQuipToneChange = onQuipToneChange,
             onCategories = onCategories,
+            excludedCount = categories.count { it.id in reportExcluded },
+            onExclusions = { onExclusionsSheet(true) },
             onOpen = { page = it },
             onBack = onBack,
         )
@@ -251,6 +261,16 @@ fun SettingsScreen(
 
         SettingsRoom.FEEDBACK -> FeedbackPage { page = SettingsRoom.INDEX }
     }
+
+    if (exclusionsSheet) {
+        ExcludeSheet(
+            categories = categories,
+            excluded = reportExcluded,
+            onExcluded = onReportExcluded,
+            onDismiss = { onExclusionsSheet(false) },
+            householdShared = family.paired,
+        )
+    }
 }
 
 /**
@@ -278,6 +298,9 @@ private fun SettingsIndex(
     quipTone: QuipTone,
     onQuipToneChange: (QuipTone) -> Unit,
     onCategories: () -> Unit,
+    /** How many categories the reports leave out, for the row's value. */
+    excludedCount: Int,
+    onExclusions: () -> Unit,
     onOpen: (SettingsRoom) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -322,23 +345,34 @@ private fun SettingsIndex(
             IndexRow(
                 title = "پیامک‌های بانک",
                 value = if (smsOn) "روشن" else "خاموش",
-                shape = bandShape(0, if (full) 3 else 1),
+                shape = bandShape(0, if (full) 4 else 1),
                 divided = full,
                 onClick = { onOpen(SettingsRoom.SMS) },
             ) { GlyphIcon(CategoryGlyph.ENVELOPE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             if (full) {
                 IndexRow(
                     title = "دسته‌بندی‌ها",
-                    shape = bandShape(1, 3),
+                    shape = bandShape(1, 4),
                     divided = true,
                     onClick = onCategories,
                 ) { GlyphIcon(CategoryGlyph.TAG, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
+                // Beside the categories it is a choice about: which of them the reports, and خانه's
+                // month, leave out of their sums. It used to be a pill on دخل و خرج, but it governs
+                // more than that one screen and is changed a few times a year — a setting. The
+                // report still says, in a line of its own, what it is leaving out.
+                IndexRow(
+                    title = "کنار گذاشته از گزارش‌ها",
+                    value = if (excludedCount > 0) "${faNumber(excludedCount.toDouble())} دسته" else "هیچ‌کدوم",
+                    shape = bandShape(2, 4),
+                    divided = true,
+                    onClick = onExclusions,
+                ) { GlyphIcon(CategoryGlyph.CHART, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
                 IndexRow(
                     title = "خانواده",
                     // No value until there is a household: an unpaired phone is not a setting
                     // left «خاموش», it is simply somebody's own book.
                     value = if (family.paired) "${faNumber(family.members.size.toDouble())} عضو" else null,
-                    shape = bandShape(2, 3),
+                    shape = bandShape(3, 4),
                     onClick = onCompanion,
                 ) { GlyphIcon(CategoryGlyph.HOUSE, MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp) }
             }

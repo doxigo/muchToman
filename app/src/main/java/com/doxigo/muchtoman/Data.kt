@@ -474,6 +474,48 @@ fun changeAcross(points: List<Pair<Long, Double>>): Change? {
 }
 
 /**
+ * Her total against the dollar over one window, in percent: what the Toman figure did, what the
+ * dollar's rate did, and what that leaves her with in dollars.
+ *
+ * In Toman the total climbs with inflation almost whatever she does, so the change pill alone
+ * cannot say whether she is any richer. The rate's own move beside it can.
+ */
+data class DollarLens(val wealth: Double, val dollar: Double, val real: Double, val sinceDay: Long)
+
+/**
+ * Measured from [changeOver]'s own day, so the figure beside «دارایی‌ات» is the change pill's
+ * figure and the two never disagree. Null when that day has no recorded rate: borrowing a
+ * neighbour's is the re-pricing [usdHistory] refuses, and an absent card is the honest answer.
+ */
+fun dollarLens(
+    history: Map<Long, Double>,
+    rateHistory: Map<Long, Double>,
+    today: Long,
+    current: Double,
+    usdNow: Double?,
+    windowDays: Int = 30,
+): DollarLens? {
+    if (usdNow == null || usdNow <= 0.0 || !usdNow.isFinite() || current <= 0.0) return null
+    val day = changeOver(history, today, windowDays, current)?.sinceDay ?: return null
+    val base = history.getValue(day).takeIf { it > 0.0 } ?: return null
+    val rate = rateHistory[day]?.takeIf { it > 0.0 && it.isFinite() } ?: return null
+    return DollarLens(
+        wealth = (current / base - 1) * 100,
+        dollar = (usdNow / rate - 1) * 100,
+        real = ((current / usdNow) / (base / rate) - 1) * 100,
+        sinceDay = day,
+    )
+}
+
+/**
+ * What the Toman she holds today lost against the dollar over the lens's window, in dollars: the
+ * same Toman at the rate of [DollarLens.sinceDay] bought this many more dollars than it does now.
+ * Exactly that and no more — it reads today's balance at two rates, so it needs no claim about
+ * what she held thirty days ago. Negative when the dollar fell.
+ */
+fun DollarLens.heldTomanCostUsd(toman: Double, usdNow: Double): Double = toman / usdNow * dollar / 100
+
+/**
  * The fold's figures are Toman by the time [parseBankSms] is done; the ledger states its bound
  * in Rial ([MAX_PLAUSIBLE_RIAL], Derived.kt), so this is the same line in the fold's unit.
  */
