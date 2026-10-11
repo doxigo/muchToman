@@ -27,6 +27,7 @@ class CsvTest {
         transfer: Boolean = false,
         duplicate: Boolean = false,
         split: List<SplitPart> = emptyList(),
+        balance: Long? = null,
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
@@ -36,7 +37,7 @@ class CsvTest {
                 bank = bank, accountId = bank,
                 direction = signed?.let { if (it > 0) "in" else "out" },
                 amountRial = signed?.let { kotlin.math.abs(it) }, signedRial = signed,
-                balanceRial = null, feeRial = null, mask = "", instrument = "unknown",
+                balanceRial = balance, feeRial = null, mask = "", instrument = "unknown",
                 merchant = merchant, merchantNorm = "", refNo = "", printedAt = "",
                 channel = "unknown", unitPrinted = "none", inferred = false,
                 parserVer = PARSER_VERSION, sourceKind = sourceKind,
@@ -52,7 +53,7 @@ class CsvTest {
         val csv = ledgerCsv(
             listOf(
                 entry(
-                    merchant = "کافه دنج", signed = -60_000_000L,
+                    merchant = "کافه دنج", signed = -60_000_000L, balance = 845_000_000L,
                     split = listOf(SplitPart("cat_smokes", "دخانیات", 53_500_000L), SplitPart("cat_cafe", "کافی‌شاپ", 6_500_000L)),
                 ),
                 entry(merchant = "کافه دنج", duplicate = true),
@@ -61,17 +62,24 @@ class CsvTest {
                 entry(signed = -12_340L, at = tehranDayStart(day), bank = "MANUAL", sourceKind = "manual"),
                 entry(signed = null),
             ),
+            // What each member has as the file is made: one line per thing, no مبلغ, cut to the Rial.
+            balances = listOf(
+                FamilyAssetView("m1", "سهیل", listOf(AssetShareItem("حساب‌های بانکی", 108_400_000.07)), 108_400_000.07),
+            ),
+            now = afternoon,
         )
         assertEquals(
             "\uFEFF" + listOf(
-                "تاریخ,ساعت,مبلغ (ریال),مبلغ (تومان),بانک,طرف حساب,دسته,یادداشت,نوع,صاحب تراکنش",
-                "1405/07/11,14:03,-53500000,-5350000,بانک سامان,کافه دنج,دخانیات,,خرج,",
-                "1405/07/11,14:03,-6500000,-650000,بانک سامان,کافه دنج,کافی‌شاپ,,خرج,",
-                "1405/07/11,14:03,-10000000,-1000000,بانک سامان,,انتقال بین حساب‌ها,,انتقال,",
-                "1405/07/11,14:03,12345,1234.5,بانک سامان,\"'=HYPERLINK(\"\"x\"\")\",خوراکی,\"قسط, \"\"دوم\"\"\",درآمد,مریم",
+                "تاریخ,ساعت,مبلغ (ریال),مبلغ (تومان),موجودی (ریال),موجودی (تومان),بانک,طرف حساب,دسته,یادداشت,نوع,صاحب تراکنش",
+                "1405/07/11,14:03,,,1084000000,108400000,حساب‌های بانکی,,,,موجودی,سهیل",
+                // The مانده the message stated sits on the first part of a split payment only.
+                "1405/07/11,14:03,-53500000,-5350000,845000000,84500000,بانک سامان,کافه دنج,دخانیات,,خرج,",
+                "1405/07/11,14:03,-6500000,-650000,,,بانک سامان,کافه دنج,کافی‌شاپ,,خرج,",
+                "1405/07/11,14:03,-10000000,-1000000,,,بانک سامان,,انتقال بین حساب‌ها,,انتقال,",
+                "1405/07/11,14:03,12345,1234.5,,,بانک سامان,\"'=HYPERLINK(\"\"x\"\")\",خوراکی,\"قسط, \"\"دوم\"\"\",درآمد,مریم",
                 // Entered from a bare date: no minute to print.
-                "1405/07/11,,-12340,-1234,ورود دستی,,خوراکی,,خرج,",
-                "1405/07/11,14:03,,,بانک سامان,,خوراکی,,مانده,",
+                "1405/07/11,,-12340,-1234,,,ورود دستی,,خوراکی,,خرج,",
+                "1405/07/11,14:03,,,,,بانک سامان,,خوراکی,,مانده,",
             ).joinToString("") { "$it\r\n" },
             csv,
         )

@@ -24,6 +24,8 @@ import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.abs
 
 /**
@@ -33,33 +35,61 @@ import kotlin.math.abs
  * with her passphrase, for this app to read back; this is her ledger in the clear, for Excel to
  * read and for her to sum, sort and hand to an accountant. So it says so before it is made.
  *
- * The rows are دفتر's rows ([ledgerRows], duplicates out, a split payment as its parts, transfers
- * in and marked), never a second derivation of the ledger. The file is what Excel needs to open
- * Persian without asking: UTF-8 with a BOM, CRLF lines, RFC 4180 quoting, and Latin digits in the
- * figures so a number lands as a number. Mirrored in `pwa/src/csv.ts`.
+ * Transactions alone say where money went and nothing about what is left, so the file opens with
+ * what each member has as it is made — the hero's own lines, typed «موجودی» — and every row carries
+ * the مانده its bank stated after it. The rows are دفتر's rows ([ledgerRows], duplicates out, a split
+ * payment as its parts, transfers in and marked), never a second derivation of the ledger. The file
+ * is what Excel needs to open Persian without asking: UTF-8 with a BOM, CRLF lines, RFC 4180
+ * quoting, and Latin digits in the figures so a number lands as a number. Mirrored in
+ * `pwa/src/csv.ts`.
  */
 private val CSV_HEADER = listOf(
-    "تاریخ", "ساعت", "مبلغ (ریال)", "مبلغ (تومان)", "بانک", "طرف حساب", "دسته", "یادداشت", "نوع", "صاحب تراکنش",
+    "تاریخ", "ساعت", "مبلغ (ریال)", "مبلغ (تومان)", "موجودی (ریال)", "موجودی (تومان)",
+    "بانک", "طرف حساب", "دسته", "یادداشت", "نوع", "صاحب تراکنش",
 )
 
-/** The whole file, BOM first, one line per row دفتر lists, in the order it lists them. */
-internal fun ledgerCsv(entries: List<LedgerEntry>): String = buildString {
+/**
+ * The whole file, BOM first: a line for each thing each of [balances] holds, stamped [now], then
+ * one line per row دفتر lists, in the order it lists them.
+ */
+internal fun ledgerCsv(
+    entries: List<LedgerEntry>,
+    balances: List<FamilyAssetView> = emptyList(),
+    now: Long = System.currentTimeMillis(),
+): String = buildString {
     append('\uFEFF')
     csvLine(CSV_HEADER.map(::csvText))
+    // Nothing moved, so no مبلغ: a figure there would be summed with the spending under it.
+    for (member in balances) for (item in member.items) {
+        if (!item.toman.isFinite()) continue
+        val rial = csvRial(item.toman)
+        csvLine(
+            listOf(
+                csvDate(tehranDay(now)), csvClock(now), "", "", rial.toString(), csvToman(rial),
+                csvText(item.name), "", "", "", "موجودی", csvText(member.name),
+            ),
+        )
+    }
+    var previous = ""
     for (e in ledgerRows(entries.filterNot { it.duplicate }, LedgerLens.ALL, emptyList(), "")) {
         val txn = e.txn
         // As دفتر draws it: a message that did not say which way prints with the minus there,
         // so it does here — and its نوع stays blank rather than claim a side nobody read.
         val rial = txn.signedRial ?: txn.amountRial?.let { -it }
-        val date = jalaliOf(txn.day).let { "${it.year}/${two(it.month)}/${two(it.day)}" }
+        // The parts of a split payment sit together under the one message's ref, and the مانده
+        // that message stated goes on the first of them, not once per part.
+        val balance = txn.balanceRial.takeIf { txn.ref != previous }
+        previous = txn.ref
         csvLine(
             listOf(
-                date,
+                csvDate(txn.day),
                 // A row entered from a bare date sits on its midnight; «00:00» would be a minute
                 // nobody recorded — faMoment's rule.
                 if (txn.at == tehranDayStart(txn.day)) "" else csvClock(txn.at),
                 rial?.toString().orEmpty(),
                 rial?.let(::csvToman).orEmpty(),
+                balance?.toString().orEmpty(),
+                balance?.let(::csvToman).orEmpty(),
                 csvText(if (txn.sourceKind == "manual") "ورود دستی" else bankNameOf(txn.bank)),
                 csvText(txn.merchant),
                 csvText(ledgerCategoryFa(e)),
@@ -77,6 +107,27 @@ internal fun ledgerCsv(entries: List<LedgerEntry>): String = buildString {
     }
 }
 
+/**
+ * What each member has right now, for the file's «موجودی» lines: hers as her hero total counts it —
+ * [assetShareItems] with nothing held back from the family, the file being hers — then what the
+ * others chose to share, as the asset tab lists it. Her own record is never read twice.
+ */
+internal fun csvBalances(state: UiState): List<FamilyAssetView> {
+    val mine = assetShareItems(
+        holdings = state.holdings,
+        rates = state.effective,
+        coins = state.coins,
+        stocks = state.stocks,
+        smsEnabled = state.smsEnabled,
+        bankAccounts = state.bankAccounts,
+        disabledBanks = state.disabledBanks,
+        familyExcluded = emptySet(),
+        notified = state.notified,
+    )
+    return listOf(FamilyAssetView(state.family.memberId, state.family.memberName, mine, mine.sumOf { it.toman })) +
+        state.familyAssets.filter { it.memberId != state.family.memberId }
+}
+
 /** `muchtoman-1405-07-11.csv` — today in Tehran, Jalali, Latin digits. */
 internal fun ledgerCsvName(now: Long = System.currentTimeMillis()): String =
     jalaliOf(tehranDay(now)).let { "muchtoman-${it.year}-${two(it.month)}-${two(it.day)}.csv" }
@@ -86,6 +137,14 @@ internal fun csvToman(rial: Long): String {
     val m = abs(rial)
     return (if (rial < 0) "-" else "") + (m / 10) + (if (m % 10 == 0L) "" else ".${m % 10}")
 }
+
+/**
+ * A Toman value as whole Rial, cut and never rounded up, as every figure the app shows is. A
+ * holding is its amount times a rate and seldom whole; settled in decimal first, as [faCompact]
+ * does, so a binary hair under a Rial she really has does not eat it.
+ */
+internal fun csvRial(toman: Double): Long =
+    BigDecimal(toman * 10).setScale(9, RoundingMode.HALF_UP).setScale(0, RoundingMode.DOWN).toLong()
 
 /**
  * A text cell. Merchant names and notes are somebody else's words — a bank's gateway, another
@@ -104,6 +163,8 @@ private fun StringBuilder.csvLine(cells: List<String>) {
     cells.joinTo(this, ",")
     append("\r\n")
 }
+
+private fun csvDate(day: Long): String = jalaliOf(day).let { "${it.year}/${two(it.month)}/${two(it.day)}" }
 
 private fun csvClock(at: Long): String {
     val sinceMidnight = at - tehranDayStart(tehranDay(at))
@@ -126,11 +187,11 @@ internal fun LedgerCsvExport(activity: FragmentActivity) {
     var failed by remember { mutableStateOf(false) }
     val createFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val entries = vm.state.value.ledger.entries
+        val state = vm.state.value
         scope.launch {
             val written = withContext(Dispatchers.IO) {
                 runCatching {
-                    val bytes = ledgerCsv(entries).toByteArray(Charsets.UTF_8)
+                    val bytes = ledgerCsv(state.ledger.entries, csvBalances(state)).toByteArray(Charsets.UTF_8)
                     // "wt" truncates a file she chose to overwrite, as the backup's write does.
                     val stream = runCatching { activity.contentResolver.openOutputStream(uri, "wt") }
                         .getOrNull() ?: activity.contentResolver.openOutputStream(uri)
@@ -146,7 +207,7 @@ internal fun LedgerCsvExport(activity: FragmentActivity) {
     Spacer(Modifier.height(Space.xxl))
     DoorRow(
         title = "خروجی اکسل",
-        subtitle = "همهٔ تراکنش‌های دفتر، توی یک فایل CSV",
+        subtitle = "تراکنش‌های دفتر و موجودی‌ها، توی یک فایل CSV",
         glyph = CategoryGlyph.SHEET,
         shape = bandShape(0, 1),
         divided = false,
@@ -154,7 +215,7 @@ internal fun LedgerCsvExport(activity: FragmentActivity) {
         onClick = { createFile.launch(ledgerCsvName()) },
     )
     Text(
-        "فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.",
+        "فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌ها و موجودی‌هات رو می‌تونه بخونه.",
         fontSize = 13.sp,
         lineHeight = 20.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

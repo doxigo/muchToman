@@ -22,7 +22,7 @@ import { currentTotals, recordSnapshot, refreshAll, timeoutSignal } from './data
 import { downloadLedgerCsv } from './csv';
 import { ledger, useLedger } from './derived';
 import type { LedgerHealth } from './derived';
-import { useFamily } from './family';
+import { csvBalances, useFamily } from './family';
 import { bidi, faAgo, faCompact, faDate, faNumber, moneyUnit, parseAmount, showRial, tomanOf, tomanOfShown } from './format';
 import { Chevron, PersonMark, PlusMark } from './icons';
 import { INSTALLMENT_REMINDER_DAYS, installmentReminderFa } from './installments';
@@ -568,7 +568,7 @@ function LedgerCsvExport() {
   const [failed, setFailed] = useState(false);
   const save = () => {
     try {
-      downloadLedgerCsv(ledger().entries);
+      downloadLedgerCsv(ledger().entries, csvBalances());
       setFailed(false); setNotice('فایل اکسل ساخته شد.');
     } catch (error) {
       console.warn('csv export failed', error);
@@ -580,9 +580,9 @@ function LedgerCsvExport() {
       {/* A section down from the backup's: one more of the page's acts, but not a sealed one. */}
       <div style={{ height: 'var(--xxl)' }} />
       <Band>
-        <DoorRow title="خروجی اکسل" subtitle="همهٔ تراکنش‌های دفتر، توی یک فایل CSV" glyph="SHEET" onClick={save} />
+        <DoorRow title="خروجی اکسل" subtitle="تراکنش‌های دفتر و موجودی‌ها، توی یک فایل CSV" glyph="SHEET" onClick={save} />
       </Band>
-      <Note>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌هات رو می‌تونه بخونه.</Note>
+      <Note>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌ها و موجودی‌هات رو می‌تونه بخونه.</Note>
       {notice && <p class="set-note" style={{ color: failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{notice}</p>}
     </>
   );

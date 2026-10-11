@@ -10,7 +10,7 @@ const afternoon = tehranDayStart(day) + (14 * 60 + 3) * 60_000;
 let n = 0;
 function entry(o: {
   merchant?: string; signed?: number | null; at?: number; bank?: string; sourceKind?: 'sms' | 'manual'; note?: string;
-  ownerName?: string; transfer?: boolean; duplicate?: boolean; split?: SplitPart[];
+  ownerName?: string; transfer?: boolean; duplicate?: boolean; split?: SplitPart[]; balance?: number | null;
 } = {}): LedgerEntry {
   const ref = `s:${String(++n).padStart(4, '0')}:0`;
   const signed = o.signed === undefined ? -2_500_000 : o.signed;
@@ -19,7 +19,7 @@ function entry(o: {
     txn: {
       ref, srcHash: ref, seq: 0, at: o.at ?? afternoon, day, bank, accountId: bank,
       direction: signed == null ? null : signed > 0 ? 'in' : 'out', amountRial: signed == null ? null : Math.abs(signed), signedRial: signed,
-      balanceRial: null, feeRial: null, mask: '', instrument: 'unknown', merchant: o.merchant ?? '', merchantNorm: '', refNo: '',
+      balanceRial: o.balance ?? null, feeRial: null, mask: '', instrument: 'unknown', merchant: o.merchant ?? '', merchantNorm: '', refNo: '',
       printedAt: '', channel: 'unknown', unitPrinted: 'none', inferred: false, familyRef: '', ownerMemberId: '', sourceKind: o.sourceKind ?? 'sms',
     },
     categoryId: 'cat_x', categoryFa: 'خوراکی', confidence: 95, needsReview: false, duplicate: o.duplicate ?? false, transfer: o.transfer ?? false,
@@ -32,7 +32,7 @@ describe('the spreadsheet export', () => {
   it('writes the ledger as دفتر lists it, one line per row', () => {
     const csv = ledgerCsv([
       entry({
-        merchant: 'کافه دنج', signed: -60_000_000,
+        merchant: 'کافه دنج', signed: -60_000_000, balance: 845_000_000,
         split: [{ categoryId: 'cat_smokes', categoryFa: 'دخانیات', rial: 53_500_000 }, { categoryId: 'cat_cafe', categoryFa: 'کافی‌شاپ', rial: 6_500_000 }],
       }),
       entry({ merchant: 'کافه دنج', duplicate: true }),
@@ -40,16 +40,19 @@ describe('the spreadsheet export', () => {
       entry({ merchant: '=HYPERLINK("x")', signed: 12_345, note: 'قسط, "دوم"', ownerName: 'مریم' }),
       entry({ signed: -12_340, at: tehranDayStart(day), bank: 'MANUAL', sourceKind: 'manual' }),
       entry({ signed: null }),
-    ]);
+    // What each member has as the file is made: one line per thing, no مبلغ, cut to the Rial.
+    ], [{ name: 'سهیل', items: [{ name: 'حساب‌های بانکی', toman: 108_400_000.07 }] }], afternoon);
     expect(csv).toBe('\uFEFF' + [
-      'تاریخ,ساعت,مبلغ (ریال),مبلغ (تومان),بانک,طرف حساب,دسته,یادداشت,نوع,صاحب تراکنش',
-      '1405/07/11,14:03,-53500000,-5350000,بانک سامان,کافه دنج,دخانیات,,خرج,',
-      '1405/07/11,14:03,-6500000,-650000,بانک سامان,کافه دنج,کافی‌شاپ,,خرج,',
-      '1405/07/11,14:03,-10000000,-1000000,بانک سامان,,انتقال بین حساب‌ها,,انتقال,',
-      '1405/07/11,14:03,12345,1234.5,بانک سامان,"\'=HYPERLINK(""x"")",خوراکی,"قسط, ""دوم""",درآمد,مریم',
+      'تاریخ,ساعت,مبلغ (ریال),مبلغ (تومان),موجودی (ریال),موجودی (تومان),بانک,طرف حساب,دسته,یادداشت,نوع,صاحب تراکنش',
+      '1405/07/11,14:03,,,1084000000,108400000,حساب‌های بانکی,,,,موجودی,سهیل',
+      // The مانده the message stated sits on the first part of a split payment only.
+      '1405/07/11,14:03,-53500000,-5350000,845000000,84500000,بانک سامان,کافه دنج,دخانیات,,خرج,',
+      '1405/07/11,14:03,-6500000,-650000,,,بانک سامان,کافه دنج,کافی‌شاپ,,خرج,',
+      '1405/07/11,14:03,-10000000,-1000000,,,بانک سامان,,انتقال بین حساب‌ها,,انتقال,',
+      '1405/07/11,14:03,12345,1234.5,,,بانک سامان,"\'=HYPERLINK(""x"")",خوراکی,"قسط, ""دوم""",درآمد,مریم',
       // Entered from a bare date: no minute to print.
-      '1405/07/11,,-12340,-1234,ورود دستی,,خوراکی,,خرج,',
-      '1405/07/11,14:03,,,بانک سامان,,خوراکی,,مانده,',
+      '1405/07/11,,-12340,-1234,,,ورود دستی,,خوراکی,,خرج,',
+      '1405/07/11,14:03,,,,,بانک سامان,,خوراکی,,مانده,',
     ].map((l) => `${l}\r\n`).join(''));
     expect(csv.replace(/\r\n/g, '')).not.toContain('\n');
   });

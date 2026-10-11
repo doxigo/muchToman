@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { readPairing } from './crypto';
 import type { Pairing } from './crypto';
+import type { CsvBalances } from './csv';
 import { assetShareItems, currentEffective, undoubledBankName } from './data';
 import type { AssetShareItem } from './data';
 import { getMeta, legacyOutbox, legacyRecords, partition, partitionLegacyStores, setMeta } from './db';
@@ -498,12 +499,25 @@ async function runFamilySyncLoop(initiallySilent: boolean): Promise<void> {
   }
 }
 
-/** Her دارایی as the hero prices it, minus what she keeps out of the family (Data.kt `assetShareItems`). */
-const sharedAssets = (): AssetShareItem[] => assetShareItems(
+/** Her دارایی as the hero prices it, minus `familyExcluded` (Data.kt `assetShareItems`). */
+const ownAssets = (familyExcluded: string[]): AssetShareItem[] => assetShareItems(
   pref('holdings'), currentEffective(), pref('rates')?.coins ?? [], [],
   ledger().bankAccounts.map((a) => ({ bank: a.bank, balance: a.balanceRial / 10, anchored: a.anchored })),
-  pref('disabledBanks'), syncPref('syncExcludedBanks'),
+  pref('disabledBanks'), familyExcluded,
 );
+
+/** What goes to the family: minus the banks she keeps out of it. */
+const sharedAssets = (): AssetShareItem[] => ownAssets(syncPref('syncExcludedBanks'));
+
+/**
+ * What each member has right now, for the spreadsheet's «موجودی» lines (Csv.kt `csvBalances`): hers
+ * as her hero counts it, nothing held back from the family — the file is hers — then what the others
+ * chose to share. Her own record is never read twice.
+ */
+export function csvBalances(): CsvBalances[] {
+  const me = familyState();
+  return [{ name: me.memberName, items: ownAssets([]) }, ...familyAssetViews().filter((v) => v.memberId !== me.memberId)];
+}
 
 async function runFamilySyncOnce(silent: boolean): Promise<void> {
   const current = await loadSession();
