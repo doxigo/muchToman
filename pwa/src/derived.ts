@@ -88,6 +88,18 @@ export function familyToRow(row: FamilyTxn, now: number): Txn {
   };
 }
 
+/**
+ * Every leg that counts as a transfer: this browser's settled pairs for her own rows, and for
+ * another member's row only the flag its owner published. Their phone holds every leg they have
+ * and keeps the verdicts they gave, which never leave it; re-detected here, a payment they filed
+ * as spending paired with a leg of hers and dropped out of خرج, so the household read lower here.
+ */
+export function transferLegs(links: LinkCandidate[], family: FamilyTxn[]): Set<string> {
+  const legs = new Set([...transferRefs(links)].filter((ref) => !ref.startsWith('f:')));
+  for (const f of family) if (f.transfer) legs.add(familyLocalRef(f.id));
+  return legs;
+}
+
 /** The ledger from [startsOn] on — every entry when that is 0, which is «از اول». */
 export function startingFrom(entries: LedgerEntry[], startsOn: number): LedgerEntry[] {
   return startsOn <= 0 ? entries : entries.filter((e) => e.txn.day >= startsOn);
@@ -349,8 +361,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const links = findLinks([...hers, ...familyRows], input.links);
   const dropped = new Set([...hiddenByHer, ...hiddenRefs(links.filter((l) => hiddenByHer.has(l.aRef) || hiddenByHer.has(l.bRef)))]);
   const all: Txn[] = [...hers.filter((t) => !dropped.has(t.ref)), ...familyRows];
-  const transfers = transferRefs(links);
-  for (const f of family) if (f.transfer) transfers.add(familyLocalRef(f.id));
+  const transfers = transferLegs(links, family);
   const classes = new Map<string, TxnClass>(
     all.map((t) => [t.ref, classify(t, rules, pinned.get(t.ref) ?? null, transfers, addrKeys.get(t.srcHash) ?? null)]),
   );

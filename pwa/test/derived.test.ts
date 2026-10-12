@@ -341,6 +341,17 @@ describe('the ledger view', () => {
     expect(view.entries[0]).toMatchObject({ transfer: true, ownerMemberId: 'him' });
   });
 
+  it("takes a member's transfer flag as their word, never this browser's own pairing", () => {
+    // He filed a payment to her as spending, a verdict that stays on his phone. Re-paired here
+    // with her deposit, it left خرج on her side alone, and the household read lower here.
+    const sent: FamilyTxn = { id: 'txn:him:2', ownerMemberId: 'him', sourceKind: 'sms', at: 100_000, day: tehranDay(100_000), amountRial: -50_000_000, bank: 'SAMAN', merchant: '', updatedAt: 1, deleted: false, transfer: false };
+    const received = source('BLU', 'واریز مبلغ 50,000,000 ریال', 130_000);
+    const transfers = (f: FamilyTxn) =>
+      Object.fromEntries(ledgerView(input({ sources: [received], familyTxns: [f], mineId: 'me' })).entries.map((e) => [e.txn.ref[0], e.transfer]));
+    expect(transfers(sent)).toEqual({ f: false, s: true });
+    expect(transfers({ ...sent, transfer: true })).toEqual({ f: true, s: true });
+  });
+
   it('asks about the biggest first, and never about a transfer or a duplicate', () => {
     const view = ledgerView(input({
       sources: [

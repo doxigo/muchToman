@@ -386,6 +386,19 @@ fun familyToRow(row: FamilyTxn, now: Long = System.currentTimeMillis()): Txn = T
 )
 
 /**
+ * Every leg that counts as a transfer: this phone's settled pairs for its own rows, and for
+ * another member's row only the flag its owner published.
+ *
+ * Their row is theirs to judge. Their phone holds every leg they have, private ones included,
+ * and keeps the verdicts they gave, which never leave it. Re-detected here, a payment they had
+ * filed as spending paired with a leg on this phone and dropped out of خرج, and the household's
+ * report and shared budgets read lower on this phone than on theirs.
+ */
+fun transferLegs(links: List<LinkCandidate>, family: List<FamilyTxn>): Set<String> =
+    transferRefs(links).filterNot { it.startsWith("f:") }.toSet() +
+        family.filter { it.transfer }.map { familyLocalRef(it.id) }
+
+/**
  * Rebuild every transaction from the stored messages.
  *
  * Total and idempotent, with no incremental path and no watermark: running it twice over the
@@ -446,7 +459,7 @@ suspend fun derive(
         written = all.size
         derived.links().putAll(links)
 
-        val transfers = transferRefs(links) + familyRecords.filter { it.transfer }.map { familyLocalRef(it.id) }
+        val transfers = transferLegs(links, familyRecords)
         derived.classes().putAll(
             all.map { classify(it, rules, pinned[it.ref], transfers, addrKeys[it.srcHash]) }
         )
@@ -650,8 +663,7 @@ suspend fun ledgerEntries(
         .filter { !it.value.isNullOrBlank() }
         .associateBy { it.ref }
     val hidden = hiddenRefs(links)
-    val transfers = transferRefs(links) + durable.familyTxns().all()
-        .filter { it.transfer }.map { familyLocalRef(it.id) }
+    val transfers = transferLegs(links, durable.familyTxns().all())
     // Her corrections, laid over the rows here and not in derive — see `Edits.kt`.
     val edits = listOf(DecisionKind.AMOUNT, DecisionKind.DAY, DecisionKind.MEMBER, DecisionKind.SPLIT)
         .associateWith { kind -> durable.decisions().ofKind(kind).associate { it.ref to it.value } }

@@ -378,6 +378,22 @@ class ClassifyTest {
     }
 
     @Test
+    fun `another member's leg is a transfer only on their word`() {
+        // He filed a payment to her as spending, a verdict that stays on his phone. Re-paired here
+        // with her deposit, it left خرج on her phone alone, and the household read lower there.
+        val row = FamilyTxn(
+            familyTxnId("him", "s:1"), "him", "sms", at = 1_000_000, day = tehranDay(1_000_000),
+            amountRial = -50_000_000, bank = "SAMAN", updatedAt = 1,
+        )
+        val sent = familyToRow(row, now = 2_000_000)
+        val into = txn(at = 1_060_000, signed = 50_000_000, account = "BLU")
+        val links = findLinks(listOf(sent, into), emptyList())
+        assertEquals(setOf(sent.ref, into.ref), transferRefs(links))
+        assertEquals(setOf(into.ref), transferLegs(links, listOf(row)))
+        assertEquals(setOf(sent.ref, into.ref), transferLegs(links, listOf(row.copy(transfer = true))))
+    }
+
+    @Test
     fun `a fee taken out of the transfer is found but has to be confirmed`() {
         val out = txn(at = 1_000_000, signed = -50_000_000, account = "SAMAN")
         val into = txn(at = 1_060_000, signed = 49_940_000, account = "BLU")
