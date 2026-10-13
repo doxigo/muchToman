@@ -441,6 +441,49 @@ export async function fetchRates(now = Date.now()): Promise<Rates> {
   return parsed;
 }
 
+/** The dollar on each of the last 400 days, from the rates Worker (Data.kt fetchUsdHistory): epoch day → Toman. */
+export async function fetchUsdHistory(): Promise<Record<string, number>> {
+  const res = await fetch('/usd-history', { headers: { Accept: 'application/json' }, signal: timeoutSignal(20_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const days = (JSON.parse(await readLimited(res, 64 * 1024)) as { days?: unknown }).days;
+  if (days == null || typeof days !== 'object') throw new Error('no days');
+  return days as Record<string, number>;
+}
+
+/**
+ * [recorded] with the days it lacks filled from [fetched], pruned as recordDay prunes (Data.kt
+ * backfillRates). A day this browser wrote down keeps its own rate — the dollar it showed her that
+ * day — and a fetched one that is no rate, or for a day still to come, is dropped.
+ */
+export function backfillRates(recorded: Record<string, number>, fetched: Record<string, unknown>, today: number): Record<string, number> {
+  const filled: Record<string, number> = {};
+  for (const [day, rate] of Object.entries(fetched)) {
+    if (/^\d+$/.test(day) && Number(day) <= today && typeof rate === 'number' && rate > 0 && Number.isFinite(rate)) filled[day] = rate;
+  }
+  Object.assign(filled, recorded);
+  return Object.fromEntries(
+    Object.keys(filled).map(Number).sort((a, b) => a - b).slice(-HISTORY_KEEP_DAYS).map((d) => [String(d), filled[d]]),
+  );
+}
+
+/**
+ * The dollar on the days this browser never wrote one down — every month before she started, and
+ * the days it sat closed — so a month from before then can be read in dollars (AppVm fillRateGaps).
+ * At most once a day, and only while the history is short of a full 400 days.
+ */
+export async function fillRateGaps(now = Date.now()): Promise<void> {
+  if (Object.keys(pref('rateHistory')).length >= HISTORY_KEEP_DAYS || now - pref('usdHistoryAt') < DAY_MS) return;
+  setPref('usdHistoryAt', now);
+  try {
+    const fetched = await fetchUsdHistory();
+    // Read again after the wait: a snapshot may have written today's rate meanwhile.
+    const next = backfillRates(pref('rateHistory'), fetched, Math.trunc(now / DAY_MS));
+    if (!sameRecord(next, pref('rateHistory'))) setPref('rateHistory', next);
+  } catch (error) {
+    console.warn('usd history fetch failed', error);
+  }
+}
+
 /**
  * The day's one count, as on the phone (Diagnostics.kt): the first rates fetch of a UTC day names
  * the version and `pwa` as where it came from, and nothing else. localStorage rather than a pref
@@ -754,6 +797,7 @@ export async function refreshRates(): Promise<void> {
   }
   setStatus({ loading: false, error: failure });
   recordSnapshot();
+  void fillRateGaps();
 }
 
 /**

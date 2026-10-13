@@ -6,7 +6,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BANK_ID, TOMAN_ID, resolveType } from '../src/catalog';
 import {
-  EMPTY_RATES, HISTORY_KEEP_DAYS, assetShareItems, backupReminderDue, undoubledBankName, changeOver, computeTotals, configureWealth,
+  EMPTY_RATES, HISTORY_KEEP_DAYS, assetShareItems, backfillRates, backupReminderDue, undoubledBankName, changeOver, computeTotals, configureWealth,
   effectiveRates, fetchRates, fetchWalletBalance, isWalletAddressFormatValid, isWalletBalanceValid,
   isWalletContractFormatValid, listHoldings, mergeRates, nameOr, rebaseHistory, recordDay, refreshWallets,
   reinstateHolding, removeHolding, sanitizeRates, setExcluded, setHolding, setLabel, setOverride, snapshotDay,
@@ -107,6 +107,18 @@ describe('history', () => {
     expect(Object.keys(h).length).toBe(HISTORY_KEEP_DAYS);
     expect(h[99]).toBeUndefined();
     expect(h[499]).toBe(499);
+  });
+
+  it('fetched rates fill only the days this browser never wrote down (SnapshotTest.kt)', () => {
+    const recorded = { 100: 200_000 };
+    const fetched = { 99: 190_000, 100: 202_000, 101: 0, 102: 205_000, x: 1 };
+    // Its own day keeps the rate the app showed; a zero, a day still to come and a stray key are no rates.
+    expect(backfillRates(recorded, fetched, 101)).toEqual({ 99: 190_000, 100: 200_000 });
+    // Pruned from the old end, as every recorded day is.
+    const year = Object.fromEntries(Array.from({ length: HISTORY_KEEP_DAYS + 5 }, (_, d) => [String(d), 1]));
+    const kept = backfillRates({}, year, 1_000);
+    expect(Object.keys(kept)).toHaveLength(HISTORY_KEEP_DAYS);
+    expect(Math.min(...Object.keys(kept).map(Number))).toBe(5);
   });
 
   it('change is measured against the newest snapshot old enough', () => {

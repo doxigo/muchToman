@@ -1080,6 +1080,8 @@ private fun AppScreens(
               // still opens this from the گزارش button on its field, so there it keeps the
               // «برگشت» it had as an overlay — see [tabs].
               onBack = ({ tab = tabs.first() }).takeIf { tabs.size == 1 },
+              inUsd = state.reportUsd,
+              onUsd = vm::setReportUsd,
             )
           }
         }

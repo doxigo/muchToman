@@ -40,6 +40,15 @@ describe('rates proxies', () => {
     expect([...new Headers(init.headers)]).toEqual([['x-muchtoman-daily', '1.2.5 pwa']]);
   });
 
+  it('passes /usd-history through to the rates Worker', async () => {
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response('{"days":{"20738":262970}}', { headers: { 'cache-control': 'public, max-age=21600' } }));
+    const res = await SELF.fetch('https://sync.test/usd-history');
+    expect(await res.json()).toEqual({ days: { 20738: 262970 } });
+    expect(res.headers.get('cache-control')).toBe('public, max-age=21600');
+    expect(upstream.mock.calls[0][0]).toBe('https://rates.muchtoman.com/usd-history');
+  });
+
   it('carries a /rates revalidation through both ways, so the browser can get a 304', async () => {
     const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(null, { status: 304, headers: { etag: '"abc"', 'cache-control': 'public, max-age=600' } }));

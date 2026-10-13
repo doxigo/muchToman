@@ -9,7 +9,8 @@ import { jalaliDay, jalaliMonthLength, weekStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
 import {
   REPORT_SPANS, ReportMonth, ReportRange, ReportSpan, availableReportMonths, bufferDays, buildCashFlow, buildStory,
-  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, periodReport, quietWins, spendRhythm, weekRange,
+  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, periodReport, quietWins, runningSpend,
+  spendRhythm, weekRange,
 } from '../src/reports';
 import type { PeriodReport } from '../src/reports';
 import { entry as row } from './plans-fixture';
@@ -794,6 +795,30 @@ describe('spend rhythm (ReportsTest.kt)', () => {
     // A lent sum is no purchase unless the switch counts it, and a week is no habit.
     expect(spendRhythm(rows.map((e) => ({ ...e, categoryId: CAT_LOAN })), range, today, '')).toBeNull();
     expect(spendRhythm(rows, weekRange(weekStart(today)), today, '')).toBeNull();
+  });
+});
+
+describe('the running خرج (ReportsTest.kt)', () => {
+  it("adds up day by day to the card's own figure, against the whole month before", () => {
+    const mehr = new ReportMonth(1405, 7);
+    const range = new ReportRange(mehr, mehr);
+    const today = mehr.startDay + 9; // ۱۰ مهر
+    const rows = [
+      entry(mehr.startDay, -3_000), entry(mehr.startDay + 4, -2_000), entry(mehr.startDay + 4, 9_000),
+      loan(mehr.startDay + 5, -50_000), entry(mehr.startDay + 6, -1_000, { transfer: true }),
+      entry(mehr.previous().startDay, -4_000), entry(mehr.previous().endDay - 1, -6_000),
+    ];
+    const run = runningSpend(rows, range, today, true);
+    // Ten days lived of thirty; income, a قرض and a transfer move none of it.
+    expect(run.current).toEqual([3_000, 3_000, 3_000, 3_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000]);
+    expect(run.current[run.current.length - 1]).toBe(periodReport(rows, range).spentRial);
+    expect(run.days).toBe(30);
+    expect(run.previous).toHaveLength(31); // شهریور, whole
+    expect([run.previous[0], run.previous[30]]).toEqual([4_000, 10_000]);
+    // A month the ledger did not watch whole is no pace to read against.
+    expect(runningSpend(rows, range, today, false).previous).toEqual([]);
+    // The قرض counts once the report has been asked to count it.
+    expect(runningSpend(rows, range, today, true, true).current.at(-1)).toBe(55_000);
   });
 });
 

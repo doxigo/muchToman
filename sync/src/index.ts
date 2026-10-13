@@ -950,7 +950,8 @@ export default {
       // Served from here so the PWA is same-origin with its prices. The rates Worker sets no
       // CORS headers at all today, and proxying is both cheaper and safer than teaching a
       // public endpoint to answer cross-origin — its own edge cache still does the work.
-      if (path === '/rates') {
+      // The dollar's daily history rides the same way: a GET the rates Worker caches for hours.
+      if (path === '/rates' || path === '/usd-history') {
         if (request.method !== 'GET') return textResponse('GET only\n', 405, 'GET');
         const origin = env.RATES_ORIGIN ?? DEFAULT_RATES_ORIGIN;
         // Two request headers are passed on: the day's count (see "usage" in the rates Worker),
@@ -961,7 +962,7 @@ export default {
           const value = request.headers.get(name);
           if (value != null) headers[name] = value;
         }
-        const upstream = await fetch(`${origin}/rates`, { headers, signal: AbortSignal.timeout(8_000) });
+        const upstream = await fetch(`${origin}${path}`, { headers, signal: AbortSignal.timeout(8_000) });
         const etag = upstream.headers.get('etag');
         return new Response(upstream.body, {
           status: upstream.status,

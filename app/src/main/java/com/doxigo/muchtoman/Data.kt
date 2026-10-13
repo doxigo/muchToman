@@ -620,6 +620,7 @@ val ledgerGate = Mutex()
 
 private val JSON = Json { ignoreUnknownKeys = true }
 private const val MAX_RATES_RESPONSE_BYTES = 2 * 1024 * 1024
+private const val MAX_USD_HISTORY_BYTES = 64 * 1024
 private const val MAX_WALLET_RESPONSE_BYTES = 64 * 1024
 private const val MAX_RATE_ENTRIES = 10_000
 private const val MAX_COIN_ENTRIES = 500
@@ -1030,6 +1031,16 @@ class Store(context: Context) {
         get() = read("rateHistory", emptyMap())
         set(v) = write("rateHistory", v)
 
+    /** When [fetchUsdHistory] was last asked, so it is asked at most once a day. This phone's own. */
+    var usdHistoryAt: Long
+        get() = prefs.getLong("usdHistoryAt", 0L)
+        set(v) { prefs.edit().putLong("usdHistoryAt", v).apply() }
+
+    /** Whether گزارش‌ها states every figure in dollars. A reading preference, like [familyTotal]. */
+    var reportUsd: Boolean
+        get() = prefs.getBoolean("reportUsd", false)
+        set(v) { prefs.edit().putBoolean("reportUsd", v).apply() }
+
     /**
      * Whether the first-run sheet has had its one turn.
      *
@@ -1352,6 +1363,51 @@ suspend fun fetchRates(url: String, daily: String? = null, cached: Rates = Rates
             conn.disconnect()
         }
     }
+}
+
+/** The rates Worker's `/usd-history`: epoch day → Toman per dollar. */
+@Serializable
+private data class UsdHistory(val days: Map<String, Double> = emptyMap())
+
+/**
+ * The dollar on each of the last [HISTORY_KEEP_DAYS] days, from the rates Worker — for the days
+ * this phone never wrote a rate down. Asked at the rates origin, as [fetchWalletBalance] is.
+ */
+suspend fun fetchUsdHistory(ratesUrl: String): Result<Map<Long, Double>> = withContext(Dispatchers.IO) {
+    runCatching {
+        val rates = URL(ratesUrl)
+        val endpoint = URL(rates.protocol, rates.host, rates.port, "/usd-history")
+        val conn = (endpoint.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            requestMethod = "GET"
+            instanceFollowRedirects = false
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Connection", "close")
+        }
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) error("HTTP $code")
+            val body = conn.inputStream.use { it.readUtf8Limited(MAX_USD_HISTORY_BYTES) }
+            JSON.decodeFromString<UsdHistory>(body).days
+                .mapNotNull { (day, rate) -> day.toLongOrNull()?.let { it to rate } }
+                .toMap()
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+/**
+ * [recorded] with the days it lacks filled in from [fetched], pruned as [recordDay] prunes.
+ *
+ * A day this phone wrote down keeps its own rate: it is the dollar the app showed her that day,
+ * and a closed month must not re-price itself because a second source reads it a percent apart.
+ * A fetched rate that is no rate, or one for a day still to come, is dropped.
+ */
+fun backfillRates(recorded: Map<Long, Double>, fetched: Map<Long, Double>, today: Long): Map<Long, Double> {
+    val filled = fetched.filter { (day, rate) -> day <= today && rate > 0.0 && rate.isFinite() } + recorded
+    return filled.entries.sortedBy { it.key }.takeLast(HISTORY_KEEP_DAYS).associate { it.key to it.value }
 }
 
 /**

@@ -161,13 +161,21 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
   finding on top and the grid under it, hours left to right, empty blocks `surfaceVariant`. A
   habit barely moves from one day to the next, so it is a thing to read rather than to glance
   at; under four watched weeks or thirty purchases (every «۱ هفته») it is absent.
-- **Income in dollars is the report's too**: «ماه به ماه» carries the asset chart's «تومان / دلار»
-  `PillToggle` on its heading line (the key drops to the line under it), offered once two
-  columns have a recorded rate. In dollars every column is read at its own window's recorded
-  rate and the current one at today's; a column with no rate has no bar, and a line under the
-  chart says so. The sentence is an insight card: the newest finished month's «درآمد» in dollars
-  against the mean of up to five before it (`incomeInDollars`), the mean because income is
-  lumpy.
+- **One unit for the whole of گزارش‌ها**: a «تومان / دلار» `PillToggle` ends the title line and
+  governs both reports — every card, chart, row and drill-down sheet — rather than one toggle per
+  chart, which left the cards around a dollar chart in Toman. Remembered (`reportUsd`), and
+  absent until a rate has ever been seen. A window is read at its own rate: the current one at
+  today's, one that is over at the mean of its recorded days, with the rates worker's
+  `/usd-history` filling the days the phone never recorded. In dollars the big figures are
+  dollars and the exact Toman stays under them; a chart column, line or trend month with no rate
+  draws nothing, and a window with none reads in Toman whole under a line saying so. The
+  sentence is an insight card: the newest finished month's «درآمد» in dollars against the mean
+  of up to five before it (`incomeInDollars`), the mean because income is lumpy.
+- **«۱ ماه» and «۱ هفته» chart the pace, not two bars**: «خرج روز به روز» is the window's خرج
+  added up day by day, solid `onSurface`, over the whole window before's, dashed
+  `onSurfaceVariant`, time left to right and today ringed as on the asset chart. Above it, the
+  two figures the same day in («مهر تا امروز» / «شهریور تا همین روز»), neither called better. The
+  window before draws only when the ledger watched all of it. Longer spans keep «ماه به ماه».
 - **A row on آینده leads with what it is**: a budget with its category's disc, a cheque with
   the logo of the bank it draws on (`BankLogo`, 36dp, the disc's slot). Goals and installments
   have no such mark and lead with their name. A cheque's caution follows the budget's: the

@@ -27,10 +27,10 @@ import { DAY_MS, jalaliOf, tehranDay } from './jalali';
 import { faDayMonth } from './loans';
 import { closeSheet, openPage, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
 import type { ReportMode } from './nav';
-import { REPORT_SPANS, ReportSpan, buildCashFlow, categoryWindow, memberWindow, reportMonthOf } from './reports';
-import type { CashFlowReport, Insight, MemberShare, PeriodReport, ReportRange, SpendRhythm } from './reports';
+import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberWindow, reportMonthOf } from './reports';
+import type { CashFlowReport, Insight, MemberShare, PeriodReport, RunningSpend, SpendRhythm } from './reports';
 import { CAT_UNCATEGORISED } from './rules';
-import { pref, rows } from './state';
+import { pref, rows, setPref } from './state';
 import { FilterCategoryChip, MemberFace, TimelineRow, openTxn } from './timeline';
 import { ChipChoice, Panel, PillButton, PillToggle, ScreenTitle, SegmentedChoice, Sheet, SheetLabel, SheetTitle } from './ui';
 
@@ -60,6 +60,26 @@ const alpha = (color: string, percent: number): string => `color-mix(in srgb, ${
 /** Growth, in the colour every bank app in the country uses for it — the scheme's gain role. */
 const INCOME_TINT = 'var(--tertiary)';
 const SPEND_TINT = 'var(--on-surface-variant)';
+
+/**
+ * The dollar a window of this report is read at while the switch at the top says دلار, or null for
+ * Toman (Report.kt ReportUsd): the window she is standing in at today's rate, one that is over at
+ * the days it ran through. Read where it is used rather than handed down, because the drill-down
+ * sheet opens outside the report's tree.
+ */
+function usdFor(range: ReportRange, today = tehranDay(Date.now())): number | null {
+  if (!pref('reportUsd')) return null;
+  const rate = range.contains(today) ? currentEffective().usd ?? null : range.usdRate(pref('rateHistory'));
+  return rate != null && rate > 0 && Number.isFinite(rate) ? rate : null;
+}
+/** An amount as a row states it: compact Toman, or dollars at [rate]. */
+const figureOf = (rial: number, rate: number | null): string => rate != null ? faUsd(tomanOf(rial) / rate) : faCompact(tomanOf(rial));
+/** The same with its unit, on a line that does not already say it. */
+const amountOf = (rial: number, rate: number | null): string =>
+  rate != null ? faUsd(tomanOf(rial) / rate) : `${faCompact(tomanOf(rial))} ${moneyUnit()}`;
+/** And as a screen reader says it: "$" is read as punctuation, or not at all. */
+const spokenOf = (rial: number, rate: number | null): string =>
+  rate != null ? `${faRate(tomanOf(rial) / rate)} دلار` : `${faCompact(tomanOf(rial))} ${moneyUnit()}`;
 
 /**
  * BasicText's autoSize: the largest size in [min, max] at which the text fits its box on
@@ -194,7 +214,15 @@ function ReportScreen() {
           bottom of a long one, and the gap under it is outside the scroll so content never
           slides up to touch the control that governs it. */}
       <div class="rp-top">
-        <div class="screen-head"><ScreenTitle>گزارش‌ها</ScreenTitle></div>
+        <div class="screen-head">
+          <ScreenTitle>گزارش‌ها</ScreenTitle>
+          {/* One unit for the whole screen, over both reports: a toggle on each chart left every card
+              around it in Toman. Absent until a dollar rate has ever been seen. */}
+          {(currentEffective().usd != null || Object.keys(pref('rateHistory')).length > 0) && (
+            <PillToggle options={[false, true]} selected={pref('reportUsd')} label={(usd) => usd ? 'دلار' : moneyUnit()}
+              onSelect={(usd) => setPref('reportUsd', usd)} />
+          )}
+        </div>
         <SegmentedChoice options={MODES} selected={at.mode} label={(m) => MODE_FA[m]} onSelect={onMode} />
       </div>
       <div class="rp-scroll" ref={scroller}>
@@ -242,9 +270,9 @@ function AssetReportContent() {
 
   // The shortest window that is at least a month: a week was never what the door was opened to ask.
   const [selected, select] = useState(() => WINDOWS.find(([, d]) => d !== 7 && available(d))?.[0] ?? 'همه');
-  // In Toman the line climbs with inflation almost whatever she does; in dollars it answers
-  // whether she is actually any richer. Toman first, because it is the unit the app keeps.
-  const [inUsd, setUsd] = useState(false);
+  // The switch at the top: in Toman the line climbs with inflation almost whatever she does; in
+  // dollars it answers whether she is actually any richer.
+  const inUsd = pref('reportUsd');
   // Today closes the dollar line as it closes the Toman one: the live total at the live rate.
   const usdRate = currentEffective().usd;
   const rateHistory = pref('rateHistory');
@@ -272,14 +300,7 @@ function AssetReportContent() {
       <ChipChoice options={WINDOWS.map(([label]) => label)} selected={selected} label={(l) => l}
         enabled={(l) => available(WINDOWS.find(([label]) => label === l)![1])} onSelect={select} scroll />
       <div class="rp-xxl">
-        {/* The unit belongs to the figure and the line under it, not to the page: as a second row
-            of the window's chips it read as another window. So it ends the figure's own caption
-            line, a size down — and stays when the empty state takes the figure's place, because
-            dollars short of a line must still be able to switch back to Toman. */}
-        <div class="rp-since">
-          <span>{since}</span>
-          <PillToggle options={[false, true]} selected={inUsd} label={(usd) => usd ? 'دلار' : moneyUnit()} onSelect={setUsd} />
-        </div>
+        <div class="rp-since"><span>{since}</span></div>
         {shown == null
           // Dollars short of a line say why: the rates start on the day the app first recorded
           // one, which can be long after the Toman history did.
@@ -303,7 +324,7 @@ function AssetReportContent() {
         )}
       </div>
       {/* One kind is the hero total said twice. */}
-      {composition.length > 1 && <div class="rp-xxl"><CompositionBar composition={composition} /></div>}
+      {composition.length > 1 && <div class="rp-xxl"><CompositionBar composition={composition} usd={inUsd ? usdRate ?? null : null} /></div>}
     </div>
   );
 }
@@ -318,7 +339,7 @@ export const BAR_TINT: Record<Kind, string> = {
 };
 
 /** What the total is made of, right now, in the home list's own sections. */
-function CompositionBar({ composition }: { composition: Array<[Kind, number]> }) {
+function CompositionBar({ composition, usd }: { composition: Array<[Kind, number]>; usd: number | null }) {
   const total = composition.reduce((s, [, v]) => s + v, 0);
   return (
     <div>
@@ -331,7 +352,7 @@ function CompositionBar({ composition }: { composition: Array<[Kind, number]> })
           <span class="rp-legend-dot" style={{ background: BAR_TINT[kind] }} />
           <span class="grow">{KIND_FA[kind]}</span>
           {/* Parentheses, not a middot: beside Persian digits «·» reads as a zero. */}
-          <span class="muted">{`${faCompact(value, 3, true)} ${moneyUnit()} (${faNumber(roundEven(value / total * 100))}٪)`}</span>
+          <span class="muted">{`${usd != null ? faUsd(value / usd) : `${faCompact(value, 3, true)} ${moneyUnit()}`} (${faNumber(roundEven(value / total * 100))}٪)`}</span>
         </div>
       ))}
     </div>
@@ -467,6 +488,8 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
   );
   // Today's rate prices the window she is standing in; a closed one is frozen at its own days.
   const usdRate = currentEffective().usd ?? null;
+  // A window with no rate on file reads in Toman whole, and says so, rather than mixing units.
+  const rate = usdFor(cash.range, cash.today);
   const period = cash.period;
   // A window whose only rows are held apart is not empty — those rows are listed under دسته‌ها.
   const heldApart = period.excludedSpending.length > 0 || period.excludedIncome.length > 0;
@@ -479,18 +502,23 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
       <ChipChoice options={[...REPORT_SPANS]} selected={cash.span} label={(s) => s.fa} enabled={(s) => cash.spans.includes(s)}
         onSelect={(s) => onWindow(cash.range.endDay - 1, s)} scroll />
       <div class="rp-xxl"><WindowNavigator cash={cash} onWindow={onWindow} /></div>
+      {pref('reportUsd') && rate == null && <p class="rp-note rp-s">{`نرخ دلارِ این بازه ثبت نشده؛ گزارشش به ${moneyUnit()} مونده.`}</p>}
       <div class="rp-m">
         {period.transactions === 0 && !heldApart
           // This window empty yet is a thing to do; a past one may simply be older than the ledger.
           ? cash.current ? <QuietStart named={cash.range.recentFa} /> : <EmptyMonth range={cash.range} />
-          : <MonthSummary month={period} current={cash.current} today={cash.today} usdRate={usdRate} rateHistory={rateHistory} />}
+          : <MonthSummary month={period} current={cash.current} today={cash.today} usdRate={usdRate} rateHistory={rateHistory} rate={rate} />}
       </div>
-      {/* Two windows with something in them is the least a comparison can be made of. */}
-      {cash.series.filter((r) => r.incomeRial > 0 || r.spentRial > 0).length > 1 && (
-        <div class="rp-xxl"><MonthBars cash={cash} onWindow={onWindow} usdRate={usdRate} rateHistory={rateHistory} /></div>
-      )}
-      {(period.transactions > 0 || heldApart) && <div class="rp-xxl"><CategoryDetail period={period} /></div>}
-      {cash.members.length > 0 && <div class="rp-xxl"><MemberDetail members={cash.members} period={period} excluded={excluded} /></div>}
+      {/* One month or one week reads as a pace against the one before; two bars side by side said
+          only what the card's figures had. Longer windows compare months, two with something in
+          them being the least a comparison can be made of. */}
+      {cash.running
+        ? (cash.running.current[cash.running.current.length - 1] ?? 0) > 0 &&
+          <div class="rp-xxl"><RunningChart cash={cash} running={cash.running} rate={rate} /></div>
+        : cash.series.filter((r) => r.incomeRial > 0 || r.spentRial > 0).length > 1 &&
+          <div class="rp-xxl"><MonthBars cash={cash} onWindow={onWindow} usd={rate != null} /></div>}
+      {(period.transactions > 0 || heldApart) && <div class="rp-xxl"><CategoryDetail period={period} rate={rate} /></div>}
+      {cash.members.length > 0 && <div class="rp-xxl"><MemberDetail members={cash.members} period={period} excluded={excluded} rate={rate} /></div>}
       {/* Present even when the window is empty while an exclusion stands: a report quietly
           missing a category with no way to see why is the friendlier kind of lie. */}
       {view.categories.length > 0 && (
@@ -502,7 +530,7 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
       {/* After what she spent on and who spent it, when she spends: the same window, through the same
           exclusions just above it. Absent on a window too short to call a habit. */}
       {cash.rhythm && <div class="rp-xxl"><RhythmDetail rhythm={cash.rhythm} windowFa={cash.range.nameFa(cash.current)} mine={cash.members.length > 0} /></div>}
-            {worthIt.total > 0 && <div class="rp-xxl"><WorthItDetail summary={worthIt} range={cash.range} /></div>}
+      {worthIt.total > 0 && <div class="rp-xxl"><WorthItDetail summary={worthIt} range={cash.range} rate={rate} /></div>}
       {/* Findings and wins in one grid: paired by kind, each run could end on a lone card. */}
       {cards.length > 0 && <div class="rp-xxl"><InsightGrid insights={cards} /></div>}
     </div>
@@ -563,12 +591,15 @@ function EmptyMonth({ range }: { range: ReportRange }) {
  * What came in against what went out, then the one line that settles it. A deficit is never a
  * negative amount under the word «مانده»: the word carries it, «کسری», and colour confirms.
  */
-function MonthSummary({ month, current, today, usdRate, rateHistory }: {
+function MonthSummary({ month, current, today, usdRate, rateHistory, rate: usd }: {
   month: PeriodReport; current: boolean; today: number; usdRate: number | null; rateHistory: Record<string, number>;
+  /** The dollar every figure reads at while the switch says دلار; null for Toman. */
+  rate: number | null;
 }) {
   // Today's rate only for the window still being written; one that is over is read at the rates
-  // recorded while it ran, and one from before the app kept rates shows no dollars at all.
-  const rate = current ? usdRate : month.range.usdRate(rateHistory);
+  // recorded while it ran, and one from before the app kept rates shows no dollars at all. In
+  // dollars the figures already are that reading, so the aside goes.
+  const rate = usd != null ? null : current ? usdRate : month.range.usdRate(rateHistory);
   // «درآمد این ماه» on the month she is standing in; on a longer window just «درآمد».
   const named = current && month.range.count === 1 ? ` ${month.range.recentFa}` : '';
   const kept = month.netRial >= 0;
@@ -577,8 +608,8 @@ function MonthSummary({ month, current, today, usdRate, rateHistory }: {
   return (
     <Panel>
       <div class="rp-sides">
-        <FlowSide label={`درآمد${named}`} rial={month.incomeRial} tone={INCOME_TINT} rate={rate} />
-        <FlowSide label={`خرج${named}`} rial={month.spentRial} tone="var(--on-surface)" rate={rate} />
+        <FlowSide label={`درآمد${named}`} rial={month.incomeRial} tone={INCOME_TINT} rate={rate} usd={usd} />
+        <FlowSide label={`خرج${named}`} rial={month.spentRial} tone="var(--on-surface)" rate={rate} usd={usd} />
       </div>
       {(month.incomeRial > 0 || month.spentRial > 0) && (
         <FlowSplit parts={[[month.incomeRial, INCOME_TINT], [month.spentRial, SPEND_TINT]]} />
@@ -587,11 +618,11 @@ function MonthSummary({ month, current, today, usdRate, rateHistory }: {
       <div class="rp-net">
         <span class="muted">{kept ? `مانده${named}` : `کسری${named}`}</span>
         {/* The figure yields, not the label: it is the half that grows by orders of magnitude. */}
-        <div class="rp-fitbox grow"><Fit text={bidi(faCompact(tomanOf(net)))} min={15} max={22} class="figure rp-w800 rp-end" color={tone} /></div>
+        <div class="rp-fitbox grow"><Fit text={bidi(figureOf(net, usd))} min={15} max={22} class="figure rp-w800 rp-end" color={tone} /></div>
       </div>
       <p class="figure muted rp-net-exact">{`${faNumber(shownOf(tomanOf(net)))} ${moneyUnit()}`}</p>
       <UsdAside rial={net} rate={rate} end />
-      <SpendPace month={month} today={today} />
+      <SpendPace month={month} today={today} rate={usd} />
     </Panel>
   );
 }
@@ -600,35 +631,35 @@ function MonthSummary({ month, current, today, usdRate, rateHistory }: {
  * The pace behind the خرج figure, per day and per week — what makes windows of different
  * lengths comparable. Absent where the window is too short for «میانگین» to be true.
  */
-function SpendPace({ month, today }: { month: PeriodReport; today: number }) {
+function SpendPace({ month, today, rate }: { month: PeriodReport; today: number; rate: number | null }) {
   const daily = month.dailySpendRial(today);
   if (daily == null) return null;
   const weekly = month.weeklySpendRial(today);
   return (
     <>
       <hr class="rp-rule rp-m" />
-      <PaceLine label="میانگین خرج روزانه" rial={daily} />
-      {weekly != null && <PaceLine label="میانگین خرج هفتگی" rial={weekly} />}
+      <PaceLine label="میانگین خرج روزانه" rial={daily} rate={rate} />
+      {weekly != null && <PaceLine label="میانگین خرج هفتگی" rial={weekly} rate={rate} />}
     </>
   );
 }
 
-function PaceLine({ label, rial }: { label: string; rial: number }) {
+function PaceLine({ label, rial, rate }: { label: string; rial: number; rate: number | null }) {
   return (
     <div class="rp-pace">
       <span class="muted">{label}</span>
       {/* Compact only: the exact Rial of an average is precision the division never had. */}
-      <div class="rp-fitbox grow"><Fit text={bidi(`${faCompact(tomanOf(rial))} ${moneyUnit()}`)} min={11} max={14} class="figure rp-w700 rp-end" /></div>
+      <div class="rp-fitbox grow"><Fit text={bidi(amountOf(rial, rate))} min={11} max={14} class="figure rp-w700 rp-end" /></div>
     </div>
   );
 }
 
 /** One side of the window: the magnitude to read at a glance, the exact figure under it. */
-function FlowSide({ label, rial, tone, rate }: { label: string; rial: number; tone: string; rate: number | null }) {
+function FlowSide({ label, rial, tone, rate, usd }: { label: string; rial: number; tone: string; rate: number | null; usd: number | null }) {
   return (
     <div class="rp-fitbox rp-side">
       <Fit text={label} min={10} max={12} class="muted" />
-      <Fit text={bidi(faCompact(tomanOf(rial)))} min={13} max={26} class="figure rp-w800 rp-side-figure" color={tone} />
+      <Fit text={bidi(figureOf(rial, usd))} min={13} max={26} class="figure rp-w800 rp-side-figure" color={tone} />
       {/* faCompact truncates, so the magnitude is never more than she has; the exact is right here. */}
       <Fit text={`${faNumber(shownOf(tomanOf(rial)))} ${moneyUnit()}`} min={8} max={11} class="figure muted rp-side-exact" />
       <UsdAside rial={rial} rate={rate} />
@@ -663,6 +694,90 @@ function FlowSplit({ parts }: { parts: Array<[number, string]> }) {
   );
 }
 
+/**
+ * خرج added up day by day over the one month or week she picked, on the window before's line
+ * (Report.kt RunningChart). Two bars said what the card's figures already had; two lines say where
+ * in the month the money went, and whether this one is running ahead. Time runs left to right; the
+ * window before is dashed and quieter — the yardstick, not the subject. The two figures are the
+ * same day in, and neither is called better: in Toman a smaller figure is often only an older one.
+ */
+function RunningChart({ cash, running, rate }: { cash: CashFlowReport; running: RunningSpend; rate: number | null }) {
+  const before = cash.range.before();
+  const weekly = cash.range.week != null;
+  // Each line at its own window's dollar; a window before with none on file loses its line.
+  const now = running.current.map((r) => tomanOf(r) / (rate ?? 1));
+  const beforeRate = rate == null ? 1 : usdFor(before, cash.today);
+  const then = beforeRate == null ? [] : running.previous.map((r) => tomanOf(r) / beforeRate);
+  // The same day in: the last one lived, or the window before's last when it was shorter.
+  const sameDay = then[now.length - 1] ?? then[then.length - 1] ?? null;
+  const said = (v: number) => (rate != null ? faUsd(v) : `${faCompact(v)} ${moneyUnit()}`);
+  const nameOf = (r: ReportRange) => {
+    if (r.week == null) return MONTHS[r.last.month - 1];
+    const at = jalaliOf(r.week);
+    return `هفتهٔ ${faNumber(at.day)} ${MONTHS[at.month - 1]}`;
+  };
+  const name = nameOf(cash.range);
+  const beforeName = nameOf(before);
+  const nowLabel = cash.current ? `${name} تا امروز` : `کل ${name}`;
+  const thenLabel = cash.current ? `${beforeName} تا همین روز` : `کل ${beforeName}`;
+  const W = 1000;
+  const H = 160;
+  const padY = 8;
+  const last = Math.max(Math.max(running.days, then.length) - 1, 1);
+  const top = Math.max(...now, ...then) || 1;
+  const px = (i: number) => (i / last) * W;
+  const py = (v: number) => H - padY - (v / top) * (H - 2 * padY);
+  const line = (values: number[]) => values.map((v, i) => `${i ? 'L' : 'M'}${px(i).toFixed(2)} ${py(v).toFixed(2)}`).join(' ');
+  const end = now[now.length - 1];
+  // "$" is read out as punctuation, or not at all.
+  const heard = (v: number) => (rate != null ? `${faRate(v)} دلار` : said(v));
+  const spoken = `${nowLabel}: ${heard(end)}` + (sameDay != null ? `، ${thenLabel}: ${heard(sameDay)}` : '');
+  return (
+    <div>
+      <h2 class="rp-heading">خرج روز به روز</h2>
+      <div class="rp-sides rp-m">
+        <div class="rp-fitbox rp-side">
+          <p class="muted rp-running-label">{nowLabel}</p>
+          <Fit text={bidi(said(end))} min={13} max={20} class="figure rp-w800 rp-side-figure" color="var(--on-surface)" />
+        </div>
+        {sameDay != null && (
+          <div class="rp-fitbox rp-side">
+            <p class="muted rp-running-label">{thenLabel}</p>
+            <Fit text={bidi(said(sameDay))} min={13} max={20} class="figure rp-w800 rp-side-figure" color={SPEND_TINT} />
+          </div>
+        )}
+      </div>
+      <div class="rp-chart-card" role="img" aria-label={spoken}>
+        <div class="rp-running">
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden="true">
+            <line x1="0" y1={H - padY} x2={W} y2={H - padY} style={{ stroke: SPEND_TINT }} stroke-opacity={0.3} stroke-width={1}
+              vector-effect="non-scaling-stroke" />
+            {then.length > 1 && (
+              <path d={line(then)} fill="none" style={{ stroke: SPEND_TINT }} stroke-width={2} stroke-dasharray="6 5"
+                stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            )}
+            {now.length > 1 && (
+              <path d={line(now)} fill="none" style={{ stroke: 'var(--on-surface)' }} stroke-width={3}
+                stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            )}
+          </svg>
+          {/* Where the window stands, ringed as the asset chart rings today. */}
+          <span class="rp-history-end" style={{ left: `${(px(now.length - 1) / W) * 100}%`, top: `${py(end)}px`, '--tone': 'var(--on-surface)' }} />
+        </div>
+        {/* Time runs left to right, so in this RTL row the first label lands on the right, under the last day. */}
+        <div class="rp-captions">
+          <span class="muted rp-running-axis">{weekly ? 'جمعه' : faNumber(running.days)}</span>
+          <span class="muted rp-running-axis">{weekly ? 'شنبه' : faNumber(1)}</span>
+        </div>
+      </div>
+      <div class="rp-keys" style={{ marginTop: 'var(--s)' }}>
+        <BarKey label={name} tone="var(--on-surface)" />
+        {then.length > 0 && <BarKey label={`${beforeName} (خط‌چین)`} tone={SPEND_TINT} />}
+      </div>
+    </div>
+  );
+}
+
 /** The shortest a bar may be drawn while still reading as an amount rather than as nothing. */
 const BAR_FLOOR = 0.03;
 
@@ -672,20 +787,12 @@ const BAR_FLOOR = 0.03;
  * Each column is a control: tapping reads that month alone, with the span dropping to «۱ ماه»
  * visibly (a week stays a week).
  */
-function MonthBars({ cash, onWindow, usdRate, rateHistory }: {
-  cash: CashFlowReport; onWindow: OnWindow; usdRate: number | null; rateHistory: Readonly<Record<string, number>>;
-}) {
+function MonthBars({ cash, onWindow, usd }: { cash: CashFlowReport; onWindow: OnWindow; usd: boolean }) {
   const weekly = cash.range.week != null;
   // In Toman both sides climb with inflation; in dollars the chart says whether she is earning, or
   // spending, any more (Report.kt MonthBars). Each column at its own window's recorded rate, the one
   // she is standing in at today's; absent, never zero, where no rate is on file.
-  const [inUsd, setUsd] = useState(false);
-  const rates = useMemo(() => cash.series.map((r) => {
-    const rate = r.range.contains(cash.today) ? usdRate : r.range.usdRate(rateHistory);
-    return rate != null && rate > 0 && Number.isFinite(rate) ? rate : null;
-  }), [cash, usdRate, rateHistory]);
-  const priced = rates.filter((r) => r != null).length >= 2;
-  const usd = inUsd && priced;
+  const rates = cash.series.map((r) => (usd ? usdFor(r.range, cash.today) : null));
   const shown = (i: number, rial: number): number | null => (!usd ? tomanOf(rial) : rates[i] != null ? tomanOf(rial) / rates[i]! : null);
   const top = Math.max(...cash.series.map((r, i) => Math.max(shown(i, r.incomeRial) ?? 0, shown(i, r.spentRial) ?? 0))) || 1;
   // A year of months thins the bars to keep twelve on a narrow phone, and names give way to numerals.
@@ -698,8 +805,6 @@ function MonthBars({ cash, onWindow, usdRate, rateHistory }: {
       <div class="rp-row-head">
         {/* Not «شش ماه اخیر»: near the ledger's start the window holds fewer. */}
         <h2 class="rp-heading grow">{weekly ? 'هفته به هفته' : 'ماه به ماه'}</h2>
-        {/* Only once two columns have a dollar to show: one is not a comparison. */}
-        {priced && <PillToggle options={[false, true]} selected={inUsd} label={(u) => u ? 'دلار' : moneyUnit()} onSelect={setUsd} />}
       </div>
       <div class="rp-keys">
         <BarKey label="درآمد" tone={INCOME_TINT} />
@@ -778,7 +883,7 @@ const openCategory = (props: ReportCategoryProps): void => openSheet('reportCate
  * came to for the detail. Money the report is deliberately not counting is listed under the
  * counted rows rather than hidden.
  */
-function CategoryDetail({ period }: { period: PeriodReport }) {
+function CategoryDetail({ period, rate }: { period: PeriodReport; rate: number | null }) {
   // خرج unless there is nothing on that side, counted or held apart.
   const [side, setSide] = useState<Lens>(() =>
     period.spentRial <= 0 && !period.excludedSpending.length && (period.incomeRial > 0 || period.excludedIncome.length > 0)
@@ -798,7 +903,7 @@ function CategoryDetail({ period }: { period: PeriodReport }) {
       {!list.length || total <= 0
         ? <p class="rp-none muted">{income ? `در ${named} درآمدی ثبت نشده.` : `در ${named} خرجی ثبت نشده.`}</p>
         : list.map(([name, rial]) => (
-          <ShareRow key={name} name={name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined}
+          <ShareRow key={name} name={name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined} rate={rate}
             lead={<CategoryDisc name={name} size={32} icon={17} stroke={1.5} />}
             onOpen={() => openCategory({ name, income, range: period.range, sideRial: total })} />
         ))}
@@ -806,7 +911,7 @@ function CategoryDetail({ period }: { period: PeriodReport }) {
         <>
           <h3 class="rp-aside-head">بیرون از جمع</h3>
           {heldOut.map(([name, rial]) => (
-            <AsideCategoryRow key={name} name={name} rial={rial}
+            <AsideCategoryRow key={name} name={name} rial={rial} rate={rate}
               // sideRial zero: this category is inside no total, so its sheet claims no share.
               onOpen={() => openCategory({ name, income, range: period.range, sideRial: 0 })} />
           ))}
@@ -821,14 +926,14 @@ function CategoryDetail({ period }: { period: PeriodReport }) {
  * purpose — the amount is stated, not weighed. The share's well is kept empty so both lists'
  * amounts sit on one column.
  */
-function AsideCategoryRow({ name, rial, onOpen }: { name: string; rial: number; onOpen: () => void }) {
+function AsideCategoryRow({ name, rial, rate, onOpen }: { name: string; rial: number; rate: number | null; onOpen: () => void }) {
   return (
     <button type="button" class="rp-btn rp-share" onClick={onOpen}
-      aria-label={`${name}: ${faCompact(tomanOf(rial))} ${moneyUnit()}، در جمع حساب نشده`}>
+      aria-label={`${name}: ${spokenOf(rial, rate)}، در جمع حساب نشده`}>
       <span class="rp-share-row">
         <CategoryDisc name={name} size={32} icon={17} stroke={1.5} fill={10} ink={70} />
         <span class="rp-share-name muted">{name}</span>
-        <span class="figure rp-share-amount">{bidi(faCompact(tomanOf(rial)))}</span>
+        <span class="figure rp-share-amount">{bidi(figureOf(rial, rate))}</span>
         <span class="rp-share-pct" />
         <span class="muted"><Chevron size={18} /></span>
       </span>
@@ -840,7 +945,9 @@ function AsideCategoryRow({ name, rial, onOpen }: { name: string; rial: number; 
  * The window split by who each row belongs to — «دسته‌ها» grouped the other way, in the same
  * two-lens construction: «خرج» by who paid, «درآمد» by who it reached.
  */
-function MemberDetail({ members, period, excluded }: { members: MemberShare[]; period: PeriodReport; excluded: ReadonlySet<string> }) {
+function MemberDetail({ members, period, excluded, rate }: {
+  members: MemberShare[]; period: PeriodReport; excluded: ReadonlySet<string>; rate: number | null;
+}) {
   const [side, setSide] = useState<Lens>(() =>
     members.every((m) => m.spentRial <= 0) && members.some((m) => m.incomeRial > 0) ? 'INCOME' : 'EXPENSE');
   const income = side === 'INCOME';
@@ -859,7 +966,7 @@ function MemberDetail({ members, period, excluded }: { members: MemberShare[]; p
       {!list.length || total <= 0
         ? <p class="rp-none muted">{income ? `در ${named} درآمدی از اعضا ثبت نشده.` : `در ${named} خرجی از اعضا ثبت نشده.`}</p>
         : list.map(([member, rial]) => (
-          <ShareRow key={member.id} name={member.name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined}
+          <ShareRow key={member.id} name={member.name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined} rate={rate}
             lead={<MemberFace name={member.name} avatar={member.avatar} size={32} />}
             // Her rows on the side she is reading, in the sheet the category rows open.
             onOpen={() => openCategory({
@@ -876,8 +983,10 @@ function MemberDetail({ members, period, excluded }: { members: MemberShare[]; p
  * that survives inflation. The amount comes before the fixed-width share box, so the shares line
  * up on the box and the amounts on where it begins.
  */
-function ShareRow({ name, rial, total, tint, lead, onOpen }: {
+function ShareRow({ name, rial, total, tint, lead, onOpen, rate = null }: {
   name: string; rial: number; total: number; tint?: string; lead: ComponentChildren; onOpen?: () => void;
+  /** The dollar the report reads at, or null — خانه's card always reads Toman. */
+  rate?: number | null;
 }) {
   const share = shareOf(rial, total);
   const percent = faNumber(roundEven(share * 100));
@@ -887,14 +996,14 @@ function ShareRow({ name, rial, total, tint, lead, onOpen }: {
         {lead}
         {/* Wraps rather than truncates: a clipped name is the one thing she cannot reconstruct. */}
         <span class="rp-share-name">{name}</span>
-        <span class="figure rp-share-amount">{bidi(faCompact(tomanOf(rial)))}</span>
+        <span class="figure rp-share-amount">{bidi(figureOf(rial, rate))}</span>
         <span class="figure rp-share-pct">{`${percent}٪`}</span>
         {onOpen && <span class="muted"><Chevron size={18} /></span>}
       </span>
       <span class="rp-track"><span style={{ width: `${share * 100}%`, background: tint ?? 'var(--primary)' }} /></span>
     </>
   );
-  const label = `${name}: ${faCompact(tomanOf(rial))} ${moneyUnit()}، ${percent} درصد`;
+  const label = `${name}: ${spokenOf(rial, rate)}، ${percent} درصد`;
   return onOpen
     ? <button type="button" class="rp-btn rp-share" aria-label={label} onClick={onOpen}>{body}</button>
     : <div class="rp-share" role="group" aria-label={label}>{body}</div>;
@@ -952,16 +1061,16 @@ export function CategoryShareRow({ name, rial, total }: { name: string; rial: nu
  * «به نظر خودت» — her «ارزش داشت؟» answers, summed over this window. Zero rows are skipped: a
  * Persian zero at this size is a floating dot, not a figure.
  */
-function WorthItDetail({ summary, range }: { summary: WorthItSummary; range: ReportRange }) {
+function WorthItDetail({ summary, range, rate }: { summary: WorthItSummary; range: ReportRange; rate: number | null }) {
   return (
     <div>
       <h2 class="rp-heading">به نظر خودت</h2>
       <p class="rp-note rp-xs">{`جمع جواب‌هایی که به «ارزش داشت؟» دادی، در ${range.fa}.`}</p>
       <div class="rp-worth">
-        {summary.worth > 0 && <WorthItLine label="ارزش داشت" rial={summary.worth} tone="var(--tertiary)" />}
-        {summary.needed > 0 && <WorthItLine label="لازم بود" rial={summary.needed} tone="var(--on-surface-variant)" />}
+        {summary.worth > 0 && <WorthItLine label="ارزش داشت" rial={summary.worth} tone="var(--tertiary)" rate={rate} />}
+        {summary.needed > 0 && <WorthItLine label="لازم بود" rial={summary.needed} tone="var(--on-surface-variant)" rate={rate} />}
         {/* The caution amber: her own «نه» is the one figure that asks to be acted on. */}
-        {summary.regretted > 0 && <WorthItLine label="ارزش نداشت" rial={summary.regretted} tone="var(--secondary)" />}
+        {summary.regretted > 0 && <WorthItLine label="ارزش نداشت" rial={summary.regretted} tone="var(--secondary)" rate={rate} />}
       </div>
       {summary.regretted > 0 && (
         <p class="rp-note rp-s">«ارزش نداشت» تنها رقمیه که می‌شه روش کاری کرد — خرجیه که خودت گفتی می‌شد نباشه.</p>
@@ -970,11 +1079,11 @@ function WorthItDetail({ summary, range }: { summary: WorthItSummary; range: Rep
   );
 }
 
-function WorthItLine({ label, rial, tone }: { label: string; rial: number; tone: string }) {
+function WorthItLine({ label, rial, tone, rate }: { label: string; rial: number; tone: string; rate: number | null }) {
   return (
     <div class="rp-worth-line">
       <span class="grow">{label}</span>
-      <span class="figure rp-w700" style={{ color: tone }}>{bidi(`${faCompact(tomanOf(rial))} ${moneyUnit()}`)}</span>
+      <span class="figure rp-w700" style={{ color: tone }}>{bidi(amountOf(rial, rate))}</span>
     </div>
   );
 }
@@ -1019,6 +1128,8 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
   // A person's name through categoryHue would borrow a colour that means «خوراک» elsewhere, so a
   // member's sheet wears the colour their bar already wore.
   const tone = win.face == null ? hue(win.name) : income ? INCOME_TINT : 'var(--primary)';
+  // The report's own reading of this window — the same rule, so the sheet and the row agree.
+  const rate = usdFor(range);
   return (
     <Sheet label={win.name}>
       <div class="rp-sheet-head">
@@ -1030,7 +1141,7 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
         </div>
       </div>
       <div class="rp-fitbox rp-l">
-        <Fit text={bidi(`${faCompact(tomanOf(win.totalRial))} ${moneyUnit()}`)} min={22} max={34} class="figure rp-w900"
+        <Fit text={bidi(amountOf(win.totalRial, rate))} min={22} max={34} class="figure rp-w900"
           color={income ? INCOME_TINT : 'var(--on-surface)'} />
       </div>
       {win.share != null && (
@@ -1041,7 +1152,7 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
         <>
           <SheetLabel>دسته به دسته</SheetLabel>
           {win.breakdown.map(([cat, rial]) => (
-            <ShareRow key={cat} name={cat} rial={rial} total={Math.max(win.totalRial, 1)} tint={income ? INCOME_TINT : undefined}
+            <ShareRow key={cat} name={cat} rial={rial} total={Math.max(win.totalRial, 1)} tint={income ? INCOME_TINT : undefined} rate={rate}
               lead={<CategoryDisc name={cat} size={32} icon={17} stroke={1.5} />} />
           ))}
         </>
@@ -1049,7 +1160,7 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
       {win.trend.some(([, rial]) => rial > 0) && (
         <>
           <SheetLabel>ماه به ماه</SheetLabel>
-          <CategoryTrend trend={win.trend} tone={tone} />
+          <CategoryTrend trend={win.trend} tone={tone} usd={rate != null} />
         </>
       )}
       {win.rows.length > 0 && (
@@ -1078,13 +1189,19 @@ function openFromSheet(ref: string): void {
  * Six months of one category on one scale, in its own hue. Only the two end months are named:
  * six Persian month names across a sheet is a caption war, and the ends are the axis.
  */
-function CategoryTrend({ trend, tone }: { trend: CategoryWindowTrend; tone: string }) {
-  const top = Math.max(...trend.map(([, rial]) => rial), 1);
+function CategoryTrend({ trend, tone, usd }: { trend: CategoryWindowTrend; tone: string; usd: boolean }) {
+  // Each month at its own dollar in dollars, as the month bars are; none on file draws as nothing.
+  const values = trend.map(([month, rial]) => {
+    if (!usd) return rial;
+    const rate = usdFor(new ReportRange(month, month));
+    return rate != null ? rial / rate : 0;
+  });
+  const top = Math.max(...values) || 1;
   return (
     <div class="rp-trend" aria-hidden="true">
-      {trend.map(([month, rial], i) => (
+      {trend.map(([month], i) => (
         <div>
-          <span style={{ height: `${Math.max(4, (80 * Math.fround(rial)) / top)}px`, background: rial > 0 ? tone : 'var(--surface-variant)' }} />
+          <span style={{ height: `${Math.max(4, (80 * Math.fround(values[i])) / top)}px`, background: values[i] > 0 ? tone : 'var(--surface-variant)' }} />
           <p>{i === 0 || i === trend.length - 1 ? MONTHS[month.month - 1] : ' '}</p>
         </div>
       ))}

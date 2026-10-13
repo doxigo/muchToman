@@ -240,6 +240,10 @@ export interface Prefs {
   rateHistory: Record<string, number>;
   lockEnabled: boolean;
   familyTotal: boolean;
+  /** Whether گزارش‌ها states every figure in dollars (Data.kt reportUsd). */
+  reportUsd: boolean;
+  /** When /usd-history was last asked (data.ts fillRateGaps) — this browser's, kept out of backups. */
+  usdHistoryAt: number;
   reportExcluded: string[];
   /** The household's copy of the same choice, last-write-wins across members (Sync.kt:471). */
   reportExclusions: { ids: string[]; updatedAt: number; editedByMemberId: string } | null;
@@ -288,6 +292,8 @@ export const PREF_DEFAULTS: Prefs = {
   rateHistory: {},
   lockEnabled: false,
   familyTotal: false,
+  reportUsd: false,
+  usdHistoryAt: 0,
   // The pass-through categories — قرض and همسر — sit outside the totals until she says
   // otherwise (Rules.kt PASS_THROUGH_CATEGORIES, Data.kt reportExcluded).
   reportExcluded: ['cat_loan', 'cat_loan_back', 'cat_spouse'],

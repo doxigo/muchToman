@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -168,6 +170,9 @@ fun ReportScreen(
     entries: List<LedgerEntry> = emptyList(),
     /** Opens one transaction's own page, from the drill-down's list. */
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+    /** Whether every figure on both reports reads in dollars — [Store.reportUsd]. */
+    inUsd: Boolean = false,
+    onUsd: (Boolean) -> Unit = {},
 ) {
     val modes = reportModes
     // The lite edition is handed CASH_FLOW by any caller that does not know which build it is
@@ -196,7 +201,19 @@ fun ReportScreen(
                     if (modes.size > 1) "گزارش‌ها" else "گزارش دارایی",
                     modifier = Modifier.weight(1f),
                 )
+                // One unit for the whole screen, over both reports. A toggle on each chart left
+                // every card around it in Toman, so the chart's dollars were read against Toman
+                // two inches up. Absent until a dollar rate has ever been seen.
+                if (usdRate != null || rateHistory.isNotEmpty()) {
+                    PillToggle(
+                        options = listOf(false, true),
+                        selected = inUsd,
+                        label = { if (it) "دلار" else moneyUnit },
+                        onSelect = onUsd,
+                    )
+                }
                 onBack?.let { back ->
+                    Spacer(Modifier.width(Space.s))
                     PillButton("برگشت", back)
                 }
             }
@@ -238,6 +255,7 @@ fun ReportScreen(
                     worthIt = worthIt,
                     entries = entries,
                     onOpenEntry = onOpenEntry,
+                    inUsd = inUsd,
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(cashScroll),
@@ -248,6 +266,7 @@ fun ReportScreen(
                     composition = composition,
                     usdRate = usdRate,
                     rateHistory = rateHistory,
+                    inUsd = inUsd,
                     bottomInset = bottomInset,
                     modifier = Modifier
                         .weight(1f)
@@ -270,14 +289,16 @@ private fun AssetReportContent(
     usdRate: Double?,
     /** One recorded dollar rate per day, the only rate a past day is ever read at. */
     rateHistory: Map<Long, Double>,
+    /**
+     * The switch at the top of the screen. In Toman the line climbs with inflation almost whatever
+     * she does; in dollars it answers whether she is actually any richer.
+     */
+    inUsd: Boolean,
     bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     val now = today()
     val sorted = remember(history) { history.toSortedMap() }
-    // In Toman the line climbs with inflation almost whatever she does; in dollars it answers
-    // whether she is actually any richer. Toman first, because it is the unit the app keeps.
-    var inUsd by remember { mutableStateOf(false) }
     // Today closes the dollar line as it closes the Toman one: the live total at the live rate.
     val dollars = remember(history, current, rateHistory, usdRate) {
         usdHistory(history + (now to current), usdRate?.let { rateHistory + (now to it) } ?: rateHistory)
@@ -332,24 +353,11 @@ private fun AssetReportContent(
         // either side of a heading — so nothing was grouped and the eye had to read the words to
         // find out where one section stopped.
         Spacer(Modifier.height(Space.xxl))
-        // The unit belongs to the figure and the line under it, not to the page: as a second row
-        // of the window's chips it read as another window. So it ends the figure's own caption
-        // line, a size down — and stays when the empty state takes the figure's place, because
-        // dollars short of a line must still be able to switch back to Toman.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                since.orEmpty(),
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            PillToggle(
-                options = listOf(false, true),
-                selected = inUsd,
-                label = { if (it) "دلار" else moneyUnit },
-                onSelect = { inUsd = it },
-            )
-        }
+        Text(
+            since.orEmpty(),
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (shown == null) {
             // Dollars short of a line say why rather than repeat the Toman promise: the rates
             // only start on the day the app first recorded one, which can be long after the
@@ -404,7 +412,7 @@ private fun AssetReportContent(
         // One kind is the hero total said twice — same rule the list's section heads use.
         if (composition.size > 1) {
             Spacer(Modifier.height(Space.xxl))
-            CompositionBar(composition)
+            CompositionBar(composition, usdRate?.takeIf { inUsd && it > 0.0 && it.isFinite() })
         }
         Spacer(Modifier.height(bottomInset + Space.xxl))
     }
@@ -432,7 +440,11 @@ internal fun barTint(kind: Kind): Color = when (kind) {
  * the same money in the same words — just side by side instead of stacked.
  */
 @Composable
-private fun CompositionBar(composition: List<Pair<Kind, Double>>) {
+private fun CompositionBar(
+    composition: List<Pair<Kind, Double>>,
+    /** Today's dollar while the switch at the top says دلار — what is held is held today. */
+    usd: Double? = null,
+) {
     val total = composition.sumOf { it.second }
     Column {
         Text(
@@ -474,7 +486,8 @@ private fun CompositionBar(composition: List<Pair<Kind, Double>>) {
                 Text(kind.fa, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(
                     // Parentheses, not a middot: beside Persian digits «·» reads as a zero.
-                    "${faCompact(value, 3, pad = true)} $moneyUnit (${faNumber(round(value / total * 100))}٪)",
+                    (usd?.let { faUsd(value / it) } ?: "${faCompact(value, 3, pad = true)} $moneyUnit") +
+                        " (${faNumber(round(value / total * 100))}٪)",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -692,6 +705,30 @@ private fun HistoryChart(
 
 // ─────────────────────────── دخل و خرج ───────────────────────────
 
+/**
+ * The dollar دخل و خرج is read at while the switch at the top says دلار: [rate] for every figure
+ * in the window, so the categories under the card still add up to it, and [rateFor] for a chart's
+ * column or line, each at its own window's rate. Null in Toman.
+ */
+private class ReportUsd(val rate: Double, val rateFor: (ReportRange) -> Double?)
+
+private val LocalReportUsd = compositionLocalOf<ReportUsd?> { null }
+
+/** An amount as a row of this report states it: compact Toman, or dollars — see [ReportUsd]. */
+@Composable
+private fun figureOf(rial: Long): String =
+    LocalReportUsd.current?.let { faUsd(tomanOf(rial) / it.rate) } ?: faCompact(tomanOf(rial))
+
+/** The same with its unit, on a line that does not already say it. */
+@Composable
+private fun amountOf(rial: Long): String =
+    LocalReportUsd.current?.let { faUsd(tomanOf(rial) / it.rate) } ?: "${faCompact(tomanOf(rial))} $moneyUnit"
+
+/** And as a screen reader says it: "$" is read out as punctuation, or not at all. */
+@Composable
+private fun spokenOf(rial: Long): String =
+    LocalReportUsd.current?.let { "${faRate(tomanOf(rial) / it.rate)} دلار" } ?: "${faCompact(tomanOf(rial))} $moneyUnit"
+
 /** Growth, in the colour every bank app in the country uses for it — the scheme's gain role. */
 private val INCOME_TINT: Color
     @Composable get() = MaterialTheme.colorScheme.tertiary
@@ -723,10 +760,19 @@ private fun CashFlowReportContent(
     worthIt: WorthItSummary = WorthItSummary(0, 0, 0),
     entries: List<LedgerEntry> = emptyList(),
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+    /** The switch at the top of the screen — see [ReportUsd]. */
+    inUsd: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val period = cash.period
-    Column(modifier) {
+    // Every window at its own dollar: the one she is standing in at today's, one that is over at
+    // the days it ran through ([ReportRange.usdRate]). A window with none on file reads in Toman
+    // whole, and says so, rather than mixing the two units down one page.
+    val rateFor: (ReportRange) -> Double? = { r ->
+        (if (cash.today in r) usdRate else r.usdRate(rateHistory))?.takeIf { it > 0.0 && it.isFinite() }
+    }
+    val usd = if (inUsd) rateFor(cash.range)?.let { ReportUsd(it, rateFor) } else null
+    CompositionLocalProvider(LocalReportUsd provides usd) { Column(modifier) {
         // How long a window, directly under which report — one control group, and the picker is
         // the quieter half of it at 14sp against the mode segment's 15. The anchor handed over
         // is the window's last day: for month spans that is a day of the month she is reading
@@ -741,6 +787,15 @@ private fun CashFlowReportContent(
         // of the same control.
         Spacer(Modifier.height(Space.xxl))
         WindowNavigator(cash, onWindow)
+
+        if (inUsd && usd == null) {
+            Text(
+                "نرخ دلارِ این بازه ثبت نشده؛ گزارشش به $moneyUnit مونده.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s),
+            )
+        }
 
         Spacer(Modifier.height(Space.m))
         // A window whose only rows are excluded ones is not empty — those rows are listed right
@@ -761,12 +816,20 @@ private fun CashFlowReportContent(
             MonthSummary(period, cash.current, cash.today, usdRate, rateHistory)
         }
 
-        // Two months *with something in them* is the least a comparison can be made of. One
-        // lived-in month beside empty neighbours is a chart that answers «is this month unusual»
-        // with the month itself — and the empty neighbours draw as bare floating numerals.
-        if (cash.series.count { it.incomeRial > 0 || it.spentRial > 0 } > 1) {
+        // One month or one week reads as a pace against the one before — two bars side by side
+        // said only what the card's two figures already had. Longer windows compare months.
+        val running = cash.running
+        if (running != null) {
+            if ((running.current.lastOrNull() ?: 0L) > 0L) {
+                Spacer(Modifier.height(Space.xxl))
+                RunningChart(cash, running)
+            }
+        } else if (cash.series.count { it.incomeRial > 0 || it.spentRial > 0 } > 1) {
+            // Two months *with something in them* is the least a comparison can be made of. One
+            // lived-in month beside empty neighbours is a chart that answers «is this month
+            // unusual» with the month itself — and the empty neighbours draw as bare numerals.
             Spacer(Modifier.height(Space.xxl))
-            MonthBars(cash, onWindow, usdRate, rateHistory)
+            MonthBars(cash, onWindow)
         }
 
         // Present when anything moved — the counted window, or money an exclusion is holding
@@ -817,7 +880,7 @@ private fun CashFlowReportContent(
             InsightGrid(cards)
         }
         Spacer(Modifier.height(bottomInset + Space.xxl))
-    }
+    } }
 }
 
 /**
@@ -1111,7 +1174,7 @@ private fun MonthSummary(
             // and the figure is the thing that grows by orders of magnitude, so the figure is
             // what shrinks — exactly as the two figures above it do.
             BasicText(
-                text = bidi(faCompact(tomanOf(abs(month.netRial)))),
+                text = bidi(figureOf(abs(month.netRial))),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 15.sp, maxFontSize = 22.sp),
                 // Trailing, on the same edge as the exact figure printed under it.
@@ -1131,7 +1194,8 @@ private fun MonthSummary(
                 .padding(top = Space.xs),
             textAlign = TextAlign.End,
         )
-        UsdAside(abs(month.netRial), rate, Modifier.fillMaxWidth(), TextAlign.End)
+        // Toman's own second reading; in dollars the figure above already is one.
+        if (LocalReportUsd.current == null) UsdAside(abs(month.netRial), rate, Modifier.fillMaxWidth(), TextAlign.End)
 
         SpendPace(month, today)
     }
@@ -1182,7 +1246,7 @@ private fun PaceLine(label: String, rial: Long) {
         // a Row measures its unweighted children first, so whichever carries the weight is the
         // one that yields — and the figure is the half that grows by orders of magnitude.
         BasicText(
-            text = bidi("${faCompact(tomanOf(rial))} $moneyUnit"),
+            text = bidi(amountOf(rial)),
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 14.sp),
             style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.Bold)
@@ -1224,7 +1288,7 @@ private fun FlowSide(
         )
         Spacer(Modifier.height(Space.xs))
         BasicText(
-            text = bidi(faCompact(tomanOf(rial))),
+            text = bidi(figureOf(rial)),
             maxLines = 1,
             // Down to 13sp before it gives up, not 16: at 16 a year's «۹۳۹٫۵ میلیون» is wider
             // than half a phone, and what it loses off the end is the word — «۹۳۹٫۵» of nothing,
@@ -1243,7 +1307,7 @@ private fun FlowSide(
             style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Normal),
             modifier = Modifier.padding(top = 2.dp),
         )
-        UsdAside(rial, usdRate)
+        if (LocalReportUsd.current == null) UsdAside(rial, usdRate)
     }
 }
 
@@ -1311,6 +1375,154 @@ private fun FlowSplit(parts: List<Pair<Long, Color>>) {
     }
 }
 
+/**
+ * خرج added up day by day over the one month or week she picked, drawn on the window before's
+ * line — see [runningSpend]. Two bars said what the card's two figures already had; two lines say
+ * where in the month the money went, and whether this one is running ahead of the last.
+ *
+ * Time runs left to right inside the chart, as [HistoryChart]'s does. The window before is dashed
+ * and quieter: the yardstick, not the subject. The two figures above it are the same day in, «تا
+ * امروز» against «تا همین روز», because a half-lived month against a whole one is the comparison
+ * the line exists to avoid. Neither is called better: in Toman a smaller figure is often only an
+ * older one, so the chart states and she judges.
+ */
+@Composable
+private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
+    val usd = LocalReportUsd.current
+    val before = cash.range.before()
+    val weekly = cash.range.week != null
+    // Each line at its own window's dollar, as each column of the month bars is. A window before
+    // with no rate on file loses its line rather than borrowing this one's.
+    val now = running.current.map { tomanOf(it) / (usd?.rate ?: 1.0) }
+    val then = (if (usd == null) 1.0 else usd.rateFor(before))
+        ?.let { rate -> running.previous.map { tomanOf(it) / rate } }
+        .orEmpty()
+    // The same day in: the last one lived, or the window before's last when it was shorter.
+    val sameDay = then.getOrNull(now.lastIndex) ?: then.lastOrNull()
+    fun said(v: Double) = if (usd != null) faUsd(v) else "${faCompact(v)} $moneyUnit"
+    // "$" is read out as punctuation, or not at all.
+    fun spoken(v: Double) = if (usd != null) "${faRate(v)} دلار" else said(v)
+    fun nameOf(r: ReportRange) = r.week?.let { w ->
+        jalaliOf(w).let { "هفتهٔ ${faNumber(it.day.toDouble())} ${MONTHS[it.month - 1]}" }
+    } ?: MONTHS[r.last.month - 1]
+    val name = nameOf(cash.range)
+    val beforeName = nameOf(before)
+    val nowLabel = if (cash.current) "$name تا امروز" else "کل $name"
+    val thenLabel = if (cash.current) "$beforeName تا همین روز" else "کل $beforeName"
+    val tone = MaterialTheme.colorScheme.onSurface
+    val quiet = MaterialTheme.colorScheme.onSurfaceVariant
+    val surface = MaterialTheme.colorScheme.surface
+
+    Column {
+        Text(
+            "خرج روز به روز",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(Modifier.height(Space.m))
+        Row(Modifier.fillMaxWidth()) {
+            RunningFigure(nowLabel, said(now.last()), tone, Modifier.weight(1f))
+            if (sameDay != null) {
+                Spacer(Modifier.width(Space.m))
+                RunningFigure(thenLabel, said(sameDay), quiet, Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(Space.m))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.group))
+                .background(surface)
+                .padding(Space.l),
+        ) {
+            Column {
+                Canvas(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .semantics {
+                            contentDescription = "$nowLabel: ${spoken(now.last())}" +
+                                (sameDay?.let { "، $thenLabel: ${spoken(it)}" } ?: "")
+                        },
+                ) {
+                    val last = (maxOf(running.days, then.size) - 1).coerceAtLeast(1)
+                    val top = (now + then).maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
+                    val padY = 8.dp.toPx()
+                    fun px(i: Int) = i / last.toFloat() * size.width
+                    fun py(v: Double) = size.height - padY - (v / top).toFloat() * (size.height - 2 * padY)
+                    fun line(values: List<Double>) = Path().apply {
+                        values.forEachIndexed { i, v -> if (i == 0) moveTo(px(i), py(v)) else lineTo(px(i), py(v)) }
+                    }
+                    drawLine(
+                        quiet.copy(alpha = 0.3f),
+                        Offset(0f, size.height - padY),
+                        Offset(size.width, size.height - padY),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    if (then.size > 1) {
+                        drawPath(
+                            line(then),
+                            quiet,
+                            style = Stroke(
+                                width = 2.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())),
+                            ),
+                        )
+                    }
+                    if (now.size > 1) {
+                        drawPath(
+                            line(now),
+                            tone,
+                            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                        )
+                    }
+                    // Where the window stands, ringed as [HistoryChart] rings today.
+                    val end = Offset(px(now.lastIndex), py(now.last()))
+                    drawCircle(tone.copy(alpha = 0.18f), radius = 10.dp.toPx(), center = end)
+                    drawCircle(surface, radius = 5.dp.toPx(), center = end)
+                    drawCircle(tone, radius = 3.5.dp.toPx(), center = end)
+                }
+                Spacer(Modifier.height(Space.s))
+                // Time runs left to right, so in this RTL row the first label lands on the right,
+                // under the window's last day.
+                Row(Modifier.fillMaxWidth()) {
+                    val ends = if (weekly) "جمعه" to "شنبه"
+                    else faNumber(running.days.toDouble()) to faNumber(1.0)
+                    Text(ends.first, fontSize = 11.sp, color = quiet)
+                    Spacer(Modifier.weight(1f))
+                    Text(ends.second, fontSize = 11.sp, color = quiet)
+                }
+            }
+        }
+        Spacer(Modifier.height(Space.s))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BarKey(name, tone)
+            if (then.isNotEmpty()) {
+                Spacer(Modifier.width(Space.m))
+                BarKey("$beforeName (خط‌چین)", quiet)
+            }
+        }
+    }
+}
+
+/** One of the chart's two figures: what it is, then how much, at the card's own scale. */
+@Composable
+private fun RunningFigure(label: String, figure: String, tone: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        BasicText(
+            text = bidi(figure),
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 20.sp),
+            style = figureStyle(tone, FontWeight.ExtraBold),
+            modifier = Modifier.padding(top = Space.xs),
+        )
+    }
+}
+
 /** How tall the tallest bar in the window draws. */
 private val BAR_BOX = 132.dp
 
@@ -1335,10 +1547,6 @@ private const val BAR_FLOOR = 0.03f
 private fun MonthBars(
     cash: CashFlowReport,
     onWindow: (Long, ReportSpan) -> Unit,
-    /** Today's dollar, for the column she is standing in — see [MonthSummary]'s same rule. */
-    usdRate: Double? = null,
-    /** The recorded rates every closed column is frozen at — see [ReportRange.usdRate]. */
-    rateHistory: Map<Long, Double> = emptyMap(),
 ) {
     val spend = MaterialTheme.colorScheme.onSurfaceVariant
     // Over «۱ هفته» every column is a week, so everything month-shaped below — the heading, the
@@ -1346,20 +1554,15 @@ private fun MonthBars(
     // scale rule, one unit down.
     val weekly = cash.range.week != null
     // In Toman both sides climb with inflation almost whatever she does; in dollars the chart says
-    // whether she is earning, or spending, any more. The asset chart's own control, for the same
-    // reason. Each column at its own window's recorded rate — a closed month keeps the dollars it
-    // was worth then — and the one she is standing in at today's.
-    var inUsd by rememberSaveable { mutableStateOf(false) }
-    val rates = remember(cash, usdRate, rateHistory) {
-        cash.series.map { r ->
-            (if (cash.today in r.range) usdRate else r.range.usdRate(rateHistory))?.takeIf { it > 0.0 && it.isFinite() }
-        }
-    }
-    val priced = rates.count { it != null } >= 2
+    // whether she is earning, or spending, any more. Each column at its own window's rate — a
+    // closed month keeps the dollars it was worth then — and the one she is standing in at today's.
+    val usd = LocalReportUsd.current
+    val inUsd = usd != null
+    val rates = cash.series.map { usd?.rateFor(it.range) }
     // Absent, never zero, for a column with no rate on file: borrowing a neighbour's would be the
     // re-pricing the rates are kept to refuse.
     fun shown(i: Int, rial: Long): Double? =
-        if (!(inUsd && priced)) tomanOf(rial) else rates[i]?.let { tomanOf(rial) / it }
+        if (!inUsd) tomanOf(rial) else rates[i]?.let { tomanOf(rial) / it }
     val top = cash.series.indices
         .maxOf { i -> maxOf(shown(i, cash.series[i].incomeRial) ?: 0.0, shown(i, cash.series[i].spentRial) ?: 0.0) }
         .takeIf { it > 0.0 } ?: 1.0
@@ -1373,28 +1576,14 @@ private fun MonthBars(
     val markWindow = !weekly && cash.series.size > cash.range.count
 
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                // Not «شش ماه اخیر»: the window is six *at most*, and near the start of the
-                // ledger it slides forward, so a heading counting months would be a caption
-                // that is only sometimes true.
-                if (weekly) "هفته به هفته" else "ماه به ماه",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { heading() },
-            )
-            // Only once two columns have a dollar to show: one is not a comparison.
-            if (priced) {
-                PillToggle(
-                    options = listOf(false, true),
-                    selected = inUsd,
-                    label = { if (it) "دلار" else moneyUnit },
-                    onSelect = { inUsd = it },
-                )
-            }
-        }
+        Text(
+            // Not «شش ماه اخیر»: the window is six *at most*, and near the start of the ledger it
+            // slides forward, so a heading counting months would be a caption only sometimes true.
+            if (weekly) "هفته به هفته" else "ماه به ماه",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.semantics { heading() },
+        )
         Spacer(Modifier.height(Space.xs))
         Row(verticalAlignment = Alignment.CenterVertically) {
             BarKey("درآمد", INCOME_TINT)
@@ -1450,7 +1639,7 @@ private fun MonthBars(
                         .padding(vertical = Space.s)
                         .semantics(mergeDescendants = true) {
                             val name = if (weekly) report.range.fa else report.month.fa
-                            contentDescription = if (inUsd && priced) {
+                            contentDescription = if (inUsd) {
                                 rates[i]?.let { rate ->
                                     "$name: درآمد ${faRate(tomanOf(report.incomeRial) / rate)} دلار، " +
                                         "خرج ${faRate(tomanOf(report.spentRial) / rate)} دلار"
@@ -1502,7 +1691,7 @@ private fun MonthBars(
                 }
             }
         }
-        if (inUsd && priced && rates.any { it == null }) {
+        if (inUsd && rates.any { it == null }) {
             Text(
                 "${if (weekly) "هفته‌هایی" else "ماه‌هایی"} که نرخ دلارشون ثبت نشده، ستون ندارن.",
                 fontSize = 12.sp,
@@ -1678,6 +1867,7 @@ private fun AsideCategoryRow(
     rial: Long,
     onOpen: () -> Unit,
 ) {
+    val spoken = spokenOf(rial)
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
@@ -1686,7 +1876,7 @@ private fun AsideCategoryRow(
             .clickable(role = Role.Button, onClickLabel = "جزئیات $name", onClick = onOpen)
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$name: ${faCompact(tomanOf(rial))} $moneyUnit، در جمع حساب نشده"
+                contentDescription = "$name: $spoken، در جمع حساب نشده"
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1702,7 +1892,7 @@ private fun AsideCategoryRow(
         Text(name, Modifier.weight(1f), color = muted)
         Spacer(Modifier.width(Space.s))
         Text(
-            bidi(faCompact(tomanOf(rial))),
+            bidi(figureOf(rial)),
             style = figureStyle(muted, FontWeight.Bold),
             fontSize = 14.sp,
         )
@@ -1816,6 +2006,7 @@ private fun MemberShareRow(
     tint: Color?,
     onOpen: (() -> Unit)? = null,
 ) {
+    val spoken = spokenOf(rial)
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
     Column(
         Modifier
@@ -1834,7 +2025,7 @@ private fun MemberShareRow(
             )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "${member.name}: ${faCompact(tomanOf(rial))} $moneyUnit، " +
+                contentDescription = "${member.name}: $spoken، " +
                     "${faNumber(round(share * 100.0))} درصد"
             },
     ) {
@@ -1845,7 +2036,7 @@ private fun MemberShareRow(
             Text(member.name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.width(Space.s))
             Text(
-                bidi(faCompact(tomanOf(rial))),
+                bidi(figureOf(rial)),
                 style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
                 fontSize = 14.sp,
             )
@@ -1903,6 +2094,7 @@ internal fun CategoryShare(
     /** The bar's empty part. خانه's month card is itself `surfaceVariant`, so it passes the paper. */
     track: Color = MaterialTheme.colorScheme.surfaceVariant,
 ) {
+    val spoken = spokenOf(rial)
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
     Column(
         Modifier
@@ -1919,7 +2111,7 @@ internal fun CategoryShare(
             )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$name: ${faCompact(tomanOf(rial))} $moneyUnit، " +
+                contentDescription = "$name: $spoken، " +
                     "${faNumber(round(share * 100.0))} درصد"
             },
     ) {
@@ -1953,7 +2145,7 @@ internal fun CategoryShare(
             // right order now, the figure first and the comparison after it, which is the order
             // the bar underneath states them in.
             Text(
-                bidi(faCompact(tomanOf(rial))),
+                bidi(figureOf(rial)),
                 style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
                 fontSize = 14.sp,
             )
@@ -2064,7 +2256,7 @@ private fun CategorySheet(
                 }
                 Spacer(Modifier.height(Space.l))
                 BasicText(
-                    text = bidi("${faCompact(tomanOf(window.totalRial))} $moneyUnit"),
+                    text = bidi(amountOf(window.totalRial)),
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 34.sp),
                     style = figureStyle(
@@ -2142,13 +2334,20 @@ private fun CategorySheet(
  */
 @Composable
 private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
-    val top = trend.maxOf { it.second }.coerceAtLeast(1L)
+    // Each month at its own dollar while the report reads in dollars, as the month bars are; one
+    // with no rate on file draws as nothing rather than borrowing a neighbour's.
+    val usd = LocalReportUsd.current
+    val values = trend.map { (month, rial) ->
+        if (usd == null) rial.toDouble() else usd.rateFor(ReportRange(month, month))?.let { rial / it } ?: 0.0
+    }
+    val top = values.max().coerceAtLeast(1e-9)
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(Space.s),
         verticalAlignment = Alignment.Bottom,
     ) {
-        trend.forEachIndexed { index, (month, rial) ->
+        trend.forEachIndexed { index, (month, _) ->
+            val value = values[index]
             Column(
                 Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -2156,10 +2355,10 @@ private fun CategoryTrend(trend: List<Pair<ReportMonth, Long>>, hue: Color) {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(maxOf(4f, 80f * rial.toFloat() / top.toFloat()).dp)
+                        .height(maxOf(4f, 80f * (value / top).toFloat()).dp)
                         .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
                         .background(
-                            if (rial > 0) hue
+                            if (value > 0.0) hue
                             else MaterialTheme.colorScheme.surfaceVariant,
                         ),
                 )
@@ -2347,7 +2546,7 @@ private fun WorthItLine(label: String, rial: Long, tone: Color) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            bidi("${faCompact(tomanOf(rial))} $moneyUnit"),
+            bidi(amountOf(rial)),
             style = figureStyle(tone, FontWeight.Bold),
             fontSize = 14.sp,
         )

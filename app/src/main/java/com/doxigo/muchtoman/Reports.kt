@@ -956,6 +956,8 @@ data class CashFlowReport(
     val canGoForward: Boolean,
     /** When in the week she buys, over this window — see [spendRhythm]. Null on a short one. */
     val rhythm: SpendRhythm? = null,
+    /** خرج day by day against the window before — see [runningSpend]. Only over «۱ ماه» and «۱ هفته». */
+    val running: RunningSpend? = null,
 ) {
     val range: ReportRange get() = period.range
 }
@@ -1039,6 +1041,11 @@ fun buildCashFlow(
         canGoBack = month > available.first(),
         canGoForward = month < available.last(),
         rhythm = spendRhythm(entries, range, today, mineId, excluded, countPassThrough),
+        running = if (use == ReportSpan.MONTH) {
+            runningSpend(entries, range, today, had != null, countPassThrough, excluded)
+        } else {
+            null
+        },
     )
 }
 
@@ -1148,6 +1155,51 @@ fun spendRhythm(
     )
 }
 
+/**
+ * خرج added up day by day — the window's, and the whole window before it's — so «۱ ماه» and
+ * «۱ هفته» can answer the one question two bars could not: is she spending faster than last time?
+ *
+ * Through [periodReport]'s own gates, so the last point of [current] is the خرج on the card above
+ * it. [previous] is empty unless the ledger watched the whole of the window before, which is the
+ * rule the card's own comparison keeps: half a month of history is not last month's pace.
+ */
+data class RunningSpend(
+    /** The window's running خرج at the end of each day lived so far, its first day first. */
+    val current: List<Long>,
+    /** The window before's, for every one of its days. */
+    val previous: List<Long>,
+    /** How many days the window holds, lived or not — the chart's width. */
+    val days: Int,
+)
+
+fun runningSpend(
+    entries: List<LedgerEntry>,
+    range: ReportRange,
+    today: Long,
+    watchedBefore: Boolean,
+    countPassThrough: Boolean = false,
+    excluded: Set<String> = emptySet(),
+): RunningSpend {
+    val spent = spendable(entries).filter {
+        (it.txn.signedRial ?: 0L) < 0L && it.categoryId !in excluded &&
+            (countPassThrough || it.categoryId !in PASS_THROUGH_CATEGORIES)
+    }
+    fun running(window: ReportRange, through: Long): List<Long> {
+        val daily = LongArray((minOf(window.endDay, through + 1) - window.startDay).coerceAtLeast(0L).toInt())
+        for (row in spent) {
+            val at = row.txn.day - window.startDay
+            if (at in daily.indices) daily[at.toInt()] += -row.txn.signedRial!!
+        }
+        return daily.runningReduce { total, day -> total + day }
+    }
+    val before = range.before()
+    return RunningSpend(
+        current = running(range, today),
+        previous = if (watchedBefore) running(before, before.endDay - 1) else emptyList(),
+        days = (range.endDay - range.startDay).toInt(),
+    )
+}
+
 private fun weekdayOf(day: Long): Int = (day - weekStart(day)).toInt()
 
 /** How many weeks the weekly chart lines up — the same six the month chart draws. */
@@ -1216,6 +1268,7 @@ private fun buildWeekly(
         today = today,
         canGoBack = week > floor,
         canGoForward = week < thisWeek,
+        running = runningSpend(entries, range, today, had != null, countPassThrough, excluded),
     )
 }
 

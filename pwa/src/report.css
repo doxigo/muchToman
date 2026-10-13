@@ -49,6 +49,10 @@
 .rp-history-end::before, .rp-history-end::after { content: ""; position: absolute; border-radius: 50%; }
 .rp-history-end::before { inset: 5px; background: var(--surface); }
 .rp-history-end::after { inset: 7px; background: var(--tone); }
+.rp-running { position: relative; direction: ltr; height: 160px; }
+.rp-running svg { display: block; overflow: visible; }
+.rp-running-label { font-size: 12px; }
+.rp-running-axis { font-size: 11px; }
 .rp-captions { display: flex; justify-content: space-between; margin-top: var(--l); }
 .rp-caption-label { font-size: 12px; color: var(--on-surface-variant); }
 .rp-caption-value { font-size: 14px; font-weight: 700; margin-top: 2px; }

@@ -64,6 +64,18 @@ class SnapshotTest {
     }
 
     @Test
+    fun `fetched rates fill only the days the phone never wrote down`() {
+        val recorded = mapOf(100L to 200_000.0)
+        val fetched = mapOf(99L to 190_000.0, 100L to 202_000.0, 101L to 0.0, 102L to 205_000.0)
+        // Its own day keeps the rate the app showed; a zero and a day still to come are no rates.
+        assertEquals(mapOf(99L to 190_000.0, 100L to 200_000.0), backfillRates(recorded, fetched, today = 101L))
+        // Pruned from the old end, as every recorded day is.
+        val year = (0L until HISTORY_KEEP_DAYS + 5L).associateWith { 1.0 }
+        assertEquals(HISTORY_KEEP_DAYS, backfillRates(emptyMap(), year, today = 1_000L).size)
+        assertEquals(5L, backfillRates(emptyMap(), year, today = 1_000L).keys.min())
+    }
+
+    @Test
     fun `the bank row lands right after cash`() {
         val holdings = listOf(Holding("usd", 1.0), Holding(TOMAN_ID, 5.0), Holding("btc", 1.0))
         val list = listHoldings(holdings, true, listOf(anchored("SAMAN", 300.0)), emptySet())

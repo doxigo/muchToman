@@ -1239,6 +1239,29 @@ class ReportsTest {
     }
 
     @Test
+    fun `the running خرج adds up day by day to the card's own figure, against the whole month before`() {
+        val mehr = ReportMonth(1405, 7)
+        val range = ReportRange(mehr, mehr)
+        val today = mehr.startDay + 9 // ۱۰ مهر
+        val rows = listOf(
+            entry(mehr.startDay, -3_000), entry(mehr.startDay + 4, -2_000), entry(mehr.startDay + 4, 9_000),
+            loan(mehr.startDay + 5, -50_000), entry(mehr.startDay + 6, -1_000, transfer = true),
+            entry(mehr.previous().startDay, -4_000), entry(mehr.previous().endDay - 1, -6_000),
+        )
+        val run = runningSpend(rows, range, today, watchedBefore = true)
+        // Ten days lived of thirty; income, a قرض and a transfer move none of it.
+        assertEquals(listOf(3_000L, 3_000, 3_000, 3_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000), run.current)
+        assertEquals(periodReport(rows, range).spentRial, run.current.last())
+        assertEquals(30, run.days)
+        assertEquals(31, run.previous.size) // شهریور, whole
+        assertEquals(listOf(4_000L, 10_000L), listOf(run.previous.first(), run.previous.last()))
+        // A month the ledger did not watch whole is no pace to read against.
+        assertTrue(runningSpend(rows, range, today, watchedBefore = false).previous.isEmpty())
+        // The قرض counts once the report has been asked to count it.
+        assertEquals(55_000L, runningSpend(rows, range, today, true, countPassThrough = true).current.last())
+    }
+
+    @Test
     fun `income in dollars is the month against the mean of the ones before it, each at its own rate`() {
         val mehr = ReportMonth(1405, 7)
         val months = (4 downTo 0).map { mehr.back(it) } // خرداد … مهر

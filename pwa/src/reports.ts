@@ -749,6 +749,8 @@ export interface CashFlowReport {
   range: ReportRange;
   /** When in the week she buys, over this window (Reports.kt spendRhythm); null on a short one. */
   rhythm: SpendRhythm | null;
+  /** خرج day by day against the window before (runningSpend); only over «۱ ماه» and «۱ هفته». */
+  running: RunningSpend | null;
 }
 
 export interface CashFlowOptions extends ReadingOptions {
@@ -811,6 +813,7 @@ export function buildCashFlow(
     canGoForward: month.compareTo(available[available.length - 1]) < 0,
     range,
     rhythm: spendRhythm(entries, range, today, mineId, excluded, countPassThrough),
+    running: use === ReportSpan.MONTH ? runningSpend(entries, range, today, had != null, countPassThrough, excluded) : null,
   };
 }
 
@@ -891,6 +894,42 @@ export function spendRhythm(entries: LedgerEntry[], range: ReportRange, today: n
   };
 }
 
+/**
+ * خرج added up day by day — the window's, and the whole window before it's — so «۱ ماه» and «۱ هفته»
+ * can say whether she is spending faster than last time (Reports.kt runningSpend). Through
+ * periodReport's gates, so current's last point is the card's خرج; previous is empty unless the
+ * ledger watched the whole window before.
+ */
+export interface RunningSpend {
+  /** The window's running خرج at the end of each day lived so far, its first day first. */
+  current: number[];
+  /** The window before's, for every one of its days. */
+  previous: number[];
+  /** How many days the window holds, lived or not — the chart's width. */
+  days: number;
+}
+
+export function runningSpend(entries: LedgerEntry[], range: ReportRange, today: number, watchedBefore: boolean,
+  countPassThrough = false, excluded: ReadonlySet<string> = NONE): RunningSpend {
+  const spent = spendable(entries).filter((e) => (e.txn.signedRial ?? 0) < 0 && !excluded.has(e.categoryId)
+    && (countPassThrough || !PASS_THROUGH_CATEGORIES.has(e.categoryId)));
+  const running = (window: ReportRange, through: number): number[] => {
+    const daily = new Array<number>(Math.max(Math.min(window.endDay, through + 1) - window.startDay, 0)).fill(0);
+    for (const e of spent) {
+      const at = e.txn.day - window.startDay;
+      if (at >= 0 && at < daily.length) daily[at] += -e.txn.signedRial!;
+    }
+    let total = 0;
+    return daily.map((d) => (total += d));
+  };
+  const before = range.before();
+  return {
+    current: running(range, today),
+    previous: watchedBefore ? running(before, before.endDay - 1) : [],
+    days: range.endDay - range.startDay,
+  };
+}
+
 /** How many weeks the weekly chart lines up — the same six the month chart draws. */
 const WEEK_BARS = 6;
 
@@ -942,6 +981,7 @@ function buildWeekly(
     range,
     // A week is never a habit: spendRhythm wants four of them.
     rhythm: null,
+    running: runningSpend(entries, range, today, had != null, countPassThrough, excluded),
   };
 }
 

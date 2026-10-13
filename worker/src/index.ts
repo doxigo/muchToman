@@ -685,6 +685,64 @@ const fetchKucoinUsd = async () =>
 const fetchOkxUsd = async () =>
   usdtPairs(asArray(asRecord(await getJson('https://www.okx.com/api/v5/market/tickers?instType=SPOT')).data), 'instId');
 
+// ───────────────────────── the dollar, day by day ─────────────────────────
+
+/** How far back /usd-history reaches: as far as the phone keeps rates (HISTORY_KEEP_DAYS). */
+const USD_HISTORY_DAYS = 400;
+// A day's close moves once a day; six hours keeps today's fresh without asking nobitex per open.
+const USD_HISTORY_TTL_SECONDS = 6 * 3_600;
+const USD_HISTORY_CACHE_VERSION = 'usd-history-v1';
+/** Tehran is UTC+3:30 all year since 2022, and nobitex opens a daily candle at its midnight. */
+const TEHRAN_OFFSET_SECONDS = 12_600;
+
+/**
+ * One dollar rate per Tehran day, in Toman: what the phone reads a month at when it ran before
+ * the phone started writing rates down.
+ *
+ * Nobitex keeps no USDT/IRT candles, so a day is bitcoin's Toman close over its USDT close on the
+ * same candle — the exchange's own cross rate, with USDT taken as USD as everywhere here. Keyed
+ * by epoch day, as the phone keys its own rate history. A day either side lacks, or whose ratio
+ * fails the dollar's band, is left out rather than guessed.
+ */
+export function usdDays(irt: unknown, usdt: unknown): Record<string, number> {
+  const closes = (value: unknown): Map<number, number> => {
+    const candles = asRecord(value);
+    if (candles.s !== 'ok') throw new Error(`no candles: ${String(candles.s ?? candles.status)}`);
+    const times = asArray(candles.t);
+    const close = asArray(candles.c);
+    const out = new Map<number, number>();
+    times.forEach((at, i) => {
+      const v = num(close[i]);
+      if (typeof at === 'number' && v != null) out.set(at, v);
+    });
+    return out;
+  };
+  const dollar = closes(usdt);
+  const days: Record<string, number> = {};
+  for (const [at, toman] of closes(irt)) {
+    const usd = dollar.get(at);
+    if (usd == null) continue;
+    const rate = Math.round(toman / usd);
+    if (usdBandVerdict(rate) !== true) continue;
+    days[String(Math.floor((at + TEHRAN_OFFSET_SECONDS) / 86_400))] = rate;
+  }
+  if (Object.keys(days).length === 0) throw new Error('no usable days');
+  return days;
+}
+
+async function buildUsdHistory(): Promise<Response> {
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - USD_HISTORY_DAYS * 86_400;
+  const candles = (symbol: string) =>
+    getJson(`https://apiv2.nobitex.ir/market/udf/history?symbol=${symbol}&resolution=D&from=${from}&to=${to}`);
+  const [irt, usdt] = await Promise.all([candles('BTCIRT'), candles('BTCUSDT')]);
+  return jsonResponse(
+    { updatedAt: Date.now(), days: usdDays(irt, usdt) },
+    200,
+    `public, max-age=${USD_HISTORY_TTL_SECONDS}`,
+  );
+}
+
 /**
  * A fallback started now and awaited later, so it costs no time of its own when the source
  * ahead of it fails. The catch only marks it handled; awaiting it still throws.
@@ -1937,6 +1995,27 @@ export default {
       }
     }
 
+    if (url.pathname === '/usd-history') {
+      if (request.method !== 'GET') {
+        return textResponse('Method not allowed', 405, 'GET');
+      }
+      const cache = caches.default;
+      const key = new Request(
+        `${PUBLIC_ORIGIN}/__cache/usd-history/${USD_HISTORY_CACHE_VERSION}`,
+        { method: 'GET' },
+      );
+      const hit = await cache.match(key);
+      if (hit) return hit;
+      try {
+        const res = await buildUsdHistory();
+        ctx.waitUntil(cache.put(key, res.clone()));
+        return res;
+      } catch (error) {
+        console.error(JSON.stringify({ message: 'usd history failed', error: errorMessage(error) }));
+        return jsonResponse({ code: 'unavailable' }, 502);
+      }
+    }
+
     if (url.pathname === '/crash') {
       if (request.method !== 'POST') {
         return textResponse('Method not allowed', 405, 'POST');
@@ -2002,7 +2081,7 @@ export default {
         return await landingPage(request, env);
       }
       return textResponse(
-        'muchtoman: GET /rates, GET /coin-icon, GET /download, POST /wallet-balance, POST /crash, or POST /feedback\n',
+        'muchtoman: GET /rates, GET /usd-history, GET /coin-icon, GET /download, POST /wallet-balance, POST /crash, or POST /feedback\n',
         404,
       );
     }

@@ -111,6 +111,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             fromStore = installedByStore(app),
             reportExcluded = store.reportExcluded,
             familyTotal = store.familyTotal,
+            reportUsd = store.reportUsd,
             crashReport = pendingCrash(app),
         )
     )
@@ -293,6 +294,33 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
             _state.update { it.copy(loading = false, error = failure) }
             recordSnapshot()
+            fillRateGaps()
+        }
+    }
+
+    /**
+     * The dollar on the days this phone never wrote one down — every month before she installed
+     * the app, and the days it sat closed — from the rates Worker's history, so a month from
+     * before then can still be read in dollars. Asked at most once a day, and only while the
+     * history is short of a full [HISTORY_KEEP_DAYS]: once filled, the daily snapshot keeps it so.
+     * On [ledgerGate] for [recordSnapshot]'s reason — the same read-modify-write of the same map.
+     */
+    private fun fillRateGaps() {
+        val now = System.currentTimeMillis()
+        if (store.rateHistory.size >= HISTORY_KEEP_DAYS || now - store.usdHistoryAt < DAY_MS) return
+        store.usdHistoryAt = now
+        viewModelScope.launch(Dispatchers.Default) {
+            val fetched = fetchUsdHistory(BuildConfig.RATES_URL).getOrElse {
+                android.util.Log.w("muchtoman", "usd history fetch failed: $it")
+                return@launch
+            }
+            ledgerGate.withLock {
+                val next = backfillRates(store.rateHistory, fetched, now / DAY_MS)
+                if (next != store.rateHistory) {
+                    store.rateHistory = next
+                    _state.update { it.copy(rateHistory = next) }
+                }
+            }
         }
     }
 
@@ -601,6 +629,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setFamilyTotal(on: Boolean) {
         store.familyTotal = on
         _state.update { it.copy(familyTotal = on) }
+    }
+
+    /** Whether گزارش‌ها reads in dollars — see [Store.reportUsd]. */
+    fun setReportUsd(on: Boolean) {
+        store.reportUsd = on
+        _state.update { it.copy(reportUsd = on) }
     }
 
     /**
@@ -2858,6 +2892,8 @@ data class UiState(
     val familyAssets: List<FamilyAssetView> = emptyList(),
     /** Whether the hero total folds those in. Mirrored from [Store.familyTotal]. */
     val familyTotal: Boolean = false,
+    /** Whether گزارش‌ها reads in dollars. Mirrored from [Store.reportUsd]. */
+    val reportUsd: Boolean = false,
     /** Where a tapped notification wants her, until the composition has taken her there. */
     val openTab: Tab? = null,
     /** Whether that notification wanted the review deck in particular. Same one-shot life. */

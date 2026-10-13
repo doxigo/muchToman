@@ -45,7 +45,7 @@ export default defineConfig({
   // The dev server stands in for the sync Worker's public proxies, so prices and wallet balances
   // are real while working on screens. The household API is never proxied here.
   server: {
-    proxy: Object.fromEntries(['/rates', '/wallet-balance', '/coin-icon', '/feedback'].map((path) =>
+    proxy: Object.fromEntries(['/rates', '/usd-history', '/wallet-balance', '/coin-icon', '/feedback'].map((path) =>
       [path, { target: 'https://rates.muchtoman.com', changeOrigin: true }])),
   },
 });
