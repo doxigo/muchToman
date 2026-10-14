@@ -9,8 +9,8 @@ import { jalaliDay, jalaliMonthLength, weekStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
 import {
   REPORT_SPANS, ReportMonth, ReportRange, ReportSpan, availableReportMonths, bufferDays, buildCashFlow, buildStory,
-  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, periodReport, quietWins, runningSpend,
-  spendRhythm, weekRange,
+  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, noteTotalFa, noteTotals, periodReport,
+  quietWins, runningSpend, spendRhythm, weekRange,
 } from '../src/reports';
 import type { PeriodReport } from '../src/reports';
 import { entry as row } from './plans-fixture';
@@ -774,6 +774,30 @@ describe('reports', () => {
     expect(spent.breakdown.reduce((s, [, rial]) => s + rial, 0)).toBe(spent.totalRial);
     expect(memberWindow(rows, amir, true, range, amir.incomeRial).breakdown).toEqual([['حقوق', 50_000_000]]);
     expect(categoryWindow(rows, 'خوراک', false, range, 0).breakdown).toEqual([]);
+  });
+
+  it("a category's sheet adds its rows up note by note", () => {
+    const range = new ReportRange(here, here);
+    const food = (day: number, signed: number, note: string) => entry(day, signed, { category: 'خوراک', categoryId: 'cat_food', note });
+    const rows = [
+      food(first, -1_000_000, 'شیر'),
+      food(first + 1, -1_200_000, 'شير'),
+      food(first + 2, -300_000, 'شیر '),
+      food(first + 3, -500_000, 'نان'),
+      food(first + 4, -500_000, 'نان'),
+      food(first + 5, -600_000, 'نان'),
+      food(first + 6, -9_000_000, ''),
+    ];
+    const win = categoryWindow(rows, 'خوراک', false, range, 0);
+    const byNote = noteTotals(win.rows);
+    expect(byNote).toEqual([
+      { note: 'شیر', rial: 2_500_000, count: 3 }, { note: 'نان', rial: 1_600_000, count: 3 }, { note: '', rial: 9_000_000, count: 1 },
+    ]);
+    expect(byNote.reduce((s, t) => s + t.rial, 0)).toBe(win.totalRial);
+    expect(noteTotalFa(byNote[1])).toBe('نان (۳ بار)');
+    expect(noteTotalFa(byNote[2])).toBe('بدون یادداشت (۱ بار)');
+    expect(noteTotals(rows.map((e) => ({ ...e, note: '' })))).toEqual([]);
+    expect(noteTotals(rows.map((e) => ({ ...e, note: 'شیر' })))).toEqual([]);
   });
 });
 

@@ -776,6 +776,7 @@ private fun AppScreens(
                 onBack = { transactionRef = null },
                 categoryUse = state.ledger.categoryUse,
                 onNote = vm::setNote,
+                notes = state.ledger.notes,
                 onDelete = { entry ->
                     vm.deleteTxn(entry)
                     // The undo is a second net under the two-tap arming, not a replacement.
@@ -1455,6 +1456,7 @@ private fun AppScreens(
         ManualTxnSheet(
             categories = state.ledger.categories,
             categoryUse = state.ledger.categoryUse,
+            notes = state.ledger.notes,
             onSave = { rial, categoryId, merchant, note, at ->
                 vm.addManualTxn(rial, categoryId, merchant, note, at)
                 addingTxn = false

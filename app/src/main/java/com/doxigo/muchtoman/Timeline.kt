@@ -8,6 +8,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -69,10 +71,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -86,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 
@@ -1006,6 +1011,8 @@ internal fun TimelineRow(
     entry: LedgerEntry,
     /** The category sheet lists one category, so the repeated mark would be noise there. */
     showIcon: Boolean = true,
+    /** What the line under the title says instead of the category — her note, on that sheet. */
+    line: String? = null,
     onClick: () -> Unit,
 ) {
     val txn = entry.txn
@@ -1100,7 +1107,7 @@ internal fun TimelineRow(
             )
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                 Text(
-                    categoryFa,
+                    line ?: categoryFa,
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1233,6 +1240,8 @@ fun TransactionScreen(
     categoryUse: Map<String, Double> = emptyMap(),
     /** Her note on this transaction. Null hides the section — the deck has no room for prose. */
     onNote: ((LedgerEntry, String) -> Unit)? = null,
+    /** The notes she has written before, offered under hers — see [NoteSuggestions]. */
+    notes: List<NoteUse> = emptyList(),
     /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
     onDelete: ((LedgerEntry) -> Unit)? = null,
     /**
@@ -1414,7 +1423,7 @@ fun TransactionScreen(
                         Spacer(Modifier.height(Space.xxl))
                         SectionHeading("یادداشت")
                         Spacer(Modifier.height(Space.m))
-                        NoteField(entry, onNote)
+                        NoteField(entry, onNote, notes, chosen)
                     }
                 }
             }
@@ -1565,18 +1574,41 @@ private fun LearnSimilarToggle(txn: Txn, checked: Boolean, onChange: (Boolean) -
 }
 
 /**
- * Words about the row, saved when she says so rather than on every keystroke.
+ * Words about the row, kept as she leaves them.
  *
- * The save pill only exists while the draft and the stored note disagree, and its disappearance
- * after the tap is the receipt: what is on screen is what the ledger holds.
+ * There is no save. A note is not a form, and its save pill was one more thing to finish first:
+ * on the deck a category tap moves to the next card, and words typed before it and never saved
+ * went with the card. So what she typed is kept the moment she leaves it — the field let go, the
+ * page or card closed, the app sent away — and a suggestion the moment it is tapped. Only what she
+ * changed is written: [kept] is what the field opened with or last wrote, so a note another member
+ * edits while this page is open is not overwritten by the copy it opened with.
  *
  * A note is the household's, not one phone's, so the words here can be somebody else's — and
  * when they are, the line underneath says whose before she edits over them. Her own note gets
  * no byline: «یادداشت از سهیل» on her own sentence is the app telling her who she is.
  */
 @Composable
-private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit) {
-    var draft by rememberSaveable(entry.txn.ref) { mutableStateOf(entry.note) }
+private fun NoteField(
+    entry: LedgerEntry,
+    onNote: (LedgerEntry, String) -> Unit,
+    notes: List<NoteUse>,
+    categoryId: String?,
+) {
+    val ref = entry.txn.ref
+    var draft by rememberSaveable(ref) { mutableStateOf(entry.note) }
+    var kept by rememberSaveable(ref) { mutableStateOf(entry.note.trim()) }
+    val focus = LocalFocusManager.current
+    fun keep() {
+        val next = draft.trim()
+        if (next != kept) {
+            kept = next
+            onNote(entry, next)
+        }
+    }
+    // The card or page going away, and the app going to the background: a process killed there
+    // would take an unkept draft with it.
+    DisposableEffect(ref) { onDispose { keep() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { keep() }
     Column {
         OutlinedTextField(
             value = draft,
@@ -1586,6 +1618,7 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
             minLines = 2,
             modifier = Modifier
                 .fillMaxWidth()
+                .onFocusChanged { if (!it.isFocused) keep() }
                 .semantics { contentDescription = "یادداشت تراکنش" },
         )
         if (entry.noteAuthorName.isNotBlank()) {
@@ -1596,9 +1629,60 @@ private fun NoteField(entry: LedgerEntry, onNote: (LedgerEntry, String) -> Unit)
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (draft.trim() != entry.note) {
-            Spacer(Modifier.height(Space.s))
-            PillButton("ذخیره یادداشت", { onNote(entry, draft) }, voice = ButtonVoice.PRIMARY)
+        // While she is writing one, not under a note already kept.
+        if (draft.isBlank() || draft.trim() != kept) {
+            NoteSuggestions(notes, draft, categoryId) {
+                draft = it
+                keep()
+                // A pick is a finished note: the keyboard goes with it.
+                focus.clearFocus()
+            }
+        }
+    }
+}
+
+/**
+ * The notes she keeps writing, under a note field — see [noteSuggestions]. This is what makes
+ * «یادداشت به یادداشت» in the report add up: «شیر» picked is «شیر» spelled the same way every time.
+ *
+ * Words offered to the field, not acts, so not pills. Filled pills under the field read as more
+ * buttons beside its save. These are outlined and a size under a chip, on the one line a keyboard
+ * puts its guesses on, scrolling rather than wrapping so the page under them does not jump with
+ * every letter. Drawn at 32dp and touched at 48, which Compose gives any smaller clickable; the
+ * row's own padding holds that 48 so the strip does not clip it.
+ */
+@Composable
+internal fun NoteSuggestions(notes: List<NoteUse>, draft: String, categoryId: String?, onPick: (String) -> Unit) {
+    val offered = remember(notes, draft, categoryId) { noteSuggestions(notes, draft, categoryId) }
+    if (offered.isEmpty()) return
+    val shape = RoundedCornerShape(Radius.pill)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = Space.s),
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        for (text in offered) {
+            Box(
+                Modifier
+                    .clip(shape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                    .clickable(role = Role.Button, onClickLabel = "نوشتن همین یادداشت") { onPick(text) }
+                    .heightIn(min = 32.dp)
+                    .widthIn(max = 240.dp)
+                    .padding(horizontal = Space.m),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2222,7 +2306,7 @@ fun ReviewDeck(
                     Spacer(Modifier.height(Space.xxl))
                     SectionHeading("یادداشت")
                     Spacer(Modifier.height(Space.m))
-                    NoteField(entry, onNote)
+                    NoteField(entry, onNote, ledger.notes, picked)
                 }
 
                 Spacer(Modifier.height(Space.xxl))

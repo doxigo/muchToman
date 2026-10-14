@@ -315,6 +315,34 @@ class ClassifyTest {
         )
     }
 
+    @Test
+    fun `a note field offers back the notes she keeps writing, this category's first`() {
+        fun noted(note: String, categoryId: String) = LedgerEntry(
+            txn = txn(at = 1000, signed = -1_000_000),
+            categoryId = categoryId, categoryFa = "", confidence = Confidence.NONE,
+            needsReview = false, duplicate = false, transfer = false, note = note,
+        )
+        // «شیر» three ways is one note, shown the way she spells it most.
+        val notes = noteUseOf(
+            listOf(
+                noted("شیر", "cat_food"), noted("شير", "cat_food"), noted("شیر ", "cat_food"),
+                noted("نان", "cat_food"), noted("نان", "cat_food"),
+                noted("اسنپ", "cat_taxi"), noted("اسنپ", "cat_taxi"), noted("اسنپ", "cat_taxi"),
+                noted("اسنپ", "cat_taxi"), noted("کادوی تولد مامان", "cat_gift"), noted(" ", "cat_food"),
+            ),
+        )
+        assertEquals(4, notes.size)
+
+        // Blank on a خوراک row: that category's habits, the most written first, and nothing else.
+        assertEquals(listOf("شیر", "نان"), noteSuggestions(notes, "", "cat_food"))
+        // Blank on a row not filed yet: every habit, and still not the one-off.
+        assertEquals(listOf("اسنپ", "شیر", "نان"), noteSuggestions(notes, "", CAT_UNCATEGORISED))
+        // Typed: anything holding it, one-offs included — but not what is already typed in full.
+        assertEquals(listOf("کادوی تولد مامان"), noteSuggestions(notes, "تولد", "cat_food"))
+        assertEquals(emptyList<String>(), noteSuggestions(notes, "شیر", "cat_food"))
+        assertEquals(listOf("نان"), noteSuggestions(notes, "نا", null))
+    }
+
     // ─────────────────────────── links ───────────────────────────
 
     @Test

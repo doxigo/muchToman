@@ -613,6 +613,32 @@ fun categoryWindow(
     )
 }
 
+/** One note's slice of a category's window — see [noteTotals]. A blank [note] is the rows with none. */
+data class NoteTotal(val note: String, val rial: Long, val count: Int) {
+    /** «شیر (۵ بار)» — not «شیر · ۵ بار», whose dot beside a Persian digit reads as its zero: «۰۵». */
+    val fa: String get() = "${note.ifBlank { "بدون یادداشت" }} (${faNumber(count.toDouble())} بار)"
+}
+
+/**
+ * A category's rows regrouped by her notes, biggest first: «شیر» five times and «نان» ten out of
+ * one خوراک figure, without finding the rows and adding them up by hand. Folded the way
+ * [noteUseOf] folds, so the spelling the suggestions keep steady is the one that sums. The rows
+ * with no note close the list, so its lines still add up to the figure above them.
+ *
+ * Empty when there is nothing to tell apart — no notes at all, or the one note on every row.
+ */
+fun noteTotals(rows: List<LedgerEntry>): List<NoteTotal> {
+    val groups = rows.groupBy { searchFold(it.note) }
+    if (groups.size < 2) return emptyList()
+    return groups.map { (key, group) ->
+        NoteTotal(
+            note = if (key.isEmpty()) "" else usualSpelling(group),
+            rial = group.sumOf { abs(it.txn.signedRial ?: 0L) },
+            count = group.size,
+        )
+    }.sortedWith(compareBy<NoteTotal> { it.note.isEmpty() }.thenByDescending { it.rial })
+}
+
 // ─────────────────────────── the members, side by side ───────────────────────────
 
 /** One member's slice of the window: what they spent, what reached them. */

@@ -161,6 +161,25 @@ export function resolveType(id: string, coins: Coin[] | Map<string, AssetType>, 
  */
 export const faLetters = (s: string): string => s.replaceAll('ي', 'ی').replaceAll('ك', 'ک');
 
+// Here rather than in timeline.tsx (Timeline.kt's home for it) so rules.ts and reports.ts can fold
+// notes without importing a screen.
+/**
+ * One string folded for searching the ledger, the same folding on both sides of the match: one
+ * digit set, ZWNJ and spaces gone («اسنپ‌فود», «اسنپ فود», «اسنپفود» are one merchant), the
+ * Arabic ي/ك a bank's system spells folded to hers, latin lowercased.
+ */
+export function searchFold(s: string): string {
+  let out = '';
+  for (const c of faLetters(s)) {
+    const code = c.charCodeAt(0);
+    if (code >= 0x6f0 && code <= 0x6f9) out += String(code - 0x6f0);
+    else if (code >= 0x660 && code <= 0x669) out += String(code - 0x660);
+    else if (c === '‌' || /\s/.test(c)) continue;
+    else out += c.toLowerCase();
+  }
+  return out;
+}
+
 // ZWNJ and spaces vary by keyboard and source ("بیت‌کوین", "بیت کوین", "بیتکوین").
 const searchKey = (s: string): string => faLetters(s).replaceAll('‌', '').replaceAll(' ', '').toLowerCase();
 

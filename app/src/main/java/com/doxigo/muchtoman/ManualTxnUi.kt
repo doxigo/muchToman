@@ -115,6 +115,7 @@ private val ClockMask = digitsMask(':', 2)
 fun ManualTxnSheet(
     categories: List<Category>,
     categoryUse: Map<String, Double>,
+    notes: List<NoteUse>,
     onSave: (signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -293,6 +294,7 @@ fun ManualTxnSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
+            NoteSuggestions(notes, note, categoryId) { note = it }
 
             Spacer(Modifier.height(Space.xl))
             PillButton(

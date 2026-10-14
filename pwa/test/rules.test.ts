@@ -5,7 +5,8 @@ import { jalaliDay, tehranDay, tehranDayStart } from '../src/jalali';
 import type { LedgerEntry, Rule, Txn } from '../src/model';
 import {
   BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_CASH, CAT_FEES, CAT_INCOME, CAT_OTHER, CAT_SHOPPING_ID, CAT_TRANSFER, CAT_UNCATEGORISED, Confidence,
-  Priority, REVIEW_BELOW, categoryChoices, categoryUseOf, classify, customCategory, ruleFrom, ruleMatches, specificity,
+  Priority, REVIEW_BELOW, categoryChoices, categoryUseOf, classify, customCategory, noteSuggestions, noteUseOf, ruleFrom, ruleMatches,
+  specificity,
 } from '../src/rules';
 import { merchantNorm } from '../src/sms';
 
@@ -184,6 +185,27 @@ describe('the picker', () => {
     const escapes = new Map([[CAT_OTHER, 40], [CAT_TRANSFER, 40]]);
     expect(categoryChoices(BUILTIN_CATEGORIES, 'out', escapes).map((c) => c.nameFa).slice(-2)).toEqual(['سایر', 'انتقال بین حساب‌ها']);
     expect(categoryUseOf(filed('cat_health', 1, 5).map((e) => ({ ...e, transfer: true })), today).size).toBe(0);
+  });
+
+  it("offers back the notes she keeps writing, this category's first", () => {
+    const noted = (note: string, categoryId: string): LedgerEntry => ({
+      txn: txn({ at: 1000, signed: -1_000_000 }), categoryId, categoryFa: '',
+      confidence: Confidence.NONE, needsReview: false, duplicate: false, transfer: false, ownerMemberId: '', ownerName: '',
+      ownerAvatar: '', categoryEditorName: '', note, noteAuthorName: '', sharedWithFamily: true,
+    });
+    // «شیر» three ways is one note, shown the way she spells it most.
+    const notes = noteUseOf([
+      noted('شیر', 'cat_food'), noted('شير', 'cat_food'), noted('شیر ', 'cat_food'),
+      noted('نان', 'cat_food'), noted('نان', 'cat_food'),
+      noted('اسنپ', 'cat_taxi'), noted('اسنپ', 'cat_taxi'), noted('اسنپ', 'cat_taxi'),
+      noted('اسنپ', 'cat_taxi'), noted('کادوی تولد مامان', 'cat_gift'), noted(' ', 'cat_food'),
+    ]);
+    expect(notes.length).toBe(4);
+    expect(noteSuggestions(notes, '', 'cat_food')).toEqual(['شیر', 'نان']);
+    expect(noteSuggestions(notes, '', CAT_UNCATEGORISED)).toEqual(['اسنپ', 'شیر', 'نان']);
+    expect(noteSuggestions(notes, 'تولد', 'cat_food')).toEqual(['کادوی تولد مامان']);
+    expect(noteSuggestions(notes, 'شیر', 'cat_food')).toEqual([]);
+    expect(noteSuggestions(notes, 'نا', null)).toEqual(['نان']);
   });
 });
 

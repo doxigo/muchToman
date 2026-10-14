@@ -614,6 +614,9 @@ data class LedgerView(
     val categoryUse: Map<String, Double> by lazy {
         categoryUseOf(entries, tehranDay(System.currentTimeMillis()))
     }
+
+    /** Her notes, for [noteSuggestions] — lazy and read off [entries] for [categoryUse]'s reasons. */
+    val notes: List<NoteUse> by lazy { noteUseOf(entries) }
 }
 
 data class LedgerEntries(

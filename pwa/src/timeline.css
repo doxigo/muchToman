@@ -138,3 +138,12 @@
 .autofile-lines { margin-top: var(--l); padding: var(--s) var(--l); border-radius: var(--r-field); background: var(--surface-variant); }
 .autofile-line { display: flex; align-items: center; gap: var(--m); padding: var(--s) 0; font-size: 14px; line-height: 22px; color: var(--on-surface); }
 .autofile-line .figure { font-size: 17px; font-weight: 800; }
+
+/* Suggestions under a note field: words offered to it, not acts — outlined, a size under a chip, one
+   line that scrolls. 32px drawn, 48 touched: the strip's padding holds the reach so it is not clipped. */
+.note-suggestions { display: flex; gap: var(--s); overflow-x: auto; scrollbar-width: none; padding-block: var(--s); }
+.note-suggestions::-webkit-scrollbar { display: none; }
+.note-suggestion { position: relative; flex: none; max-width: 240px; min-height: 32px; padding: 0 var(--m); border: 1px solid var(--outline-variant); border-radius: var(--r-pill); background: transparent; color: var(--on-surface); font-size: 13px; font-weight: 500; transition: background var(--fast); }
+.note-suggestion::after { content: ""; position: absolute; inset: -8px 0; }
+.note-suggestion:active { background: var(--wash); }
+.note-suggestion > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

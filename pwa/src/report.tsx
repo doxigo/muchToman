@@ -27,7 +27,7 @@ import { DAY_MS, jalaliOf, tehranDay } from './jalali';
 import { faDayMonth } from './loans';
 import { closeSheet, openPage, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
 import type { ReportMode } from './nav';
-import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberWindow, reportMonthOf } from './reports';
+import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberWindow, noteTotalFa, noteTotals, reportMonthOf } from './reports';
 import type { CashFlowReport, Insight, MemberShare, PeriodReport, RunningSpend, SpendRhythm } from './reports';
 import { CAT_UNCATEGORISED } from './rules';
 import { pref, rows, setPref } from './state';
@@ -1130,6 +1130,8 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
   const tone = win.face == null ? hue(win.name) : income ? INCOME_TINT : 'var(--primary)';
   // The report's own reading of this window — the same rule, so the sheet and the row agree.
   const rate = usdFor(range);
+  // Not on a member's sheet, which is already asking «کجا؟» by category.
+  const byNote = win.face == null ? noteTotals(win.rows) : [];
   return (
     <Sheet label={win.name}>
       <div class="rp-sheet-head">
@@ -1157,6 +1159,17 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
           ))}
         </>
       )}
+      {/* A category's own rows regrouped by her notes — what «شیر» cost this month. A note has no
+          mark, and categoryHue would paint it some category's colour. */}
+      {byNote.length > 0 && (
+        <>
+          <SheetLabel>یادداشت به یادداشت</SheetLabel>
+          {byNote.map((line) => (
+            <ShareRow key={line.note} name={noteTotalFa(line)} rial={line.rial} total={Math.max(win.totalRial, 1)}
+              tint={income ? INCOME_TINT : undefined} rate={rate} lead={null} />
+          ))}
+        </>
+      )}
       {win.trend.some(([, rial]) => rial > 0) && (
         <>
           <SheetLabel>ماه به ماه</SheetLabel>
@@ -1168,10 +1181,13 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
           <SheetLabel>تراکنش‌های این بازه</SheetLabel>
           <div class="band">
             {/* A category's rows are all the one category, so its disc would be noise; a
-                member's rows are not, and the disc is what says where each one went. */}
+                member's rows are not, and the disc is what says where each one went. On a
+                category's, the line under the title says her note instead of the category again,
+                so each line of «یادداشت به یادداشت» can be found among them. */}
             {win.rows.map((e) => (
               // Tapping goes where it always goes; closing the page lands back on this report.
-              <TimelineRow key={e.txn.ref} entry={e} showIcon={win.face != null} onClick={() => openFromSheet(e.txn.ref)} />
+              <TimelineRow key={e.txn.ref} entry={e} showIcon={win.face != null}
+                line={win.face == null && e.note.trim() ? e.note.trim() : undefined} onClick={() => openFromSheet(e.txn.ref)} />
             ))}
           </div>
         </>

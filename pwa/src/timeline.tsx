@@ -14,9 +14,10 @@ import { categoriseAll, categorise, deleteTxn, learnSimilarNow, restoreTxn, setN
 import { editable, splitParts, splittable } from './edits';
 import { SplitPanel, TxnActs } from './editsUi';
 import { autoFilePlan } from './filing';
-import { CAT_INSTALMENT, MAX_NOTE_CHARS, categoryChoices } from './rules';
+import { CAT_INSTALMENT, MAX_NOTE_CHARS, categoryChoices, noteSuggestions } from './rules';
+import type { NoteUse } from './rules';
 import { bankFa } from './sms';
-import { faLetters } from './catalog';
+import { searchFold } from './catalog';
 import { CategoryIcon, customGlyphs, glyphOf, hueCss } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
 import { CategoryGrid } from './categoryGrid';
@@ -56,23 +57,6 @@ export const ledgerCategoryFa = (entry: LedgerEntry): string =>
 /** The one category whose mark the row wears — a split row's biggest part. */
 export const ledgerMarkFa = (entry: LedgerEntry): string =>
   entry.transfer ? 'انتقال بین حساب‌ها' : entry.categoryFa;
-
-/**
- * One string folded for searching the ledger, the same folding on both sides of the match: one
- * digit set, ZWNJ and spaces gone («اسنپ‌فود», «اسنپ فود», «اسنپفود» are one merchant), the
- * Arabic ي/ك a bank's system spells folded to hers, latin lowercased.
- */
-export function searchFold(s: string): string {
-  let out = '';
-  for (const c of faLetters(s)) {
-    const code = c.charCodeAt(0);
-    if (code >= 0x6f0 && code <= 0x6f9) out += String(code - 0x6f0);
-    else if (code >= 0x660 && code <= 0x669) out += String(code - 0x660);
-    else if (c === '‌' || /\s/.test(c)) continue;
-    else out += c.toLowerCase();
-  }
-  return out;
-}
 
 /**
  * Does this row answer to what she typed? Searched over what the row shows — title, category line,
@@ -447,7 +431,12 @@ export function MemberFace({ name, avatar, size = 44 }: { name: string; avatar: 
  * grey, which is the distinction the disc is for — whose it is on the disc's edge, the amount in
  * the ledger's in/out colours, and a transfer leg struck through because it is in no total.
  */
-export function TimelineRow({ entry, showIcon = true, onClick }: { entry: LedgerEntry; showIcon?: boolean; onClick: () => void }) {
+export function TimelineRow({ entry, showIcon = true, line, onClick }: {
+  entry: LedgerEntry; showIcon?: boolean;
+  /** What the line under the title says instead of the category — her note, on that sheet. */
+  line?: string;
+  onClick: () => void;
+}) {
   const txn = entry.txn;
   const incoming = txn.direction === 'in';
   const categoryFa = ledgerCategoryFa(entry);
@@ -469,7 +458,7 @@ export function TimelineRow({ entry, showIcon = true, onClick }: { entry: Ledger
       <span class="grow txn-text">
         <span class="txn-title ellipsis">{txnTitleFa(txn)}</span>
         <span class="txn-line">
-          <span class="ellipsis">{categoryFa}</span>
+          <span class="ellipsis">{line ?? categoryFa}</span>
           {owner && <span class="txn-owner">{`از ${entry.ownerName}`}</span>}
           {/* A dot, not a warning: nothing is wrong, something is merely unconfirmed. */}
           {waiting && <span class="review-dot" />}
@@ -591,21 +580,69 @@ function LearnSimilarToggle({ txn, checked, onChange }: { txn: Txn; checked: boo
 }
 
 /**
- * Words about the row, saved when she says so. The save pill exists only while the draft and the
- * stored note disagree; its disappearance is the receipt. Somebody else's note says whose it is.
+ * Words about the row, kept as she leaves them (Timeline.kt `NoteField`). No save pill: on the deck a
+ * category tap moved to the next card and took unsaved words with it. The field letting go, the page
+ * or card closing and the app being hidden all keep it; a suggestion is kept as it is tapped. Only
+ * what she changed is written — [kept] is what the field opened with or last wrote, so a note another
+ * member edits meanwhile is not overwritten by this copy. Somebody else's note says whose it is.
  */
-function NoteField({ entry }: { entry: LedgerEntry }) {
+function NoteField({ entry, notes, categoryId }: { entry: LedgerEntry; notes: NoteUse[]; categoryId: string | null }) {
   const [draft, setDraft] = useState(entry.note);
+  const [kept, setKept] = useState(entry.note.trim());
+  // Read by the unmount and hide handlers, which outlive the render that made them.
+  const latest = useRef({ draft, kept });
+  latest.current.draft = draft;
+  const keep = (): void => {
+    const next = latest.current.draft.trim();
+    if (next === latest.current.kept) return;
+    latest.current.kept = next;
+    setKept(next);
+    setNote(entry, next);
+  };
+  useEffect(() => {
+    const hidden = (): void => { if (document.visibilityState === 'hidden') keep(); };
+    document.addEventListener('visibilitychange', hidden);
+    return () => { document.removeEventListener('visibilitychange', hidden); keep(); };
+  }, []);
   return (
     <div>
       <label class="field">
         <textarea rows={2} value={draft} maxLength={MAX_NOTE_CHARS} placeholder="مثلاً کادوی تولد مامان" aria-label="یادداشت تراکنش"
-          onInput={(e) => setDraft((e.currentTarget as HTMLTextAreaElement).value.slice(0, MAX_NOTE_CHARS))} />
+          onInput={(e) => setDraft((e.currentTarget as HTMLTextAreaElement).value.slice(0, MAX_NOTE_CHARS))} onBlur={keep} />
       </label>
       {entry.noteAuthorName.trim() && <p class="muted small" style={{ marginTop: 'var(--s)' }}>{`یادداشت از ${entry.noteAuthorName}`}</p>}
-      {draft.trim() !== entry.note && (
-        <div style={{ marginTop: 'var(--s)' }}><PillButton label="ذخیره یادداشت" voice="primary" onClick={() => setNote(entry, draft)} /></div>
+      {/* While she is writing one, not under a note already kept. */}
+      {(!draft.trim() || draft.trim() !== kept) && (
+        <NoteSuggestions notes={notes} draft={draft} categoryId={categoryId} onPick={(text) => {
+          setDraft(text);
+          latest.current.draft = text;
+          keep();
+          // A pick is a finished note: the keyboard goes with it.
+          (document.activeElement as HTMLElement | null)?.blur();
+        }} />
       )}
+    </div>
+  );
+}
+
+/**
+ * The notes she keeps writing, under a note field (Timeline.kt `NoteSuggestions`) — «شیر» picked is
+ * «شیر» spelled one way, which is what lets «یادداشت به یادداشت» in the report add up. Words offered
+ * to the field, not acts, so outlined rather than pills, a size under a chip, on one line that
+ * scrolls. Pressing one keeps the field focused (no blur keeping half a word first); the pick decides.
+ */
+export function NoteSuggestions({ notes, draft, categoryId, onPick }: {
+  notes: NoteUse[]; draft: string; categoryId: string | null; onPick: (text: string) => void;
+}) {
+  const offered = useMemo(() => noteSuggestions(notes, draft, categoryId), [notes, draft, categoryId]);
+  if (!offered.length) return null;
+  return (
+    <div class="note-suggestions">
+      {offered.map((text) => (
+        <button type="button" key={text} class="note-suggestion" onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(text)}>
+          <span>{text}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -728,7 +765,7 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
       )}
 
       <SectionHeading>یادداشت</SectionHeading>
-      <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} /></div>
+      <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} notes={view.notes} categoryId={chosen} /></div>
 
       <SectionHeading>جزئیات</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><DetailsPanel details={transactionDetails(entry)} /></div>
@@ -813,7 +850,7 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       <div style={{ marginTop: 'var(--m)' }}><LearnSimilarToggle txn={txn} checked={learnSimilar} onChange={setLearnSimilar} /></div>
 
       <SectionHeading>یادداشت</SectionHeading>
-      <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} /></div>
+      <div style={{ marginTop: 'var(--m)' }}><NoteField entry={entry} notes={view.notes} categoryId={picked} /></div>
       <SectionHeading>جزئیات</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><DetailsPanel details={transactionDetails(entry)} /></div>
       <SectionHeading>منبع</SectionHeading>

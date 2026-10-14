@@ -18,6 +18,7 @@ export interface EntryOptions {
   merchant?: string;
   direction?: 'in' | 'out';
   sharedWithFamily?: boolean;
+  note?: string;
 }
 
 export function entry(day: number, signed: number | null, o: EntryOptions = {}): LedgerEntry {
@@ -45,7 +46,7 @@ export function entry(day: number, signed: number | null, o: EntryOptions = {}):
     ownerName: o.ownerName ?? '',
     ownerAvatar: '',
     categoryEditorName: '',
-    note: '',
+    note: o.note ?? '',
     noteAuthorName: '',
     sharedWithFamily: o.sharedWithFamily ?? true,
   };

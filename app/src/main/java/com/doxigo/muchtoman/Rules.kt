@@ -341,6 +341,60 @@ fun categoryUseOf(
 }
 
 /**
+ * One note she has written, however many rows carry it — what [noteSuggestions] offers back.
+ *
+ * Keyed by [searchFold], so «شیر», «شير» and «شیر » are one note. That is the point of offering
+ * notes back at all: «شیر» typed the same way every time is what lets the report add it up.
+ */
+data class NoteUse(
+    /** The spelling she uses most — see [usualSpelling]. */
+    val text: String,
+    val key: String,
+    val count: Int,
+    /** categoryId → how many of [count] are filed there. */
+    val categories: Map<String, Int>,
+)
+
+/** The spelling most of these rows' notes use, which is the one to show for all of them. */
+internal fun usualSpelling(rows: List<LedgerEntry>): String =
+    rows.groupingBy { it.note.trim() }.eachCount().maxBy { it.value }.key
+
+/**
+ * Her notes, read off the ledger the way [categoryUseOf] reads categories — nothing stored, so a
+ * note taken back stops being offered. In the ledger's own order, newest first, which is what
+ * breaks a tie between two notes she writes as often.
+ */
+fun noteUseOf(entries: List<LedgerEntry>): List<NoteUse> =
+    entries.filter { it.note.isNotBlank() }
+        .groupBy { searchFold(it.note) }
+        .filterKeys { it.isNotEmpty() }
+        .map { (key, rows) ->
+            NoteUse(usualSpelling(rows), key, rows.size, rows.groupingBy { it.categoryId }.eachCount())
+        }
+
+/**
+ * The notes worth a tap under a note field, the ones she writes in [categoryId] first.
+ *
+ * Blank, it offers only what recurs: a note written twice is a habit, and one written once —
+ * «کادوی تولد مامان» — would be noise under every row after it. Once the row is filed, only that
+ * category's habits: «شیر» under a taxi fare is a guess at nothing. Typed, it completes anything
+ * she has written that holds what she typed, bar what she has already typed in full.
+ */
+fun noteSuggestions(uses: List<NoteUse>, draft: String, categoryId: String?, limit: Int = 4): List<String> {
+    val typed = searchFold(draft)
+    val filed = categoryId?.takeIf { it.isNotBlank() && it != CAT_UNCATEGORISED }
+    val here = { use: NoteUse -> filed?.let { use.categories[it] } ?: 0 }
+    return uses
+        .filter {
+            if (typed.isEmpty()) it.count >= 2 && (filed == null || here(it) > 0)
+            else typed in it.key && it.key != typed
+        }
+        .sortedWith(compareByDescending(here).thenByDescending { it.count })
+        .take(limit)
+        .map { it.text }
+}
+
+/**
  * The categories worth offering for one transaction, the ones she actually uses first.
  *
  * «دسته‌بندی نشده» is the absence of an answer, not one of them, and an archived category is one

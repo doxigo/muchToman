@@ -2093,6 +2093,8 @@ internal fun CategoryShare(
     onOpen: (() -> Unit)? = null,
     /** The bar's empty part. خانه's month card is itself `surfaceVariant`, so it passes the paper. */
     track: Color = MaterialTheme.colorScheme.surfaceVariant,
+    /** False on a note's line: a note has no mark, and [categoryHue] would paint it some category's. */
+    mark: Boolean = true,
 ) {
     val spoken = spokenOf(rial)
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
@@ -2120,15 +2122,17 @@ internal fun CategoryShare(
             // took — colouring both would have the same row answering one question twice, and
             // the bars stop being comparable the moment they stop being the same colour.
             // On its disc, as everywhere a category leads a row now.
-            val hue = categoryHue(name)
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(hue.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center,
-            ) { CategoryIcon(name, hue, size = 17.dp, stroke = 1.5.dp) }
-            Spacer(Modifier.width(Space.m))
+            if (mark) {
+                val hue = categoryHue(name)
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(hue.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) { CategoryIcon(name, hue, size = 17.dp, stroke = 1.5.dp) }
+                Spacer(Modifier.width(Space.m))
+            }
             // Wraps rather than truncates: «دسته‌بندی نشده» beside a percentage and a figure is
             // one character over the line on a narrow phone, and a clipped category name is the
             // one thing in the row she cannot reconstruct from the rest of it.
@@ -2214,6 +2218,8 @@ private fun CategorySheet(
         window.income -> INCOME_TINT
         else -> MaterialTheme.colorScheme.primary
     }
+    // Not on a member's sheet, which is already asking «کجا؟» by category.
+    val byNote = remember(window) { if (window.face == null) noteTotals(window.rows) else emptyList() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2293,6 +2299,24 @@ private fun CategorySheet(
                 }
             }
 
+            // A category's own rows regrouped by her notes — what «شیر» cost this month.
+            if (byNote.isNotEmpty()) {
+                item(key = "notes") {
+                    SheetLabel("یادداشت به یادداشت")
+                    Column {
+                        for (line in byNote) {
+                            CategoryShare(
+                                line.fa,
+                                line.rial,
+                                window.totalRial.coerceAtLeast(1L),
+                                if (window.income) INCOME_TINT else null,
+                                mark = false,
+                            )
+                        }
+                    }
+                }
+            }
+
             if (window.trend.any { it.second > 0 }) {
                 item(key = "trend") {
                     SheetLabel("ماه به ماه")
@@ -2316,8 +2340,14 @@ private fun CategorySheet(
                         // would be noise there — the header wears that mark once. A member's
                         // rows are not: the disc is the only thing on the line saying which
                         // category each one went to, which is the question a member's sheet is
-                        // open for.
-                        TimelineRow(e, showIcon = window.face != null) {
+                        // open for. On a category's, the line under the title says her note
+                        // instead of the category again, so each line of «یادداشت به یادداشت» can
+                        // be found among them.
+                        TimelineRow(
+                            e,
+                            showIcon = window.face != null,
+                            line = e.note.trim().takeIf { window.face == null && it.isNotEmpty() },
+                        ) {
                             if (onOpenEntry != null) close { onDismiss(); onOpenEntry(e) }
                         }
                     }

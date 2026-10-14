@@ -1217,6 +1217,38 @@ class ReportsTest {
         assertTrue(food.breakdown.isEmpty())
     }
 
+    @Test
+    fun `a category's sheet adds its rows up note by note`() {
+        val range = ReportRange(here, here)
+        fun food(day: Long, signed: Long, note: String) =
+            entry(day, signed, category = "خوراک", categoryId = "cat_food").copy(note = note)
+        val rows = listOf(
+            food(first, -1_000_000, "شیر"),
+            food(first + 1, -1_200_000, "شير"),
+            food(first + 2, -300_000, "شیر "),
+            food(first + 3, -500_000, "نان"),
+            food(first + 4, -500_000, "نان"),
+            food(first + 5, -600_000, "نان"),
+            food(first + 6, -9_000_000, ""),
+        )
+        val window = categoryWindow(rows, "خوراک", income = false, range, sideRial = 0L)
+
+        // One «شیر» however it was typed, biggest first with the counts, the rows without a note
+        // last however big, and every line together is the figure on the sheet.
+        val byNote = noteTotals(window.rows)
+        assertEquals(
+            listOf(NoteTotal("شیر", 2_500_000, 3), NoteTotal("نان", 1_600_000, 3), NoteTotal("", 9_000_000, 1)),
+            byNote,
+        )
+        assertEquals(window.totalRial, byNote.sumOf { it.rial })
+        assertEquals("نان (۳ بار)", byNote[1].fa)
+        assertEquals("بدون یادداشت (۱ بار)", byNote[2].fa)
+
+        // Nothing to tell apart, nothing to list: no notes, or the one note on every row.
+        assertTrue(noteTotals(rows.map { it.copy(note = "") }).isEmpty())
+        assertTrue(noteTotals(rows.map { it.copy(note = "شیر") }).isEmpty())
+    }
+
     private fun at(e: LedgerEntry, hour: Int) = e.copy(txn = e.txn.copy(at = e.txn.at + hour * 3_600_000L))
 
     @Test

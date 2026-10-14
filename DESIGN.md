@@ -225,6 +225,18 @@ complete looked like «انصراف» beside it. Dimmed (38% on both platforms) 
 only: work in flight, whose label already says «در حال …», and a stepper at its end — «روز بعد»
 beside «امروز».
 
+**A note keeps itself.** A transaction's note field has no save: what she typed is kept when the
+field lets go, when the page or deck card closes, and when the app is sent away. A save pill there
+was one more thing to finish, and on the deck a category tap moves to the next card and took
+unsaved words with it. Only a changed note is written. The manual-entry sheet is a form, so its
+note goes with «ثبت تراکنش».
+
+**Suggestions are not pills.** Under a note field, the notes she keeps writing sit on one
+scrolling line as outlined chips: hairline `outlineVariant`, no fill, 13sp Medium, 32dp drawn and
+48 touched (`NoteSuggestions`, `.note-suggestion`). Filled pills there read as more buttons beside
+the field. A tap fills the field, keeps it and closes the keyboard; on the manual-entry form it
+only fills.
+
 ## Spacing
 
 `Space` scale: 4 / 8 / 12 / 16 / 20 / 32 / 48. Screen gutter is `Space.xl` (20) — `edge` in

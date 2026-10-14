@@ -8,6 +8,7 @@ import { CategoryGrid } from './categoryGrid';
 import { useLedger } from './derived';
 import { addManualTxn } from './ledger';
 import { MAX_NOTE_CHARS, categoryChoices } from './rules';
+import { NoteSuggestions } from './timeline';
 import { tomanFieldToRial } from './installments';
 import { tehranDay, tehranDayStart } from './jalali';
 import { faClock, faDay, faWeekdayDate, moneyUnit } from './format';
@@ -181,6 +182,7 @@ function ManualTxnSheet() {
 
       <SheetLabel>توضیحات</SheetLabel>
       <TextField label="یادداشت — خالی هم می‌شه" ariaLabel="توضیحات" value={note} maxLength={MAX_NOTE_CHARS} multiline onInput={(v) => setNote(v.slice(0, MAX_NOTE_CHARS))} />
+      <NoteSuggestions notes={view.notes} draft={note} categoryId={categoryId} onPick={setNote} />
 
       <div class="sheet-actions">
         <PillButton voice="primary" block label="ثبت تراکنش" onClick={save} />

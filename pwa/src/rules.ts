@@ -7,6 +7,7 @@
  */
 import { batch, load, putAll, rows } from './state';
 import { uuid7 } from './sync';
+import { searchFold } from './catalog';
 import type { Category, CategoryKindId, LedgerEntry, Rule, Txn } from './model';
 
 // ---- categories ----------------------------------------------------------------------------
@@ -146,6 +147,61 @@ export function categoryUseOf(entries: readonly LedgerEntry[], today: number, ha
     use.set(id, (use.get(id) ?? 0) + 2 ** (-age / halfLife));
   }
   return use;
+}
+
+/**
+ * One note she has written, however many rows carry it (Rules.kt `NoteUse`). Keyed by searchFold, so
+ * «شیر», «شير» and «شیر » are one: «شیر» typed the same way every time is what lets the report add it up.
+ */
+export interface NoteUse {
+  /** The spelling she uses most. */
+  text: string;
+  key: string;
+  count: number;
+  /** categoryId → how many of [count] are filed there. */
+  categories: Map<string, number>;
+}
+
+/** The spelling most of these rows' notes use — the first such in their order on a tie. */
+export function usualSpelling(rows: readonly LedgerEntry[]): string {
+  const counts = new Map<string, number>();
+  for (const e of rows) counts.set(e.note.trim(), (counts.get(e.note.trim()) ?? 0) + 1);
+  let best = '';
+  let most = 0;
+  for (const [text, n] of counts) if (n > most) { best = text; most = n; }
+  return best;
+}
+
+/** Her notes, read off the ledger like [categoryUseOf], in its order — newest first breaks a tie. */
+export function noteUseOf(entries: readonly LedgerEntry[]): NoteUse[] {
+  const byKey = new Map<string, LedgerEntry[]>();
+  for (const e of entries) {
+    const key = e.note.trim() ? searchFold(e.note) : '';
+    if (!key) continue;
+    const list = byKey.get(key);
+    if (list) list.push(e); else byKey.set(key, [e]);
+  }
+  return [...byKey].map(([key, rows]) => {
+    const categories = new Map<string, number>();
+    for (const e of rows) categories.set(e.categoryId, (categories.get(e.categoryId) ?? 0) + 1);
+    return { text: usualSpelling(rows), key, count: rows.length, categories };
+  });
+}
+
+/**
+ * The notes worth a tap under a note field, [categoryId]'s first. Blank, only what recurs — a note
+ * written once is «کادوی تولد مامان», noise under every row after it — and once the row is filed,
+ * only that category's. Typed, anything she has written that holds it, bar what is typed in full.
+ */
+export function noteSuggestions(uses: readonly NoteUse[], draft: string, categoryId: string | null, limit = 4): string[] {
+  const typed = searchFold(draft);
+  const filed = categoryId?.trim() && categoryId !== CAT_UNCATEGORISED ? categoryId : null;
+  const here = (use: NoteUse): number => (filed ? use.categories.get(filed) ?? 0 : 0);
+  return uses
+    .filter((it) => (typed ? it.key.includes(typed) && it.key !== typed : it.count >= 2 && (filed == null || here(it) > 0)))
+    .sort((a, b) => here(b) - here(a) || b.count - a.count)
+    .slice(0, limit)
+    .map((it) => it.text);
 }
 
 /**

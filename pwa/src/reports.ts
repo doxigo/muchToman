@@ -21,7 +21,8 @@ import type { InstallmentProgress } from './installments';
 import { MONTHS, faDigits, faNumber, faRate, tomanOf } from './format';
 import { DAY_MS, TEHRAN_OFFSET_MS, jalaliDay, jalaliMonthLength, jalaliOf, weekStart } from './jalali';
 import type { Goal, LedgerEntry } from './model';
-import { PASS_THROUGH_CATEGORIES } from './rules';
+import { PASS_THROUGH_CATEGORIES, usualSpelling } from './rules';
+import { searchFold } from './catalog';
 
 const div = (a: number, b: number): number => Math.trunc(a / b);
 
@@ -485,6 +486,35 @@ export function categoryWindow(
     breakdown: [],
     share: sideRial > 0 ? totalRial / sideRial : null,
   };
+}
+
+/** One note's slice of a category's window (Reports.kt `NoteTotal`). A blank [note] is the rows with none. */
+export interface NoteTotal {
+  note: string;
+  rial: number;
+  count: number;
+}
+
+/** «شیر (۵ بار)» — not «شیر · ۵ بار», whose dot beside a Persian digit reads as its zero. */
+export const noteTotalFa = (t: NoteTotal): string => `${t.note || 'بدون یادداشت'} (${faNumber(t.count)} بار)`;
+
+/**
+ * A category's rows regrouped by her notes, biggest first — «شیر» five times and «نان» ten out of one
+ * خوراک figure. Folded as noteUseOf folds, so the spelling the suggestions keep steady is the one that
+ * sums; the rows with no note close the list, so it still adds up to the figure above it. Empty when
+ * there is nothing to tell apart — no notes at all, or the one note on every row.
+ */
+export function noteTotals(rows: readonly LedgerEntry[]): NoteTotal[] {
+  const groups = new Map<string, LedgerEntry[]>();
+  for (const e of rows) {
+    const key = searchFold(e.note);
+    const list = groups.get(key);
+    if (list) list.push(e); else groups.set(key, [e]);
+  }
+  if (groups.size < 2) return [];
+  return [...groups]
+    .map(([key, group]): NoteTotal => ({ note: key ? usualSpelling(group) : '', rial: sumAbs(group), count: group.length }))
+    .sort((a, b) => Number(!a.note) - Number(!b.note) || b.rial - a.rial);
 }
 
 // ─────────────────────────── the members, side by side ───────────────────────────

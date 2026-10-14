@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ledgerRows, matchesLedgerSearch, searchFold } from '../src/timeline';
+import { searchFold } from '../src/catalog';
+import { ledgerRows, matchesLedgerSearch } from '../src/timeline';
 import { clockDigits, parseFaClock } from '../src/manualTxn';
 import { faClock } from '../src/format';
 import { tehranDayStart } from '../src/jalali';

@@ -18,8 +18,8 @@ import type { LinkCandidate } from './links';
 import { loanLinks } from './loans';
 import type { LoanLink } from './loans';
 import { editedTxn, splitOf } from './edits';
-import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify } from './rules';
-import type { TxnClass } from './rules';
+import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify, noteUseOf } from './rules';
+import type { NoteUse, TxnClass } from './rules';
 import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, clampAt, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
 import { dataVersion, pref, rows, useData } from './state';
 import type {
@@ -321,6 +321,8 @@ export interface LedgerView {
   review: LedgerEntry[];
   /** What she files under, for [categoryChoices] to order the picker. */
   categoryUse: Map<string, number>;
+  /** Her notes, for [noteSuggestions]. */
+  notes: NoteUse[];
   health: LedgerHealth;
   bankAccounts: BankAccountView[];
   bankTotalRial: number;
@@ -428,6 +430,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
     review: kept.filter((e) => e.needsReview && !e.duplicate && !e.transfer)
       .sort((a, b) => (b.txn.amountRial ?? 0) - (a.txn.amountRial ?? 0)),
     categoryUse: categoryUseOf(kept, tehranDay(now)),
+    notes: noteUseOf(kept),
     health: {
       oldestDay: least(kept.map((e) => e.txn.day)),
       transactionCount: kept.length,
