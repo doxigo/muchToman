@@ -26,9 +26,17 @@ android {
         applicationId = "com.doxigo.muchtoman"
         minSdk = 24
         targetSdk = 37
-        // CI passes these from the git tag; local builds don't care.
+        // CI passes these from the git tag. A local build names the tag it was built after, so the
+        // dev build reads «1.4.2-dev» rather than a placeholder; 1.0 only where git cannot say.
         versionCode = providers.gradleProperty("muchtoman.versionCode").orNull?.toInt() ?: 1
-        versionName = providers.gradleProperty("muchtoman.versionName").orNull ?: "1.0"
+        versionName = providers.gradleProperty("muchtoman.versionName").orNull
+            ?: runCatching {
+                providers.exec {
+                    commandLine("git", "describe", "--tags", "--abbrev=0", "--match", "v*")
+                    isIgnoreExitValue = true
+                }.standardOutput.asText.get().trim().removePrefix("v")
+            }.getOrNull()?.ifBlank { null }
+            ?: "1.0"
         // The on-device smoke suite under src/androidTest (plan 008) — plain JUnit4 on the
         // stock runner; no custom runner exists and none is needed.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

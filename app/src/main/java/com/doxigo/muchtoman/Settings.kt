@@ -458,16 +458,17 @@ private fun SettingsIndex(
             // column a weighted spacer has nothing to push against.
             //
             // The build number and the build type are both here because the name alone does not
-            // identify an install: every locally built app carries the placeholder 1.0, so a
-            // sandbox build and a real 1.0 release read identically — which is exactly the
-            // question this line exists to answer.
+            // identify an install: a local debug build carries the release's own name, so it and
+            // the release read identically — which is exactly the question this line exists to
+            // answer. The dev build says so in its name («۱٫۴٫۲-dev»), and its build number is a
+            // constant (app/build.gradle.kts) that only read as ۲۰۰۰۰۰۰۰۰۰.
             Spacer(Modifier.height(Space.xxl))
             Text(
                 buildString {
                     append("چقدر تومن • نسخهٔ ${faVersion(BuildConfig.VERSION_NAME)}")
-                    append(" • ساخت ${faVersion(BuildConfig.VERSION_CODE.toString())}")
-                    if (BuildConfig.BUILD_TYPE != "release") {
-                        append(" • ${bidi(BuildConfig.BUILD_TYPE)}")
+                    if (BuildConfig.BUILD_TYPE != "dev") {
+                        append(" • ساخت ${faVersion(BuildConfig.VERSION_CODE.toString())}")
+                        if (BuildConfig.BUILD_TYPE != "release") append(" • ${bidi(BuildConfig.BUILD_TYPE)}")
                     }
                 },
                 fontSize = 12.sp,
