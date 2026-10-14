@@ -107,6 +107,20 @@ class FilingTest {
     }
 
     @Test
+    fun `a household member's spend is theirs, and says nothing on this phone`() {
+        // Pulled in by the sync, their unfiled row arrives pinned to «دسته‌بندی نشده» — so it read
+        // as filed, and the next wakeup posted «تو «دسته‌بندی نشده» ثبت شد» for a spend not hers.
+        val theirs = waiting(at = 900L).let {
+            it.copy(needsReview = false, txn = it.txn.copy(ref = familyLocalRef("txn:m2:00"), familyRef = "txn:m2:00"))
+        }
+        val mine = waiting(at = 800L)
+        val news = filingNews(listOf(theirs, mine), listOf(mine), said = 400L)
+        assertEquals(listOf(mine.txn.ref), news.landed.map { it.txn.ref })
+        assertEquals(0, news.alert!!.filed)
+        assertNull(filingNews(listOf(theirs), emptyList(), said = 400L).alert)
+    }
+
+    @Test
     fun `a fresh install speaks for the very first thing that lands`() {
         // Ingest seeds its watermark at now, so a ledger holding one row on the first pass is
         // holding the spend that just happened — there is no backlog here to be ambushed by.
