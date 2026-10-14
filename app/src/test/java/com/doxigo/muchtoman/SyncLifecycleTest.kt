@@ -740,6 +740,25 @@ class SyncLifecycleTest {
     }
 
     @Test
+    fun `a sync names the rows this phone holds for the first time, and never the household's history`() = lifecycle { server, durable ->
+        val session = claimHousehold(server.base, durable, "مریم")
+        val them = "b".repeat(32)
+        suspend fun sync(vararg records: JSONObject): SyncResult {
+            server.pulls.add(JSONObject().put("seq", 2).put("records", JSONArray(records.toList())).put("hasMore", false).toString())
+            val derived = Room.inMemoryDatabaseBuilder(
+                ApplicationProvider.getApplicationContext<Context>(), DerivedDb::class.java
+            ).build()
+            return try { syncNow(durable, derived, session) } finally { derived.close() }
+        }
+
+        // The first pull is from the start: everything in it is new here and none of it is news.
+        assertTrue(sync(memberRecord(session, them, "رضا", 1000), txnRecord(session, them, "m:1", 1000)).arrived.isEmpty())
+        // After it, a row arriving is, however old; an edit of one already here is not.
+        val next = sync(txnRecord(session, them, "m:1", 2000), txnRecord(session, them, "m:2", 2000))
+        assertEquals(setOf(familyLocalRef(familyTxnId(them, "m:2"))), next.arrived)
+    }
+
+    @Test
     fun `a transaction stamp the ledger cannot place lands clamped`() = lifecycle { server, durable ->
         val session = claimHousehold(server.base, durable, "مریم")
         val them = "b".repeat(32)

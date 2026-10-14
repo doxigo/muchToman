@@ -1009,6 +1009,15 @@ class Store(context: Context) {
         get() = prefs.getBoolean("familyTotal", false)
         set(v) { prefs.edit().putBoolean("familyTotal", v).apply() }
 
+    /**
+     * Whether the household's transactions get a note each on this phone — see [notifyFamily].
+     * Off [EXPORTED_PREFS] for [familyTotal]'s reason: a restored phone has no household until
+     * she pairs it again.
+     */
+    var familyNotes: Boolean
+        get() = prefs.getBoolean("familyNotes", false)
+        set(v) { prefs.edit().putBoolean("familyNotes", v).apply() }
+
     /** Rates the user typed in by hand; these win over whatever the Worker says. */
     var overrides: Map<String, Double>
         get() = read("overrides", emptyMap())

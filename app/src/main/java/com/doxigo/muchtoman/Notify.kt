@@ -29,6 +29,9 @@ import androidx.core.content.ContextCompat
  * her bank. The same voice puts a line on top of the budget and installment notes. At ساده, and
  * always in lite, neither happens and every note reads exactly as it did.
  *
+ * The fifth is off until she switches it on, on the خانواده page: a household member's transaction
+ * has reached this phone. Late by nature — see [notifyFamily] — so it is quiet by default.
+ *
  * ## Why any of this exists
  *
  * A budget that is only true while the app is open is a scoreboard. «۸۰٪ رفته» is worth knowing at
@@ -121,6 +124,18 @@ private const val FILING_SUMMARY_ID = 3
  */
 private const val FILING_GROUP = "com.doxigo.muchtoman.FILING"
 
+/** «خانواده» — the household's transactions, a note each, once she asks. See [notifyFamily]. */
+private const val FAMILY_CHANNEL = "family"
+
+/** One id for every household note, with the row's `ref` as the tag — [FILING_NOTE_ID]'s arrangement. */
+private const val FAMILY_NOTE_ID = 6
+
+/** The line over them, untagged — [FILING_SUMMARY_ID]'s arrangement. */
+private const val FAMILY_SUMMARY_ID = 7
+
+/** Their own bundle: under hers, the summary's «تا یادته» would be asking her about their spends. */
+private const val FAMILY_GROUP = "com.doxigo.muchtoman.FAMILY"
+
 /** Read by [MainActivity] to open on the screen a notification was about. */
 const val EXTRA_OPEN_TAB = "com.doxigo.muchtoman.OPEN_TAB"
 
@@ -148,6 +163,8 @@ internal fun installmentPublicTitle(): String = "یادآوری قسط"
 internal fun chequePublicTitle(): String = "یادآوری چک"
 
 internal fun quietPublicTitle(): String = "احوال‌پرسی"
+
+internal fun familyPublicTitle(): String = "خبری از خانواده"
 
 internal fun publicBody(): String = "جزئیات توی برنامه"
 
@@ -237,6 +254,31 @@ private fun ensureInstallmentChannel(context: Context) {
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             description = "یادآوری سررسید قسط‌ها و چک‌هایی که ثبت کردی."
+            setShowBadge(true)
+        },
+    )
+}
+
+/**
+ * The household's channel, made as soon as she switches it on so its own switch is in Android's
+ * settings when she goes looking.
+ *
+ * IMPORTANCE_LOW — the weight [ensureFilingChannel] had while its notes trailed the spend by hours.
+ * These always can: this phone hears of a member's spend only when it next syncs. A note that late
+ * belongs in the shade rather than in her ear, least of all from the sweep that runs through the
+ * night. She can raise it there.
+ */
+internal fun ensureFamilyChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = context.getSystemService(NotificationManager::class.java) ?: return
+    if (manager.getNotificationChannel(FAMILY_CHANNEL) != null) return
+    manager.createNotificationChannel(
+        NotificationChannel(
+            FAMILY_CHANNEL,
+            "خانواده",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "تراکنش‌های بقیه‌ی اعضای خانواده؛ ممکنه چند ساعت دیر برسن."
             setShowBadge(true)
         },
     )
@@ -564,15 +606,71 @@ internal fun filingSummary(context: Context, alert: FilingAlert): Notification {
  * That also picks up the single untagged note left standing by the build before this one, whose id
  * was the same.
  */
-fun clearFilingNote(context: Context) {
+fun clearFilingNote(context: Context) = clearStack(context, FILING_NOTE_ID, FILING_SUMMARY_ID)
+
+/** [clearFilingNote] for the household's notes, at the moment it runs: she opened the app. */
+fun clearFamilyNotes(context: Context) = clearStack(context, FAMILY_NOTE_ID, FAMILY_SUMMARY_ID)
+
+/** One stack's notes and the line over them, asked of the platform rather than remembered. */
+private fun clearStack(context: Context, noteId: Int, summaryId: Int) {
     val manager = NotificationManagerCompat.from(context)
     runCatching {
-        manager.cancel(FILING_SUMMARY_ID)
+        manager.cancel(summaryId)
         for (live in manager.activeNotifications) {
-            if (live.id == FILING_NOTE_ID) manager.cancel(live.tag, FILING_NOTE_ID)
+            if (live.id == noteId) manager.cancel(live.tag, noteId)
         }
-    }.onFailure { android.util.Log.w("muchtoman", "filing cancel failed: $it") }
+    }.onFailure { android.util.Log.w("muchtoman", "notes cancel failed: $it") }
 }
+
+/**
+ * One note per household transaction this phone has just heard of, under a line of their own —
+ * [notifyFiling]'s arrangement, and its cap, since the platform's ceiling on live notes is shared.
+ *
+ * Posted only by the watch worker, straight after the sync that brought them: the app in front of
+ * her shows their rows better, and takes these back — see [markFilingSeen]. No mark to keep, unlike
+ * hers: [SyncResult.arrived] is new to this phone by construction, and a row arrives once.
+ */
+// [canNotify] checked in the body — see [notifyBudget].
+@SuppressLint("MissingPermission")
+fun notifyFamily(context: Context, news: List<LedgerEntry>) {
+    if (news.isEmpty() || !canNotify(context)) return
+    ensureFamilyChannel(context)
+    val manager = NotificationManagerCompat.from(context)
+    for (entry in news.take(LANDED_NOTE_LIMIT).asReversed()) {
+        runCatching { manager.notify(entry.txn.ref, FAMILY_NOTE_ID, familyNote(context, entry)) }
+            .onFailure { android.util.Log.w("muchtoman", "family notify failed: $it") }
+    }
+    runCatching { manager.notify(FAMILY_SUMMARY_ID, familySummary(context, news)) }
+        .onFailure { android.util.Log.w("muchtoman", "family summary failed: $it") }
+}
+
+/** One of theirs. Opens دفتر, where their row sits beside hers. */
+internal fun familyNote(context: Context, entry: LedgerEntry): Notification =
+    familyBuilder(context, familyTitle(entry), familyBody(entry))
+        .withLockFace(context, FAMILY_CHANNEL, NotificationCompat.CATEGORY_STATUS, familyPublicTitle(), openLedgerTab(context))
+
+/** The line over them — [filingSummary]'s job, counting this batch. */
+internal fun familySummary(context: Context, news: List<LedgerEntry>): Notification =
+    familyBuilder(context, familyAlertTitle(news), familyAlertBody(news))
+        .setGroupSummary(true)
+        .withLockFace(context, FAMILY_CHANNEL, NotificationCompat.CATEGORY_STATUS, familyPublicTitle(), openLedgerTab(context))
+
+private fun familyBuilder(context: Context, title: String, body: String) =
+    NotificationCompat.Builder(context, FAMILY_CHANNEL)
+        .setSmallIcon(R.drawable.ic_toman)
+        .setColor(0xFF0A423B.toInt())
+        .setContentTitle(title)
+        .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        // The pre-O mirror of [ensureFamilyChannel]'s weight.
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setGroup(FAMILY_GROUP)
+        // Should she raise the channel, one sound for a batch rather than one more for its summary.
+        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+        .setAutoCancel(true)
+        .setContentIntent(openLedgerTab(context))
+        .setTicker("$title. $body")
 
 /**
  * Reminds her of one plan's next payment. Opens «آینده», where the plan's card is.
@@ -825,4 +923,6 @@ fun markFilingSeen(context: Context, store: Store, view: LedgerView) {
     if (view.entries.isNotEmpty()) ensureFilingChannel(context)
     store.filingMark = filingNews(view.entries, view.review, store.filingMark).mark
     clearFilingNote(context)
+    // The household's rows are on the same screen as hers.
+    clearFamilyNotes(context)
 }

@@ -134,6 +134,27 @@ class NotifyTest {
     }
 
     @Test
+    fun `a household note is private and its public face names nobody and no figure`() {
+        val entry = waiting(at = 1_000L).copy(ownerMemberId = "m2", ownerName = "مریم", needsReview = false)
+        val note = familyNote(context, entry)
+
+        assertEquals(NotificationCompat.VISIBILITY_PRIVATE, note.visibility)
+        val public = note.publicVersion
+        assertNotNull(public)
+        assertEquals(familyPublicTitle(), title(public!!))
+        assertEquals(publicBody(), text(public))
+        // Whose it was is as private as what it was.
+        val rial = entry.txn.amountRial!!
+        for (line in listOf(title(public), text(public))) {
+            assertTrue(!line.contains(entry.ownerName))
+            assertTrue(!line.contains(entry.txn.merchant))
+            assertTrue(!line.contains(faCompact(tomanOf(rial))))
+        }
+        assertEquals(familyTitle(entry), title(note))
+        assertEquals(familyBody(entry), text(note))
+    }
+
+    @Test
     fun `with the app lock on every note is secret and still says its full words`() {
         Store(context).lockEnabled = true
         val progress = budgetProgress(budget(50_000_000), listOf(spend(first, -41_500_000)), first + 5)
@@ -143,6 +164,8 @@ class NotifyTest {
             budgetNote(context, progress) to budgetAlertTitle(progress),
             landedNote(context, entry) to landedTitle(entry),
             filingSummary(context, alert) to filingAlertTitle(alert),
+            familyNote(context, entry) to familyTitle(entry),
+            familySummary(context, listOf(entry, entry)) to familyAlertTitle(listOf(entry, entry)),
         )
         for ((note, fullTitle) in notes) {
             assertEquals(NotificationCompat.VISIBILITY_SECRET, note.visibility)

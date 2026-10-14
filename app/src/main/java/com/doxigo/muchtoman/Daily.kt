@@ -174,7 +174,8 @@ private const val LEGACY_BUDGET_WATCH_WORK = "budget-watch"
  * On a phone that belongs to a household, one more thing: the family sync runs here too, so a
  * spend reaches the rest of the family the minute its message lands rather than the next time
  * this phone's owner happens to open the app — her shared دارایی with it — and whatever the family
- * pushed while the app was closed is already in the ledger before she next looks.
+ * pushed while the app was closed is already in the ledger before she next looks. Once she has asked
+ * for it, each of their transactions that sync brought gets a note of its own ([notifyFamily]).
  */
 class LedgerWatchWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
@@ -247,6 +248,11 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 // Pulled rows sit in durable until a derive folds them in, and the foreground
                 // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
                 if (result.received > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
+                // Their transactions, a note each, once she asked for that. After the derive, so
+                // the rows the sync named are in the ledger to be read.
+                if (store.familyNotes && result.arrived.isNotEmpty()) {
+                    notifyFamily(app, familyNews(ledgerEntries(derived, durable).entries, result.arrived, System.currentTimeMillis()))
+                }
                 // The categories the household leaves out of the report, landed on this phone's
                 // own setting while the app is closed — the report has to open on the family's
                 // answer rather than wait for a foreground sync to repeat what this one learnt.

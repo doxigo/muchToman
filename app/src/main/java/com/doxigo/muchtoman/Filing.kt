@@ -297,6 +297,56 @@ fun filingAlertBody(alert: FilingAlert): String {
 }
 
 /**
+ * How long another member's transaction stays news here — see [familyNews]. Past the lag: this
+ * phone and theirs each sync when they next wake, and a phone Android holds back can take most of
+ * a day to.
+ */
+private const val FAMILY_NEWS_DAYS = 2L
+
+/**
+ * The household's transactions worth a note each, newest first: the ones this phone has just heard
+ * of for the first time — [arrived], from the sync, see [SyncResult.arrived] — that moved money.
+ * Their transfers and balance announcements are bookkeeping, as hers are.
+ *
+ * Within [FAMILY_NEWS_DAYS], because heard of for the first time is not the same as new: a member
+ * joining, or switching their sharing on, hands the household their history, and every row of it
+ * arrives here for the first time.
+ */
+fun familyNews(entries: List<LedgerEntry>, arrived: Set<String>, now: Long): List<LedgerEntry> =
+    spendableRows(entries)
+        .filter { it.txn.ref in arrived && it.txn.at > now - FAMILY_NEWS_DAYS * DAY_MS }
+        .sortedByDescending { it.txn.at }
+
+private fun memberOf(entry: LedgerEntry): String = entry.ownerName.ifBlank { "عضو خانواده" }
+
+/** Whose it was, then what [landedTitle] says of one of hers: «مریم • اسنپ‌پی: ۴۵۰ هزار تومان رفت». */
+fun familyTitle(entry: LedgerEntry): String = "${memberOf(entry)} • ${landedTitle(entry)}"
+
+/**
+ * When it happened, because the note can come hours after it — and what its owner filed it as, when
+ * they have. Never the deck's question: the row is theirs to place.
+ *
+ * The weekday rather than «امروز»: the note can stand overnight, and «امروز» read the next morning
+ * is yesterday. Inside [FAMILY_NEWS_DAYS] a weekday names one day only. A hand-entered row with no
+ * minute keeps the day alone, [faMoment]'s rule.
+ */
+fun familyBody(entry: LedgerEntry): String {
+    val txn = entry.txn
+    val day = faWeekday(txn.day)
+    val moment = if (txn.at == tehranDayStart(txn.day)) day else "$day، ${bidi(faClock(txn.at))}"
+    val filed = !entry.needsReview && entry.categoryId != CAT_UNCATEGORISED
+    return if (filed) "$moment • ${entry.categoryFa}" else moment
+}
+
+/** The line over their stack: how many came, or the one note's own words when it stands alone. */
+fun familyAlertTitle(news: List<LedgerEntry>): String =
+    if (news.size > 1) "${faNumber(news.size.toDouble())} تراکنش تازه از خانواده" else familyTitle(news.first())
+
+/** Whose they were, each name once. */
+fun familyAlertBody(news: List<LedgerEntry>): String =
+    if (news.size > 1) news.map(::memberOf).distinct().joinToString(" و ") else familyBody(news.first())
+
+/**
  * Filing the whole backlog in one gesture, worked out before anything is written.
  *
  * Three buckets, in order of how much the app actually knows. A row the rules already guessed at

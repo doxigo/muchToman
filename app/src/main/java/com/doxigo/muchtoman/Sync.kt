@@ -1023,7 +1023,19 @@ private suspend fun formerMemberIds(durable: DurableDb, publications: List<SyncP
     }
 }
 
-data class SyncResult(val sent: Int, val received: Int, val unsupportedKinds: Set<String> = emptySet())
+data class SyncResult(
+    val sent: Int,
+    val received: Int,
+    val unsupportedKinds: Set<String> = emptySet(),
+    /**
+     * Another member's transactions this phone held for the first time, by local ref — what the
+     * household's notes are about, see [familyNews]. By arrival rather than by stamp: a row lands
+     * whenever its owner's phone and this one next sync, hours late and out of order, so «newer
+     * than the last one said» would skip exactly the late ones. Empty on a household's first pull,
+     * which is its whole history.
+     */
+    val arrived: Set<String> = emptySet(),
+)
 
 private data class PreparedRecord(
     val wire: WireRecord,
@@ -1632,6 +1644,7 @@ private suspend fun applyTransaction(
     record: WireRecord,
     payload: SyncEntry,
     now: Long,
+    arrived: MutableSet<String>,
 ): Boolean {
     val owner = resolvedTransactionOwner(record.kind, record.ownerMemberId, record.authorMemberId)
     if (owner.isBlank() || owner == session.member) return false
@@ -1665,6 +1678,9 @@ private suspend fun applyTransaction(
             updatedAt = record.updatedAt,
         )
     )
+    // The first time this phone holds it. An edit of a row already here is not a transaction, and
+    // neither is one coming back from a tombstone — the table keeps those rows, so they are not null.
+    if (existing == null) arrived += familyLocalRef(familyRef)
 
     // Whose spending the owner says it was. Only the owner writes this record, so the record's own
     // stamp settles it: a blank one takes an earlier attribution back.
@@ -2120,6 +2136,7 @@ private suspend fun applyRecord(
     session: SyncSession,
     record: WireRecord,
     now: Long,
+    arrived: MutableSet<String>,
 ): Boolean {
     if (record.device == session.device) return false
     val plain = openRecord(session, record) ?: return false
@@ -2156,7 +2173,7 @@ private suspend fun applyRecord(
         "exclusion" -> runCatching { SYNC_JSON.decodeFromString<SyncExclusionPayload>(plain) }
             .getOrNull()?.let { applyReportExclusions(durable, session, record, it) } ?: false
         "transaction", "legacy" -> runCatching { SYNC_JSON.decodeFromString<SyncEntry>(plain) }
-            .getOrNull()?.let { applyTransaction(durable, session, record, it, now) } ?: false
+            .getOrNull()?.let { applyTransaction(durable, session, record, it, now, arrived) } ?: false
         else -> false
     }
 }
@@ -2273,6 +2290,12 @@ suspend fun syncNow(
     }
 
     var cursor = durable.meta().get(META_SYNC_SEQ)?.toLongOrNull() ?: 0L
+    // From the start — a join, a rejoin, a renewal — the pull is the household's history: every
+    // row of it is new to this phone, and none of it is news.
+    val history = cursor == 0L
+    // ponytail: in memory only, so a sync that throws after its pull (a refused push, a later page
+    // failing) keeps the rows and loses their notes. Persist it beside the cursor if that matters.
+    val arrived = mutableSetOf<String>()
     var received = 0
     var canRotate = false
     do {
@@ -2293,7 +2316,7 @@ suspend fun syncNow(
                 // The client half of the skew bound, in one choke point: everything downstream
                 // compares and stores the clamped stamp.
                 val bounded = record.copy(updatedAt = clampSyncStamp(record.updatedAt, now))
-                if (applyRecord(durable, active, bounded, now)) applied++
+                if (applyRecord(durable, active, bounded, now, arrived)) applied++
             }
             durable.meta().put(DurableMeta(META_SYNC_SEQ, nextCursor.toString()))
             if (applied > 0) {
@@ -2311,7 +2334,7 @@ suspend fun syncNow(
     if (canRotate) rotateTokenIfStale(durable, active, now)
     settleDepartedMembers(durable, active)
     refused?.let { throw it }
-    SyncResult(sent, received, unsupportedKinds)
+    SyncResult(sent, received, unsupportedKinds, if (history) emptySet() else arrived)
 }
 
 /**

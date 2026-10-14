@@ -410,4 +410,58 @@ class FilingTest {
             }
         }
     }
+
+    // ─────────────────────────── the household's notes ───────────────────────────
+
+    private val hour = 3_600_000L
+
+    /** Another member's row as the sync lands it: pinned to what they filed, so never in her deck. */
+    private fun theirs(at: Long, categoryId: String = CAT_UNCATEGORISED, categoryFa: String = "دسته‌بندی نشده"): LedgerEntry {
+        val row = waiting(at)
+        val familyRef = "txn:m2:${row.txn.ref}"
+        return row.copy(
+            txn = row.txn.copy(ref = familyLocalRef(familyRef), familyRef = familyRef, ownerMemberId = "m2"),
+            categoryId = categoryId, categoryFa = categoryFa, needsReview = false,
+            ownerMemberId = "m2", ownerName = "مریم",
+        )
+    }
+
+    @Test
+    fun `their transaction is news when this phone first hears of it, however late it is`() {
+        val now = 100 * DAY_MS
+        // Twenty hours old by its own stamp — older than what this phone already held — and still
+        // news, because this is the sync that brought it.
+        val late = theirs(at = now - 20 * hour)
+        val fresh = theirs(at = now - hour)
+        val known = theirs(at = now - 2 * hour)
+        val mine = waiting(at = now - hour / 2)
+        val news = familyNews(listOf(mine, fresh, known, late), setOf(late.txn.ref, fresh.txn.ref), now)
+        assertEquals(listOf(fresh.txn.ref, late.txn.ref), news.map { it.txn.ref })
+    }
+
+    @Test
+    fun `their history and their bookkeeping are not news`() {
+        val now = 100 * DAY_MS
+        // A member who just joined hands over months; a transfer between their accounts is theirs.
+        val history = theirs(at = now - 3 * DAY_MS)
+        val moved = theirs(at = now - hour).copy(transfer = true)
+        assertTrue(familyNews(listOf(history, moved), setOf(history.txn.ref, moved.txn.ref), now).isEmpty())
+    }
+
+    @Test
+    fun `their note says whose, what and when, and their category only once they gave one`() {
+        val at = tehranDayStart(jalaliDay(1405, 7, 20)) + 14 * hour + 3 * 60_000L
+        val day = faWeekday(tehranDay(at))
+        val unfiled = theirs(at)
+        assertEquals("مریم • اسنپ: ۴۵۰ هزار تومان رفت", familyTitle(unfiled))
+        // Never «دسته‌بندی نشده» passed off as their answer, and never «بگو چی بود» — it is theirs.
+        assertEquals("$day، ${bidi("۱۴:۰۳")}", familyBody(unfiled))
+        val filed = theirs(at, CAT_SHOPPING_ID, "خرید روزانه")
+        assertEquals("$day، ${bidi("۱۴:۰۳")} • خرید روزانه", familyBody(filed))
+        // Over a batch, the count and who.
+        val batch = listOf(filed, unfiled, unfiled.copy(ownerName = "رضا"))
+        assertEquals("۳ تراکنش تازه از خانواده", familyAlertTitle(batch))
+        assertEquals("مریم و رضا", familyAlertBody(batch))
+        assertEquals(familyTitle(filed), familyAlertTitle(listOf(filed)))
+    }
 }

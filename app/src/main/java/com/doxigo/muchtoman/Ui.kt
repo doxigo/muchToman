@@ -685,6 +685,12 @@ private fun AppScreens(
             onAvatarChange = vm::setFamilyAvatar,
             onShareSmsChange = vm::setFamilySmsSharing,
             onShareAssetsChange = vm::setFamilyAssetSharing,
+            // A note switch: switching it on is the moment to ask for notifications, as the
+            // reminder's does.
+            onNotesChange = { on ->
+                vm.setFamilyNotes(on)
+                if (on && !canNote) askNotify()
+            },
             banks = remember(state.bankAccounts) { state.bankAccounts.map { it.bank }.distinct() },
             onExcludedBankToggle = vm::toggleFamilyExcludedBank,
             onInvite = vm::inviteDevice,

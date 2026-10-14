@@ -185,6 +185,8 @@ fun CompanionScreen(
     onAvatarChange: (String) -> Unit,
     onShareSmsChange: (Boolean) -> Unit,
     onShareAssetsChange: (Boolean) -> Unit,
+    /** A note for each of their transactions — see [FamilyState.notes]. */
+    onNotesChange: (Boolean) -> Unit,
     /** The banks this phone tracks, for the set-aside rows. Enum names, not Persian. */
     banks: List<String>,
     onExcludedBankToggle: (String) -> Unit,
@@ -396,6 +398,19 @@ fun CompanionScreen(
                 }
                 Helper("از بانک خاموش، نه تراکنشی فرستاده می‌شه نه موجودی.")
             }
+
+            // What this phone hears, after what it sends. The line under it stands whichever way
+            // the switch sits: the lag is the thing to know before turning it on.
+            SectionHeading("اعلان‌ها")
+            SettingCard(
+                mark = { TabMark { drawLedger(it) } },
+                title = "تراکنش‌های بقیه",
+                subtitle = if (state.notes) "برای هر کدوم یه اعلان میاد" else "اعلانی نمیاد",
+                checked = state.notes,
+                onChange = onNotesChange,
+                shape = bandShape(0, 1),
+            )
+            Helper("ممکنه چند ساعت دیر برسن: این گوشی فقط هر از گاهی از خانواده خبر می‌گیره.")
         }
 
         SectionHeading("حریم خصوصی")
@@ -1346,6 +1361,8 @@ data class FamilyState(
     val members: List<FamilyMember> = emptyList(),
     val sharesSms: Boolean = false,
     val sharesAssets: Boolean = false,
+    /** Whether their transactions get a note each here. Mirrored from [Store.familyNotes]. */
+    val notes: Boolean = false,
     /** Banks kept out of sharing — transactions and balances both. */
     val excludedBanks: Set<String> = emptySet(),
     /** The founder, as the server names them. Nobody else can remove this member. */

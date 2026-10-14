@@ -110,6 +110,9 @@ Sample data, live rates.
   family member can categorize it or write a note on it — a shared note says who wrote it. Which
   categories Income & spending sets aside is one choice the whole family shares, synced between the
   phones — and what those categories moved stays visible on the report, just outside the totals.
+  On Android, a phone can also get a notification for each transaction the others share. It is
+  built on the phone from what it has already synced, with no push service involved, so it can
+  arrive a few hours late.
 - **Public-wallet tracking, or manual entry.** Save a public address and the app refreshes BTC,
   ETH/ERC-20, SOL, TRX/TRC-20, and supported EVM-token balances on BSC, Arbitrum, Polygon,
   Optimism, and Avalanche. Anything else can be entered by hand.

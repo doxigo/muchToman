@@ -111,6 +111,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             fromStore = installedByStore(app),
             reportExcluded = store.reportExcluded,
             familyTotal = store.familyTotal,
+            family = FamilyState(notes = store.familyNotes),
             reportUsd = store.reportUsd,
             crashReport = pendingCrash(app),
         )
@@ -597,13 +598,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Whether the watch has anything to do: messages to read, a cap to guard, or a payment to remind
-     * her of. Read off the published ledger, so call it after the state carries the latest view.
+     * Whether the watch has anything to do: messages to read, a cap to guard, a payment to remind
+     * her of, or a household whose transactions she asked to hear about — its sync is how this phone
+     * hears of them. Read off the published ledger, so call it after the state carries the latest view.
      */
     private fun watchWanted(): Boolean {
         val ledger = _state.value.ledger
         return store.smsEnabled || ledger.budgets.isNotEmpty() ||
-            (store.installmentReminder >= 0 && (ledger.installments.any { !it.done } || ledger.cheques.isNotEmpty()))
+            (store.installmentReminder >= 0 && (ledger.installments.any { !it.done } || ledger.cheques.isNotEmpty())) ||
+            (store.familyNotes && _state.value.family.paired)
+    }
+
+    /** A note for each of the household's transactions — see [Store.familyNotes]. */
+    fun setFamilyNotes(on: Boolean) {
+        store.familyNotes = on
+        _state.update { it.copy(family = it.family.copy(notes = on)) }
+        if (on) ensureFamilyChannel(getApplication())
+        // It may be the only reason this phone has to wake and sync.
+        scheduleLedgerWatch(getApplication(), watchWanted())
     }
 
     /** Locked state is session-only; the *preference* is what persists. */

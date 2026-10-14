@@ -465,6 +465,18 @@ broadcast). The app's own `publishLedger` covers the foreground case, and it is 
 any path may publish a ledger, precisely so that `announceBudgets` cannot be forgotten by one of
 the eight callers that change one.
 
+**The household's transactions, once she asks.** «تراکنش‌های بقیه» on the خانواده page
+(`Store.familyNotes`, off by default, Android only — the PWA posts no transaction notes). Filing's
+mark cannot serve it: another member's row reaches this phone whenever both phones next sync, hours
+late and out of order. So `syncNow` reports what it stored for the first time (`SyncResult.arrived`,
+empty on a pull from cursor 0, which is history) and the worker posts those right after its sync,
+through `familyNews` — money that moved, under two days old. The foreground sync never posts them,
+and opening the app takes them down. There is no push channel, so the lag is the worker's: the next
+bank message or the six-hour sweep, which the switch keeps scheduled. Their own channel, «خانواده»,
+at IMPORTANCE_LOW. To watch one land, switch it on, have the other phone record a spend and sync,
+then send this phone a bank message (on an emulator, `adb emu sms send <sender> "<text>"`): the
+watch it wakes syncs, then posts.
+
 **Blu's app notifications are the one exception to "the inbox is the single reader".** A
 notification exists once, when it is posted, so `BankNotificationListener` stores it itself
 (`ingestNotifications`, same gate as the inbox) under the sender `com.samanpr.blu`, derives, and
