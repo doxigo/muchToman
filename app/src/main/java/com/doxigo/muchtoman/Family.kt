@@ -790,7 +790,12 @@ internal fun MemberFace(name: String, avatar: String, size: Dp = 44.dp) {
             remember(avatar) {
                 faceCache.get(avatar) ?: runCatching {
                     val bytes = Base64.decode(avatar.removePrefix(AVATAR_PHOTO_PREFIX), Base64.DEFAULT)
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    // Somebody else's bytes, bounds first: a 600-byte JPEG can declare 8192×8192,
+                    // and decoding it allocates 256 MB on the main thread. Ours are AVATAR_PX.
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    val fits = bounds.outWidth in 1..AVATAR_PX * 2 && bounds.outHeight in 1..AVATAR_PX * 2
+                    if (fits) BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() else null
                 }.getOrNull()?.also { faceCache.put(avatar, it) }
             }
         } else {

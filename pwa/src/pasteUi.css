@@ -10,6 +10,7 @@
 .paste-no-amount { font-weight: 700; }
 .paste-rows { margin-top: var(--s); }
 .paste-how { margin-top: var(--m); }
+.paste-unkeyed { margin-top: var(--m); font-size: 14px; line-height: 24px; }
 /* The Shortcuts how-to: steps in Persian numbers, the iOS labels in bold Latin as she sees them. */
 .howto { margin-top: var(--m); font-size: 14px; line-height: 24px; color: var(--on-surface); }
 .howto.muted { color: var(--on-surface-variant); font-size: 13px; line-height: 20px; }

@@ -1616,6 +1616,30 @@ internal fun syncedEditWins(
     existingAt < incomingAt ||
     (existingAt == incomingAt && existingEditor < incomingEditor)
 
+/**
+ * Who wrote a filing or a note: the server's word for who pushed it, else the sealed name. Null
+ * when both are there and disagree — a member sealing somebody else's name, or a server naming
+ * somebody else as the pusher — because either one would let a forged edit win a draw it should
+ * lose. Only its editor ever publishes one of these ([decisionMayLeave]). Not for goals or the
+ * exclusion set: after a renewal every phone holding one sends it again, sealed with the last
+ * editor's name and pushed under its own, and that is no forgery.
+ */
+private fun syncedEditor(record: WireRecord, sealed: String): String? = when {
+    record.authorMemberId.isBlank() -> sealed
+    sealed.isBlank() || sealed == record.authorMemberId -> record.authorMemberId
+    else -> null
+}
+
+/**
+ * Whether a synced goal's days are ones the Jalali arithmetic can place. They reach every member's
+ * آینده tab, and [jalCal] throws past its table: one far-off day would crash the screen on every
+ * phone in the household. A century ahead is further than any plan anybody writes.
+ */
+internal fun syncedGoalDaysSane(startsOn: Long, endsOn: Long?, now: Long): Boolean {
+    val last = tehranDay(now) + 36_500
+    return startsOn in 0..last && (endsOn == null || endsOn in startsOn..last)
+}
+
 fun categoryUpdateWins(
     existingAt: Long?,
     existingEditor: String,
@@ -1644,6 +1668,9 @@ private suspend fun applyMember(
     payload: SyncMemberPayload,
 ): Boolean {
     val memberId = payload.memberId.takeIf(String::isNotBlank) ?: return false
+    // The sealed id has to name the record it arrived on, or one member's record — served under
+    // another's id, or with the envelope owner blanked — would rewrite somebody else's name and face.
+    if (record.id != memberRecordId(memberId)) return false
     if (record.ownerMemberId.isNotBlank() && record.ownerMemberId != memberId) return false
     val previous = durable.familyMembers().get(memberId)
     if (previous != null && previous.updatedAt > record.updatedAt) return false
@@ -1774,6 +1801,8 @@ private suspend fun applyCategory(
     payload: SyncCategoryPayload,
     now: Long,
 ): Boolean {
+    // The id is the hash of its target: a filing served under another row's record is not that row's.
+    if (record.id != categoryRecordId(payload.target)) return false
     val targetOwner = ownerOfFamilyTxnId(payload.target) ?: return false
     val localRef = if (targetOwner == session.member) {
         localRefOfFamilyTxn(payload.target, session.member) ?: return false
@@ -1794,7 +1823,7 @@ private suspend fun applyCategory(
         now,
     )
     val existing = durable.decisions().forRef(localRef).firstOrNull { it.kind == DecisionKind.CATEGORY }
-    val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
+    val editor = syncedEditor(record, payload.editedByMemberId) ?: return false
     // Its own stamp, not the category's: the transaction record can land the same filing first
     // at the same millisecond, and the split must not lose to its own lead part.
     val resplit = applySplit(durable, localRef, record, payload, editor, now)
@@ -1866,6 +1895,8 @@ private suspend fun applyNote(
     record: WireRecord,
     payload: SyncNotePayload,
 ): Boolean {
+    // Bound to its target the way a filing is — see [applyCategory].
+    if (record.id != noteRecordId(payload.target)) return false
     val targetOwner = ownerOfFamilyTxnId(payload.target) ?: return false
     val localRef = if (targetOwner == session.member) {
         localRefOfFamilyTxn(payload.target, session.member) ?: return false
@@ -1874,7 +1905,7 @@ private suspend fun applyNote(
     }
     val note = safeSyncedNote(payload.note)
     val existing = durable.decisions().answerFor(localRef, DecisionKind.NOTE)
-    val editor = record.authorMemberId.ifBlank { payload.editedByMemberId }
+    val editor = syncedEditor(record, payload.editedByMemberId) ?: return false
     if (!syncedEditWins(existing?.updatedAt, existing?.memberId.orEmpty(), record.updatedAt, editor)) return false
     durable.decisions().put(
         TxnDecision(
@@ -1951,11 +1982,13 @@ private suspend fun applyGoal(
     session: SyncSession,
     record: WireRecord,
     payload: SyncGoalPayload,
+    now: Long,
 ): Boolean {
     val goalId = payload.goalId.takeIf(String::isNotBlank) ?: return false
     if (record.id != goalRecordId(goalId)) return false
     val kind = payload.goalKind.takeIf { it == GoalKind.SAVE || it == GoalKind.CAP } ?: return false
     if (payload.targetRial !in 0..MAX_PLAUSIBLE_RIAL) return false
+    if (!syncedGoalDaysSane(payload.startsOn, payload.endsOn, now)) return false
     val existing = durable.goals().anyById(goalId)
     if (existing != null && existing.updatedAt > record.updatedAt) return false
     // The same draw-breaker a filed category uses, and it has to be here as well as on the server:
@@ -2189,7 +2222,7 @@ private suspend fun applyRecord(
         "asset" -> runCatching { SYNC_JSON.decodeFromString<SyncAssetPayload>(plain) }
             .getOrNull()?.let { applyAsset(durable, session, record, it) } ?: false
         "goal" -> runCatching { SYNC_JSON.decodeFromString<SyncGoalPayload>(plain) }
-            .getOrNull()?.let { applyGoal(durable, session, record, it) } ?: false
+            .getOrNull()?.let { applyGoal(durable, session, record, it, now) } ?: false
         // No tombstone branch above: an exclusion record is never deleted, only replaced — see
         // [SyncExclusionPayload] — so a deleted envelope under this kind falls through to nothing.
         "exclusion" -> runCatching { SYNC_JSON.decodeFromString<SyncExclusionPayload>(plain) }

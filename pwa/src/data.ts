@@ -391,8 +391,13 @@ export function sanitizeRates(raw: unknown, now = Date.now()): Rates {
   return { updatedAt, toman: Object.fromEntries(toman), coins, ...(quips ? { quips } : {}) };
 }
 
+/** What `readLimited` throws past its cap: the sender's doing, never the connection's. */
+export class ResponseTooLargeError extends Error {
+  constructor() { super('response too large'); }
+}
+
 /** The body, but never more than `maxBytes` of it: a payload that big is a mistake or an attack. */
-async function readLimited(res: Response, maxBytes: number): Promise<string> {
+export async function readLimited(res: Response, maxBytes: number): Promise<string> {
   const reader = res.body?.getReader();
   if (!reader) return '';
   const decoder = new TextDecoder();
@@ -404,7 +409,7 @@ async function readLimited(res: Response, maxBytes: number): Promise<string> {
     total += value.byteLength;
     if (total > maxBytes) {
       void reader.cancel();
-      throw new Error('response too large');
+      throw new ResponseTooLargeError();
     }
     text += decoder.decode(value, { stream: true });
   }

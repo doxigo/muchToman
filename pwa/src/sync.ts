@@ -19,7 +19,7 @@
  */
 import { glyphNamed } from './categoryIcon';
 import { generateKey, hexOf, importKey, openSealed, randomHex, seal, toBase64Url } from './crypto';
-import { safeAssetShareItems, timeoutSignal } from './data';
+import { ResponseTooLargeError, readLimited, safeAssetShareItems, timeoutSignal } from './data';
 import type { AssetShareItem } from './data';
 import { deleteMeta, getMeta, partition, setMeta, withSyncLock } from './db';
 import { familyLocalRef, ledger } from './derived';
@@ -51,6 +51,8 @@ export const REPORT_EXCLUSIONS_RECORD_ID = 'exclusion:report';
 const TOKEN_ROTATE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const PUSH_CHUNK = 200;
 const PULL_LIMIT = 1000;
+/** Sync.kt's read cap. The server keeps a page's records under 768 KiB, so only a hostile one reaches it. */
+const MAX_RESPONSE_BYTES = 1 << 20;
 /**
  * Sync.kt `SYNC_READ_VERSION`, kept equal to it: what this build can read off the wire. A browser
  * whose stored `syncRead` differs pulls the household from the start once, so the records an
@@ -239,7 +241,10 @@ async function request(url: string, method: string, token: string | null, payloa
   } catch (error) {
     throw new SyncIoError(String(error));
   }
-  const text = await response.text().catch((error: unknown) => { throw new SyncIoError(String(error)); });
+  const text = await readLimited(response, MAX_RESPONSE_BYTES).catch((error: unknown) => {
+    // Too big is the server's doing, not the connection's: Sync.kt throws it as no IOException.
+    throw error instanceof ResponseTooLargeError ? error : new SyncIoError(String(error));
+  });
   if (!response.ok) throw new SyncHttpError(response.status, text.slice(0, 120));
   return text;
 }
@@ -343,9 +348,15 @@ const parseGoal = (plain: string): SyncGoalPayload | null => decode(plain, (o) =
 
 /** A category a split names beside the lead one — enough to draw it on a device that never saw it. */
 interface SyncSplitCategory { id: string; name: string; kind: string; glyph: string; editedAt: number }
-const isSplitCategories = (v: unknown): v is SyncSplitCategory[] =>
-  Array.isArray(v) && v.every((c) => !!c && typeof c === 'object' && isString((c as Json).id) &&
-    isString((c as Json).name) && isString((c as Json).kind));
+const isObjects = (v: unknown): v is Json[] => Array.isArray(v) && v.every((c) => !!c && typeof c === 'object' && !Array.isArray(c));
+/** Read as kotlinx reads SyncSplitCategory: a field there of the wrong type fails the whole record. */
+const splitCategoryOf = (c: Json): SyncSplitCategory => ({
+  id: field(c, 'id', isString),
+  name: field(c, 'name', isString),
+  kind: field(c, 'kind', isString),
+  glyph: field(c, 'glyph', isString, ''),
+  editedAt: field(c, 'editedAt', isLong, 0),
+});
 
 interface SyncCategoryPayload {
   target: string; categoryId: string; categoryName: string; categoryKind: string; categoryGlyph: string;
@@ -362,10 +373,7 @@ const parseCategory = (plain: string): SyncCategoryPayload | null => decode(plai
   editedByMemberId: field(o, 'editedByMemberId', isString),
   categoryEditedAt: field(o, 'categoryEditedAt', isLong, 0),
   split: field(o, 'split', isString, ''),
-  splitCategories: field(o, 'splitCategories', isSplitCategories, []).map((c) => ({
-    id: c.id, name: c.name, kind: c.kind,
-    glyph: isString(c.glyph) ? c.glyph : '', editedAt: isLong(c.editedAt) ? c.editedAt : 0,
-  })),
+  splitCategories: field(o, 'splitCategories', isObjects, []).map(splitCategoryOf),
 }));
 
 interface SyncExclusionPayload { categoryIds: string[]; editedByMemberId: string }
@@ -523,6 +531,24 @@ export const syncedEditWins = (existingAt: number | null | undefined, existingEd
 export const categoryUpdateWins = (existingAt: number | null | undefined, existingEditor: string, incomingAt: number, incomingEditor: string): boolean =>
   existingAt == null || incomingAt > existingAt || (incomingAt === existingAt && incomingEditor > existingEditor) ||
   (incomingAt === 0 && existingAt === 0 && incomingEditor === existingEditor);
+
+/**
+ * Sync.kt `syncedEditor`: the server's word for who pushed a filing or note, else the sealed name.
+ * Null when both are there and disagree — either side forging the other wins a draw it should lose.
+ * Only its editor publishes one; goals and the exclusion set are re-sent by every holder after a
+ * renewal, sealed with the last editor's name, so they keep the plain rule.
+ */
+const syncedEditor = (record: WireRecord, sealed: string): string | null =>
+  blank(record.authorMemberId) ? sealed : (blank(sealed) || sealed === record.authorMemberId) ? record.authorMemberId : null;
+
+/**
+ * Sync.kt `syncedGoalDaysSane`: days the Jalali arithmetic can place. They reach every member's
+ * آینده tab, and `jalCal` throws past its table, so one far-off day blanks it on every device.
+ */
+export const syncedGoalDaysSane = (startsOn: number, endsOn: number | null, now: number): boolean => {
+  const last = tehranDay(now) + 36_500;
+  return startsOn >= 0 && startsOn <= last && (endsOn == null || (endsOn >= startsOn && endsOn <= last));
+};
 
 export const resolvedTransactionOwner = (wireKind: string, wireOwner: string, authenticatedAuthor: string): string =>
   wireKind === 'legacy' ? authenticatedAuthor : (blank(wireOwner) ? authenticatedAuthor : wireOwner);
@@ -864,6 +890,8 @@ const liveDecision = (ref: string, kind: 'category' | 'note'): Decision | undefi
 function applyMember(record: WireRecord, payload: SyncMemberPayload): boolean {
   const memberId = payload.memberId;
   if (blank(memberId)) return false;
+  // The sealed id names the record it arrived on, or one member's would rewrite another's name and face.
+  if (record.id !== memberRecordId(memberId)) return false;
   if (!blank(record.ownerMemberId) && record.ownerMemberId !== memberId) return false;
   const previous = row('familyMembers', memberId);
   if (previous && previous.updatedAt > record.updatedAt) return false;
@@ -939,6 +967,8 @@ function answerTarget(session: Session, target: string): string | null {
 }
 
 function applyCategory(session: Session, record: WireRecord, payload: SyncCategoryPayload, now: number): boolean {
+  // The id is the hash of its target: a filing served under another row's record is not that row's.
+  if (record.id !== categoryRecordId(payload.target)) return false;
   const localRef = answerTarget(session, payload.target);
   if (localRef == null) return false;
   const categoryId = safeSyncedText(payload.categoryId, 80);
@@ -946,7 +976,8 @@ function applyCategory(session: Session, record: WireRecord, payload: SyncCatego
   // A new mark is news even when the filing it rides on is not.
   const remarked = putSyncedCategory(categoryId, payload.categoryName, payload.categoryKind, payload.categoryGlyph, payload.categoryEditedAt, record.updatedAt, now);
   const existing = liveDecision(localRef, 'category');
-  const editor = blank(record.authorMemberId) ? payload.editedByMemberId : record.authorMemberId;
+  const editor = syncedEditor(record, payload.editedByMemberId);
+  if (editor == null) return false;
   // Its own stamp, not the category's: the transaction record can land the same filing first.
   const resplit = applySplit(localRef, record, payload, editor, now);
   if (!syncedEditWins(existing?.updatedAt, existing?.memberId ?? '', record.updatedAt, editor)) return remarked || resplit;
@@ -978,11 +1009,13 @@ function applySplit(localRef: string, record: WireRecord, payload: SyncCategoryP
 
 /** The guard reads the retracted row too, so a note taken back here is not resurrected by an older copy. */
 function applyNote(session: Session, record: WireRecord, payload: SyncNotePayload): boolean {
+  if (record.id !== noteRecordId(payload.target)) return false;
   const localRef = answerTarget(session, payload.target);
   if (localRef == null) return false;
   const note = safeSyncedNote(payload.note);
   const existing = row('decisions', `note:${localRef}`);
-  const editor = blank(record.authorMemberId) ? payload.editedByMemberId : record.authorMemberId;
+  const editor = syncedEditor(record, payload.editedByMemberId);
+  if (editor == null) return false;
   if (!syncedEditWins(existing?.updatedAt, existing?.memberId ?? '', record.updatedAt, editor)) return false;
   put('decisions', {
     id: `note:${localRef}`, ref: localRef, kind: 'note', value: note,
@@ -1027,12 +1060,13 @@ export function syncedGoal(payload: SyncGoalPayload, kind: GoalKindId, updatedAt
   };
 }
 
-function applyGoal(record: WireRecord, payload: SyncGoalPayload): boolean {
+function applyGoal(record: WireRecord, payload: SyncGoalPayload, now: number): boolean {
   const goalId = payload.goalId;
   if (blank(goalId) || record.id !== goalRecordId(goalId)) return false;
   const kind = payload.goalKind;
   if (kind !== 'save' && kind !== 'cap') return false;
   if (payload.targetRial < 0 || payload.targetRial > MAX_PLAUSIBLE_RIAL) return false;
+  if (!syncedGoalDaysSane(payload.startsOn, payload.endsOn, now)) return false;
   const existing = row('goals', goalId);
   if (existing && existing.updatedAt > record.updatedAt) return false;
   // Two edits on one millisecond arrive in whichever order the pull returned them; only a rule
@@ -1158,7 +1192,7 @@ export function applyRecord(session: Session, record: WireRecord, plain: string 
     case 'category': return apply(parseCategory(plain), (p) => applyCategory(session, record, p, now));
     case 'note': return apply(parseNote(plain), (p) => applyNote(session, record, p));
     case 'asset': return apply(parseAsset(plain), (p) => applyAsset(session, record, p));
-    case 'goal': return apply(parseGoal(plain), (p) => applyGoal(record, p));
+    case 'goal': return apply(parseGoal(plain), (p) => applyGoal(record, p, now));
     // Never deleted, only replaced: a deleted envelope under this kind falls through to nothing.
     case 'exclusion': return apply(parseExclusion(plain), (p) => applyReportExclusions(session, record, p));
     case 'transaction': case 'legacy': return apply(parseEntry(plain), (p) => applyTransaction(session, record, p, now));
@@ -1242,7 +1276,10 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
     const unsupportedKinds = new Set<string>();
     let refused: SyncHttpError | null = null;
     const byKind = new Map<string, PreparedRecord[]>();
-    for (const r of outgoing) byKind.set(r.wire.kind, [...(byKind.get(r.wire.kind) ?? []), r]);
+    for (const r of outgoing) {
+      const group = byKind.get(r.wire.kind);
+      if (group) group.push(r); else byKind.set(r.wire.kind, [r]);
+    }
     for (const group of byKind.values()) {
       for (let i = 0; i < group.length; i += PUSH_CHUNK) {
         const chunk = group.slice(i, i + PUSH_CHUNK);

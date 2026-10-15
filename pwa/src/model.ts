@@ -267,6 +267,8 @@ export interface Prefs {
   lastPasteBank: string;
   /** A Shortcut's sender no table knows (a contact's name), and the bank she said it is. */
   senderBanks: Record<string, string>;
+  /** The key a Shortcut's link carries to be filed unseen (pasteUi.tsx) — this browser's, kept out of backups. */
+  pasteKey: string;
   /** طلب و بدهی: the people and what she wrote down about them (loans.ts). Backed up, never synced. */
   loans: LoanBook;
   /** WebAuthn credential id (base64url) the lock unlocks with. */
@@ -312,6 +314,7 @@ export const PREF_DEFAULTS: Prefs = {
   disabledBanks: [],
   lastPasteBank: '',
   senderBanks: {},
+  pasteKey: '',
   loans: { people: [], moves: [] },
   lockCredential: '',
   syncSeq: 0,

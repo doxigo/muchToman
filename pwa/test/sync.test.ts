@@ -41,6 +41,8 @@ async function record(id: string, kind: string, plain: string, extra: Partial<Wi
   const { nonce, body } = await crypt.seal(session.key, plain, legacy ? undefined : sync.recordAad(session.scope, kind, id));
   return { id, scope: session.scope, updatedAt: NOW - 1000, device: THEIR_DEVICE, kind, ownerMemberId: THEM, authorMemberId: THEM, deleted: false, nonce, body, ...extra };
 }
+/** A filing's or note's record id: the hash of the row it is about, as Sync.kt names it. */
+const answerId = (kind: 'category' | 'note', target: string): string => `${kind}:${createHash('sha256').update(target).digest('hex')}`;
 async function apply(r: WireRecord): Promise<boolean> {
   return sync.applyRecord(session, r, await sync.openRecord(session, r), NOW);
 }
@@ -84,7 +86,7 @@ describe('reading what a phone sends', () => {
 
   it('lands somebody else\'s note on my own row, and a blank one as taken back', async () => {
     const mine = sync.familyTxnId(ME, 'm:abc');
-    const note = (text: string, at: number) => record(`note:${crypt.hexOf(new Uint8Array([1]))}`, 'note',
+    const note = (text: string, at: number) => record(answerId('note', mine), 'note',
       JSON.stringify({ target: mine, note: text, editedByMemberId: THEM }), { updatedAt: at, ownerMemberId: ME });
     expect(await apply(await note('کادوی تولد', NOW - 100))).toBe(true);
     expect(state.row('decisions', 'note:m:abc')).toMatchObject({ value: 'کادوی تولد', memberId: THEM, familyRef: mine, deleted: false });
@@ -112,7 +114,7 @@ describe('last write wins', () => {
     expect(sync.categoryUpdateWins(5, 'x', 5, 'x')).toBe(false);
 
     const target = sync.familyTxnId(THEM, 'm:1');
-    const filing = (author: string, categoryId: string) => record(`category:x`, 'category', JSON.stringify({
+    const filing = (author: string, categoryId: string) => record(answerId('category', target), 'category', JSON.stringify({
       target, categoryId, categoryName: categoryId, categoryKind: 'expense', editedByMemberId: author,
     }), { updatedAt: NOW - 10, authorMemberId: author });
     const ref = derived.familyLocalRef(target);
@@ -367,7 +369,7 @@ describe('publishing', () => {
     expect(await apply(await row(ME, NOW - 900))).toBe(true);
     expect(derived.ledger().allEntries.find((e) => e.txn.ref === ref)?.ownerMemberId).toBe(ME);
 
-    const filing = (split: string, at: number) => record(sync.familyTxnId(THEM, 'x').replace('txn:', 'category:'), 'category', JSON.stringify({
+    const filing = (split: string, at: number) => record(answerId('category', id), 'category', JSON.stringify({
       target: id, categoryId: 'cat_groceries', categoryName: 'خواربار', categoryKind: 'expense', editedByMemberId: THEM,
       ...(split ? { split, splitCategories: [{ id: 'cat_theirs', name: 'باشگاه', kind: 'expense' }] } : {}),
     }), { updatedAt: at });
@@ -390,6 +392,47 @@ describe('publishing', () => {
     expect(goal).toMatchObject({ shared: true, categoryId: null, endsOn: null, ownerMemberId: THEM });
     const out = await sync.outgoingRecords(input([], { goals: [goal], publications: state.rows('publications') }));
     expect(out.map((r) => r.wire.kind)).toEqual(['member']);
+  });
+
+  it('refuses a goal whose days the Jalali calendar cannot place, so آینده never blanks', async () => {
+    const goal = (startsOn: number, endsOn: number | null) => record('goal:g', 'goal', JSON.stringify({
+      goalId: 'g', nameFa: 'خرج ماه', targetRial: 1, goalKind: 'cap', period: 'jmonth', startsOn, endsOn, createdAt: 1, ownerMemberId: THEM, editedByMemberId: THEM,
+    }));
+    const today = Math.floor(NOW / 86_400_000);
+    expect(await apply(await goal(2_000_000, null))).toBe(false);
+    expect(await apply(await goal(-1, null))).toBe(false);
+    expect(await apply(await goal(today, today - 1))).toBe(false);
+    expect(await apply(await goal(today, today + 40_000))).toBe(false);
+    expect(state.row('goals', 'g')).toBeUndefined();
+    expect(await apply(await goal(today, today + 30))).toBe(true);
+  });
+
+  it('lands a goal another holder re-sent under its own name, as every device does after a renewal', async () => {
+    const today = Math.floor(NOW / 86_400_000);
+    const resent = await record('goal:r', 'goal', JSON.stringify({
+      goalId: 'r', nameFa: 'خرج ماه', targetRial: 1, goalKind: 'cap', period: 'jmonth', startsOn: today, endsOn: null,
+      createdAt: 1, ownerMemberId: THEM, editedByMemberId: '7'.repeat(32),
+    }));
+    expect(await apply(resent)).toBe(true);
+    expect(state.row('goals', 'r')).toMatchObject({ editedByMemberId: THEM });
+  });
+
+  it('drops a record whose sealed names disagree with the envelope it came in', async () => {
+    const target = sync.familyTxnId(ME, 'm:1');
+    const note = (id: string, editor: string) => record(id, 'note', JSON.stringify({ target, note: 'سلام', editedByMemberId: editor }));
+    // Under another row's id, or sealed in a name other than the member who pushed it.
+    expect(await apply(await note(answerId('note', sync.familyTxnId(ME, 'm:2')), THEM))).toBe(false);
+    expect(await apply(await note(answerId('note', target), ME))).toBe(false);
+    const filing = await record(answerId('category', sync.familyTxnId(ME, 'm:2')), 'category', JSON.stringify({
+      target, categoryId: 'cat_food', categoryName: 'خوراک', categoryKind: 'expense', editedByMemberId: THEM,
+    }));
+    expect(await apply(filing)).toBe(false);
+    // Their face under somebody else's record, the envelope owner blanked.
+    const face = JSON.stringify({ memberId: THEM, name: 'x', sharesSms: false });
+    expect(await apply(await record(`member:${'5'.repeat(32)}`, 'member', face, { ownerMemberId: '' }))).toBe(false);
+    expect(state.row('familyMembers', THEM)).toBeUndefined();
+    expect(state.rows('decisions')).toEqual([]);
+    expect(await apply(await note(answerId('note', target), THEM))).toBe(true);
   });
 
   it('lands the household\'s report exclusions on the setting every figure reads', async () => {

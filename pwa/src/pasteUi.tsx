@@ -11,7 +11,8 @@
  * its sender, so the bank is read off the phone's own table and asked only for a sender it lacks.
  * Handed over by link, a bundle whose every sender has a bank is filed without the sheet, as the
  * phone files what arrives: the Shortcut runs on its own as each message lands, with nobody there
- * to tap ثبت.
+ * to tap ثبت. Only when the link carries this browser's key (`pasteKey`), though: any page can
+ * open `#paste=` with made-up messages, and those wait on the sheet for her.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import './timeline.css';
@@ -26,6 +27,7 @@ import { bidi, faCompact, faDigits, faNumber, faSignedParts, faWordsToman, toman
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
 import { pref, setPref } from './state';
 import { ensureSeeded } from './rules';
+import { randomHex } from './crypto';
 import { PillButton, Sheet, SheetLabel, SheetTitle, SignedFigure, TextField } from './ui';
 import { openTxn } from './timeline';
 
@@ -44,7 +46,8 @@ function bankFor(sender: string): string | null {
 
 const noticeAdded = (added: number): void => showNotice(added ? `${faNumber(added)} پیامک ثبت شد` : 'پیامک تازه‌ای نبود');
 
-function PasteSheet({ text: given = '' }: { text?: string }) {
+/** `unkeyed`: a Shortcut's bundle that came without this browser's key, so it was not filed unseen. */
+function PasteSheet({ text: given = '', unkeyed = false }: { text?: string; unkeyed?: boolean }) {
   const [text, setText] = useState(given);
   // A second hand-off while the sheet is up replaces what is in it.
   useEffect(() => setText(given), [given]);
@@ -114,8 +117,15 @@ function PasteSheet({ text: given = '' }: { text?: string }) {
             : refused ? 'این پیامک تراکنش بانکی نیست، یا رمز یک‌بارمصرفه.' : null}
           support={bundle && bundleLine(keep, bundle.length - keep.length)} />
       </div>
-      {/* Where several at once is the wish: before anything is pasted, and right after she tried. */}
-      {(blank || several) && (
+      {unkeyed && bundle && (
+        <p class="caution paste-unkeyed" role="status">
+          این پیام‌ها خودکار ثبت نشدن، چون آدرسی که آوردشون کلید این مرورگر رو نداشت. اگه از میان‌بر خودت اومدن،
+          آدرسش رو از «چطوری پیامک‌ها خودکار بیان؟» دوباره بردار. اگه نمی‌دونی از کجا اومدن، ثبتشون نکن.
+        </p>
+      )}
+      {/* Where several at once is the wish: before anything is pasted, right after she tried, and
+          when her Shortcut's address is one from before the key. */}
+      {(blank || several || (unkeyed && bundle)) && (
         <div class="paste-how">
           <PillButton label="چطوری پیامک‌ها خودکار بیان؟" onClick={() => openSheet('pasteShortcut', { text })} />
         </div>
@@ -213,6 +223,11 @@ const En = ({ children }: { children: string }) => <bdi class="ios">{children}</
  * not promised.
  */
 function ShortcutSheet({ text = '' }: { text?: string }) {
+  // This browser's key, made the first time the guide shows the address that carries it. A page
+  // opening `#paste=` cannot know it. Kept out of backups (backup.ts LOCAL_PREFS): restored in
+  // another browser it is a key that browser's Shortcut never carries.
+  const [key] = useState(() => pref('pasteKey') || randomHex(12));
+  useEffect(() => { if (!pref('pasteKey')) setPref('pasteKey', key); }, [key]);
   const answered = Object.entries(pref('senderBanks')).filter(([, bank]) => isBank(bank));
   return (
     <Sheet label="پیامک‌ها خودکار">
@@ -244,7 +259,7 @@ function ShortcutSheet({ text = '' }: { text?: string }) {
         <li>
           اکشن <En>URL Encode</En> رو روی <En>Combined Text</En> بذار، بعد <En>Open URLs</En> با این آدرس
           و خروجی <En>URL Encode</En> ته‌اش:
-          <pre class="howto-code" dir="ltr">{`${location.origin}/#paste=`}</pre>
+          <pre class="howto-code" dir="ltr">{`${location.origin}/#key=${key}&paste=`}</pre>
         </li>
       </ol>
 
@@ -292,24 +307,31 @@ function ShortcutSheet({ text = '' }: { text?: string }) {
 }
 registerSheet('pasteShortcut', ShortcutSheet);
 
+/** `#paste=<text>`, or `#key=<pasteKey>&paste=<text>` as the Shortcut guide prints it. */
+const PASTE_HASH = /^#(?:key=([0-9a-f]+)&)?paste=/;
+
 /**
  * An iOS Shortcut's hand-off: the message in the hash, read once and taken out of the address. A
- * bundle whose every sender has a bank is filed at once; anything that needs her opens the sheet.
+ * bundle carrying this browser's key whose every sender has a bank is filed at once; anything
+ * else opens the sheet, where nothing is stored until she taps ثبت.
  */
 async function pasteFromHash(): Promise<void> {
-  if (!location.hash.startsWith('#paste=')) return;
-  const raw = location.hash.slice('#paste='.length);
+  const head = PASTE_HASH.exec(location.hash);
+  if (!head) return;
+  const raw = location.hash.slice(head[0].length);
   let text = raw;
   try { text = decodeURIComponent(raw); } catch { /* a stray % — keep the text as it came */ }
   history.replaceState(history.state, '', location.pathname + location.search);
   const bundle = readBundle(text);
+  let unkeyed = false;
   if (bundle) {
-    // The remembered senders and the dedupe both read the store, which may still be loading.
+    // The key, the remembered senders and the dedupe all read the store, which may still be loading.
     await ensureSeeded();
+    unkeyed = !head[1] || head[1] !== pref('pasteKey');
     const keep = storable(bundle);
-    if (keep.every((r) => bankFor(r.sender) != null)) { noticeAdded(await addPastedBundle(keep, bankFor)); return; }
+    if (!unkeyed && keep.every((r) => bankFor(r.sender) != null)) { noticeAdded(await addPastedBundle(keep, bankFor)); return; }
   }
-  openSheet('pasteSms', { text });
+  openSheet('pasteSms', { text, unkeyed });
 }
 if (typeof location !== 'undefined') {
   void pasteFromHash();

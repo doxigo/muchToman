@@ -82,6 +82,14 @@ class FamilyBudgetSyncTest {
             return Phone(durable, derived, session).also { phones += it }
         }
 
+        /** A record sealed as any member holding the key could seal it, stored as pushed by [author]. */
+        fun plant(id: String, kind: String, plain: String, author: String, owner: String = author) {
+            val (nonce, body) = seal(key, plain, recordAad("family:test", kind, id))
+            rows[id] = JSONObject().put("id", id).put("scope", "family:test").put("updatedAt", System.currentTimeMillis())
+                .put("device", "f".repeat(32)).put("kind", kind).put("ownerMemberId", owner).put("authorMemberId", author)
+                .put("deleted", false).put("nonce", nonce).put("body", body).put("seq", ++seq)
+        }
+
         override fun close() {
             server.stop(0)
             phones.forEach { it.derived.close(); it.durable.close() }
@@ -175,6 +183,35 @@ class FamilyBudgetSyncTest {
             // the divergence دخل و خرج already has, since each phone reads its own exclusions
             // over the same shared rows.
             assertEquals(113_000_000L, roof(b, PASS_THROUGH_CATEGORIES.keys))
+        }
+    }
+
+    @Test
+    fun `a goal or profile no honest phone could have sent is dropped on arrival`() = runBlocking {
+        Household().use { home ->
+            val b = home.phone('b')
+            val them = "a".repeat(32)
+            val today = tehranDay(System.currentTimeMillis())
+            fun goal(id: String, startsOn: Long, endsOn: Long?, editor: String = them) = JSONObject()
+                .put("goalId", id).put("nameFa", "خرج ماه").put("targetRial", 1).put("goalKind", GoalKind.CAP)
+                .put("period", GoalPeriod.MONTH).put("startsOn", startsOn).put("endsOn", endsOn ?: JSONObject.NULL)
+                .put("createdAt", 1).put("ownerMemberId", them).put("editedByMemberId", editor).toString()
+            // Past the Jalali table, آینده would throw on every phone that stored it.
+            home.plant("goal:far", "goal", goal("far", 2_000_000, null), them)
+            home.plant("goal:back", "goal", goal("back", today, today - 1), them)
+            // Sealed with its last editor's name and pushed by another holder, as every phone re-sends
+            // the goals it holds after a renewal: honest, so it lands.
+            home.plant("goal:resent", "goal", goal("resent", today, null, editor = "d".repeat(32)), them)
+            home.plant("goal:fine", "goal", goal("fine", today, today + 30), them)
+            // Their face served under somebody else's record, the envelope owner blanked.
+            home.plant("member:${"c".repeat(32)}", "member",
+                JSONObject().put("memberId", them).put("name", "x").put("sharesSms", false).toString(), them, owner = "")
+            b.sync()
+            assertNull(b.durable.goals().anyById("far"))
+            assertNull(b.durable.goals().anyById("back"))
+            assertNotNull(b.durable.goals().anyById("resent"))
+            assertNotNull(b.durable.goals().anyById("fine"))
+            assertNotEquals("x", b.durable.familyMembers().get(them)?.name)
         }
     }
 

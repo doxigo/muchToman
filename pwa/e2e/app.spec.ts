@@ -32,6 +32,16 @@ async function onboardedOnDisk(page: Page): Promise<void> {
     open.onsuccess = () => { const get = open.result.transaction('prefs_v3').objectStore('prefs_v3').get('onboarded'); get.onsuccess = () => { open.result.close(); resolve(get.result); }; };
   }))).toBe(true);
 }
+/** The address the Shortcut guide prints for this browser, its key in it, ready for the messages. */
+async function shortcutAddress(page: Page): Promise<string> {
+  await page.goto('/#paste=');
+  await page.getByRole('dialog', { name: 'پیامک بانک' }).getByRole('button', { name: 'چطوری پیامک‌ها خودکار بیان؟' }).click();
+  const guide = page.getByRole('dialog', { name: 'پیامک‌ها خودکار' });
+  const address = await guide.locator('pre', { hasText: '#key=' }).textContent();
+  await guide.getByRole('button', { name: 'برگرد به چسباندن' }).click();
+  await page.getByRole('dialog', { name: 'پیامک بانک' }).getByRole('button', { name: 'انصراف' }).click();
+  return address!;
+}
 async function addManual(page: Page, amount: string, merchant: string, category: string): Promise<void> {
   await page.getByRole('button', { name: 'تراکنش دستی' }).click();
   const sheet = page.getByRole('dialog', { name: 'تراکنش دستی' });
@@ -212,18 +222,24 @@ test('two messages pasted as one are refused on the paste sheet', async ({ page 
   await expect(sheet).toBeVisible();
 });
 
-test("a shortcut's bundle is filed under each sender's bank without the sheet, once", async ({ page }) => {
+test("a shortcut's bundle is filed under each sender's bank without the sheet, once, and only with this browser's key", async ({ page }) => {
   const bundle = [
     `#muchtoman 6104\n${corpus('mellat.json', 'mellat-6104-withdrawal-with-balance')}`,
     `#muchtoman 98700719\n${corpus('saderat.json', 'saderat-paya-deposit-trailing-plus')}`,
     `#muchtoman 0999 992 0000\n${corpus('rejected.json', 'rejected-otp-from-a-real-bank-number')}`,
   ].join('\n');
   await onboard(page);
+  // Any page can open this address with made-up messages: without the key they wait for her tap.
+  await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
+  const sheet = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await expect(sheet).toContainText('کلید این مرورگر رو نداشت');
+  await sheet.getByRole('button', { name: 'انصراف' }).click();
+  const address = await shortcutAddress(page);
   // Every sender known: the Shortcut runs on its own, so nothing waits for a tap.
-  await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
+  await page.goto(`${address}${encodeURIComponent(bundle)}`);
   await expect(page.getByRole('status')).toContainText('۲ پیامک ثبت شد');
-  await expect(page.getByRole('dialog', { name: 'پیامک بانک' })).toHaveCount(0);
-  await page.goto(`/#paste=${encodeURIComponent(bundle)}`);
+  await expect(sheet).toHaveCount(0);
+  await page.goto(`${address}${encodeURIComponent(bundle)}`);
   await expect(page.getByRole('status')).toContainText('پیامک تازه‌ای نبود');
 });
 
@@ -240,7 +256,7 @@ test("a sender no table knows is asked once, then filed like the rest", async ({
   await sheet.getByRole('radio', { name: 'بانک ملت' }).click();
   await sheet.getByRole('button', { name: 'ثبت', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('۱ پیامک ثبت شد');
-  await page.goto(`/#paste=${encodeURIComponent(next)}`);
+  await page.goto(`${await shortcutAddress(page)}${encodeURIComponent(next)}`);
   await expect(page.getByRole('status')).toContainText('۱ پیامک ثبت شد');
   await expect(sheet).toHaveCount(0);
 });

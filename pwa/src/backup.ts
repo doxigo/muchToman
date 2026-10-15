@@ -46,11 +46,12 @@ export const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
  * *this* browser already announced; the household cursor, founder and SMS-sharing switch, which
  * belong to the session and not to the file; the lock, whose credential lives in this device's
  * authenticator — restored anywhere else it is a lockout, not a setting, so a restore never
- * switches it on; and whether this browser has been through the first screen.
+ * switches it on; whether this browser has been through the first screen; and the key its own
+ * Shortcut's links carry, which no other browser's Shortcut does.
  */
 const LOCAL_PREFS: string[] = [
   'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncRead', 'syncShareSms', 'syncPrimaryMember',
-  'syncPullFirst', 'lockEnabled', 'lockCredential', 'onboarded', 'usdHistoryAt',
+  'syncPullFirst', 'lockEnabled', 'lockCredential', 'onboarded', 'usdHistoryAt', 'pasteKey',
 ];
 /**
  * Kept as this browser's too while it is in a household. The phone's restore drops its session
