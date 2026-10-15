@@ -3,6 +3,7 @@
 # index.html, word for word, plus frame-ancestors — which a <meta> cannot carry. Keep the two,
 # and ASSET_HEADERS in sync/src/index.ts, identical; sync's tests check that they are.
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

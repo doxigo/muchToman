@@ -69,9 +69,32 @@ describe('rates proxies', () => {
     expect((await SELF.fetch('https://sync.test/wallet-balance')).status).toBe(405);
   });
 
+  it('refuses a POST not labelled JSON before asking upstream, and passes the label on as sent', async () => {
+    // A browser sends a cross-site POST unasked only as a form or plain text; defaulting a missing
+    // type to JSON here is what once let one through to the rates Worker's JSON-only routes.
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 204 }));
+    for (const path of ['/wallet-balance', '/feedback']) {
+      for (const type of [null, 'text/plain', 'application/x-www-form-urlencoded']) {
+        const res = await SELF.fetch(`https://sync.test${path}`, {
+          method: 'POST', headers: type ? { 'content-type': type } : {}, body: '{}',
+        });
+        expect(res.status).toBe(415);
+        expect(await res.json()).toEqual({ code: 'unsupported_media_type' });
+      }
+    }
+    expect(upstream).not.toHaveBeenCalled();
+    await SELF.fetch('https://sync.test/feedback', {
+      method: 'POST', headers: { 'content-type': 'application/json; charset=utf-8' }, body: '{}',
+    });
+    const [, init] = upstream.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json; charset=utf-8');
+  });
+
   it('answers 502 when the rates Worker cannot be reached', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('down'));
-    const res = await SELF.fetch('https://sync.test/wallet-balance', { method: 'POST', body: '{}' });
+    const res = await SELF.fetch('https://sync.test/wallet-balance', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ code: 'unavailable' });
   });
@@ -86,7 +109,9 @@ describe('rates proxies', () => {
     const [url, init] = upstream.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://rates.muchtoman.com/feedback');
     expect(init.body).toBe(body);
-    const big = await SELF.fetch('https://sync.test/feedback', { method: 'POST', body: 'x'.repeat(9000) });
+    const big = await SELF.fetch('https://sync.test/feedback', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(9000),
+    });
     expect(big.status).toBe(413);
     expect(upstream).toHaveBeenCalledTimes(1);
   });
@@ -100,6 +125,8 @@ describe('rates proxies', () => {
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(png);
     expect(res.headers.get('content-type')).toBe('image/png');
     expect(res.headers.get('cache-control')).toBe('public, max-age=86400');
+    // Opened on its own, an icon from a third party runs nothing on this origin.
+    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox");
     expect(upstream.mock.calls[0][0]).toBe('https://rates.muchtoman.com/coin-icon?path=%2Fcoins%2Fimages%2F1%2Flarge%2Fbitcoin.png');
     expect((await SELF.fetch('https://sync.test/coin-icon', { method: 'POST' })).status).toBe(405);
   });

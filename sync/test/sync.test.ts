@@ -27,6 +27,7 @@ async function claimDevice(
 ): Promise<ClaimedDevice> {
   const res = await SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ scopes, ...identity }),
   });
   expect(res.status).toBe(200);
@@ -45,14 +46,14 @@ async function pairDevice(
 ): Promise<ClaimedDevice> {
   const invite = await SELF.fetch('https://sync.test/v1/invite', {
     method: 'POST',
-    headers: { authorization: `Bearer ${owner}` },
+    headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
   expect(invite.status).toBe(200);
   const { code } = (await invite.json()) as { code: string };
   const paired = await SELF.fetch('https://sync.test/v1/pair', {
     method: 'POST',
-    headers: { authorization: `Bearer ${owner}` },
+    headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
     body: JSON.stringify({ code, memberId, deviceId }),
   });
   expect(paired.status).toBe(200);
@@ -75,7 +76,7 @@ function record(over: Partial<Record<string, unknown>> = {}) {
 async function push(token: string, records: unknown[]) {
   return SELF.fetch('https://sync.test/v1/sync', {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ records }),
   });
 }
@@ -85,6 +86,22 @@ async function pull(token: string, since = 0) {
     headers: { authorization: `Bearer ${token}` },
   });
   return { status: res.status, json: (await res.json()) as { seq: number; records: any[] } };
+}
+
+/** What the object runs as it wakes; a test that seeds rows behind its back runs it again. */
+function migrate(instance: unknown) {
+  (instance as { migrate(): void }).migrate();
+}
+
+/** The counts kept in meta, beside the same three figures counted from the rows themselves. */
+async function counts(hid: string) {
+  return runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => ({
+    kept: JSON.parse([...state.storage.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'counts'")][0].v),
+    counted: { ...[...state.storage.sql.exec(
+      'SELECT COUNT(*) FILTER (WHERE deleted = 0) AS live, COUNT(*) AS stored, ' +
+        'COALESCE(SUM(LENGTH(CAST(body AS BLOB))), 0) AS bytes FROM record',
+    )][0] },
+  }));
 }
 
 function memberTombstone(memberId: string, scope: string, updatedAt = 2000) {
@@ -101,7 +118,7 @@ function memberTombstone(memberId: string, scope: string, updatedAt = 2000) {
 async function removeMember(token: string, memberId: string, scope: string) {
   return SELF.fetch('https://sync.test/v1/remove', {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ member: memberId, record: memberTombstone(memberId, scope) }),
   });
 }
@@ -109,7 +126,7 @@ async function removeMember(token: string, memberId: string, scope: string) {
 async function leave(token: string, memberId: string, scope: string) {
   return SELF.fetch('https://sync.test/v1/leave', {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ record: memberTombstone(memberId, scope) }),
   });
 }
@@ -120,6 +137,7 @@ describe('a household', () => {
     await claim(hid, ['personal:her']);
     const second = await SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
       method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ scopes: ['personal:her'] }),
     });
     expect(second.status).toBe(409);
@@ -139,7 +157,7 @@ describe('a household', () => {
 
   it('writes nothing for a household nobody claimed, so a made-up id leaves nothing behind', async () => {
     const hid = '2a'.repeat(16);
-    const headers = { authorization: `Bearer ${hid}.${'f'.repeat(64)}` };
+    const headers = { authorization: `Bearer ${hid}.${'f'.repeat(64)}`, 'content-type': 'application/json' };
     expect((await SELF.fetch('https://sync.test/v1/sync', { headers })).status).toBe(401);
     for (const path of ['/v1/sync', '/v1/invite', '/v1/pair', '/v1/identity', '/v1/leave']) {
       const res = await SELF.fetch(`https://sync.test${path}`, { method: 'POST', headers, body: '{}' });
@@ -177,6 +195,7 @@ describe('a household', () => {
     });
     const reclaimed = await SELF.fetch(`https://sync.test/v1/claim?hid=${orphan}`, {
       method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ scopes: ['personal:her'] }),
     });
     expect(reclaimed.status).toBe(409);
@@ -320,7 +339,7 @@ describe('syncing', () => {
     const member = await pairDevice(owner.token, 'a5'.repeat(16), 'a6'.repeat(16));
     const left = await SELF.fetch('https://sync.test/v1/leave', {
       method: 'POST',
-      headers: { authorization: `Bearer ${member.token}` },
+      headers: { authorization: `Bearer ${member.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ record: memberTombstone(member.memberId, scope, fractional) }),
     });
     expect(left.status).toBe(400);
@@ -359,7 +378,7 @@ describe('privacy between households and members', () => {
 
     const invite = await SELF.fetch('https://sync.test/v1/invite', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner}` },
+      headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ scopes: ['family:c'] }),
     });
     expect(invite.status).toBe(200);
@@ -367,7 +386,7 @@ describe('privacy between households and members', () => {
 
     const paired = await SELF.fetch('https://sync.test/v1/pair', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner}` },
+      headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
     expect(paired.status).toBe(200);
@@ -382,13 +401,13 @@ describe('privacy between households and members', () => {
     const owner = await claim('d'.repeat(32), ['family:d']);
     const invite = await SELF.fetch('https://sync.test/v1/invite', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner}` },
+      headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ scopes: ['family:d', 'personal:someone'] }),
     });
     const { code } = (await invite.json()) as { code: string };
     const paired = await SELF.fetch('https://sync.test/v1/pair', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner}` },
+      headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
     const { scopes } = (await paired.json()) as { scopes: string[] };
@@ -399,12 +418,12 @@ describe('privacy between households and members', () => {
     const owner = await claim('e'.repeat(32), ['family:e']);
     const invite = await SELF.fetch('https://sync.test/v1/invite', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner}` },
+      headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({}),
     });
     const { code } = (await invite.json()) as { code: string };
     const body = JSON.stringify({ code });
-    const headers = { authorization: `Bearer ${owner}` };
+    const headers = { authorization: `Bearer ${owner}`, 'content-type': 'application/json' };
     expect((await SELF.fetch('https://sync.test/v1/pair', { method: 'POST', headers, body })).status).toBe(200);
     expect((await SELF.fetch('https://sync.test/v1/pair', { method: 'POST', headers, body })).status).toBe(403);
   });
@@ -476,14 +495,14 @@ describe('privacy between households and members', () => {
     const claimed = await claimDevice('63'.repeat(16), ['family:63'], { memberId, deviceId });
     const same = await SELF.fetch('https://sync.test/v1/identity', {
       method: 'POST',
-      headers: { authorization: `Bearer ${claimed.token}` },
+      headers: { authorization: `Bearer ${claimed.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ memberId, deviceId }),
     });
     expect(same.status).toBe(200);
 
     const rebound = await SELF.fetch('https://sync.test/v1/identity', {
       method: 'POST',
-      headers: { authorization: `Bearer ${claimed.token}` },
+      headers: { authorization: `Bearer ${claimed.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ memberId: '64'.repeat(16), deviceId }),
     });
     expect(rebound.status).toBe(409);
@@ -501,7 +520,7 @@ describe('privacy between households and members', () => {
     const joined = await pairDevice(founder.token, '6d'.repeat(16), '6e'.repeat(16));
     const rebound = await SELF.fetch('https://sync.test/v1/identity', {
       method: 'POST',
-      headers: { authorization: `Bearer ${joined.token}` },
+      headers: { authorization: `Bearer ${joined.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ memberId: '6f'.repeat(16), deviceId: joined.deviceId }),
     });
     expect(rebound.status).toBe(409);
@@ -519,12 +538,12 @@ describe('privacy between households and members', () => {
 
     const pairAs = async (memberId: string) => {
       const invite = await SELF.fetch('https://sync.test/v1/invite', {
-        method: 'POST', headers: { authorization: `Bearer ${stays.token}` }, body: '{}',
+        method: 'POST', headers: { authorization: `Bearer ${stays.token}`, 'content-type': 'application/json' }, body: '{}',
       });
       const { code } = (await invite.json()) as { code: string };
       return SELF.fetch('https://sync.test/v1/pair', {
         method: 'POST',
-        headers: { authorization: `Bearer ${stays.token}` },
+        headers: { authorization: `Bearer ${stays.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ code, memberId, deviceId: '8c'.repeat(16) }),
       });
     };
@@ -538,7 +557,7 @@ describe('privacy between households and members', () => {
     });
     const claimAs = (memberId: string) => SELF.fetch('https://sync.test/v1/identity', {
       method: 'POST',
-      headers: { authorization: `Bearer ${stays.token}` },
+      headers: { authorization: `Bearer ${stays.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ memberId, deviceId: stays.deviceId }),
     });
     expect((await claimAs(removed.memberId)).status).toBe(409);
@@ -560,7 +579,7 @@ describe('revocation', () => {
 
     const revoke = await SELF.fetch('https://sync.test/v1/revoke', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ device: member.deviceId }),
     });
     expect(revoke.status).toBe(200);
@@ -577,14 +596,14 @@ describe('revocation', () => {
     // happens. It must die with them: a code is not attributed to whoever minted it.
     const invite = await SELF.fetch('https://sync.test/v1/invite', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({}),
     });
     const { code } = (await invite.json()) as { code: string };
 
     const revoke = await SELF.fetch('https://sync.test/v1/revoke', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ member: member.memberId }),
     });
     expect(revoke.status).toBe(200);
@@ -592,7 +611,7 @@ describe('revocation', () => {
 
     const paired = await SELF.fetch('https://sync.test/v1/pair', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
     expect(paired.status).toBe(403);
@@ -666,7 +685,7 @@ describe('revocation', () => {
     const revoke = (token: string, body: Record<string, string>) =>
       SELF.fetch('https://sync.test/v1/revoke', {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
 
@@ -694,7 +713,7 @@ describe('revocation', () => {
       const text = new TextEncoder().encode(JSON.stringify(body));
       const response = SELF.fetch(`https://sync.test${path}`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${member.token}` },
+        headers: { authorization: `Bearer ${member.token}`, 'content-type': 'application/json' },
         body: readable,
       });
       return {
@@ -724,7 +743,7 @@ describe('revocation', () => {
     const member = await pairDevice(founder.token, 'e7'.repeat(16), 'e8'.repeat(16));
     const ambiguous = await SELF.fetch('https://sync.test/v1/revoke', {
       method: 'POST',
-      headers: { authorization: `Bearer ${member.token}` },
+      headers: { authorization: `Bearer ${member.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ device: founder.deviceId, member: member.memberId }),
     });
     expect(ambiguous.status).toBe(400);
@@ -741,7 +760,7 @@ describe('revocation', () => {
     const member = await pairDevice(founder.token, 'ec'.repeat(16), 'ed'.repeat(16));
     const malformed = await SELF.fetch('https://sync.test/v1/remove', {
       method: 'POST',
-      headers: { authorization: `Bearer ${founder.token}` },
+      headers: { authorization: `Bearer ${founder.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         member: member.memberId,
         record: memberTombstone(founder.memberId, scope),
@@ -820,7 +839,7 @@ describe('token rotation', () => {
 
     const res = await SELF.fetch('https://sync.test/v1/rotate', {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     });
     expect(res.status).toBe(200);
     const { secret } = (await res.json()) as { secret: string };
@@ -842,12 +861,14 @@ describe('abuse resistance', () => {
     // SQLite, because pushing 120k records through HTTP would test patience rather than the cap.
     const capMinusTwo = 120_000 - 2;
     const stub = env.HOUSEHOLD.getByName(hid);
-    await runInDurableObject(stub, async (_instance, state) => {
+    await runInDurableObject(stub, async (instance, state) => {
       state.storage.sql.exec(
         `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${capMinusTwo})
          INSERT INTO record (id, scope, seq, updated_at, device, kind, owner_member, author_member, deleted, nonce, body)
          SELECT 'seed-' || i, 'personal:her', i, 1, 'seed', 'legacy', '', '', 0, 'n', 'b' FROM n`,
       );
+      // Counted the way a household older than the counters is: once, as the object wakes.
+      migrate(instance);
     });
 
     expect((await push(token, [record({ id: 'fits-1' }), record({ id: 'fits-2' })])).status).toBe(200);
@@ -864,12 +885,13 @@ describe('abuse resistance', () => {
     // A lifetime of deletes, one short of the backstop on every row ever stored: none of it
     // counts against the cap on live rows, so the household keeps filing new ones.
     const storedMinusOne = 4 * 120_000 - 1;
-    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (instance, state) => {
       state.storage.sql.exec(
         `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${storedMinusOne})
          INSERT INTO record (id, scope, seq, updated_at, device, kind, owner_member, author_member, deleted, nonce, body)
          SELECT 'gone-' || i, 'personal:her', i, 1, 'seed', 'legacy', '', '', 1, 'n', 'b' FROM n`,
       );
+      migrate(instance);
     });
     expect((await push(token, [record({ id: 'new-1' })])).status).toBe(200);
     // The backstop still holds: burying is not a way around the bound.
@@ -892,13 +914,13 @@ describe('abuse resistance', () => {
     }
     const invite = await SELF.fetch('https://sync.test/v1/invite', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({}),
     });
     const { code } = (await invite.json()) as { code: string };
     const refused = await SELF.fetch('https://sync.test/v1/pair', {
       method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}` },
+      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
     expect(refused.status).toBe(409);
@@ -910,7 +932,7 @@ describe('abuse resistance', () => {
     const codes: string[] = [];
     for (let i = 0; i < 17; i++) {
       const invite = await SELF.fetch('https://sync.test/v1/invite', {
-        method: 'POST', headers: { authorization: `Bearer ${owner}` }, body: '{}',
+        method: 'POST', headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' }, body: '{}',
       });
       codes.push(((await invite.json()) as { code: string }).code);
     }
@@ -918,7 +940,7 @@ describe('abuse resistance', () => {
       [...state.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM pairing')][0].n);
     expect(stored).toBe(16);
     const pairWith = (code: string) => SELF.fetch('https://sync.test/v1/pair', {
-      method: 'POST', headers: { authorization: `Bearer ${owner}` }, body: JSON.stringify({ code }),
+      method: 'POST', headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' }, body: JSON.stringify({ code }),
     });
     expect((await pairWith(codes[0])).status).toBe(403);
     expect((await pairWith(codes[16])).status).toBe(200);
@@ -949,7 +971,7 @@ describe('abuse resistance', () => {
     const claimAs = (ip: string, hid: string) =>
       SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
         method: 'POST',
-        headers: { 'cf-connecting-ip': ip },
+        headers: { 'cf-connecting-ip': ip, 'content-type': 'application/json' },
         body: JSON.stringify({ scopes: ['personal:her'] }),
       });
     for (let i = 0; i < 5; i++) {
@@ -961,6 +983,180 @@ describe('abuse resistance', () => {
     // Another address is another bucket; the neighbour is not paying for the flood.
     expect((await claimAs('198.51.100.8', 'f7'.repeat(16))).status).toBe(200);
   });
+
+  it('refuses a POST not labelled JSON, so no other site can make households from its visitors', async () => {
+    // A browser sends a cross-site POST unasked only as a form or plain text — and a string body
+    // with no type at all goes as text/plain.
+    const hid = '49'.repeat(16);
+    for (const type of [null, 'text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+      const res = await SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
+        method: 'POST',
+        headers: type ? { 'content-type': type } : {},
+        body: JSON.stringify({ scopes: ['personal:her'] }),
+      });
+      expect(res.status).toBe(415);
+      expect(await res.json()).toEqual({ code: 'unsupported_media_type' });
+    }
+    const tables = await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) =>
+      [...state.storage.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'device'")].length);
+    expect(tables).toBe(0);
+
+    const token = await claim(hid, ['personal:her']);
+    const typeless = await SELF.fetch('https://sync.test/v1/sync', {
+      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ records: [record()] }),
+    });
+    expect(typeless.status).toBe(415);
+    expect((await pull(token)).json.records).toEqual([]);
+    // The type's parameters and case are the sender's business.
+    const labelled = await SELF.fetch('https://sync.test/v1/sync', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'Application/JSON; charset=utf-8' },
+      body: JSON.stringify({ records: [record()] }),
+    });
+    expect(labelled.status).toBe(200);
+  });
+
+  it('answers a body that is not a JSON object with a 400, never a 500', async () => {
+    const hid = '48'.repeat(16);
+    for (const body of ['{', 'null', '[]', '"x"', '7']) {
+      const claimed = await SELF.fetch(`https://sync.test/v1/claim?hid=${hid}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body,
+      });
+      expect(claimed.status).toBe(400);
+    }
+    const token = await claim(hid, ['personal:her']);
+    for (const body of ['{', 'null', '[]', '"x"', '7']) {
+      for (const path of ['/v1/sync', '/v1/invite', '/v1/pair', '/v1/identity', '/v1/remove', '/v1/leave', '/v1/revoke', '/v1/rotate']) {
+        const res = await SELF.fetch(`https://sync.test${path}`, {
+          method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body,
+        });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ code: 'invalid_request' });
+      }
+    }
+    expect((await pull(token)).status).toBe(200);
+  });
+
+  it('removes only someone who was here, and takes the retry of a removal whose answer was lost', async () => {
+    const hid = '70'.repeat(16);
+    const scope = 'family:70';
+    const founder = await claimDevice(hid, [scope], { memberId: '45'.repeat(16), deviceId: '46'.repeat(16) });
+    const member = await pairDevice(founder.token, '47'.repeat(16), '4a'.repeat(16));
+    const invite = await SELF.fetch('https://sync.test/v1/invite', {
+      method: 'POST', headers: { authorization: `Bearer ${founder.token}`, 'content-type': 'application/json' }, body: '{}',
+    });
+    const { code } = (await invite.json()) as { code: string };
+    const before = await counts(hid).catch(() => null);
+
+    // Nobody by that id ever joined: nothing is written, and the invite on the screen still works.
+    const ghost = await removeMember(founder.token, '4b'.repeat(16), scope);
+    expect(ghost.status).toBe(404);
+    expect(await ghost.json()).toEqual({ code: 'unknown_member' });
+    expect((await pull(founder.token)).json.records).toEqual([]);
+    expect(await counts(hid).catch(() => null)).toEqual(before);
+    const paired = await SELF.fetch('https://sync.test/v1/pair', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${founder.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ code, memberId: '4c'.repeat(16), deviceId: '4d'.repeat(16) }),
+    });
+    expect(paired.status).toBe(200);
+
+    expect((await removeMember(founder.token, member.memberId, scope)).status).toBe(200);
+    // The phone buries the member only on a yes, so asking again must still get one.
+    expect((await removeMember(founder.token, member.memberId, scope)).status).toBe(200);
+  });
+
+  it('keeps a legacy row its author\'s, while one older than authorship stays open', async () => {
+    const hid = '4e'.repeat(16);
+    const scope = 'family:4e';
+    const founder = await claimDevice(hid, [scope], { memberId: '4f'.repeat(16), deviceId: '50'.repeat(16) });
+    const other = await pairDevice(founder.token, '5c'.repeat(16), '5d'.repeat(16));
+    // No kind on the wire is how an old APK writes: a legacy row, naming no owner.
+    const mine = record({ id: 'legacy-1', scope });
+    expect((await push(founder.token, [mine])).status).toBe(200);
+
+    for (const theirs of [{ ...mine, updatedAt: 2000 }, { ...mine, updatedAt: 2000, deleted: true }]) {
+      const refused = await push(other.token, [theirs]);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({ code: 'forbidden_owner' });
+    }
+    expect((await push(founder.token, [{ ...mine, updatedAt: 3000, body: 'bWluZQ==' }])).status).toBe(200);
+    expect((await pull(other.token)).json.records[0]).toMatchObject({ body: 'bWluZQ==', authorMemberId: founder.memberId });
+
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+      state.storage.sql.exec("UPDATE record SET author_member = '' WHERE id = 'legacy-1'");
+    });
+    expect((await push(other.token, [{ ...mine, updatedAt: 4000 }])).status).toBe(200);
+  });
+
+  it('keeps its counts in step with its rows, so a push never has to count them', async () => {
+    const hid = '5e'.repeat(16);
+    const scope = 'family:5e';
+    const founder = await claimDevice(hid, [scope], { memberId: '5f'.repeat(16), deviceId: '60'.repeat(16) });
+    const member = await pairDevice(founder.token, '68'.repeat(16), '69'.repeat(16));
+    await push(founder.token, [record({ id: 'r1', scope, body: 'a'.repeat(100) }), record({ id: 'r2', scope, body: 'b'.repeat(50) })]);
+    // A body that shrinks, a burial, a stale write the stamp turns away, and a batch that fails
+    // half way — the rows before the failure stand, and so must their count.
+    await push(founder.token, [record({ id: 'r1', scope, updatedAt: 2000, body: 'c'.repeat(10) })]);
+    await push(founder.token, [record({ id: 'r2', scope, updatedAt: 2000, deleted: true, body: '' })]);
+    await push(founder.token, [record({ id: 'r1', scope, updatedAt: 1500, body: 'd'.repeat(900) })]);
+    expect((await push(founder.token, [record({ id: 'r3', scope, body: 'دو' }), record({ id: 'r4', scope: 'personal:x' })])).status).toBe(403);
+    await push(member.token, [record({ id: `member:${member.memberId}`, scope, kind: 'member', ownerMemberId: member.memberId })]);
+    expect((await removeMember(founder.token, member.memberId, scope)).status).toBe(200);
+
+    const { kept, counted } = await counts(hid);
+    expect(counted).toEqual({ live: 2, stored: 4, bytes: 10 + 0 + 4 + 'Y2lwaGVydGV4dA=='.length });
+    expect(kept).toEqual(counted);
+
+    // A household older than the counters is counted once as it wakes, and lands on the same.
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (instance, state) => {
+      state.storage.sql.exec("DELETE FROM meta WHERE k = 'counts'");
+      migrate(instance);
+    });
+    expect((await counts(hid)).kept).toEqual(counted);
+  });
+
+  it('caps a household by the bytes it stores, and a body that shrinks gives them back', async () => {
+    const hid = '6b'.repeat(16);
+    const token = await claim(hid, ['personal:her']);
+    expect((await push(token, [record({ id: 'big', body: 'a'.repeat(1000) })])).status).toBe(200);
+    // Pushing 256 MiB would test patience rather than the cap; the counter is what the cap reads.
+    await runInDurableObject(env.HOUSEHOLD.getByName(hid), async (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE meta SET v = ? WHERE k = 'counts'",
+        JSON.stringify({ live: 1, stored: 1, bytes: 256 * 1024 * 1024 - 100 }),
+      );
+    });
+    const refused = await push(token, [record({ id: 'more', body: 'b'.repeat(200) })]);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ code: 'household_full' });
+    // Growing a row that is already there is growth all the same.
+    expect((await push(token, [record({ id: 'big', updatedAt: 2000, body: 'a'.repeat(1200) })])).status).toBe(409);
+    expect((await push(token, [record({ id: 'big', updatedAt: 3000, body: 'a'.repeat(500) })])).status).toBe(200);
+    expect((await push(token, [record({ id: 'more', body: 'b'.repeat(200) })])).status).toBe(200);
+  });
+
+  it('keeps no record of when a phone was last online', async () => {
+    const device = await claimDevice('6c'.repeat(16), ['personal:her']);
+    const stub = env.HOUSEHOLD.getByName('6c'.repeat(16));
+    const lastSeen = () => runInDurableObject(stub, async (_instance, state) =>
+      [...state.storage.sql.exec<{ last_seen: number }>('SELECT last_seen FROM device')].map((row) => row.last_seen));
+    // What an older Worker left behind goes as the object wakes…
+    await runInDurableObject(stub, async (instance, state) => {
+      state.storage.sql.exec('UPDATE device SET added_at = 1, last_seen = 2');
+      migrate(instance);
+    });
+    expect(await lastSeen()).toEqual([1]);
+    // …and nothing writes it again.
+    await pull(device.token);
+    await push(device.token, [record()]);
+    const headers = { authorization: `Bearer ${device.token}`, 'content-type': 'application/json' };
+    await SELF.fetch('https://sync.test/v1/identity', {
+      method: 'POST', headers, body: JSON.stringify({ memberId: device.memberId, deviceId: device.deviceId }),
+    });
+    expect((await SELF.fetch('https://sync.test/v1/rotate', { method: 'POST', headers, body: '{}' })).status).toBe(200);
+    expect(await lastSeen()).toEqual([1]);
+  });
 });
 
 describe('the PWA it serves', () => {
@@ -971,6 +1167,7 @@ describe('the PWA it serves', () => {
     const meta = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)![1];
     const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)![1];
     const policy = `${meta}; frame-ancestors 'none'`;
+    expect(policy).toContain("base-uri 'none'; form-action 'self'");
     const served = [
       ...await Promise.all(['/', '/sw.js', script].map((path) => env.ASSETS.fetch(`https://sync.test${path}`))),
       // A page load at a path that is no file, from a browser too old to say it is one, does
@@ -981,6 +1178,7 @@ describe('the PWA it serves', () => {
       expect(res.headers.get('content-security-policy')).toBe(policy);
       expect(res.headers.get('x-content-type-options')).toBe('nosniff');
       expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(res.headers.get('strict-transport-security')).toBe('max-age=31536000; includeSubDomains');
       await res.arrayBuffer();
     }
     // _headers is read, never served, so it is not a file the service worker could install.
@@ -1024,12 +1222,12 @@ describe('bounded resumable pulls', () => {
     const owner = await claim('e102'.repeat(8), ['personal:her', 'family:home']);
     await push(owner, [record({ id: 'private' }), record({ id: 'shared', scope: 'family:home' })]);
     const invitation = await SELF.fetch('https://sync.test/v1/invite', {
-      method: 'POST', headers: { authorization: `Bearer ${owner}` },
+      method: 'POST', headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ scopes: ['family:home'] }),
     });
     const { code } = await invitation.json() as { code: string };
     const pairing = await SELF.fetch('https://sync.test/v1/pair', {
-      method: 'POST', headers: { authorization: `Bearer ${owner}` },
+      method: 'POST', headers: { authorization: `Bearer ${owner}`, 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
     });
     const { secret } = await pairing.json() as { secret: string };
@@ -1097,7 +1295,7 @@ describe('recoverable token rotation', () => {
     const token = await claim('e107'.repeat(8), ['personal:her']);
     const secrets = ['a'.repeat(64), 'b'.repeat(64)];
     const results = await Promise.all(secrets.map(secret => SELF.fetch('https://sync.test/v1/rotate', {
-      method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ secret }),
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ secret }),
     })));
     expect(results.map(response => response.status).sort()).toEqual([200, 401]);
     const accepted = results.findIndex(response => response.status === 200);
@@ -1111,7 +1309,7 @@ describe('recoverable token rotation', () => {
     const token = device.token;
     const secret = 'd'.repeat(64);
     const rotate = (auth: string) => SELF.fetch('https://sync.test/v1/rotate', {
-      method: 'POST', headers: { authorization: `Bearer ${auth}` }, body: JSON.stringify({ secret }),
+      method: 'POST', headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' }, body: JSON.stringify({ secret }),
     });
     expect((await rotate(token)).status).toBe(200);
     expect((await rotate(token)).status).toBe(401);
@@ -1121,7 +1319,7 @@ describe('recoverable token rotation', () => {
     expect((await pull(token)).status).toBe(401);
     expect((await pull(replacement)).status).toBe(200);
     const revoked = await SELF.fetch('https://sync.test/v1/revoke', {
-      method: 'POST', headers: { authorization: `Bearer ${replacement}` },
+      method: 'POST', headers: { authorization: `Bearer ${replacement}`, 'content-type': 'application/json' },
       body: JSON.stringify({ member: device.memberId }),
     });
     expect(revoked.status).toBe(200);
@@ -1133,7 +1331,7 @@ describe('recoverable token rotation', () => {
     const token = await claim('e106'.repeat(8), ['personal:her']);
     for (const secret of ['', 'short', 42, 'g'.repeat(64)]) {
       const response = await SELF.fetch('https://sync.test/v1/rotate', {
-        method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ secret }),
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ secret }),
       });
       expect(response.status).toBe(400);
     }

@@ -37,8 +37,12 @@ const MAX_RECORD_ROWS = 120_000;
 // ponytail: tombstones are never compacted — this server keeps no device cursors, so it cannot
 // tell when every phone has pulled one. A household that buries 360k rows in its life hits
 // household_full for good; dropping tombstones older than every live device's cursor is the
-// upgrade. At 64 KiB a body, this many rows can outgrow the object's own storage limit first.
+// upgrade.
 const MAX_STORED_ROWS = 4 * MAX_RECORD_ROWS;
+// And by size, counted in ciphertext bytes. A real household's rows are a few hundred bytes each,
+// tens of megabytes at the row cap; at 64 KiB a body, the row caps alone would allow some 30 GB,
+// three times what the object can store. This is room to spare for the first and a wall for the second.
+const MAX_STORED_BYTES = 256 * 1024 * 1024;
 const MAX_DEVICES = 16;
 // LWW griefing/skew bound: a stamp from the far future would win every merge for ever, so
 // nothing may claim to be written more than a day ahead of this server's clock. The clamped
@@ -121,6 +125,31 @@ async function readTextLimited(request: Request, maxBytes: number): Promise<stri
     at += chunk.byteLength;
   }
   return new TextDecoder().decode(joined);
+}
+
+/**
+ * A request body that must be a JSON object. Anything else is the caller's mistake and a 400 —
+ * never a 500 whose log line would quote the start of the body back out of V8's SyntaxError.
+ */
+async function readJson(request: Request, maxBytes: number): Promise<Record<string, unknown>> {
+  let value: unknown;
+  try {
+    value = JSON.parse((await readTextLimited(request, maxBytes)) || '{}');
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new SyncError('invalid_request', 400);
+    throw error;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new SyncError('invalid_request', 400);
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Every POST here carries JSON, and both clients say so. Requiring the header is what keeps other
+ * sites out: a browser sends a cross-site POST without asking first only when its type is a form
+ * or plain text, and a JSON one needs a preflight nothing here answers.
+ */
+function isJson(request: Request): boolean {
+  return request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'application/json';
 }
 
 function hex(bytes: ArrayBuffer): string {
@@ -212,6 +241,36 @@ const IDENTITY = /^[a-f0-9]{16,64}$/;
 
 function identity(value: unknown, fallback: () => string): string {
   return typeof value === 'string' && IDENTITY.test(value) ? value : fallback();
+}
+
+/** What a household holds: rows not buried, rows ever stored, and the bytes of their bodies. */
+type Counts = {
+  live: number;
+  stored: number;
+  bytes: number;
+};
+
+/**
+ * The counts after one more row is written, or household_full if it would grow past a bound. A
+ * replaced row is not a new one and a tombstone is not a live one, so editing and deleting never
+ * fill a household; only a body that grows is held to the byte cap, and a shrinking one gives back.
+ */
+function grown(
+  counts: Counts,
+  existing: { deleted: number; size: number } | undefined,
+  deleted: boolean,
+  body: string,
+): Counts {
+  const wasLive = existing?.deleted === 0;
+  const added = new TextEncoder().encode(body).byteLength - (existing?.size ?? 0);
+  if (!deleted && !wasLive && counts.live >= MAX_RECORD_ROWS) throw new SyncError('household_full', 409);
+  if (!existing && counts.stored >= MAX_STORED_ROWS) throw new SyncError('household_full', 409);
+  if (added > 0 && counts.bytes + added > MAX_STORED_BYTES) throw new SyncError('household_full', 409);
+  return {
+    live: counts.live + Number(!deleted) - Number(wasLive),
+    stored: counts.stored + Number(!existing),
+    bytes: counts.bytes + added,
+  };
 }
 
 interface AuthorisedDevice {
@@ -310,6 +369,32 @@ export class Household extends DurableObject<Env> {
     }
     this.sql.exec('INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (2)');
     this.sql.exec('INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (3)');
+    // last_seen is no longer kept: nothing read it, and it said when each phone was last online.
+    // The column stays NOT NULL, so it holds the day the device joined, and what it held goes.
+    this.sql.exec('UPDATE device SET last_seen = added_at WHERE last_seen != added_at');
+    // How full the household is, counted once here and kept by every write after, so a push never
+    // scans the table to find out. An empty table is not written down: a household with anything
+    // in meta reads to claim() as one that once lived here.
+    if (![...this.sql.exec('SELECT 1 FROM meta WHERE k = ?', 'counts')].length) {
+      const counted = [...this.sql.exec<Counts>(
+        'SELECT COUNT(*) AS stored, COUNT(*) FILTER (WHERE deleted = 0) AS live, ' +
+          'COALESCE(SUM(LENGTH(CAST(body AS BLOB))), 0) AS bytes FROM record',
+      )][0];
+      if (counted.stored > 0) this.saveCounts(counted);
+    }
+  }
+
+  private counts(): Counts {
+    const row = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'counts')][0];
+    return row ? JSON.parse(row.v) as Counts : { live: 0, stored: 0, bytes: 0 };
+  }
+
+  private saveCounts(counts: Counts): void {
+    this.sql.exec(
+      'INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)',
+      'counts',
+      JSON.stringify({ live: counts.live, stored: counts.stored, bytes: counts.bytes }),
+    );
   }
 
   /**
@@ -389,7 +474,7 @@ export class Household extends DurableObject<Env> {
 
   /** First device. Creates the household and takes the first token; refused ever after. */
   private async claim(request: Request): Promise<Response> {
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     const scopes = Array.isArray(body.scopes) ? (body.scopes as string[]).slice(0, 16) : [];
     if (scopes.length === 0) throw new SyncError('invalid_scope', 400);
     const memberId = identity(body.memberId, () => randomToken(16));
@@ -424,7 +509,7 @@ export class Household extends DurableObject<Env> {
   /** A one-time code an existing device shows, which the new one redeems for a token of its own. */
   private async invite(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     const code = randomToken(16);
     const codeHash = await sha256Hex(code);
     const auth = this.authorise(secretHash);
@@ -449,7 +534,7 @@ export class Household extends DurableObject<Env> {
   }
 
   private async pair(request: Request): Promise<Response> {
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     const code = typeof body.code === 'string' ? body.code : '';
     if (!code) throw new SyncError('invalid_request', 400);
     const codeHash = await sha256Hex(code);
@@ -508,13 +593,12 @@ export class Household extends DurableObject<Env> {
   private authorise(secretHash: string): AuthorisedDevice {
     const found = this.device(secretHash);
     if (!found) throw new SyncError('unauthorised', 401);
-    this.sql.exec('UPDATE device SET last_seen = ? WHERE id = ?', Date.now(), found.id);
     return found;
   }
 
   private async setIdentity(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     const auth = this.authorise(secretHash);
     const memberId = identity(body.memberId, () => '');
     const deviceId = identity(body.deviceId, () => '');
@@ -540,10 +624,9 @@ export class Household extends DurableObject<Env> {
       throw new SyncError('member_exists', 409);
     }
     this.sql.exec(
-      'UPDATE device SET id = ?, member_id = ?, identity_locked = 1, last_seen = ? WHERE token_hash = ?',
+      'UPDATE device SET id = ?, member_id = ?, identity_locked = 1 WHERE token_hash = ?',
       deviceId,
       memberId,
-      Date.now(),
       auth.tokenHash,
     );
     return jsonResponse({ memberId, deviceId });
@@ -619,19 +702,14 @@ export class Household extends DurableObject<Env> {
 
   private async push(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const parsed = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}');
+    const parsed = await readJson(request, MAX_SYNC_REQUEST_BYTES);
     const auth = this.authorise(secretHash);
-    const records = asRecords((parsed as Record<string, unknown>).records);
+    const records = asRecords(parsed.records);
 
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
     const start = head ? Number(head.v) : 0;
     let seq = start;
-    // Replacing a row never grows the household; only a new live row counts against the cap.
-    const counted = [...this.sql.exec<{ stored: number; live: number }>(
-      'SELECT COUNT(*) AS stored, COUNT(*) FILTER (WHERE deleted = 0) AS live FROM record',
-    )][0];
-    let live = counted?.live ?? 0;
-    let stored = counted?.stored ?? 0;
+    let counts = this.counts();
     const maxStamp = Date.now() + MAX_STAMP_SKEW_MS;
     const clamped: { id: string; updatedAt: number }[] = [];
     try {
@@ -696,15 +774,25 @@ export class Household extends DurableObject<Env> {
           if (record.deleted) throw new SyncError('invalid_kind', 400);
         }
         const existing = [...this.sql.exec<{
-          updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string; deleted: number;
+          updated_at: number; author_member: string; kind: PushRecord['kind']; owner_member: string;
+          deleted: number; size: number;
         }>(
-          'SELECT updated_at, author_member, kind, owner_member, deleted FROM record WHERE id = ?',
+          'SELECT updated_at, author_member, kind, owner_member, deleted, LENGTH(CAST(body AS BLOB)) AS size ' +
+            'FROM record WHERE id = ?',
           record.id,
         )][0];
         if (
           existing &&
           existing.owner_member !== auth.memberId &&
           (existing.kind === 'transaction' || existing.kind === 'asset' || existing.kind === 'member')
+        ) throw new SyncError('forbidden_owner', 403);
+        // A legacy row names no owner — old APKs never sent one — so whoever wrote it is its owner,
+        // and nobody else replaces or buries it. A row with no author predates authorship and stays
+        // open, or the phones that wrote those could no longer touch their own.
+        if (
+          existing?.kind === 'legacy' &&
+          existing.author_member !== '' &&
+          existing.author_member !== auth.memberId
         ) throw new SyncError('forbidden_owner', 403);
         const storedAt = Math.min(record.updatedAt, maxStamp);
         if (storedAt !== record.updatedAt) clamped.push({ id: record.id, updatedAt: storedAt });
@@ -720,11 +808,7 @@ export class Household extends DurableObject<Env> {
         ) {
           continue;
         }
-        const wasLive = existing?.deleted === 0;
-        if (!record.deleted && !wasLive && live >= MAX_RECORD_ROWS) throw new SyncError('household_full', 409);
-        if (!existing && stored >= MAX_STORED_ROWS) throw new SyncError('household_full', 409);
-        live += Number(!record.deleted) - Number(wasLive);
-        if (!existing) stored += 1;
+        const next = grown(counts, existing, record.deleted === true, record.body);
         seq += 1;
         this.sql.exec(
           'INSERT OR REPLACE INTO record ' +
@@ -742,10 +826,13 @@ export class Household extends DurableObject<Env> {
           record.nonce,
           record.body,
         );
+        counts = next;
       }
     } finally {
+      // The same turn as the rows, so the counts can never disagree with what was written.
       if (seq !== start) {
         this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'seq', String(seq));
+        this.saveCounts(counts);
       }
     }
     return jsonResponse({ seq, accepted: records.length, clamped });
@@ -770,10 +857,11 @@ export class Household extends DurableObject<Env> {
   private removeMember(auth: AuthorisedDevice, targetMember: string, record: PushRecord): Response {
     const head = [...this.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', 'seq')][0];
     const seq = (head ? Number(head.v) : 0) + 1;
-    const existing = [...this.sql.exec<{ updated_at: number }>(
-      'SELECT updated_at FROM record WHERE id = ?',
+    const existing = [...this.sql.exec<{ updated_at: number; deleted: number; size: number }>(
+      'SELECT updated_at, deleted, LENGTH(CAST(body AS BLOB)) AS size FROM record WHERE id = ?',
       record.id,
     )][0];
+    const counts = grown(this.counts(), existing, true, record.body);
     // Leaving is authoritative. It must beat a previously clamped future profile stamp because
     // the member will have no token left with which to retry a later tombstone.
     const requestedAt = Math.min(record.updatedAt, Date.now() + MAX_STAMP_SKEW_MS);
@@ -796,6 +884,7 @@ export class Household extends DurableObject<Env> {
         record.body,
       );
       this.sql.exec('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)', 'seq', String(seq));
+      this.saveCounts(counts);
       this.sql.exec('DELETE FROM device WHERE member_id = ?', targetMember);
       this.sql.exec('DELETE FROM pairing');
     });
@@ -806,12 +895,22 @@ export class Household extends DurableObject<Env> {
   /** Removes another member, including their profile, or changes nothing. */
   private async remove(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, MAX_SYNC_REQUEST_BYTES);
     const auth = this.authorise(secretHash);
     const member = typeof body.member === 'string' ? body.member : '';
     if (!member || member === auth.memberId) throw new SyncError('invalid_request', 400);
     const primary = this.primaryMember();
     if (primary && member === primary) throw new SyncError('forbidden_primary', 403);
+    // Only someone who was here: a device of theirs, or their profile. A made-up id would leave a
+    // tombstone behind for nobody, take that id out of reach for ever and sweep every invite. A
+    // buried profile still counts, so a removal whose answer was lost can be sent again — the
+    // phone buries the member only once the server says yes, and never pulls its own tombstone.
+    const known = [...this.sql.exec(
+      'SELECT 1 FROM device WHERE member_id = ? UNION ALL SELECT 1 FROM record WHERE id = ? LIMIT 1',
+      member,
+      `member:${member}`,
+    )].length > 0;
+    if (!known) throw new SyncError('unknown_member', 404);
     const record = this.memberTombstone(body.record, auth, member);
     return this.removeMember(auth, member, record);
   }
@@ -819,7 +918,7 @@ export class Household extends DurableObject<Env> {
   /** Lets the caller leave and publishes that fact in the same transaction. */
   private async leave(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, MAX_SYNC_REQUEST_BYTES)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, MAX_SYNC_REQUEST_BYTES);
     const auth = this.authorise(secretHash);
     const record = this.memberTombstone(body.record, auth, auth.memberId);
     const response = this.removeMember(auth, auth.memberId, record);
@@ -848,7 +947,7 @@ export class Household extends DurableObject<Env> {
    */
   private async revoke(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     const auth = this.authorise(secretHash);
     const device = typeof body.device === 'string' ? body.device : '';
     const member = typeof body.member === 'string' ? body.member : '';
@@ -881,7 +980,7 @@ export class Household extends DurableObject<Env> {
    */
   private async rotate(request: Request): Promise<Response> {
     const secretHash = await this.credential(request);
-    const body = JSON.parse((await readTextLimited(request, 4096)) || '{}') as Record<string, unknown>;
+    const body = await readJson(request, 4096);
     if (body.secret !== undefined && (typeof body.secret !== 'string' || !/^[a-f0-9]{64}$/.test(body.secret))) {
       throw new SyncError('invalid_secret', 400);
     }
@@ -889,9 +988,8 @@ export class Household extends DurableObject<Env> {
     const nextHash = await sha256Hex(secret);
     const auth = this.authorise(secretHash);
     const changed = [...this.sql.exec<{ id: string }>(
-      'UPDATE device SET token_hash = ?, last_seen = ? WHERE id = ? AND token_hash = ? RETURNING id',
+      'UPDATE device SET token_hash = ? WHERE id = ? AND token_hash = ? RETURNING id',
       nextHash,
-      Date.now(),
       auth.id,
       auth.tokenHash,
     )];
@@ -936,9 +1034,10 @@ function allowClaim(ip: string, now = Date.now()): boolean {
 const ASSET_HEADERS = {
   'content-security-policy':
     "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
-    "style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'",
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
 };
 
 export default {
@@ -947,6 +1046,13 @@ export default {
     const path = url.pathname;
 
     try {
+      // Without this, a page anywhere could create households from its visitors' addresses, and
+      // a typeless POST would reach the rates Worker's JSON-only /feedback and /wallet-balance.
+      const json = path.startsWith('/v1/') || path === '/wallet-balance' || path === '/feedback';
+      if (json && request.method === 'POST' && !isJson(request)) {
+        return jsonResponse({ code: 'unsupported_media_type' }, 415);
+      }
+
       // Served from here so the PWA is same-origin with its prices. The rates Worker sets no
       // CORS headers at all today, and proxying is both cheaper and safer than teaching a
       // public endpoint to answer cross-origin — its own edge cache still does the work.
@@ -996,7 +1102,9 @@ export default {
         try {
           upstream = await fetch(`${origin}${path}`, {
             method: 'POST',
-            headers: { 'content-type': request.headers.get('content-type') ?? 'application/json' },
+            // Passed on as sent, which isJson has already checked; a default here is how a typeless
+            // cross-site POST used to arrive upstream looking like JSON.
+            headers: { 'content-type': request.headers.get('content-type')! },
             body,
             signal: AbortSignal.timeout(15_000),
           });
@@ -1026,6 +1134,9 @@ export default {
             'content-type': upstream.headers.get('content-type') ?? 'application/octet-stream',
             'cache-control': upstream.headers.get('cache-control') ?? 'no-store',
             'x-content-type-options': 'nosniff',
+            // Bytes from a third party, on the page's own origin: opened directly, an SVG with a
+            // script in it must run nothing and reach nothing.
+            'content-security-policy': "default-src 'none'; sandbox",
           },
         });
       }
