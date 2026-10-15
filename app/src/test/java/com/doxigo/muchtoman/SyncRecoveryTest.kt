@@ -86,4 +86,60 @@ class SyncRecoveryTest {
             durable.close()
         }
     }
+
+    @Test
+    fun `an update that reads more pulls the household from the start once, as history`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val durable = Room.inMemoryDatabaseBuilder(context, DurableDb::class.java).build()
+        val derived = Room.inMemoryDatabaseBuilder(context, DerivedDb::class.java).build()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        try {
+            val member = "a".repeat(32)
+            val other = "b".repeat(32)
+            val key = newScopeKey()
+            val session = SyncSession(
+                "http://127.0.0.1:${server.address.port}", "household.secret", "c".repeat(32), member, "family:home", key,
+            )
+            saveSession(durable, session)
+            derive(durable, derived, emptyMap())
+            // An older build pulled up to seq 5 and dropped the one record there it could not open.
+            durable.meta().put(DurableMeta(META_SYNC_SEQ, "5"))
+            val id = familyTxnId(other, "m:dropped")
+            val entry = SyncEntry(ownerMemberId = other, at = 1000, amountRial = 100, direction = "out")
+            val (nonce, body) = seal(key, Json.encodeToString(entry), recordAad(session.scope, "transaction", id))
+            val row = JSONObject()
+                .put("id", id).put("scope", session.scope).put("updatedAt", 1000)
+                .put("device", "d".repeat(32)).put("kind", "transaction")
+                .put("ownerMemberId", other).put("authorMemberId", other)
+                .put("nonce", nonce).put("body", body)
+            val pulls = mutableListOf<String>()
+            server.createContext("/") { exchange ->
+                exchange.requestBody.use { it.readBytes() }
+                val response = if (exchange.requestMethod == "GET") {
+                    val since = exchange.requestURI.query.substringAfter("since=").substringBefore('&')
+                    pulls += since
+                    val records = if (since == "0") JSONArray().put(row) else JSONArray()
+                    JSONObject().put("seq", 5).put("hasMore", false).put("records", records).toString()
+                } else "{}"
+                val bytes = response.toByteArray(Charsets.UTF_8)
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+            server.start()
+
+            val first = syncNow(durable, derived, session)
+            assertEquals(listOf("0"), pulls)
+            assertEquals(listOf(id), durable.familyTxns().all().map { it.id })
+            // Weeks-old rows coming back are not news to announce.
+            assertTrue(first.arrived.isEmpty())
+            assertEquals(SYNC_READ_VERSION.toString(), durable.meta().get(META_SYNC_READ))
+
+            syncNow(durable, derived, session)
+            assertEquals(listOf("0", "5"), pulls)
+        } finally {
+            server.stop(0)
+            derived.close()
+            durable.close()
+        }
+    }
 }

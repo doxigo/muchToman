@@ -37,6 +37,8 @@ const val META_SYNC_MEMBER = "sync_member"
 const val META_SYNC_SCOPE = "sync_scope"
 const val META_SYNC_KEY = "sync_key"
 const val META_SYNC_SEQ = "sync_seq"
+/** The [SYNC_READ_VERSION] this phone last pulled the household from the start with. */
+const val META_SYNC_READ = "sync_read"
 const val META_SYNC_SHARE_SMS = "sync_share_sms"
 const val META_SYNC_SHARE_ASSETS = "sync_share_assets"
 /** Comma-joined bank names kept out of sharing — transactions and balances both. */
@@ -44,6 +46,26 @@ const val META_SYNC_EXCLUDED_BANKS = "sync_excluded_banks"
 /** The household founder, as the server names them on every pull. */
 const val META_SYNC_PRIMARY = "sync_primary_member"
 const val META_SYNC_IDENTITY_OK = "sync_identity_ok"
+
+/**
+ * What this build can read off the wire. Bump it in the release that teaches a phone to open a
+ * record its predecessors could not — a new seal, a new kind, a payload an older parse refused —
+ * and every phone that updates pulls the household from the start once, the PWA too.
+ *
+ * A record that will not open or parse is dropped alone and the cursor moves past it, because one
+ * bad row must not hold every device for ever. The price is that whatever an older build dropped
+ * stays dropped after the update: those seqs are behind the cursor, and nothing asks for them
+ * again unless it is sent back. Applying is last-write-wins on every kind, so pulling a record
+ * this phone already holds changes nothing.
+ *
+ * 1: records bound to their scope, kind and id (v1.3.2). A phone still on an older build dropped
+ * every record the household wrote until it updated, and its shared budgets and reports read
+ * lower than everyone else's from then on.
+ *
+ * ponytail: bumped by hand, like [PARSER_VERSION]. Remember the cursor of the first record a
+ * pull could not read, and go back to it after an update, if a release ever forgets the bump.
+ */
+const val SYNC_READ_VERSION = 1
 
 fun parseExcludedBanks(raw: String?): Set<String> =
     raw?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet() ?: emptySet()
@@ -2289,9 +2311,11 @@ suspend fun syncNow(
         sent += chunk.size
     }
 
-    var cursor = durable.meta().get(META_SYNC_SEQ)?.toLongOrNull() ?: 0L
-    // From the start — a join, a rejoin, a renewal — the pull is the household's history: every
-    // row of it is new to this phone, and none of it is news.
+    // A build that reads what an older one dropped goes back for it — see [SYNC_READ_VERSION].
+    val reread = durable.meta().get(META_SYNC_READ) != SYNC_READ_VERSION.toString()
+    var cursor = if (reread) 0L else durable.meta().get(META_SYNC_SEQ)?.toLongOrNull() ?: 0L
+    // From the start — a join, a rejoin, a renewal, a re-read — the pull is the household's
+    // history: every row of it is new to this phone, and none of it is news.
     val history = cursor == 0L
     // ponytail: in memory only, so a sync that throws after its pull (a refused push, a later page
     // failing) keeps the rows and loses their notes. Persist it beside the cursor if that matters.
@@ -2331,6 +2355,8 @@ suspend fun syncNow(
         cursor = nextCursor
         val more = (pulled.hasMore ?: (pulled.records.size >= 1000)) && cursor > previous
     } while (more)
+    // Only once the whole pull is in: one cut short starts over from the beginning next time.
+    if (reread) durable.meta().put(DurableMeta(META_SYNC_READ, SYNC_READ_VERSION.toString()))
     if (canRotate) rotateTokenIfStale(durable, active, now)
     settleDepartedMembers(durable, active)
     refused?.let { throw it }

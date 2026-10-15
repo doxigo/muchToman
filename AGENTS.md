@@ -52,6 +52,9 @@ change needs both the Gradle and the pwa blocks run.
   figures truncate, never round.
 - **A new sync record `kind` ships server first** (`sync/`), then clients — an old server
   rejects an unknown kind with a 400 for the whole batch, stopping all sync from that phone.
+- **Teaching clients to read a new record shape bumps `SYNC_READ_VERSION`** (`Sync.kt` and
+  `pwa/src/sync.ts` together). An older client drops what it cannot open and moves its cursor
+  past it; the bump makes every updated client pull the household once from the start.
 - **Never point anything at `workers.dev`.** Iran DNS-sinkholes the whole domain; the custom
   domains (`rates.muchtoman.com`, `sync.muchtoman.com`) are the product's lifeline.
 - **Persian copy is the interface**: casual register, Persian digits, words carry warnings and

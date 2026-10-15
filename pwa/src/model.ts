@@ -274,6 +274,7 @@ export interface Prefs {
   // Household sync state (sync.ts SyncPrefs; durable_meta on the phone). A backup strips the
   // cursor and the SMS-sharing flag, as the phone's BACKUP_STRIPPED_META does.
   syncSeq: number;
+  syncRead: number;
   syncShareSms: boolean;
   syncShareAssets: boolean;
   syncExcludedBanks: string[];
@@ -314,6 +315,7 @@ export const PREF_DEFAULTS: Prefs = {
   loans: { people: [], moves: [] },
   lockCredential: '',
   syncSeq: 0,
+  syncRead: 0,
   syncShareSms: false,
   syncShareAssets: false,
   syncExcludedBanks: [],

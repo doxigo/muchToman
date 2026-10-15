@@ -75,8 +75,16 @@ disabling sharing publishes tombstones for that member's previously shared SMS t
 **A new record kind means the Worker ships first.** `asRecords` rejects an unknown `kind` for the
 whole batch with a 400, so a phone that pushes one at a Worker which has not learned it yet does
 not sync at all — not the new record, not the transactions beside it. Deploy `sync/`, then the
-APK. Going the other way is safe: an old client ignores a kind it cannot name and keeps its own
-records flowing.
+APK. Going the other way keeps sync running but loses records: an old client drops whatever it
+cannot open or parse — a new kind, a new seal, a payload its parser refuses — and moves its cursor
+past it, so updating alone never brings those records back.
+
+**A release that teaches clients to read something new bumps `SYNC_READ_VERSION`** (`Sync.kt` and
+`pwa/src/sync.ts`, kept equal). Every phone and browser that updates then pulls the household from
+the start once, and applying is last-write-wins, so only the dropped records change anything.
+Version 1 exists because record sealing changed in v1.3.2: one member's phone, still on v1.3.1,
+dropped everything another member's phone wrote for five days. Its shared budgets read 150
+million Toman lower than the other phone's, and stayed that way after it updated.
 
 
 The September 2026 family refresh failure was a deployment mismatch: production rejected

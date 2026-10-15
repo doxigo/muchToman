@@ -51,6 +51,12 @@ export const REPORT_EXCLUSIONS_RECORD_ID = 'exclusion:report';
 const TOKEN_ROTATE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const PUSH_CHUNK = 200;
 const PULL_LIMIT = 1000;
+/**
+ * Sync.kt `SYNC_READ_VERSION`, kept equal to it: what this build can read off the wire. A browser
+ * whose stored `syncRead` differs pulls the household from the start once, so the records an
+ * older build could not open and moved its cursor past are asked for again.
+ */
+export const SYNC_READ_VERSION = 1;
 const MEMBER_FALLBACK = 'عضو خانواده';
 
 // ---- the session -------------------------------------------------------------------------
@@ -151,6 +157,8 @@ export interface ReportExclusionsState { ids: string[]; updatedAt: number; edite
 export interface SyncPrefs {
   /** META_SYNC_SEQ. A backup must not carry it back (the phone strips it). */
   syncSeq: number;
+  /** META_SYNC_READ: the SYNC_READ_VERSION this browser last pulled the household from the start with. */
+  syncRead: number;
   /** META_SYNC_SHARE_SMS — pasted messages count as SMS rows. */
   syncShareSms: boolean;
   syncShareAssets: boolean;
@@ -164,8 +172,8 @@ export interface SyncPrefs {
   syncPullFirst: boolean;
 }
 const SYNC_PREF_DEFAULTS: SyncPrefs = {
-  syncSeq: 0, syncShareSms: false, syncShareAssets: false, syncExcludedBanks: [], syncPrimaryMember: '', reportExclusions: null,
-  syncPullFirst: false,
+  syncSeq: 0, syncRead: 0, syncShareSms: false, syncShareAssets: false, syncExcludedBanks: [], syncPrimaryMember: '',
+  reportExclusions: null, syncPullFirst: false,
 };
 export function syncPref<K extends keyof SyncPrefs>(key: K): SyncPrefs[K] {
   return pref(key) ?? SYNC_PREF_DEFAULTS[key];
@@ -1199,7 +1207,9 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
     let received = 0;
     let canRotate = false;
     const pull = async (): Promise<void> => {
-      let cursor = syncPref('syncSeq');
+      // A build that reads what an older one dropped goes back for it — see SYNC_READ_VERSION.
+      const reread = syncPref('syncRead') !== SYNC_READ_VERSION;
+      let cursor = reread ? 0 : syncPref('syncSeq');
       let more: boolean;
       do {
         const pulled = parsePull(await request(`${active.base}/v1/sync?since=${cursor}&limit=${PULL_LIMIT}`, 'GET', active.token));
@@ -1210,6 +1220,8 @@ export async function syncNow(session: Session, now = Date.now(), assets: AssetS
         cursor = nextCursor;
         more = (pulled.hasMore ?? pulled.records.length >= PULL_LIMIT) && cursor > previous;
       } while (more);
+      // Only once the whole pull is in: one cut short starts over from the beginning next time.
+      if (reread) syncWrite(() => setSyncPref('syncRead', SYNC_READ_VERSION));
     };
     // After a restore the cursor is back at zero and her rows are the file's: whatever the
     // household moved on since lands first, or the push would stamp the file's copy over it.

@@ -49,7 +49,7 @@ export const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
  * switches it on; and whether this browser has been through the first screen.
  */
 const LOCAL_PREFS: string[] = [
-  'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncShareSms', 'syncPrimaryMember',
+  'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncRead', 'syncShareSms', 'syncPrimaryMember',
   'syncPullFirst', 'lockEnabled', 'lockCredential', 'onboarded', 'usdHistoryAt',
 ];
 /**

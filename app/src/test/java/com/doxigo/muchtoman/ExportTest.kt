@@ -287,7 +287,7 @@ class ExportTest {
             listOf(
                 "sync_base", "sync_token", "sync_token_at", "sync_device", "sync_member",
                 "sync_scope", "sync_key", "sync_seq", "sync_identity_ok", "sync_share_sms",
-                "sync_rotation",
+                "sync_rotation", "sync_read",
             ),
             BACKUP_STRIPPED_META,
         )

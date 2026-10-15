@@ -492,6 +492,19 @@ describe('syncNow', () => {
     expect(state.row('familyMembers', THEM)?.sharesSms).toBe(true);
   });
 
+  it('pulls the household from the start once after an update that reads more, then carries on from the cursor', async () => {
+    // An older build pulled up to seq 5 and dropped the one record there it could not open.
+    sync.setSyncPref('syncSeq', 5);
+    const id = sync.familyTxnId(THEM, 'm:dropped');
+    const dropped = await record(id, 'transaction', JSON.stringify({ ownerMemberId: THEM, at: NOW - 5000, amountRial: 1000, direction: 'out' }));
+    const server = serve([{ seq: 5, records: [dropped], hasMore: false }]);
+    await sync.syncNow(session, NOW);
+    expect(state.row('familyTxns', id)).toMatchObject({ amountRial: -1000 });
+    expect(sync.syncPref('syncRead')).toBe(sync.SYNC_READ_VERSION);
+    await sync.syncNow(session, NOW + 1);
+    expect(server.pulls).toEqual([`https://sync.test/v1/sync?since=0&limit=1000`, `https://sync.test/v1/sync?since=5&limit=1000`]);
+  });
+
   it('pushes per kind in chunks of 200, skips a kind an old server refuses, and keeps its clamped stamps', async () => {
     state.putAll('manual', Array.from({ length: 450 }, (_, i) => manual(i)));
     sync.setSyncPref('syncShareAssets', true);
