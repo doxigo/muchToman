@@ -999,29 +999,19 @@ export class Household extends DurableObject<Env> {
 }
 
 /**
- * Household creation is the one unauthenticated write, so it gets a token bucket per caller IP.
- *
- * Honest about what this is: friction, not a wall. The map lives in one isolate's memory, and an
- * attacker who spreads requests across colos — or simply waits for the isolate to recycle —
- * starts with a fresh bucket every time. It exists to make casual abuse boring; the per-household
- * caps inside the Durable Object are the actual bound on what any one household can cost.
+ * Cloudflare's own counters (wrangler.jsonc `ratelimits`): how many calls one key may make a
+ * minute, counted per location. Friction, not a wall — permissive and eventually consistent by
+ * design, so a flood spread across locations gets further; the caps inside the Durable Object
+ * are what bounds a household's cost. Requests that never crossed the edge carry no
+ * CF-Connecting-IP — tests and local workerd — and are exactly the callers not to throttle.
  */
-const CLAIM_BURST = 5;
-const CLAIM_REFILL_MS = 60_000; // one new household a minute, five in a burst
-const claimBuckets = new Map<string, { tokens: number; last: number }>();
-
-function allowClaim(ip: string, now = Date.now()): boolean {
-  // The keys are attacker-chosen, so the map is bounded the blunt way: a rare full reset is
-  // cheaper than an LRU and errs on the side of letting people in.
-  if (claimBuckets.size > 10_000) claimBuckets.clear();
-  const bucket = claimBuckets.get(ip) ?? { tokens: CLAIM_BURST, last: now };
-  bucket.tokens = Math.min(CLAIM_BURST, bucket.tokens + (now - bucket.last) / CLAIM_REFILL_MS);
-  bucket.last = now;
-  const allowed = bucket.tokens >= 1;
-  if (allowed) bucket.tokens -= 1;
-  claimBuckets.set(ip, bucket);
-  return allowed;
+async function throttled(limiter: RateLimit, request: Request, key: (ip: string) => string): Promise<boolean> {
+  const ip = request.headers.get('cf-connecting-ip');
+  return ip != null && !(await limiter.limit({ key: key(ip) })).success;
 }
+
+/** The calls that change who is in a household, rather than what it holds. */
+const MEMBERSHIP_ROUTES = new Set(['invite', 'pair', 'identity', 'remove', 'leave', 'revoke', 'rotate']);
 
 /**
  * The page's policy, for the one asset response this Worker hands out: index.html at a path that
@@ -1143,11 +1133,8 @@ export default {
 
       if (path === '/v1/claim') {
         if (request.method !== 'POST') return textResponse('POST only\n', 405, 'POST');
-        // Cloudflare's edge always sets CF-Connecting-IP and strips any copy a client sends, so
-        // an absent header means the request never crossed the edge — tests and local workerd —
-        // and those are exactly the callers the bucket should not throttle.
-        const ip = request.headers.get('cf-connecting-ip');
-        if (ip && !allowClaim(ip)) return jsonResponse({ code: 'rate_limited' }, 429);
+        // The one write anybody may make unauthenticated: five new households a minute an address.
+        if (await throttled(env.CLAIM_LIMIT, request, (ip) => ip)) return rateLimited();
         // A new household names itself; there is no registry to collide with because the id is
         // 32 random bytes and the object is created by being addressed.
         const hid = url.searchParams.get('hid') ?? '';
@@ -1180,6 +1167,15 @@ export default {
             : null;
         if (!route) return textResponse('not found\n', 404);
 
+        // Every call, by address, generously: carriers here put many phones behind one address.
+        // Then membership, which a real household changes a few times a year, by household and
+        // address together — tight enough that a member cycling pair and remove gets nowhere,
+        // and keyed so neither a stranger nor an ex-member elsewhere can spend a household's turn.
+        if (await throttled(env.API_LIMIT, request, (ip) => ip)) return rateLimited();
+        if (MEMBERSHIP_ROUTES.has(route) && await throttled(env.MEMBERSHIP_LIMIT, request, (ip) => `${token.hid}:${ip}`)) {
+          return rateLimited();
+        }
+
         const inner = new Request(`https://household/${route}${url.search}`, {
           method: request.method,
           headers: withSecret(request.headers, token.secret),
@@ -1206,6 +1202,13 @@ export default {
     }
   },
 };
+
+/** Both clients read a 429 as «too many requests, try again shortly», whatever the body says. */
+function rateLimited(): Response {
+  const response = jsonResponse({ code: 'rate_limited' }, 429);
+  response.headers.set('retry-after', '60');
+  return response;
+}
 
 /** The household half of the token never reaches the object; only the secret it must check. */
 function withSecret(headers: Headers, secret: string): Headers {

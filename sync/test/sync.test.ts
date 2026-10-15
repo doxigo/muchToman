@@ -88,6 +88,16 @@ async function pull(token: string, since = 0) {
   return { status: res.status, json: (await res.json()) as { seq: number; records: any[] } };
 }
 
+/**
+ * Miniflare counts a rate limit in fixed wall-clock minutes, so a burst that straddles one starts
+ * over half way and never reaches its 429. A test that needs the 429 waits out a minute's last
+ * ten seconds first; a burst here takes about one.
+ */
+async function clearOfMinuteEdge() {
+  const into = Date.now() % 60_000;
+  if (into > 50_000) await new Promise((resolve) => setTimeout(resolve, 60_000 - into + 100));
+}
+
 /** What the object runs as it wakes; a test that seeds rows behind its back runs it again. */
 function migrate(instance: unknown) {
   (instance as { migrate(): void }).migrate();
@@ -974,6 +984,7 @@ describe('abuse resistance', () => {
         headers: { 'cf-connecting-ip': ip, 'content-type': 'application/json' },
         body: JSON.stringify({ scopes: ['personal:her'] }),
       });
+    await clearOfMinuteEdge();
     for (let i = 0; i < 5; i++) {
       expect((await claimAs('198.51.100.7', `f${i}`.repeat(16))).status).toBe(200);
     }
@@ -982,7 +993,32 @@ describe('abuse resistance', () => {
     expect(((await throttled.json()) as { code: string }).code).toBe('rate_limited');
     // Another address is another bucket; the neighbour is not paying for the flood.
     expect((await claimAs('198.51.100.8', 'f7'.repeat(16))).status).toBe(200);
-  });
+    expect(throttled.headers.get('retry-after')).toBe('60');
+  }, 20_000);
+
+  it('limits membership calls per household and address, so pair-and-remove cycles get nowhere', async () => {
+    const owner = await claim('71'.repeat(16), ['family:71']);
+    const neighbour = await claim('72'.repeat(16), ['family:72']);
+    const inviteFrom = (token: string, ip: string) => SELF.fetch('https://sync.test/v1/invite', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'cf-connecting-ip': ip },
+      body: '{}',
+    });
+    await clearOfMinuteEdge();
+    for (let i = 0; i < 30; i++) expect((await inviteFrom(owner, '203.0.113.9')).status).toBe(200);
+    const throttled = await inviteFrom(owner, '203.0.113.9');
+    expect(throttled.status).toBe(429);
+    expect(await throttled.json()).toEqual({ code: 'rate_limited' });
+    // Nobody else pays for it: not this household from another address — an ex-member flooding
+    // from elsewhere cannot lock the rest out — and not another household behind the same one.
+    expect((await inviteFrom(owner, '203.0.113.10')).status).toBe(200);
+    expect((await inviteFrom(neighbour, '203.0.113.9')).status).toBe(200);
+    // Syncing is not membership: it stays open while invites are refused.
+    const pulled = await SELF.fetch('https://sync.test/v1/sync', {
+      headers: { authorization: `Bearer ${owner}`, 'cf-connecting-ip': '203.0.113.9' },
+    });
+    expect(pulled.status).toBe(200);
+  }, 20_000);
 
   it('refuses a POST not labelled JSON, so no other site can make households from its visitors', async () => {
     // A browser sends a cross-site POST unasked only as a form or plain text — and a string body

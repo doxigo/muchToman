@@ -37,6 +37,16 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Household"] }],
 
+  // Cloudflare's rate limiting, per location and per key, a minute at a time (src/index.ts
+  // `throttled`): new households per address; every call per address, roomy for a carrier's
+  // shared one; and membership changes per household and address. The ids are this account's
+  // own namespaces — another binding reusing one would share its counters.
+  "ratelimits": [
+    { "name": "CLAIM_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
+    { "name": "API_LIMIT", "namespace_id": "1002", "simple": { "limit": 1200, "period": 60 } },
+    { "name": "MEMBERSHIP_LIMIT", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } }
+  ],
+
   // The code's own console.error lines, and nothing else. Every financial field that passes
   // through here is AES-GCM ciphertext the Worker has no key for, but invocation logs would keep
   // every request's URL, headers and the caller's geo, so they stay off.
