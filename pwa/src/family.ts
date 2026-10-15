@@ -24,9 +24,10 @@ import { batch, pref, put, putAll, row, rows, setPref, settled, subscribe, useDa
 import {
   AVATAR_B64_MAX, AVATAR_PHOTO_PREFIX, AVATAR_PX, NoInviteKeyError, SyncHttpError, claimHousehold, invite, joinHousehold,
   leaveFamily as leaveHousehold, loadSession, localRefOfFamilyTxn, pairingCase, pairingUrl, rejoinHousehold,
-  removeFamilyMember, renewHousehold, safeExcludedCategoryIds, sessionRejected, setSyncPref, syncErrorFa, syncNow, syncPref,
+  listDevices, removeFamilyMember, renewHousehold, safeExcludedCategoryIds, sessionRejected, setSyncPref, syncErrorFa, syncNow, syncPref,
+  unnamedDevices,
 } from './sync';
-import type { PairingInvite, Session } from './sync';
+import type { PairingInvite, Session, SyncDevice } from './sync';
 
 export interface FamilyState {
   paired: boolean;
@@ -42,6 +43,8 @@ export interface FamilyState {
   memberName: string;
   /** Everyone in the household, her own row included, by name. */
   members: FamilyMember[];
+  /** Phones that hold a key and have no profile here — see `unnamedDevices`. */
+  unnamed: SyncDevice[];
   me: FamilyMember | null;
   sharesSms: boolean;
   sharesAssets: boolean;
@@ -73,6 +76,8 @@ const ui = {
   working: false,
   syncing: false,
   error: null as string | null,
+  /** The server's list of phones, and whose household it was read from (see `loadDevices`). */
+  devices: { hid: '', list: [] as SyncDevice[] },
 };
 let version = 0;
 const listeners = new Set<() => void>();
@@ -84,6 +89,8 @@ function set(patch: Partial<typeof ui>): void {
   Object.assign(ui, patch);
   changed();
 }
+
+const householdOf = (s: Session): string => s.token.split('.')[0];
 
 const byNameThenId = (a: FamilyMember, b: FamilyMember): number =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -98,6 +105,8 @@ export function familyState(): FamilyState {
     memberId: session?.member ?? '',
     memberName: me?.name ?? '',
     members: session ? rows('familyMembers').filter((m) => !m.deleted).sort(byNameThenId) : [],
+    // Another household's list is nobody here: after a renewal its phones would all read as strangers.
+    unnamed: session && ui.devices.hid === householdOf(session) ? unnamedDevices(ui.devices.list, rows('familyMembers'), session.member) : [],
     me,
     sharesSms: me?.sharesSms ?? false,
     sharesAssets: session != null && syncPref('syncShareAssets'),
@@ -383,6 +392,20 @@ export async function inviteDevice(): Promise<void> {
 }
 
 /**
+ * The server's list of phones, read when the family screen opens and after each sync it shows. A
+ * failed read keeps the last one; before the first there is simply nothing extra to show.
+ */
+export async function loadDevices(): Promise<void> {
+  const current = await loadSession();
+  if (!current) return;
+  try {
+    set({ devices: { hid: householdOf(current), list: await listDevices(current) } });
+  } catch {
+    // Offline or refused: the rows the screen already has stay, and the sync's own error says why.
+  }
+}
+
+/**
  * Cuts one member's devices off the household. True once the server has done it, and a sync is
  * asked for; false for the sheet to say «حذف نشد. اینترنتت رو چک کن.» (Family.kt). The founder
  * cannot be removed — the server refuses it, so the screen does not offer it.
@@ -395,6 +418,8 @@ export async function removeMember(memberId: string): Promise<boolean> {
   } catch {
     return false;
   }
+  // The phone leaves the list now, not at the next read: its device is already gone.
+  set({ devices: { ...ui.devices, list: ui.devices.list.filter((d) => d.memberId !== memberId) } });
   requestFamilySync(false);
   return true;
 }

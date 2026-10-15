@@ -1498,6 +1498,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 family = it.family.copy(
                     paired = session != null,
                     pendingPairing = if (session != null) null else it.family.pendingPairing,
+                    householdId = session?.token?.substringBefore('.').orEmpty(),
                     memberId = session?.member.orEmpty(),
                     memberName = own?.name.orEmpty(),
                     members = members,

@@ -1453,6 +1453,38 @@ export function sessionRejected(session: Session): Promise<boolean> {
   });
 }
 
+/** A phone holding a key to the household, as the server lists it: whose it is, and when it joined. */
+export interface SyncDevice { memberId: string; addedAt: number }
+
+/**
+ * Every phone in the household, from the server's own list rather than the profiles (Sync.kt
+ * listDevices). Read when the family screen asks, never by the background sync.
+ */
+export function listDevices(session: Session): Promise<SyncDevice[]> {
+  return withFamilySync(async () => {
+    const active = await activeSession(session);
+    const body = JSON.parse(await request(`${active.base}/v1/devices`, 'GET', active.token)) as { devices?: unknown };
+    const devices = Array.isArray(body.devices) ? body.devices as Json[] : null;
+    if (!devices || !devices.every((d) => d && isString(d.memberId) && isLong(d.addedAt))) throw new Error('malformed devices');
+    return devices.map((d) => ({ memberId: d.memberId as string, addedAt: d.addedAt as number }));
+  });
+}
+
+/**
+ * The phones no profile speaks for (Sync.kt unnamedDevices): paired and never sent a name, or kept
+ * after their profile was buried. Ids the server could not have issued are left out: removal
+ * writes a record named after the id.
+ */
+export function unnamedDevices(devices: readonly SyncDevice[], members: readonly FamilyMember[], self: string): SyncDevice[] {
+  const named = new Set(members.filter((m) => !m.deleted).map((m) => m.id)).add(self);
+  const seen = new Set<string>();
+  return devices.filter((d) => {
+    if (named.has(d.memberId) || !SYNC_IDENTITY.test(d.memberId) || seen.has(d.memberId)) return false;
+    seen.add(d.memberId);
+    return true;
+  });
+}
+
 export interface PairingInvite { base: string; hid: string; code: string; scope: string; key: Uint8Array<ArrayBuffer> }
 
 /** The network half of a join: redeem the one-time code for a session. Persists nothing. */

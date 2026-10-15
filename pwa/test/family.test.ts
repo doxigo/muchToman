@@ -144,3 +144,35 @@ describe('what the family screen reads', () => {
     expect(family.contributionsOf([e(ME), e(ME), e(THEM), e(THEM, true)])).toEqual({ [ME]: 2, [THEM]: 1 });
   });
 });
+
+describe('phones that hold a key and have no profile', () => {
+  it('shows each as unnamed until it is removed — never this browser, never a living profile', async () => {
+    const crypt = await import('../src/crypto');
+    const { key, raw } = await crypt.generateKey();
+    await db.setMeta('session', { base: 'https://sync.test', token: `${HID}.${'b'.repeat(64)}`, issuedAt: NOW, device: DEVICE, member: ME, scope: `family:${HID}`, key, raw: crypt.toBase64Url(raw) });
+    const SILENT = '4'.repeat(32);
+    const BURIED = '5'.repeat(32);
+    const joined = NOW - 86_400_000;
+    const removed: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/v1/devices')) {
+        return Response.json({ devices: [ME, THEM, BURIED, SILENT, SILENT, 'not-an-id'].map((memberId) => ({ memberId, addedAt: joined })) });
+      }
+      if (url.endsWith('/v1/remove')) { removed.push(JSON.parse(String(init?.body))); return Response.json({ revoked: SILENT, seq: 1, clamped: [] }); }
+      if (url.includes('/v1/sync?')) return Response.json({ seq: 0, records: [], hasMore: false });
+      return Response.json({ clamped: [] });
+    }));
+    await state.load();
+    await family.loadFamily();
+    state.put('familyMembers', { id: THEM, name: 'مامان', sharesSms: false, avatar: '', updatedAt: NOW, deleted: false });
+    // A profile buried while its phone still holds a key is exactly the one to see.
+    state.put('familyMembers', { id: BURIED, name: 'رفته', sharesSms: false, avatar: '', updatedAt: NOW, deleted: true });
+    expect(family.familyState().unnamed).toEqual([]);
+
+    await family.loadDevices();
+    expect(family.familyState().unnamed.map((d) => d.memberId)).toEqual([BURIED, SILENT]);
+    expect(await family.removeMember(SILENT)).toBe(true);
+    expect(removed).toEqual([expect.objectContaining({ member: SILENT })]);
+    expect(family.familyState().unnamed.map((d) => d.memberId)).toEqual([BURIED]);
+  });
+});

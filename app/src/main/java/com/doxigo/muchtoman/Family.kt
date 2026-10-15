@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -242,6 +243,17 @@ fun CompanionScreen(
     var openMember by rememberSaveable { mutableStateOf<String?>(null) }
     val household = state.paired && state.pendingRejoin == null && state.pendingPairing == null
 
+    // The server's list of phones, read again after every sync: a failed read keeps the last one,
+    // and before the first there is simply nothing extra to show. Another household's list is
+    // nobody here — after a renewal its phones would all read as strangers — so it starts over.
+    var devices by remember(state.householdId) { mutableStateOf<List<SyncDevice>>(emptyList()) }
+    LaunchedEffect(household, state.householdId, state.lastSync) {
+        if (!household) return@LaunchedEffect
+        val durable = DurableDb.get(appContext)
+        runCatching { loadSession(durable)?.let { listDevices(it, durable) } }.getOrNull()?.let { devices = it }
+    }
+    val unnamed = if (household) unnamedDevices(devices, state.members, state.memberId) else emptyList()
+
     SettingsPage("خانواده", onBack) {
         when {
             // Before the plain join: a link on a phone that already belongs somewhere is
@@ -286,8 +298,8 @@ fun CompanionScreen(
                 // One band: me first, because mine is the only row anybody can change, then
                 // everyone else, then the way to add one — a list and the way to grow it are
                 // one object, as on بودجه.
-                val rows = others.size + 2
-                SectionHeading("اعضای خانواده", others.size + 1)
+                val rows = others.size + unnamed.size + 2
+                SectionHeading("اعضای خانواده", others.size + unnamed.size + 1)
                 MemberRow(
                     name = myName,
                     avatar = me?.avatar.orEmpty(),
@@ -296,7 +308,7 @@ fun CompanionScreen(
                     contributions = contributions[state.memberId] ?: 0,
                     sharing = null,
                     shape = bandShape(0, rows),
-                    divided = others.isNotEmpty(),
+                    divided = others.isNotEmpty() || unnamed.isNotEmpty(),
                     onClickLabel = "تغییر اسم و چهره",
                     onClick = { editingMe = true },
                 )
@@ -310,11 +322,28 @@ fun CompanionScreen(
                         contributions = contributions[member.id] ?: 0,
                         sharing = member.sharesSms,
                         shape = bandShape(index + 1, rows),
-                        divided = index < others.lastIndex,
+                        divided = index < others.lastIndex || unnamed.isNotEmpty(),
                         onClickLabel = "حذف از خانواده",
                         // The founder's row opens nothing: removal is all the sheet offers,
                         // and the server refuses it for them, so the door would be a lie.
                         onClick = if (founder) null else ({ openMember = member.id }),
+                    )
+                }
+                // After the people, the phones that hold a key and have not said whose they are.
+                unnamed.forEachIndexed { index, device ->
+                    val founder = device.memberId == state.primaryMemberId
+                    MemberRow(
+                        name = UNNAMED_PHONE,
+                        avatar = "",
+                        mine = false,
+                        founder = founder,
+                        contributions = contributions[device.memberId] ?: 0,
+                        sharing = null,
+                        detail = (if (founder) "سرپرست • " else "") + joinedFa(device.addedAt),
+                        shape = bandShape(others.size + index + 1, rows),
+                        divided = index < unnamed.lastIndex,
+                        onClickLabel = "حذف از خانواده",
+                        onClick = if (founder) null else ({ openMember = device.memberId }),
                     )
                 }
                 SettingsAddRow(
@@ -465,14 +494,20 @@ fun CompanionScreen(
             onDismiss = { editingMe = false },
         )
     }
-    others.firstOrNull { it.id == openMember }?.let { member ->
+    val openUnnamed = unnamed.firstOrNull { it.memberId == openMember }
+    (others.firstOrNull { it.id == openMember } ?: openUnnamed?.let {
+        FamilyMember(id = it.memberId, name = UNNAMED_PHONE, updatedAt = it.addedAt)
+    })?.let { member ->
         MemberSheet(
             member = member,
+            unnamed = openUnnamed != null,
             contributions = contributions[member.id] ?: 0,
             enabled = !state.working && !acting,
             error = actionError,
             onRemove = {
-                familyAction("حذف نشد. اینترنتت رو چک کن.", after = { openMember = null; onSync() }) { session, durable ->
+                // The phone leaves the list now, not at the next read: its device is already gone.
+                val after = { openMember = null; devices = devices.filterNot { it.memberId == member.id }; onSync() }
+                familyAction("حذف نشد. اینترنتت رو چک کن.", after = after) { session, durable ->
                     removeFamilyMember(session, durable, member.id)
                 }
             },
@@ -952,6 +987,12 @@ private fun ShareStatus(sharing: Boolean) {
     }
 }
 
+/** A phone in the household that has not published a profile, so has no name to show. */
+private const val UNNAMED_PHONE = "گوشی بی‌نام"
+
+/** When an unnamed phone joined: the one thing about it that might jog a memory. */
+private fun joinedFa(addedAt: Long): String = "وصل شده ${faDay(tehranDay(addedAt))}"
+
 /** How much of the family ledger came from this person. */
 private fun contributionsFa(count: Int): String =
     if (count > 0) "${faNumber(count.toDouble())} تراکنش" else "هنوز تراکنشی نفرستاده"
@@ -978,6 +1019,8 @@ private fun MemberRow(
     onClickLabel: String,
     /** Null when the row leads nowhere — the founder's, seen by anyone else. */
     onClick: (() -> Unit)?,
+    /** The second line, in place of what they have put in. */
+    detail: String? = null,
 ) {
     Box(
         Modifier
@@ -1024,7 +1067,7 @@ private fun MemberRow(
                     }
                 }
                 Text(
-                    if (founder) "سرپرست • ${contributionsFa(contributions)}" else contributionsFa(contributions),
+                    detail ?: if (founder) "سرپرست • ${contributionsFa(contributions)}" else contributionsFa(contributions),
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1171,6 +1214,8 @@ private fun DangerRow(
 @Composable
 private fun MemberSheet(
     member: FamilyMember,
+    /** A phone with no profile behind it: no sharing to show, and a reason to be here. */
+    unnamed: Boolean,
     contributions: Int,
     enabled: Boolean,
     error: String?,
@@ -1201,11 +1246,11 @@ private fun MemberSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                ShareStatus(member.sharesSms)
+                if (!unnamed) ShareStatus(member.sharesSms)
             }
             Spacer(Modifier.height(Space.xl))
             Text(
-                "همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.",
+                (if (unnamed) UNNAMED_LEAD else "") + REMOVAL_TEXT,
                 fontSize = 13.sp,
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1230,6 +1275,13 @@ private fun MemberSheet(
         }
     }
 }
+
+/** What removing someone does and does not do — said the same way in both clients. */
+private const val REMOVAL_TEXT =
+    "همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه."
+
+/** Why an unnamed phone's sheet is worth opening: it holds a key, and nobody has said whose. */
+private const val UNNAMED_LEAD = "این گوشی به خانواده وصله ولی هنوز اسمی نفرستاده. اگه نمی‌شناسیش حذفش کن. "
 
 /** The faces in [MeSheet], a size up from the rows: here they are the thing being chosen. */
 private val PICK_FACE = 56.dp
@@ -1361,6 +1413,8 @@ data class FamilyState(
      */
     val pendingRejoin: String? = null,
     val rejoinSameHousehold: Boolean = false,
+    /** The household this phone syncs with, the id in front of its token; blank when none. */
+    val householdId: String = "",
     val memberId: String = "",
     val memberName: String = "",
     val members: List<FamilyMember> = emptyList(),

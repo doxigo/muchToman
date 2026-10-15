@@ -809,6 +809,33 @@ suspend fun sessionRejected(session: SyncSession, durable: DurableDb): Boolean =
     failure is SyncHttpException && failure.status in setOf(401, 403)
 }
 
+/** A phone holding a key to the household, as the server lists it: whose it is, and when it joined. */
+@Serializable
+data class SyncDevice(val memberId: String, val addedAt: Long)
+
+@Serializable
+private data class DevicesBody(val devices: List<SyncDevice>)
+
+/**
+ * Every phone in the household, from the server's own list rather than the profiles. Read when
+ * the family screen asks, never by the background sync: nothing else needs it.
+ */
+suspend fun listDevices(session: SyncSession, durable: DurableDb): List<SyncDevice> = withFamilySync {
+    val active = activeSession(durable, session)
+    SYNC_JSON.decodeFromString<DevicesBody>(request("${active.base}/v1/devices", "GET", active.token, null)).devices
+}
+
+/**
+ * The phones no profile speaks for: paired, and never sent a name — or kept after their profile was
+ * buried. They read the household like anyone, and the member list is drawn from profiles, so
+ * without this they would be in it invisibly. Ids the server could not have issued are left out:
+ * removal writes a record named after the id.
+ */
+internal fun unnamedDevices(devices: List<SyncDevice>, members: List<FamilyMember>, self: String): List<SyncDevice> {
+    val named = members.filterNot { it.deleted }.mapTo(HashSet()) { it.id } + self
+    return devices.filter { it.memberId !in named && isValidSyncIdentity(it.memberId) }.distinctBy { it.memberId }
+}
+
 /**
  * A confirmed replace: the same join, from a phone that already belongs somewhere. The network
  * pair runs first so a dead code costs nothing — the old household is untouched until the new

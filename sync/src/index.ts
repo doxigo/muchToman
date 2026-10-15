@@ -273,6 +273,11 @@ function grown(
   };
 }
 
+/** A device's member: its own id, or for a token older than identity, one derived from the token. */
+function memberOf(row: { member_id: string; token_hash: string }): string {
+  return IDENTITY.test(row.member_id) ? row.member_id : row.token_hash.slice(0, 32);
+}
+
 interface AuthorisedDevice {
   id: string;
   memberId: string;
@@ -433,10 +438,9 @@ export class Household extends DurableObject<Env> {
       'SELECT id, member_id, identity_locked, token_hash, scopes FROM device',
     )) {
       if (timingSafeEqual(row.token_hash, secretHash)) {
-        const memberId = IDENTITY.test(row.member_id) ? row.member_id : row.token_hash.slice(0, 32);
         return {
           id: row.id,
-          memberId,
+          memberId: memberOf(row),
           scopes: JSON.parse(row.scopes) as string[],
           tokenHash: row.token_hash,
           identityLocked: row.identity_locked === 1,
@@ -462,6 +466,7 @@ export class Household extends DurableObject<Env> {
       if (path === '/leave' && request.method === 'POST') return await this.leave(request);
       if (path === '/revoke' && request.method === 'POST') return await this.revoke(request);
       if (path === '/rotate' && request.method === 'POST') return await this.rotate(request);
+      if (path === '/devices' && request.method === 'GET') return await this.devices(request);
       return textResponse('not found\n', 404);
     } catch (error) {
       if (error instanceof BodyTooLargeError) return jsonResponse({ code: 'body_too_large' }, 413);
@@ -974,6 +979,20 @@ export class Household extends DurableObject<Env> {
   }
 
   /**
+   * Who holds a token here: each device, by member and the moment it joined. The phones draw
+   * people from their profiles, so one that paired and never published a profile reads the
+   * household like anyone else and shows up in nobody's list — this is how the others see it.
+   * Nothing is returned that the members could not already learn from each other.
+   */
+  private async devices(request: Request): Promise<Response> {
+    this.authorise(await this.credential(request));
+    const devices = [...this.sql.exec<{ member_id: string; token_hash: string; added_at: number }>(
+      'SELECT member_id, token_hash, added_at FROM device ORDER BY added_at, id',
+    )].map((row) => ({ memberId: memberOf(row), addedAt: row.added_at }));
+    return jsonResponse({ devices });
+  }
+
+  /**
    * A new secret for the calling device; the old one is gone the moment the row updates — the
    * same immediacy argument as revoke. Clients rotate opportunistically after a month, so a
    * token lifted from a backup or a bus-shoulder photo has a bounded useful life.
@@ -1164,6 +1183,7 @@ export default {
             : path === '/v1/leave' && request.method === 'POST' ? 'leave'
             : path === '/v1/revoke' && request.method === 'POST' ? 'revoke'
             : path === '/v1/rotate' && request.method === 'POST' ? 'rotate'
+            : path === '/v1/devices' && request.method === 'GET' ? 'devices'
             : null;
         if (!route) return textResponse('not found\n', 404);
 

@@ -1195,6 +1195,27 @@ describe('abuse resistance', () => {
   });
 });
 
+describe('listing devices', () => {
+  it('names every phone that holds a token, by member and the moment it joined', async () => {
+    const hid = '73'.repeat(16);
+    const founder = await claimDevice(hid, ['family:73'], { memberId: '74'.repeat(16), deviceId: '75'.repeat(16) });
+    // A phone that paired and never published a profile: in nobody's member list, yet holding a key.
+    const silent = await pairDevice(founder.token, '76'.repeat(16), '77'.repeat(16));
+    const listed = await SELF.fetch('https://sync.test/v1/devices', { headers: { authorization: `Bearer ${silent.token}` } });
+    expect(listed.status).toBe(200);
+    const { devices } = (await listed.json()) as { devices: { memberId: string; addedAt: number }[] };
+    expect(devices.map((d) => d.memberId)).toEqual([founder.memberId, silent.memberId]);
+    for (const device of devices) expect(Number.isSafeInteger(device.addedAt)).toBe(true);
+    // The device id stays the server's: removal goes by member.
+    expect(Object.keys(devices[0]).sort()).toEqual(['addedAt', 'memberId']);
+
+    expect((await removeMember(founder.token, silent.memberId, 'family:73')).status).toBe(200);
+    const after = await SELF.fetch('https://sync.test/v1/devices', { headers: { authorization: `Bearer ${founder.token}` } });
+    expect(((await after.json()) as { devices: { memberId: string }[] }).devices.map((d) => d.memberId)).toEqual([founder.memberId]);
+    expect((await SELF.fetch('https://sync.test/v1/devices', { headers: { authorization: `Bearer ${silent.token}` } })).status).toBe(401);
+  });
+});
+
 describe('the PWA it serves', () => {
   it('sends the page\'s own policy with every file the asset layer serves', async () => {
     // In production a file that exists never reaches this Worker: the asset layer answers it, and

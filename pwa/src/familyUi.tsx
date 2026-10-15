@@ -14,12 +14,13 @@ import './settings.css';
 import { CategoryIcon } from './categoryIcon';
 import { useLedger } from './derived';
 import {
-  avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, rejoinLead, removeMember,
+  avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, loadDevices, rejoinLead, removeMember,
   renewFamily, setFamilyAssetSharing, setFamilyAvatar, setFamilyName, setFamilySmsSharing, startFamily, syncFamily,
   toggleFamilyExcludedBank, useFamily,
 } from './family';
 import type { FamilyState } from './family';
-import { faNumber } from './format';
+import { faDay, faNumber } from './format';
+import { tehranDay } from './jalali';
 import { Chevron, PlusMark, TabIcon } from './icons';
 import { BankLogo } from './logos';
 import type { FamilyMember } from './model';
@@ -36,6 +37,18 @@ const FAMILY_LEAD = 'تراکنش‌های اعضا در یک دفتر دیده 
 const SectionHeading = ({ title, count }: { title: string; count?: number }) =>
   <SectionLabel>{count == null ? title : `${title} (${faNumber(count)})`}</SectionLabel>;
 
+/** A phone in the household that has not published a profile, so has no name to show. */
+const UNNAMED_PHONE = 'گوشی بی‌نام';
+
+/** When an unnamed phone joined: the one thing about it that might jog a memory. */
+const joinedFa = (addedAt: number): string => `وصل شده ${faDay(tehranDay(addedAt))}`;
+
+/** What removing someone does and does not do — said the same way in both clients. */
+const REMOVAL_TEXT = 'همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.';
+
+/** Why an unnamed phone's sheet is worth opening: it holds a key, and nobody has said whose. */
+const UNNAMED_LEAD = 'این گوشی به خانواده وصله ولی هنوز اسمی نفرستاده. اگه نمی‌شناسیش حذفش کن. ';
+
 /** How much of the family ledger came from this person. */
 const contributionsFa = (count: number): string => (count > 0 ? `${faNumber(count)} تراکنش` : 'هنوز تراکنشی نفرستاده');
 
@@ -49,12 +62,14 @@ function ShareStatus({ sharing }: { sharing: boolean }) {
 }
 
 /** One person in the household: face, name, what they have put in, what they share. */
-function MemberRow({ name, avatar, mine, founder, contributions, sharing, label, onClick }: {
+function MemberRow({ name, avatar, mine, founder, contributions, sharing, label, onClick, detail }: {
   name: string; avatar: string; mine: boolean; founder: boolean; contributions: number;
   /** Theirs, as the pill. Null on my own row, where the switches further down say it. */
   sharing: boolean | null; label: string;
   /** Null when the row leads nowhere — the founder's, seen by anyone else. */
   onClick: (() => void) | null;
+  /** The second line, in place of what they have put in. */
+  detail?: string;
 }) {
   const body = (
     <>
@@ -64,7 +79,7 @@ function MemberRow({ name, avatar, mine, founder, contributions, sharing, label,
           <span class="set-title one">{name}</span>
           {mine && <span class="mine">من</span>}
         </span>
-        <span class="set-sub" style={{ display: 'block' }}>{founder ? `سرپرست • ${contributionsFa(contributions)}` : contributionsFa(contributions)}</span>
+        <span class="set-sub" style={{ display: 'block' }}>{detail ?? (founder ? `سرپرست • ${contributionsFa(contributions)}` : contributionsFa(contributions))}</span>
       </span>
       {sharing != null && <ShareStatus sharing={sharing} />}
       {onClick && <span class="chev"><Chevron size={24} /></span>}
@@ -169,12 +184,14 @@ function RejoinBlock({ working, sameHousehold }: { working: boolean; sameHouseho
 function Household({ state, contributions }: { state: FamilyState; contributions: Record<string, number> }) {
   const others = state.members.filter((m) => m.id !== state.memberId);
   const myName = state.memberName || state.me?.name || '';
+  // The server's list of phones, read again after every sync this screen shows.
+  useEffect(() => { void loadDevices(); }, [state.lastSync]);
   return (
     <>
       <p class="set-lead">{FAMILY_LEAD}</p>
       {/* One band: me first, because mine is the only row anybody can change, then everyone else,
           then the way to add one — a list and the way to grow it are one object. */}
-      <SectionHeading title="اعضای خانواده" count={others.length + 1} />
+      <SectionHeading title="اعضای خانواده" count={others.length + state.unnamed.length + 1} />
       <Band>
         <MemberRow name={myName} avatar={state.me?.avatar ?? ''} mine founder={state.memberId === state.primaryMemberId}
           contributions={contributions[state.memberId] ?? 0} sharing={null} label="تغییر اسم و چهره" onClick={() => openSheet('me')} />
@@ -185,6 +202,15 @@ function Household({ state, contributions }: { state: FamilyState; contributions
               contributions={contributions[member.id] ?? 0} sharing={member.sharesSms} label="حذف از خانواده"
               // The founder's row opens nothing: removal is all the sheet offers, and the server refuses it.
               onClick={founder ? null : () => openSheet('member', { id: member.id })} />
+          );
+        })}
+        {/* After the people, the phones that hold a key and have not said whose they are. */}
+        {state.unnamed.map((device) => {
+          const founder = device.memberId === state.primaryMemberId;
+          return (
+            <MemberRow key={device.memberId} name={UNNAMED_PHONE} avatar="" mine={false} founder={founder}
+              contributions={contributions[device.memberId] ?? 0} sharing={null} label="حذف از خانواده" detail={(founder ? 'سرپرست • ' : '') + joinedFa(device.addedAt)}
+              onClick={founder ? null : () => openSheet('member', { id: device.memberId })} />
           );
         })}
         <button type="button" class="add-member" disabled={state.working} onClick={() => void inviteDevice()}>
@@ -292,7 +318,9 @@ function MemberSheet({ id }: { id: string }) {
   const view = useLedger();
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const member: FamilyMember | undefined = state.members.find((m) => m.id === id);
+  const device = state.unnamed.find((d) => d.memberId === id);
+  const member: FamilyMember | undefined = state.members.find((m) => m.id === id)
+    ?? (device && { id, name: UNNAMED_PHONE, sharesSms: false, avatar: '', updatedAt: device.addedAt, deleted: false });
   if (!member) return null;
   const count = contributionsOf(view.entries)[member.id] ?? 0;
   const remove = async () => {
@@ -309,9 +337,9 @@ function MemberSheet({ id }: { id: string }) {
           <SheetTitle>{member.name}</SheetTitle>
           <p class="muted" style={{ fontSize: '13px' }}>{contributionsFa(count)}</p>
         </div>
-        <ShareStatus sharing={member.sharesSms} />
+        {!device && <ShareStatus sharing={member.sharesSms} />}
       </div>
-      <p class="sheet-body" style={{ marginTop: 'var(--xl)' }}>همگام‌سازی گوشی این عضو قطع می‌شه و تراکنش‌هاش از دفتر مشترک پاک می‌شن، ولی چیزی که قبلاً دیده یا کپی کرده پس گرفته نمی‌شه.</p>
+      <p class="sheet-body" style={{ marginTop: 'var(--xl)' }}>{(device ? UNNAMED_LEAD : '') + REMOVAL_TEXT}</p>
       <div style={{ height: 'var(--s)' }} />
       <ArmedAction label="حذف از خانواده" armedLabel="مطمئنی؟ برای حذف دوباره بزن" enabled={!state.working && !acting} onConfirmed={() => void remove()} />
       {error && <Note tone="error">{error}</Note>}

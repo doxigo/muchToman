@@ -24,6 +24,23 @@ class FamilySyncTest {
         parserVer = PARSER_VERSION, sourceKind = sourceKind, familyRef = familyRef,
     )
     @Test
+    fun `a phone shows as unnamed only when no living profile speaks for it`() {
+        val me = "11".repeat(16)
+        val named = "22".repeat(16)
+        val buried = "33".repeat(16)
+        val silent = "44".repeat(16)
+        val members = listOf(
+            FamilyMember(id = me, name = "من", updatedAt = 1),
+            FamilyMember(id = named, name = "مامان", updatedAt = 1),
+            FamilyMember(id = buried, name = "رفته", updatedAt = 1, deleted = true),
+        )
+        val devices = listOf(me, named, buried, silent, silent, "not-an-id").map { SyncDevice(it, 1_700_000_000_000) }
+        // A buried profile whose phone still holds a key is exactly the one to see; my own phone,
+        // a named one, a repeat and an id no server issues are not.
+        assertEquals(listOf(buried, silent), unnamedDevices(devices, members, me).map { it.memberId })
+    }
+
+    @Test
     fun `legacy short device identity is replaced before server registration`() {
         assertFalse(isValidSyncIdentity("a1b2c3d4"))
         assertTrue(isValidSyncIdentity("0123456789abcdef0123456789abcdef"))
