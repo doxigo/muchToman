@@ -472,6 +472,17 @@ suspend fun derive(
 }
 
 /**
+ * One category she picked, laid on its row as [derive] would lay it. A pinned row is filed by
+ * the pin alone (see [classify]) and no other row reads it, so a plain pick need not re-read
+ * every message she has. False when the row is not there to pin — the caller derives instead.
+ */
+suspend fun pinClass(derived: DerivedDb, txn: Txn, categoryId: String): Boolean = derivationGate.withLock {
+    if (derived.classes().forRef(txn.ref) == null) return@withLock false
+    derived.classes().putAll(listOf(classify(txn, emptyList(), pinned = categoryId)))
+    true
+}
+
+/**
  * Whether the stored transactions were produced by the reading this build ships.
  *
  * True when the parser has moved on, and true when this database was rebuilt from scratch —

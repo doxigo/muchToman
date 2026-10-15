@@ -29,7 +29,8 @@ export default defineConfig({
       const template = await readFile(new URL('./sw-template.js', import.meta.url), 'utf8');
       hash.update(template);
       for (const file of files) hash.update(relative(root, file)).update(await readFile(file));
-      const paths = files.map((file) => `/${relative(root, file).replaceAll('\\', '/')}`);
+      // `/` is the page every navigation is answered with; `/index.html` would be the same bytes twice.
+      const paths = files.map((file) => `/${relative(root, file).replaceAll('\\', '/')}`).filter((path) => path !== '/index.html');
       paths.push('/');
       const worker = template.replace('__SHELL_VERSION__', `muchtoman-shell-${hash.digest('hex').slice(0, 20)}`)
         .replace('__PRECACHE__', JSON.stringify(paths));

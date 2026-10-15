@@ -667,8 +667,11 @@ private fun figureBefore(text: String, labels: List<String>): Figure? {
  * How the message says which account it is about. Some banks mask a tail ("۱۲۳****"); Saman
  * prints the number in full ("829-800-1092308-1"). Without either, every account at a bank
  * collapses onto one balance and its siblings overwrite each other in turn.
+ *
+ * The lookbehind starts a try only where a run of digits starts: the leftmost match is the same,
+ * but without it every digit of a long run rescanned the rest of the run — 4 s on a 39k-char body.
  */
-private val MASKED = Regex("[0-9۰-۹٠-٩]*\\*{2,}[0-9۰-۹٠-٩]*")
+private val MASKED = Regex("(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]*\\*{2,}[0-9۰-۹٠-٩]*")
 private val DASHED = Regex("[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+")
 
 private fun digitsIn(s: String) =
@@ -1177,5 +1180,5 @@ fun legacySmsKey(body: String, at: Long): String = "$at:${body.trim().hashCode()
 /** Keeps the seen-message set from growing without bound; a year of messages is ample. */
 const val SMS_KEEP = 2_000
 
-fun rememberSeen(seen: Set<String>, added: List<String>): Set<String> =
+fun rememberSeen(seen: Set<String>, added: Collection<String>): Set<String> =
     (seen + added).let { if (it.size <= SMS_KEEP) it else it.toList().takeLast(SMS_KEEP).toSet() }

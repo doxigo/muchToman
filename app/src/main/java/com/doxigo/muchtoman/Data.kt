@@ -597,6 +597,8 @@ fun foldUnseen(
 ): List<BankAccount> {
     val counted = HashSet<String>()
     return messages.sortedBy { it.at }.fold(accounts) { folded, m ->
+        // No bank, no parse: skipped before the hash, as the scan skips it.
+        if (bankOf(m.from, extra) == null) return@fold folded
         val key = smsKey(m.from, m.body, m.at)
         if (key in seen || legacySmsKey(m.body, m.at) in seen || !counted.add(key)) return@fold folded
         parseBankSms(m.from, m.body, m.at, extra)?.let { foldBankSms(folded, it) } ?: folded

@@ -853,7 +853,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         // wrong, so the pair dies. Filing it under انتقال is her saying it was
                         // right — rejecting then would throw the other leg back into income,
                         // which is the bug this guards.
-                        if (entry.transfer && categoryId != CAT_TRANSFER) {
+                        val rejecting = entry.transfer && categoryId != CAT_TRANSFER
+                        if (rejecting) {
                             derived.links().touching(entry.txn.ref)
                                 .filter { it.kind == LinkKind.TRANSFER && it.auto }
                                 .forEach { link ->
@@ -888,7 +889,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                             val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
                             durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
                         }
-                        derive(durable, derived, extraLookup(store.extraBankNumbers))
+                        // A rule or a rejected pair moves other rows; a plain pick moves its own
+                        // row alone, and the card waited on a rebuild of every message to say so.
+                        val pinned = !always && !rejecting && !needsDerive(derived, durable) &&
+                            pinClass(derived, entry.txn, categoryId)
+                        if (!pinned) derive(durable, derived, extraLookup(store.extraBankNumbers))
                         publishLedger(durable, derived)
                         requestFamilySync(silent = true)
                     }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
@@ -2548,8 +2553,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         var accounts = store.bankAccounts
         val seen = if (rebuilding) emptySet() else store.seenSms
         val reparsed = mutableListOf<BankSms>()
-        val fresh = mutableListOf<String>()
+        val fresh = LinkedHashSet<String>()
         for (m in messages) {
+            // parseBankSms refuses a sender that is no bank first thing; asked here, the rest of
+            // her inbox is skipped before it is hashed rather than after.
+            if (bankOf(m.from, extra) == null) continue
             val key = smsKey(m.from, m.body, m.at)
             if (key in seen || legacySmsKey(m.body, m.at) in seen || key in fresh) continue
             val parsed = parseBankSms(m.from, m.body, m.at, extra) ?: continue

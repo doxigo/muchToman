@@ -16,7 +16,7 @@ import { forgetMarkId, ledger, manualRef, mineId } from './derived';
 import { bodyToStore, severalMessages } from './paste';
 import type { Bundled } from './paste';
 import { pastedMoment, sourceId } from './sms';
-import { batch, pref, put, row, rows, setPref } from './state';
+import { batch, pref, put, putAll, row, rows, setPref } from './state';
 import { familyTxnId, uuid7 } from './sync';
 import type { Category, CategoryKindId, Decision, LedgerEntry, Source, Txn } from './model';
 
@@ -270,39 +270,54 @@ export function toggleBankDisabled(bank: string): void {
  * pasted twice, dated or not, is not stored twice: the one already there comes back.
  */
 export async function addPastedSms(text: string, bank: string, at?: number): Promise<Source | null> {
+  const source = await pastedSource(text, bank, at);
+  if (!source) return null;
+  // An undated body hashes with the moment it was pasted, so pasting it again — or the Shortcut
+  // handing it over again — made a second source, counted twice wherever no مانده or reference
+  // pairs the two. The same bank and the same words are the same message, whenever pasted.
+  const key = sameMessage(source);
+  const existing = row('sources', source.id) ?? rows('sources').find((s) => sameMessage(s) === key);
+  batch(() => {
+    if (!existing) put('sources', source);
+    setPref('lastPasteBank', bank);
+  });
+  return existing ?? source;
+}
+
+/** What addPastedSms would store for [text], before its dedupe; null where it refuses. */
+async function pastedSource(text: string, bank: string, at: number | undefined): Promise<Source | null> {
   if (severalMessages(text)) return null;
   const body = bodyToStore(text);
   if (body == null) return null;
   const now = Date.now();
   const moment = at ?? pastedMoment(body, now) ?? now;
-  const id = await sourceId(bank, body, moment);
-  // An undated body hashes with the moment it was pasted, so pasting it again — or the Shortcut
-  // handing it over again — made a second source, counted twice wherever no مانده or reference
-  // pairs the two. The same bank and the same words are the same message, whenever pasted.
-  const existing = row('sources', id) ?? rows('sources').find((s) => s.bank === bank && s.body.trim() === body.trim());
-  const source = existing ?? { id, bank, body, at: moment, ingestedAt: now };
-  batch(() => {
-    if (!existing) put('sources', source);
-    setPref('lastPasteBank', bank);
-  });
-  return source;
+  return { id: await sourceId(bank, body, moment), bank, body, at: moment, ingestedAt: now };
 }
 
+const sameMessage = (s: Source): string => `${s.bank}\0${s.body.trim()}`;
+
 /**
- * A Shortcut's bundle (paste.ts `readBundle`), each message stored by addPastedSms — the same
- * refusals and the same dedupe, so pasting the same bundle again adds nothing. A record whose
- * sender [bankFor] cannot name is not stored. Returns how many messages were new.
- *
- * ponytail: one write per message, each a re-render; one batch for the lot if a long bundle ever
- * shows it.
+ * A Shortcut's bundle (paste.ts `readBundle`): addPastedSms's refusals and dedupe, so pasting the
+ * same bundle again adds nothing. A record whose sender [bankFor] cannot name is not stored.
+ * Returns how many messages were new. One write for the lot, and none when nothing is new: a
+ * write per message re-derived the ledger 200 times for a 200-message bundle.
  */
 export async function addPastedBundle(records: Bundled[], bankFor: (sender: string) => string | null): Promise<number> {
-  const before = rows('sources').length;
+  const stored = new Set(rows('sources').map(sameMessage));
+  const fresh: Source[] = [];
+  let lastBank = '';
   for (const r of records) {
     const bank = bankFor(r.sender);
-    if (bank) await addPastedSms(r.body, bank, r.at ?? undefined);
+    const source = bank ? await pastedSource(r.body, bank, r.at ?? undefined) : null;
+    if (!source) continue;
+    lastBank = source.bank;
+    const key = sameMessage(source);
+    if (row('sources', source.id) || stored.has(key)) continue;
+    stored.add(key);
+    fresh.push(source);
   }
-  return rows('sources').length - before;
+  if (fresh.length) batch(() => { putAll('sources', fresh); setPref('lastPasteBank', lastBank); });
+  return fresh.length;
 }
 
 /** Where the ledger starts. Nothing is deleted or re-read; «از اول» (0) brings every row back as it was. */

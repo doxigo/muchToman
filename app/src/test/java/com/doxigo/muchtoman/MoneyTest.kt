@@ -992,6 +992,15 @@ class MoneyTest {
         assertEquals(14_028_518.7, bankTotal(accounts, emptySet()), 0.01)
     }
 
+    // The masked-tail search once rescanned a run of digits from each of its digits: 4 s on this.
+    // The پیگیری keeps refIn off its own slashed-reference fallback, which is still quadratic.
+    @Test(timeout = 2_000)
+    fun `a long run of digits does not stall the masked-account search`() {
+        val body = "برداشت مبلغ 500,000 ریال\nشماره پیگیری 771205\n" + "1".repeat(39_000) + "\n12****34"
+        val m = parseBankSms("Bank Mellat", body, 1L)!!
+        assertEquals("12****34", m.mask)
+    }
+
     @Test
     fun `a long figure is never cut in half by the search window`() {
         val m = sms("موجودی قابل برداشت حساب سپرده کوتاه مدت 1,978,750,309 ریال")!!

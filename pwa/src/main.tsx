@@ -55,13 +55,10 @@ async function start(): Promise<void> {
     afterSnapshot: () => { if (familyState().paired && familyState().sharesAssets) requestFamilySync(true); },
   });
 
-  // AppVm.refreshIfStale on every return to the foreground: prices, wallets, and the household.
-  const foreground = (): void => {
-    void refreshIfStale();
-    if (familyState().paired) requestFamilySync(true);
-  };
-  foreground();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') foreground(); });
+  // AppVm.refreshIfStale on every return to the foreground: prices and wallets. The household syncs
+  // on the same return from loadFamily's own listener; a second request here queued a second lap.
+  void refreshIfStale();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void refreshIfStale(); });
 
   let announcing: ReturnType<typeof setTimeout> | undefined;
   let publishing: ReturnType<typeof setTimeout> | undefined;

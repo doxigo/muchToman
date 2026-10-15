@@ -485,8 +485,11 @@ const WHITESPACE = /[\s\p{Z}]+/gu;
 
 const digitsIn = (s: string): number => [...s].filter(isDigit).length;
 
-/** Some banks mask a tail ("۱۲۳****"); Saman prints the number in full ("829-800-1092308-1"). */
-const MASKED = /[0-9۰-۹٠-٩]*\*{2,}[0-9۰-۹٠-٩]*/;
+/**
+ * Some banks mask a tail ("۱۲۳****"); Saman prints the number in full ("829-800-1092308-1").
+ * Tried only where a run of digits starts (Sms.kt's MASKED): the same first match, linear not quadratic.
+ */
+const MASKED = /(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]*\*{2,}[0-9۰-۹٠-٩]*/;
 const DASHED = /[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+/g;
 function accountIn(text: string): string {
   const masked = MASKED.exec(text);
