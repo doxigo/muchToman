@@ -340,6 +340,13 @@ const OTP = /رمز ?(?:پویا|دوم)/u;
 const OTP_CODE = /(?<!\p{L})(?:رمز(?!\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))/gu;
 
 /**
+ * A transfer still being looked at has not happened: Blu's «در حال بررسی ویدیو انتقال مبلغ …» is
+ * followed by the debit itself, «… از حساب شما پرید», once it goes through. Only the «در حال …»
+ * wording — a bare «بررسی» is also a real debit's footer, «جهت بررسی تماس بگیرید».
+ */
+const PENDING = /در\s*حال\s*(?:بررسی|انجام|پردازش)/u;
+
+/**
  * The مانده, zero and below included: an overdrawn account states «مانده: -5,000,000», or
  * «مانده:5,000,000-» from a bank that signs behind the figure, and dropping the sign anchored her
  * at five million in hand when she owed it.
@@ -582,7 +589,8 @@ export function parsePasted(body: string): Pasted {
     // the sentence as the only word that says which way the money went.
     figureBefore(text, inWords) ??
     figureBefore(text, outWords);
-  const amount = found && found.value >= MIN_MONEY_FIGURE ? found : null;
+  // A pending transfer moves nothing yet; a مانده it states is still the balance.
+  const amount = found && found.value >= MIN_MONEY_FIGURE && !PENDING.test(text) ? found : null;
 
   // Both or neither means the message did not say which way the money went, and guessing is how
   // a deposit becomes a withdrawal.

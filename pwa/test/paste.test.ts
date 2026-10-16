@@ -79,6 +79,15 @@ describe('quick paste', () => {
     expect(parsePasted('کارمزد 5,000 ریال\nبرداشت مبلغ 1,000,000 ریال').amountRial).toBe(1_000_000);
   });
 
+  it('reads a transfer still under review as nothing moved', () => {
+    // The corpus declines blu-transfer-under-review, which this side skips; the debit follows as its own message.
+    const review = cases().find((c) => c.id === 'blu-transfer-under-review')!;
+    expect(parsePasted(review.body.join('\n'))).toMatchObject({ amountRial: null, direction: null, inferred: false });
+    // A مانده beside it is still the balance.
+    expect(parsePasted('در حال بررسی انتقال مبلغ 1,000,000 ریال\nموجودی: 9,000,000 ریال'))
+      .toMatchObject({ amountRial: null, direction: null, balanceRial: 9_000_000 });
+  });
+
   it('never reads an advert\'s «۱ میلیون تومان» as a one-toman spend', () => {
     expect(parsePasted('با خرید از فروشگاه تا ۱ میلیون تومان تخفیف بگیرید').amountRial).toBeNull();
   });

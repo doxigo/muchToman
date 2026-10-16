@@ -90,7 +90,9 @@ import kotlinx.coroutines.sync.withLock
 // real balance, and those rows are stored with none until they are read again.
 // 19: a bill, an ATM withdrawal and a fee are filed without asking — the channel names the
 // category. Every one already stored is still sitting in the deck until this rebuild refiles it.
-const val PARSER_VERSION = 19
+// 20: a transfer «در حال بررسی» is not a spend. Blu's notice that it is reviewing a transfer had
+// been stored as a withdrawal beside the real debit that follows it, counting the money twice.
+const val PARSER_VERSION = 20
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

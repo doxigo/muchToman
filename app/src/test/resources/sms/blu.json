@@ -127,6 +127,44 @@
         "unitPrinted": "rial",
         "inferred": false
       }
+    },
+    {
+      "id": "blu-transfer-under-review",
+      "sender": "0999 998 7641",
+      "at": 6,
+      "body": [
+        "بلو",
+        "بررسی درخواست انتقال",
+        "فاطمه عزیز، در حال بررسی ویدیو انتقال مبلغ 5,000,000,000 ریال از حساب شما به حساب **** **** هستیم. برای پیگیری درخواست خود، روی لینک زیر بزنید.",
+        "۲۰:۵۴",
+        "۱۴۰۵.۰۷.۲۰",
+        "https://app.blubank.com/navigate?page=transfer/get&transaction_id=********-****-****-****-************"
+      ],
+      "why": "Real message; the stars are the recipient's name and the transaction id, redacted. Blu is still reviewing the transfer, so nothing has left the account yet — the debit arrives later as its own «پرید» message (blu-transfer-after-review). «انتقال مبلغ» read it as a spend, and the ledger showed the ۵۰۰ میلیون withdrawal twice.",
+      "expect": null
+    },
+    {
+      "id": "blu-transfer-after-review",
+      "sender": "0999 998 7641",
+      "at": 7,
+      "body": [
+        "بلو",
+        "برداشت پول",
+        "فاطمه عزیز، 5,000,000,000ریال از حساب شما پرید.",
+        "موجودی: 739,763,518 ریال",
+        "۲۱:۴۵",
+        "۱۴۰۵.۰۷.۲۰"
+      ],
+      "why": "Real message: the debit that follows blu-transfer-under-review once the transfer goes through, and the one row the pair should make. «ریال» is glued to the figure.",
+      "expect": {
+        "bank": "BLU",
+        "direction": "out",
+        "amountRial": 5000000000,
+        "balanceRial": 739763518,
+        "printedAt": "۱۴۰۵.۰۷.۲۰ ۲۱:۴۵",
+        "unitPrinted": "rial",
+        "inferred": false
+      }
     }
   ]
 }

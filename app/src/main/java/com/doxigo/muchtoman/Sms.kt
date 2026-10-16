@@ -271,6 +271,16 @@ private val OTP = Regex("رمز ?(?:پویا|دوم)")
 private val OTP_CODE = Regex("(?<!\\p{L})(?:رمز(?!\\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))")
 
 /**
+ * A transfer still being looked at has not happened. Blu sends «در حال بررسی ویدیو انتقال مبلغ …»
+ * while it checks a large transfer, and the debit itself, «… از حساب شما پرید», follows as its own
+ * message once it goes through — so reading «انتقال» here as a spend counted the money twice.
+ *
+ * Only the «در حال …» wording: a bare «بررسی» is also a real debit's footer, «جهت بررسی تماس
+ * بگیرید», and «درخواست انتقال» is how some banks head a transfer that did go through.
+ */
+private val PENDING = Regex("در\\s*حال\\s*(?:بررسی|انجام|پردازش)")
+
+/**
  * Whether a body is a one-time code — the one test for it. [ingestBankSms] refuses to store what
  * this matches and [parseBankSms] declines it, and sharing it is what makes the refusal free: a
  * body ingest drops is one the ledger would never have read.
@@ -722,7 +732,8 @@ fun parseBankSms(
             // at the end of the sentence as the only word that says which way the money went.
             ?: figureBefore(text, inWords)
             ?: figureBefore(text, outWords)
-        )?.takeIf { it.value >= MIN_MONEY_FIGURE }
+        // A pending transfer moves nothing yet; a مانده it states is still the balance.
+        )?.takeIf { it.value >= MIN_MONEY_FIGURE && !PENDING.containsMatchIn(text) }
     val moved = amount?.let { it.value / (it.divisor ?: fallback) }
     val box = boxMove(text)
     val delta = when {
