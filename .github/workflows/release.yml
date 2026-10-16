@@ -175,11 +175,17 @@ jobs:
       # lightweight tag has no message, and the sheet then simply lists nothing.
       #
       #   git tag -a v1.0.5 -m 'سود بانکی رو دیگه اشتباه نمی‌خونه' && git push origin v1.0.5
+      #
+      # The message is read off the tag object, its header and signature cut away, and never
+      # through %(contents:subject): git's subject is the whole first paragraph with its lines
+      # joined, so v1.4.4's four lines, written without a blank one after the first, reached the
+      # sheet as one. That route also handed a lightweight tag its commit's English message.
       - name: Prepare release artifacts
         run: |
           prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           : > notes.md
-          fa=$(git tag -l --format='%(contents:subject)%0a%(contents:body)' "${GITHUB_REF_NAME}")
+          fa=$(git cat-file tag "${GITHUB_REF_NAME}" 2>/dev/null \
+            | sed -e '1,/^$/d' -e '/^-----BEGIN [A-Z ]*-----$/,$d' -e '/^[[:space:]]*$/d' || true)
           if [ -n "$(printf '%s' "$fa" | tr -d '[:space:]')" ]; then
             { echo '<!--fa-->'; printf '%s\n' "$fa"; echo '<!--/fa-->'; echo; } >> notes.md
           fi
