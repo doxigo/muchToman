@@ -636,7 +636,7 @@ function HoldingRow({ type, name, amount, rate, excluded, onClick, note, wallet,
 function FamilyAssetBand({ shared }: { shared: FamilyAssetView }) {
   return (
     <div class="band holdings family">
-      {shared.items.length === 0 && <p class="band-row muted" style={{ fontSize: '13px' }}>فعلاً چیزی برای نمایش نفرستاده.</p>}
+      {shared.items.length === 0 && <p class="band-row muted" style={{ fontSize: 'calc(13px * var(--text))' }}>فعلاً چیزی برای نمایش نفرستاده.</p>}
       {shared.items.map((item, i) => (
         <div class="band-row" key={i}>
           <span class="grow"><RowTitle text={item.name} /></span>

@@ -11,7 +11,7 @@
 .cat-tile .disc { width: 36px; height: 36px; background: color-mix(in srgb, var(--mark) 18%, transparent); transition: background var(--fast) var(--enter); }
 .cat-tile .disc svg { transition: color var(--fast) var(--enter); }
 .cat-label {
-  font-size: 12px; line-height: 16px; font-weight: 600; text-align: center;
+  font-size: calc(12px * var(--text)); line-height: calc(16px * var(--text)); font-weight: 600; text-align: center;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
 }
 .cat-tile.add { --mark: var(--primary); background: transparent; border: 1px solid var(--outline-variant); color: var(--primary); }

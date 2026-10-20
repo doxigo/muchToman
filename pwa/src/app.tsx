@@ -11,11 +11,14 @@ import { TabIcon } from './icons';
 import { TABS, dismissNotice, gates, pages, selectTab, sheets, tabs, useNav } from './nav';
 import type { Tab } from './nav';
 import { faNumber } from './format';
-import { pref, useData } from './state';
+import { pref, textSize, useData } from './state';
 
 function useTheme(): void {
   useData();
   const mode = pref('themeMode');
+  // Written while rendering, not in an effect: the auto-fit lines below measure in their layout
+  // effects, which run before any effect of this root, and would fit to the old size.
+  document.documentElement.style.setProperty('--text', String(textSize() / 100));
   useEffect(() => {
     const root = document.documentElement;
     if (mode === 'SYSTEM') delete root.dataset.theme; else root.dataset.theme = mode.toLowerCase();

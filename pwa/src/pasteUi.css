@@ -3,17 +3,17 @@
 /* A bank message is five or six hard lines; the field shows one whole. */
 .paste-text .field > textarea { min-height: 168px; }
 .paste-preview { margin-top: var(--m); padding: var(--l); border-radius: var(--r-card); background: var(--surface-variant); }
-.paste-amount { font-size: 26px; font-weight: 900; line-height: 1.2; color: var(--on-surface); white-space: nowrap; }
+.paste-amount { font-size: calc(26px * var(--text)); font-weight: 900; line-height: 1.2; color: var(--on-surface); white-space: nowrap; }
 .paste-amount.gain { color: var(--tertiary); }
 .paste-amount .unit { font-size: .5em; font-weight: 700; opacity: .75; margin: 0; }
 .paste-amount + p { margin-top: var(--xs); }
 .paste-no-amount { font-weight: 700; }
 .paste-rows { margin-top: var(--s); }
 .paste-how { margin-top: var(--m); }
-.paste-unkeyed { margin-top: var(--m); font-size: 14px; line-height: 24px; }
+.paste-unkeyed { margin-top: var(--m); font-size: calc(14px * var(--text)); line-height: calc(24px * var(--text)); }
 /* The Shortcuts how-to: steps in Persian numbers, the iOS labels in bold Latin as she sees them. */
-.howto { margin-top: var(--m); font-size: 14px; line-height: 24px; color: var(--on-surface); }
-.howto.muted { color: var(--on-surface-variant); font-size: 13px; line-height: 20px; }
+.howto { margin-top: var(--m); font-size: calc(14px * var(--text)); line-height: calc(24px * var(--text)); color: var(--on-surface); }
+.howto.muted { color: var(--on-surface-variant); font-size: calc(13px * var(--text)); line-height: calc(20px * var(--text)); }
 ol.howto { padding-inline-start: var(--xl); list-style: persian; }
 ol.howto li + li { margin-top: var(--s); }
 .howto .ios { font-weight: 700; }

@@ -172,7 +172,7 @@ function RejoinBlock({ working, sameHousehold }: { working: boolean; sameHouseho
   return (
     <>
       <SectionHeading title="پیوستن به خانواده جدید" />
-      <p class="set-note" style={{ paddingTop: 0, lineHeight: '22px' }}>{rejoinLead(sameHousehold)}</p>
+      <p class="set-note" style={{ paddingTop: 0, lineHeight: 'calc(22px * var(--text))' }}>{rejoinLead(sameHousehold)}</p>
       <div style={{ height: 'var(--m)' }} />
       <ArmedAction label={working ? 'در حال پیوستن...' : 'پیوستن به خانواده جدید'} armedLabel="مطمئنی؟ خانواده قبلی کنار می‌ره — دوباره بزن"
         enabled={!working} onConfirmed={() => void confirmRejoin()} />
@@ -290,7 +290,7 @@ function Family() {
       )}
 
       <SectionHeading title="حریم خصوصی" />
-      <p class="set-note" style={{ paddingTop: 0, lineHeight: '22px' }}>
+      <p class="set-note" style={{ paddingTop: 0, lineHeight: 'calc(22px * var(--text))' }}>
         متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. از دارایی‌ها هم فقط اسم و ارزش تومنی می‌ره؛ مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت نه. خاموش کردن اشتراک، موارد قبلی رو بعد از همگام‌سازی از دفتر بقیه حذف می‌کنه؛ چیزی که قبلاً دیده یا کپی شده قابل پس‌گرفتن نیست.
       </p>
 
@@ -335,7 +335,7 @@ function MemberSheet({ id }: { id: string }) {
         <MemberFace name={member.name} avatar={member.avatar} size={56} />
         <div class="grow">
           <SheetTitle>{member.name}</SheetTitle>
-          <p class="muted" style={{ fontSize: '13px' }}>{contributionsFa(count)}</p>
+          <p class="muted" style={{ fontSize: 'calc(13px * var(--text))' }}>{contributionsFa(count)}</p>
         </div>
         {!device && <ShareStatus sharing={member.sharesSms} />}
       </div>

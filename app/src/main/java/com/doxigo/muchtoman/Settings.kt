@@ -47,7 +47,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -137,6 +136,8 @@ private const val SITE = "https://muchtoman.com/"
 fun SettingsScreen(
     name: String,
     themeMode: ThemeMode,
+    /** Percent of the phone's text size — see [TEXT_SIZES]. */
+    textSize: Int,
     lockEnabled: Boolean,
     widgetLock: Boolean,
     smsEnabled: Boolean,
@@ -147,6 +148,7 @@ fun SettingsScreen(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onTextSizeChange: (Int) -> Unit,
     /** Toman or Rial — see [showRial], which the row reads for itself. */
     onShowRialChange: (Boolean) -> Unit,
     /** Days ahead an installment is reminded of, -1 for never — see [INSTALLMENT_REMINDER_DAYS]. */
@@ -199,6 +201,7 @@ fun SettingsScreen(
         SettingsRoom.INDEX -> SettingsIndex(
             name = name,
             themeMode = themeMode,
+            textSize = textSize,
             lockEnabled = lockEnabled,
             // Asked afresh whenever the index comes back: Android's page is the only place that
             // changes notification access, and returning from it through پیامک‌های بانک lands here.
@@ -208,6 +211,7 @@ fun SettingsScreen(
             onCompanion = onCompanion,
             onNameChange = onNameChange,
             onThemeChange = onThemeChange,
+            onTextSizeChange = onTextSizeChange,
             onShowRialChange = onShowRialChange,
             installmentReminder = installmentReminder,
             onInstallmentReminderChange = onInstallmentReminderChange,
@@ -285,6 +289,8 @@ fun SettingsScreen(
 private fun SettingsIndex(
     name: String,
     themeMode: ThemeMode,
+    /** Percent of the phone's text size — see [TEXT_SIZES]. */
+    textSize: Int,
     lockEnabled: Boolean,
     smsOn: Boolean,
     family: FamilyState,
@@ -292,6 +298,7 @@ private fun SettingsIndex(
     onCompanion: () -> Unit,
     onNameChange: (String) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onTextSizeChange: (Int) -> Unit,
     onShowRialChange: (Boolean) -> Unit,
     installmentReminder: Int,
     onInstallmentReminderChange: (Int) -> Unit,
@@ -492,6 +499,8 @@ private fun SettingsIndex(
         ThemeSheet(
             current = themeMode,
             onPick = { onThemeChange(it); themeSheet = false },
+            textSize = textSize,
+            onTextSize = onTextSizeChange,
             onDismiss = { themeSheet = false },
         )
     }
@@ -741,7 +750,7 @@ private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> U
     // pretending it does not know that.
     LaunchedEffect(Unit) { focus.requestFocus() }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = { onDone(draft); onDismiss() },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -791,9 +800,15 @@ private fun NameSheet(name: String, onDone: (String) -> Unit, onDismiss: () -> U
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismiss: () -> Unit) {
+private fun ThemeSheet(
+    current: ThemeMode,
+    onPick: (ThemeMode) -> Unit,
+    textSize: Int,
+    onTextSize: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -821,6 +836,32 @@ private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismis
                 onSelect = onPick,
                 fontSize = 16.sp,
             )
+            // Not closing on a step, as a theme pick does: the app under the sheet, and this
+            // sheet itself, are the preview, and «یکی دو سایز» is two taps.
+            val step = TEXT_SIZES.indexOf(textSize)
+            Row(Modifier.padding(top = Space.xl), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "اندازهٔ نوشته‌ها",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                StepButton({ MinusMark(MaterialTheme.colorScheme.onSurface) }, "کوچیک‌تر", step > 0) {
+                    onTextSize(TEXT_SIZES[step - 1])
+                }
+                Text(
+                    "${faNumber(textSize.toDouble())}٪",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(56.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                StepButton({ PlusMark(MaterialTheme.colorScheme.onSurface) }, "بزرگ‌تر", step < TEXT_SIZES.lastIndex) {
+                    onTextSize(TEXT_SIZES[step + 1])
+                }
+            }
         }
     }
 }
@@ -833,7 +874,7 @@ private fun ThemeSheet(current: ThemeMode, onPick: (ThemeMode) -> Unit, onDismis
 @Composable
 private fun MoneyUnitSheet(onPick: (Boolean) -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -870,7 +911,7 @@ private fun MoneyUnitSheet(onPick: (Boolean) -> Unit, onDismiss: () -> Unit) {
 @Composable
 private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -914,7 +955,7 @@ private fun InstallmentReminderSheet(current: Int, onPick: (Int) -> Unit, onDism
 @Composable
 private fun QuipToneSheet(current: QuipTone, onPick: (QuipTone) -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1208,7 +1249,7 @@ private fun AddBankSheet(taken: Set<String>, onAdd: (String, Double) -> Unit, on
     }
     var picked by rememberSaveable { mutableStateOf<String?>(null) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1983,7 +2024,7 @@ private fun LedgerStartSheet(health: LedgerHealth, onPick: (Long) -> Unit, onDis
     val months = generateSequence(thisMonth) { if (it > oldest) it.previous() else null }.toList()
     val options = listOf(0L to "از اول") + months.map { it.startDay to it.fa }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2358,7 +2399,7 @@ private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2460,7 +2501,7 @@ private fun RestoreSheet(
     // Staged: the line under the rows carries it from here, so the sheet bows out.
     LaunchedEffect(backup.restartNeeded) { if (backup.restartNeeded) onDismiss() }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

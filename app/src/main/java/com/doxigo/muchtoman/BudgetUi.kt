@@ -38,7 +38,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -1266,7 +1265,7 @@ private fun BudgetSheet(
     // Raised by a save tap that could not save: from then on every blank answer says so.
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1502,7 +1501,7 @@ private fun GoalSheet(
     // Raised by a save tap that could not save, as in [BudgetSheet].
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1645,7 +1644,7 @@ private fun InstallmentSheet(
     var tried by remember { mutableStateOf(false) }
     val countBad = count == null && (tried || countText.isNotBlank())
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1812,7 +1811,7 @@ private fun ChequeSheet(
     var tried by remember { mutableStateOf(false) }
     val dateBad = due == null && (tried || dateDigits.isNotEmpty())
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1948,7 +1947,7 @@ private fun InstallmentPaymentsSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2148,7 +2147,7 @@ internal fun InstallmentLinkSheet(
         .filter { !it.done || it.plan.id == current?.plan?.id }
         .sortedBy { it.plan.targetRial != amount }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

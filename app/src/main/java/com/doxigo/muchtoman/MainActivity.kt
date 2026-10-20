@@ -98,6 +98,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             locked = store.lockEnabled,
             name = store.name,
             themeMode = store.themeMode,
+            textSize = store.textSize,
             installmentReminder = store.installmentReminder,
             quipTone = store.quipTone,
             history = store.history,
@@ -581,6 +582,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setThemeMode(mode: ThemeMode) {
         store.themeMode = mode
         _state.update { it.copy(themeMode = mode) }
+    }
+
+    fun setTextSize(percent: Int) {
+        if (percent !in TEXT_SIZES) return
+        store.textSize = percent
+        _state.update { it.copy(textSize = percent) }
     }
 
     fun setInstallmentReminder(days: Int) {
@@ -2888,6 +2895,8 @@ data class UiState(
     val locked: Boolean = false,
     val name: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Percent of the phone's text size — see [Store.textSize]. */
+    val textSize: Int = 100,
     /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
     val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
     /** How notes talk — see [Store.quipTone]. */
@@ -3076,7 +3085,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             val state by appVm.state.collectAsStateWithLifecycle()
 
-            MuchTomanTheme(mode = state.themeMode) {
+            MuchTomanTheme(mode = state.themeMode, textSize = state.textSize) {
                 // The whole app is Persian, so force RTL regardless of the phone's locale.
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
 

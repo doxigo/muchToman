@@ -47,7 +47,6 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -564,6 +563,16 @@ internal fun PlusMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
     }
 }
 
+/** [PlusMark]'s crossbar alone. */
+@Composable
+internal fun MinusMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
+    Canvas(Modifier.size(size)) {
+        val w = this.size.width
+        val y = this.size.height * 0.5f
+        drawPath(Path().apply { moveTo(w * 0.14f, y); lineTo(w * 0.86f, y) }, tint, style = pen(2.2.dp))
+    }
+}
+
 /**
  * The door to narrowing by category, beside the lens it composes with. Active, it wears the
  * app's «this one» and carries the count, so a narrowed ledger names itself from across the room.
@@ -773,7 +782,7 @@ private fun CategoryFilterSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2517,7 +2526,7 @@ private fun AutoFileSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

@@ -981,6 +981,11 @@ class Store(context: Context) {
             .getOrDefault(ThemeMode.SYSTEM)
         set(v) { prefs.edit().putString("themeMode", v.name).apply() }
 
+    /** Text size in percent of the phone's own, one of [TEXT_SIZES] — see [ScaledText]. Hers, so exported. */
+    var textSize: Int
+        get() = prefs.getInt("textSize", 100).takeIf { it in TEXT_SIZES } ?: 100
+        set(v) { prefs.edit().putInt("textSize", v).apply() }
+
     /** Figures in Rial rather than Toman — see the top-level [com.doxigo.muchtoman.showRial] it drives. Hers, so exported. */
     var showRial: Boolean
         get() = prefs.getBoolean("showRial", false)
@@ -1243,7 +1248,7 @@ val EXPORTED_PREFS: List<String> = listOf(
     "seenSms", "smsScannedTo", "smsSchema", "smsFoldNeedsRefresh", "extraBankNumbers",
     "name", "themeMode", "lockEnabled", "widgetLock", "onboarded", "smsEnabled",
     "dismissedUpdate", "reportExcluded", "ledgerStartsOn", "installmentReminder", "loans", "notifyScannedTo",
-    "quipTone", "showRial",
+    "quipTone", "showRial", "textSize",
 )
 
 /**

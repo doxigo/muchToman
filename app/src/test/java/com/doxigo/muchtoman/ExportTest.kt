@@ -264,6 +264,8 @@ class ExportTest {
                 "quipTone",
                 // Toman or Rial is how she reads every figure; left behind, a restored phone quietly reverts.
                 "showRial",
+                // So is the size she reads it at.
+                "textSize",
             ),
             EXPORTED_PREFS,
         )

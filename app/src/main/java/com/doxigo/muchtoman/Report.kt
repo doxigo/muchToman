@@ -43,7 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -1013,7 +1012,7 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
         // buttons never look like one run-on object.
         Spacer(Modifier.width(Space.m))
         StepButton(
-            icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+            icon = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = null) },
             label = if (weekly) "هفتهٔ قبل" else "ماه قبل",
             enabled = cash.canGoBack,
             onClick = {
@@ -1026,7 +1025,7 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
         // The 48dp targets would otherwise touch, which is the one gap Android names a number for.
         Spacer(Modifier.width(Space.s))
         StepButton(
-            icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            icon = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
             label = if (weekly) "هفتهٔ بعد" else "ماه بعد",
             enabled = cash.canGoForward,
             onClick = {
@@ -1049,13 +1048,13 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
  * bright, and read as a control that had simply lost its label.
  */
 @Composable
-private fun StepButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+internal fun StepButton(
+    icon: @Composable () -> Unit,
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, enabled = enabled) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { contentDescription = label }) {
         Box(
             Modifier
                 .size(40.dp)
@@ -1066,7 +1065,7 @@ private fun StepButton(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = label)
+            icon()
         }
     }
 }
@@ -2221,7 +2220,7 @@ private fun CategorySheet(
     // Not on a member's sheet, which is already asking «کجا؟» by category.
     val byNote = remember(window) { if (window.face == null) noteTotals(window.rows) else emptyList() }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2669,7 +2668,7 @@ internal fun ExcludeSheet(
         }
     }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

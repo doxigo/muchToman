@@ -82,7 +82,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -718,6 +717,7 @@ private fun AppScreens(
             onExclusionsSheet = { exclusionsSheet = it },
             name = state.name,
             themeMode = state.themeMode,
+            textSize = state.textSize,
             lockEnabled = state.lockEnabled,
             widgetLock = state.widgetLock,
             smsEnabled = state.smsEnabled,
@@ -728,6 +728,7 @@ private fun AppScreens(
             onCompanion = { companion = true },
             onNameChange = vm::setName,
             onThemeChange = vm::setThemeMode,
+            onTextSizeChange = vm::setTextSize,
             onShowRialChange = vm::setShowRial,
             installmentReminder = state.installmentReminder,
             // Switching it on is the moment to ask for notifications if they are off, as the
@@ -2273,7 +2274,7 @@ private fun UpdateSheet(release: Release, onClose: () -> Unit, onLater: () -> Un
     // Play the sheet out before removing it from composition, or the choice just blinks.
     fun close(then: () -> Unit) = scope.launch { sheetState.hide(); then() }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onClose,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2554,7 +2555,7 @@ private fun BankSheet(
         reading = false
     }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -2743,13 +2744,16 @@ private fun SenderCandidateCard(
                         { choosing = true },
                         Modifier.fillMaxWidth(),
                     )
+                    // A menu is a window of its own too — see [AppSheet].
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
-                        for (b in PICKABLE_BANKS) {
-                            DropdownMenuItem(
-                                text = { Text(b.fa) },
-                                leadingIcon = { BankLogo(b.name, size = 24.dp) },
-                                onClick = { bank = b; choosing = false },
-                            )
+                        ScaledText {
+                            for (b in PICKABLE_BANKS) {
+                                DropdownMenuItem(
+                                    text = { Text(b.fa) },
+                                    leadingIcon = { BankLogo(b.name, size = 24.dp) },
+                                    onClick = { bank = b; choosing = false },
+                                )
+                            }
                         }
                     }
                 }
@@ -3407,7 +3411,7 @@ private fun PickTypeSheet(
     // Play the sheet out before removing it from composition, or the selection just blinks.
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -4146,7 +4150,7 @@ private fun EditSheet(
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
 
-    ModalBottomSheet(
+    AppSheet(
         // Nothing to write to while adding: there is no row until ذخیره makes one.
         onDismissRequest = { if (holding != null) nameIt(); onDismiss() },
         sheetState = sheetState,

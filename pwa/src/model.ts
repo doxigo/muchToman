@@ -231,6 +231,8 @@ export type QuipTone = 'PLAIN' | 'WITTY' | 'ROAST';
 export interface Prefs {
   name: string;
   themeMode: ThemeMode;
+  /** Percent of the browser's text size, one of TEXT_SIZES (Data.kt textSize). Hers, so backed up. */
+  textSize: number;
   onboarded: boolean;
   holdings: Holding[];
   overrides: Record<string, number>;
@@ -284,9 +286,13 @@ export interface Prefs {
   syncPullFirst: boolean;
 }
 
+/** «اندازهٔ نوشته‌ها», in percent (Theme.kt TEXT_SIZES). */
+export const TEXT_SIZES = [80, 90, 100, 110, 120, 130];
+
 export const PREF_DEFAULTS: Prefs = {
   name: '',
   themeMode: 'SYSTEM',
+  textSize: 100,
   onboarded: false,
   holdings: [],
   overrides: {},

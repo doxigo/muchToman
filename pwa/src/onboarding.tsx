@@ -27,8 +27,8 @@ function AskRow({ title, body }: { title: string; body: string }) {
     <div style={{ display: 'flex', paddingBottom: 'var(--l)' }}>
       <span style={{ flex: 'none', width: '8px', height: '8px', marginTop: 'var(--s)', borderRadius: '50%', background: 'var(--primary)' }} />
       <div style={{ paddingInlineStart: 'var(--m)' }}>
-        <p style={{ fontSize: '16px', fontWeight: 700 }}>{title}</p>
-        <p class="muted" style={{ fontSize: '13px', lineHeight: '22px', marginTop: 'var(--xs)' }}>{body}</p>
+        <p style={{ fontSize: 'calc(16px * var(--text))', fontWeight: 700 }}>{title}</p>
+        <p class="muted" style={{ fontSize: 'calc(13px * var(--text))', lineHeight: 'calc(22px * var(--text))', marginTop: 'var(--xs)' }}>{body}</p>
       </div>
     </div>
   );
@@ -53,8 +53,8 @@ function Onboarding() {
   useEffect(() => { if (nothingLeft) finish(); }, [nothingLeft]);
   if (nothingLeft) return null;
 
-  const heading = { fontSize: '28px', fontWeight: 800, lineHeight: 1.4 };
-  const body = { fontSize: '15px', lineHeight: '26px', marginTop: 'var(--m)' };
+  const heading = { fontSize: 'calc(28px * var(--text))', fontWeight: 800, lineHeight: 1.4 };
+  const body = { fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(26px * var(--text))', marginTop: 'var(--m)' };
   return (
     <div style={{
       minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center',

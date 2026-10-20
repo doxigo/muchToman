@@ -3,12 +3,19 @@ package com.doxigo.muchtoman
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -19,6 +26,9 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -342,8 +352,51 @@ private val DarkColors = darkColorScheme(
     scrim = Color(0xFF000000),
 )
 
+/** «اندازهٔ نوشته‌ها», in percent of the phone's own text size. */
+val TEXT_SIZES = listOf(80, 90, 100, 110, 120, 130)
+
+private val LocalTextSize = staticCompositionLocalOf { 100 }
+
+/**
+ * Her text size on top of the phone's: every sp inside is multiplied by it, and dp is left alone,
+ * which is exactly what the phone's own font-size setting does. It is measured from the phone's
+ * configuration rather than from the density around it, so saying it twice does not scale twice.
+ *
+ * ponytail: a linear scale, so on a phone whose own setting is large (where Android 14 grows big
+ * headings less than body text) a moved stepper grows them linearly. Left as it is at 100 for that.
+ */
 @Composable
-fun MuchTomanTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+fun ScaledText(content: @Composable () -> Unit) {
+    val percent = LocalTextSize.current
+    val around = LocalDensity.current
+    val phone = LocalConfiguration.current.fontScale
+    // Always the provider, at 100 too: a branch that skipped it would change the composition's
+    // shape on the first step, and every screen's state, the open sheet included, would go with it.
+    val density = if (percent == 100) around else Density(around.density, phone * percent / 100f)
+    CompositionLocalProvider(LocalDensity provides density, content = content)
+}
+
+/**
+ * [ModalBottomSheet] in her text size. A sheet is a window of its own, and every window starts
+ * again from the phone's density, so the size has to be said again inside it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppSheet(
+    onDismissRequest: () -> Unit,
+    sheetState: SheetState,
+    shape: Shape,
+    containerColor: Color,
+    content: @Composable ColumnScope.() -> Unit,
+) = ModalBottomSheet(
+    onDismissRequest = onDismissRequest,
+    sheetState = sheetState,
+    shape = shape,
+    containerColor = containerColor,
+) { ScaledText { content() } }
+
+@Composable
+fun MuchTomanTheme(mode: ThemeMode = ThemeMode.SYSTEM, textSize: Int = 100, content: @Composable () -> Unit) {
     val dark = when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
@@ -372,9 +425,10 @@ fun MuchTomanTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -
         labelSmall = labelSmall.copy(fontFamily = Modam, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
     )
 
-    MaterialTheme(
-        colorScheme = if (dark) DarkColors else LightColors,
-        typography = base.persian(),
-        content = content,
-    )
+    CompositionLocalProvider(LocalTextSize provides textSize) {
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            typography = base.persian(),
+        ) { ScaledText(content) }
+    }
 }
