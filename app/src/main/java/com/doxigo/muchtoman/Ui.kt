@@ -2799,13 +2799,20 @@ private fun BankAccountRow(
                     )
                     Text(
                         listOfNotNull(
-                            account.mask.takeIf { it.isNotBlank() }?.let { bidi(it) },
+                            // Which of the bank's accounts, where its messages say: two at one bank
+                            // are two cards with one name, and this is the line that tells them apart.
+                            account.number.takeIf { it.isNotBlank() }?.let { "حساب ${faDigits(it)}" }
+                                ?: account.mask.takeIf { it.isNotBlank() }?.let { bidi(it) },
                             faAgo(account.updatedAt, now),
                             "خاموش".takeIf { off },
-                        ).joinToString("  •  "),
+                        )
+                            // A second line rather than an ellipsis, broken only at a bullet: each
+                            // part keeps its words together, so «۲ روز پیش» is never cut in half.
+                            .joinToString("\u00a0• ") { it.replace(' ', '\u00a0') },
                         fontSize = 12.sp,
+                        lineHeight = 18.sp,
                         color = muted,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
                     )
@@ -2896,51 +2903,49 @@ private fun BankAccountRow(
                 )
             }
 
-            // The routine acts share a row in equal cells; the one that loses something gets a
-            // row of its own, full width, so its armed sentence always has room. Flowing pills
-            // left «حذف حساب» hanging alone under the first one on a 411dp phone. «ذخیره» lands
-            // in the cell «اصلاح» had, under the thumb that asked for it, and «بستن» is the way
-            // back out that the field never had.
-            Column(
+            // The card is the balance; its acts are a foot, each pill as wide as its words and set
+            // at the start, where the eye leaves the caption — two edge-to-edge bars outweighed the
+            // figure they serve. «ذخیره» lands where «اصلاح» was, under the thumb that asked for
+            // it, and «بستن» is the way back out that the field never had.
+            Row(
                 Modifier.padding(top = Space.m),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
+                horizontalArrangement = Arrangement.spacedBy(Space.s),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-                    if (account.sender.isNotBlank()) {
-                        PillButton("دیدن پیامک‌ها", onOpenSms, Modifier.weight(1f))
-                    }
-                    if (fixing) {
-                        PillButton(
-                            "ذخیره موجودی",
-                            {
-                                // Never greyed out — a dead button explains nothing — so a tap
-                                // that cannot save says why, with the keyboard out of the way.
-                                focus.clearFocus()
-                                missingDraft = draft.isBlank()
-                                parseAmount(draft)?.let { onAnchor(tomanOfShown(it)) }
-                            },
-                            Modifier.weight(1f),
-                            voice = ButtonVoice.PRIMARY,
-                        )
-                    } else {
-                        PillButton("اصلاح موجودی", onFix, Modifier.weight(1f))
-                    }
-                }
                 if (fixing) {
-                    PillButton("بستن", onFix, Modifier.fillMaxWidth())
-                } else {
-                    // Two taps, as for deleting a holding: the balance she anchored by hand is
-                    // a number nothing can rebuild, so the first tap only names what is lost.
-                    ArmedButton(
-                        "حذف حساب",
-                        // Nothing restarts a bank she keeps by hand; the number she wrote just goes.
-                        if (account.manual) "موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن"
-                        else "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
-                        onForget,
-                        Modifier.fillMaxWidth(),
-                        key = account.key,
+                    PillButton(
+                        "ذخیره موجودی",
+                        {
+                            // Never greyed out — a dead button explains nothing — so a tap that
+                            // cannot save says why, with the keyboard out of the way.
+                            focus.clearFocus()
+                            missingDraft = draft.isBlank()
+                            parseAmount(draft)?.let { onAnchor(tomanOfShown(it)) }
+                        },
+                        voice = ButtonVoice.PRIMARY,
                     )
+                    PillButton("بستن", onFix)
+                } else {
+                    PillButton("اصلاح موجودی", onFix)
+                    if (account.sender.isNotBlank()) PillButton("دیدن پیامک‌ها", onOpenSms)
                 }
+            }
+            // Forgetting the account is the last word on a balance read wrong, so it waits beside
+            // the field that corrects one: a tap past a figure she meant to fix, never a stray tap
+            // on a card she is only reading. Its own row, full width, so the armed sentence has
+            // room. Two taps, as for deleting a holding: a balance anchored by hand is a number
+            // nothing can rebuild, so the first tap only names what is lost.
+            if (fixing) {
+                ArmedButton(
+                    "حذف حساب",
+                    // Nothing restarts a bank she keeps by hand; the number she wrote just goes.
+                    if (account.manual) "موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن"
+                    else "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
+                    onForget,
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = Space.m),
+                    key = account.key,
+                )
             }
         }
     }

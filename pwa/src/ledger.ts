@@ -166,14 +166,17 @@ function answer(txn: Txn, kind: Decision['kind'], value: string | null): void {
 }
 
 /**
- * Her corrections to one of her own rows — figure, day, whose it was; null leaves that one as it
- * stands (Edits.kt `editRow`). The day stops at today, and a row put back to its own member takes
- * the attribution back rather than storing it.
+ * Her corrections to one of her own rows — figure, day, whose it was, which way it went; null
+ * leaves that one as it stands (Edits.kt `editRow`). The day stops at today, and a row put back to
+ * its own member takes the attribution back rather than storing it.
  */
-export function editTxn(entry: LedgerEntry, rial: number | null, day: number | null, memberId: string | null): void {
+export function editTxn(
+  entry: LedgerEntry, rial: number | null, day: number | null, memberId: string | null, direction: 'in' | 'out' | null = null,
+): void {
   if (!editable(entry)) return;
   const txn = entry.txn;
   batch(() => {
+    if (direction != null && direction !== txn.direction) answer(txn, DecisionKind.DIRECTION, direction);
     if (rial != null && rial >= 1 && rial <= MAX_PLAUSIBLE_RIAL && rial !== txn.amountRial) answer(txn, DecisionKind.AMOUNT, String(rial));
     if (day != null) {
       const moved = Math.min(day, tehranDay(Date.now()));
@@ -186,11 +189,12 @@ export function editTxn(entry: LedgerEntry, rial: number | null, day: number | n
   });
 }
 
-/** Back to the figure and day the row was read or typed with. Whose it was stays. */
+/** Back to the figure, day and direction the row was read or typed with. Whose it was stays. */
 export function revertTxnEdits(entry: LedgerEntry): void {
   batch(() => {
     answer(entry.txn, DecisionKind.AMOUNT, null);
     answer(entry.txn, DecisionKind.DAY, null);
+    answer(entry.txn, DecisionKind.DIRECTION, null);
   });
 }
 
@@ -235,11 +239,11 @@ export function toggleCategoryArchived(category: Category): void {
 
 // ---- accounts --------------------------------------------------------------------------------
 
-/** What an account really holds, in Rial; everything pasted after it builds on it. */
-export function setBankBalance(bank: string, balanceRial: number): void {
+/** What an account (its key — the bank, or `BANK:1234`) really holds, in Rial; everything pasted after it builds on it. */
+export function setBankBalance(key: string, balanceRial: number): void {
   const now = Date.now();
   put('anchors', {
-    id: uuid7(now), accountId: bank, at: now, balanceRial, source: 'user', createdAt: now, updatedAt: now, deleted: false,
+    id: uuid7(now), accountId: key, at: now, balanceRial, source: 'user', createdAt: now, updatedAt: now, deleted: false,
   });
 }
 
@@ -248,10 +252,10 @@ export function setBankBalance(bank: string, balanceRial: number): void {
  * before this moment counts toward its balance again: it starts from zero, unanchored, at the next
  * message. The mark is a tombstone row, which every reader of live anchors already skips.
  */
-export function forgetAccount(bank: string): void {
+export function forgetAccount(key: string): void {
   const now = Date.now();
   put('anchors', {
-    id: forgetMarkId(bank), accountId: bank, at: now, balanceRial: 0, source: 'user', createdAt: now, updatedAt: now, deleted: true,
+    id: forgetMarkId(key), accountId: key, at: now, balanceRial: 0, source: 'user', createdAt: now, updatedAt: now, deleted: true,
   });
 }
 

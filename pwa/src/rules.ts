@@ -398,6 +398,8 @@ export const DecisionKind = {
   MEMBER: 'member',
   /** The row in parts, `category:rial` each, comma-joined — see `parseSplit`. */
   SPLIT: 'split',
+  /** Which way one of her own rows' money went, 'in' or 'out' — see `settleDirections`. */
+  DIRECTION: 'direction',
 } as const;
 
 // ---- seeding ---------------------------------------------------------------------------------

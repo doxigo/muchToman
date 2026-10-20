@@ -39,11 +39,13 @@ export interface Pasted {
   unitPrinted: PrintedUnit;
   /** An amount and a balance, but no word for which way the money went. */
   inferred: boolean;
+  /** Which of the bank's accounts — {@link accountNoIn}: four digits, or blank for unnamed. */
+  accountNo: string;
 }
 
 const NOTHING: Pasted = {
   amountRial: null, direction: null, balanceRial: null, printedAt: '', feeRial: null, mask: '',
-  instrument: 'unknown', merchant: '', refNo: '', channel: 'unknown', unitPrinted: 'none', inferred: false,
+  instrument: 'unknown', merchant: '', refNo: '', channel: 'unknown', unitPrinted: 'none', inferred: false, accountNo: '',
 };
 
 /** Persian and Arabic-Indic digits fold to ASCII; every separator is dropped, the dot included. */
@@ -506,6 +508,30 @@ function accountIn(text: string): string {
   return '';
 }
 
+/** A figure a bank labels «حساب»: the label, an optional colon, and digits on the same line. */
+const ACCOUNT_NO = /(?<!\p{L})حساب[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩*][0-9۰-۹٠-٩*.\-]*)/gu;
+
+/**
+ * The account a message names, as the last four digits of the figure it labels «حساب» — blank when
+ * it names none, or two (Sms.kt `accountNoIn`). Not accountIn, which takes a card mask or a starred
+ * reference as readily: only a figure the bank labels «حساب», never a «مانده حساب» or «صورتحساب»,
+ * and never one written as money is, grouped in threes or followed by its unit.
+ */
+export function accountNoIn(text: string): string {
+  const found = new Set<string>();
+  for (const m of text.matchAll(ACCOUNT_NO)) {
+    const run = m[1];
+    const end = m.index! + m[0].length;
+    const label = text.slice(Math.max(0, m.index! - 8), m.index!);
+    const digits = digitsOf(run);
+    const tail = text.slice(end, end + 8).split('\n')[0];
+    if (BALANCE_WORDS.some((w) => label.includes(w)) || digits.length < 4) continue;
+    if (',،٬'.includes(tail[0] ?? '_') || UNIT_WORDS.some((w) => tail.includes(w))) continue;
+    found.add(digits.slice(-4));
+  }
+  return found.size === 1 ? [...found][0] : '';
+}
+
 function instrumentOf(mask: string): Instrument {
   if (!mask) return 'unknown';
   if (mask.includes('*')) return 'card';
@@ -617,5 +643,6 @@ export function parsePasted(body: string): Pasted {
     channel: channelOf(text),
     unitPrinted: amount?.divisor === 1 ? 'toman' : amount?.divisor === 10 ? 'rial' : 'none',
     inferred: direction == null && balance != null && amount != null,
+    accountNo: accountNoIn(text),
   };
 }

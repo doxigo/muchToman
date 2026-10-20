@@ -74,6 +74,41 @@ class EditsTest {
         assertEquals(listOf(row), spendableRows(listOf(row)))
     }
 
+    @Test
+    fun `a deposit read as a spend is turned by her answer, and turned back`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val durable = Room.inMemoryDatabaseBuilder(context, DurableDb::class.java).build()
+        val derived = Room.inMemoryDatabaseBuilder(context, DerivedDb::class.java).build()
+        try {
+            seedBuiltins(durable)
+            // No مانده to measure it by, so only her answer can say it came in.
+            val sender = "0999 992 0000"
+            val body = "بانک سامان\nانتقال وجه مبلغ 700,000 ریال"
+            val at = System.currentTimeMillis() - DAY_MS
+            durable.smsSource().insertAll(listOf(SmsSource(srcHash(sender, body, at), sender, srcAddrKeyV1(sender), body, at, 0L)))
+            derive(durable, derived, emptyMap())
+            val read = ledgerEntries(derived, durable).entries.single()
+            assertEquals(-700_000L, read.txn.signedRial)
+
+            editRow(durable, read, null, null, null, "", direction = "in")
+            derive(durable, derived, emptyMap())
+            val turned = ledgerEntries(derived, durable).entries.single()
+            assertEquals(700_000L, turned.txn.signedRial)
+            assertTrue(turned.edited)
+            // In derive, not over the view: what filing, rules and links read is the row she corrected.
+            assertEquals("in", derived.txn().forAccount("SAMAN").single().direction)
+
+            revertRow(durable, turned, "")
+            derive(durable, derived, emptyMap())
+            val back = ledgerEntries(derived, durable).entries.single()
+            assertEquals(-700_000L, back.txn.signedRial)
+            assertFalse(back.edited)
+        } finally {
+            derived.close()
+            durable.close()
+        }
+    }
+
     // ── the household ──
 
     private class Household : AutoCloseable {

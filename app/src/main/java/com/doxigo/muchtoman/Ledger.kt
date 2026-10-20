@@ -947,7 +947,7 @@ suspend fun migrateAnchorsFromPrefs(accounts: List<BankAccount>, db: DurableDb, 
             db.anchors().put(
                 BalanceAnchor(
                     id = uuid7(now),
-                    accountId = account.bank,
+                    accountId = account.key,
                     at = account.updatedAt,
                     balanceRial = Math.round(account.balance * 10.0),
                     source = "migrated",

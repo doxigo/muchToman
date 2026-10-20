@@ -713,6 +713,9 @@ object DecisionKind {
 
     /** The row in parts, `category:rial` each, comma-joined — see [parseSplit]. */
     const val SPLIT = "split"
+
+    /** Which way one of her own rows' money went, "in" or "out" — see [settleDirections]. */
+    const val DIRECTION = "direction"
 }
 
 /**

@@ -46,7 +46,10 @@ export function splitOf(value: string | null | undefined, amountRial: number | n
   return parts.map(([categoryId, rial]) => ({ categoryId, categoryFa: names.get(categoryId) ?? 'دسته‌بندی نشده', rial }));
 }
 
-/** The row as she corrected it, keeping its minute and its direction. */
+/**
+ * The row as she corrected it, keeping its minute and its direction: the figure never turns it.
+ * Which way it went is an answer of its own, laid on in the derive by `settleDirections`.
+ */
 export function editedTxn(txn: Txn, amountRial: number | null, day: number | null): Txn {
   let edited = txn;
   if (amountRial != null && amountRial > 0 && txn.amountRial != null) {

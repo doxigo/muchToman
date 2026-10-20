@@ -18,7 +18,7 @@ import {
 } from './data';
 import { useLedger } from './derived';
 import type { BankAccountView } from './derived';
-import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
+import { bidi, faAgo, faCompact, faDigits, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
 import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
@@ -609,16 +609,16 @@ function BankSheet() {
         </p>
         <div class="bank-list">
           {view.bankAccounts.map((acc) => (
-            <BankAccountRow key={acc.bank} account={acc} now={now} fixing={fixing === acc.bank}
-              onFix={() => setFixing(fixing === acc.bank ? null : acc.bank)}
-              onAnchor={(toman) => { setBankBalance(acc.bank, Math.round(toman * 10)); recordSnapshot(); setFixing(null); }}
+            <BankAccountRow key={acc.key} account={acc} now={now} fixing={fixing === acc.key}
+              onFix={() => setFixing(fixing === acc.key ? null : acc.key)}
+              onAnchor={(toman) => { setBankBalance(acc.key, Math.round(toman * 10)); recordSnapshot(); setFixing(null); }}
               onToggle={(on) => {
                 // What the total counts changes without money moving: the history rebases, not steps.
                 const before = currentTotals();
                 if (on === acc.disabled) toggleBankDisabled(acc.bank);
                 recordSnapshot(before);
               }}
-              onForget={() => { forgetAccount(acc.bank); recordSnapshot(); }} />
+              onForget={() => { forgetAccount(acc.key); recordSnapshot(); }} />
           ))}
         </div>
       </div>
@@ -642,8 +642,12 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
     setMissingDraft(!draft.trim());
     if (parsed != null) onAnchor(tomanOfShown(parsed));
   };
-  const caption = [account.mask.trim() ? bidi(account.mask) : null, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
-    .filter((s): s is string => s != null).join('  •  ');
+  // Which of the bank's accounts, where its messages say: two at one bank are two cards with one name.
+  const named = account.number ? `حساب ${faDigits(account.number)}` : account.mask.trim() ? bidi(account.mask) : null;
+  // A second line rather than an ellipsis: the account and its age both have to be read. It breaks
+  // only at a bullet — each part keeps its words together, so «۲ روز پیش» is never cut in half.
+  const caption = [named, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
+    .filter((s): s is string => s != null).map((s) => s.replace(/ /g, '\u00a0')).join('\u00a0• ');
   return (
     <div class="bank-card">
       {/* Off dims by colour, not a blanket alpha, which took the caption below every contrast floor. */}
@@ -676,8 +680,9 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
           </div>
         </>
       )}
-      {/* One act a row, full width — the one that loses something always on its own row, so its armed
-          sentence has room. «ذخیره» takes the row «اصلاح» had; «بستن» is the way out the field never had. */}
+      {/* The card is the balance; its acts are a foot, each pill as wide as its words and set at the
+          start — two edge-to-edge bars outweighed the figure they serve. «ذخیره» lands where «اصلاح»
+          was; «بستن» is the way out the field never had. */}
       <div class="btn-row">
         {fixing ? (
           <>
@@ -685,15 +690,19 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
             <PillButton label="بستن" onClick={onFix} />
           </>
         ) : (
-          <>
-            <PillButton label="اصلاح موجودی" onClick={onFix} />
-            {/* Two taps: a balance she anchored by hand is a number nothing can rebuild. Nothing
-                restarts a bank she keeps by hand; the number she wrote just goes. */}
-            <ArmedButton label="حذف حساب" armedLabel={account.manual ? 'موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن'
-              : 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن'} onConfirmed={onForget} />
-          </>
+          <PillButton label="اصلاح موجودی" onClick={onFix} />
         )}
       </div>
+      {/* Forgetting the account is the last word on a balance read wrong, so it waits beside the field
+          that corrects one, never a stray tap on a card she is only reading. Its own row, full width,
+          so the armed sentence has room; two taps, since a balance anchored by hand is a number nothing
+          can rebuild. Nothing restarts a bank she keeps by hand; the number she wrote just goes. */}
+      {fixing && (
+        <div class="forget">
+          <ArmedButton label="حذف حساب" armedLabel={account.manual ? 'موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن'
+            : 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن'} onConfirmed={onForget} />
+        </div>
+      )}
     </div>
   );
 }

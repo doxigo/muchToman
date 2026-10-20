@@ -186,6 +186,63 @@ class DeriveTest {
     }
 
     @Test
+    fun `the bank's own مانده says which way the money went, and her answer beats it`() {
+        fun saman(at: Long, body: String, sender: String = "0999 992 0000") = parseToRows(
+            SmsSource(srcHash(sender, body, at), sender, srcAddrKeyV1(sender), body, at, 0L), emptyMap(),
+        ).single()
+        val rows = listOf(
+            saman(1, "بانک سامان\nواریز مبلغ 1,000,000 ریال\nمانده 10,000,000 ریال"),
+            // A deposit worded with a spend word, as some banks head an incoming transfer.
+            saman(2, "بانک سامان\nانتقال وجه مبلغ 2,000,000 ریال\nمانده 12,000,000 ریال"),
+            // The same transaction told again, worded its own way: a copy — Blu's SMS and its app's
+            // notification are this — so it is measured as its original was, not as nothing moving.
+            saman(3, "بانک سامان\nواریز مبلغ 2,000,000 ریال\nمانده 12,000,000 ریال", sender = "9820000"),
+            // A deposit that names its fee names a spend word too, and read as no direction at all.
+            saman(4, "بانک سامان\nواریز مبلغ 3,000,000 ریال\nکارمزد 5,000 ریال\nمانده 15,000,000 ریال"),
+            // A message went missing before this one: the مانده moved by more than its amount,
+            // so it proves nothing and the words stand.
+            saman(5, "بانک سامان\nبرداشت مبلغ 1,000,000 ریال\nمانده 5,000,000 ریال"),
+            // No مانده to measure by.
+            saman(6, "بانک سامان\nانتقال وجه مبلغ 700,000 ریال"),
+        )
+        assertEquals(listOf("in", "out", "in", null, "out", "out"), rows.map { it.direction })
+        fun paired(rows: Collection<Txn>) = findDuplicates(rows.toList())
+            .any { setOf(it.aRef, it.bRef) == setOf(rows.first { r -> r.at == 2L }.ref, rows.first { r -> r.at == 3L }.ref) }
+
+        val settled = settleDirections(rows.shuffled(kotlin.random.Random(7))).associateBy { it.at }
+        assertEquals(listOf(1_000_000L, 2_000_000L, 2_000_000L, 3_000_000L, -1_000_000L, -700_000L),
+            (1L..6L).map { settled.getValue(it).signedRial })
+        assertEquals(false, settled.getValue(4).inferred)
+        assertTrue(paired(settled.values))
+
+        // Her answer beats the words where there is no مانده and beats the مانده too, and the copy
+        // goes the way she said its original went, so the two are still one transaction.
+        val hers = settleDirections(rows, mapOf(rows[5].ref to "in", rows[1].ref to "out")).associateBy { it.at }
+        assertEquals(listOf(700_000L, -2_000_000L, -2_000_000L), listOf(6L, 2L, 3L).map { hers.getValue(it).signedRial })
+        assertTrue(paired(hers.values))
+        // Anything she could not have written is no answer.
+        assertEquals(rows[0], settleDirections(listOf(rows[0]), mapOf(rows[0].ref to "sideways")).single())
+    }
+
+    @Test
+    fun `a bank's two accounts are two accounts, and a message naming neither goes to the last`() {
+        fun mellat(at: Long, body: String) = parseToRows(
+            SmsSource(srcHash("Bank Mellat", body, at), "Bank Mellat", srcAddrKeyV1("Bank Mellat"), body, at, 0L), emptyMap(),
+        ).single()
+        val rows = assignAccounts(listOf(
+            mellat(1, "برداشت1,000,000\nمانده9,000,000"),
+            mellat(2, "حساب7591126460\nبرداشت1,000,000\nمانده8,000,000"),
+            mellat(3, "حساب9750457\nواریز2,000,000\nمانده50,000,000"),
+            mellat(4, "برداشت500,000\nمانده49,500,000"),
+            // The same account starred out to its tail.
+            mellat(5, "حساب***6460\nبرداشت700,000\nمانده7,300,000"),
+        ).shuffled(kotlin.random.Random(3))).sortedBy { it.at }
+        assertEquals(listOf("MELLAT", "MELLAT", "MELLAT:0457", "MELLAT:0457", "MELLAT"), rows.map { it.accountId })
+        // Each account's مانده is measured against its own, not its sibling's.
+        assertEquals(listOf(-1_000_000L, -1_000_000L, 2_000_000L, -500_000L, -700_000L), settleDirections(rows).map { it.signedRial })
+    }
+
+    @Test
     fun `every corpus message that parses becomes exactly one transaction`() {
         val sources = CorpusFixtures.sources()
         val rows = sources.flatMap { parseToRows(it, emptyMap()) }

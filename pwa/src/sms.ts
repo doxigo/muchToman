@@ -184,7 +184,8 @@ export function parseToRows(source: Source, now = Date.now()): Txn[] {
     at,
     day: tehranDay(at),
     bank,
-    accountId: bank,
+    // The account it names, if any; assignAccounts settles which of the bank's that is.
+    accountId: read.accountNo ? `${bank}:${read.accountNo}` : bank,
     direction: read.direction,
     amountRial: read.amountRial,
     signedRial: read.amountRial != null && read.direction != null
@@ -200,10 +201,84 @@ export function parseToRows(source: Source, now = Date.now()): Txn[] {
     channel: read.channel,
     unitPrinted: read.unitPrinted,
     inferred: read.inferred,
+    accountNo: read.accountNo,
     familyRef: '',
     ownerMemberId: '',
     sourceKind: 'sms',
   }];
+}
+
+/**
+ * Each message row on the account it belongs to — Derived.kt `assignAccounts`, walked oldest first:
+ * a row naming a number keeps that number's account, the first number a bank names takes the bank's
+ * own name, and a row naming none lands on the account the bank last spoke about.
+ */
+export function assignAccounts(rows: Txn[]): Txn[] {
+  const accountOf = new Map<string, string>();
+  const named = new Set<string>();
+  const latest = new Map<string, string>();
+  const moved = new Map<string, string>();
+  const byTime = [...rows].sort((a, b) => a.at - b.at || (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0));
+  for (const row of byTime) {
+    if (!row.ref.startsWith('s:')) continue;
+    const bank = row.bank;
+    let key: string;
+    if (row.accountId === bank) key = latest.get(bank) ?? bank;
+    else {
+      key = accountOf.get(row.accountId) ?? (named.has(bank) ? row.accountId : bank);
+      named.add(bank);
+      accountOf.set(row.accountId, key);
+    }
+    latest.set(bank, key);
+    if (key !== row.accountId) moved.set(row.ref, key);
+  }
+  if (!moved.size) return rows;
+  return rows.map((row) => {
+    const key = moved.get(row.ref);
+    return key == null ? row : { ...row, accountId: key };
+  });
+}
+
+/** The مانده an account last stated, how much moved on that row, and which way it was settled. */
+interface Stated { balance: number; amount: number | null; direction: 'in' | 'out' | null }
+
+/**
+ * Which way each of her rows' money went — Derived.kt `settleDirections`: her own answer, then the
+ * bank's arithmetic, then the words the parser read. A row whose مانده sits exactly its amount above
+ * the one stated before it on the same account came in, exactly below went out; anything else — a
+ * message missed in between, a second account at the same bank — leaves the words standing. A row
+ * stating the مانده and amount the one before it stated is a copy of that message and goes whichever
+ * way that one was settled, so the duplicate check still sees the two as one.
+ *
+ * ponytail: measured against the one مانده just before. Walk further back if two accounts at one
+ * bank interleave often enough to matter.
+ */
+export function settleDirections(rows: Txn[], chosen: ReadonlyMap<string, string | null> = new Map()): Txn[] {
+  const decided = new Map<string, 'in' | 'out'>();
+  const latest = new Map<string, Stated>();
+  const byTime = [...rows].sort((a, b) => a.at - b.at || (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0));
+  for (const row of byTime) {
+    const amount = row.amountRial;
+    const after = row.balanceRial;
+    const last = latest.get(row.accountId);
+    const copy = last != null && after === last.balance && amount === last.amount;
+    const measured = amount == null || after == null || last == null ? null
+      : copy ? last.direction
+      : after - last.balance === amount ? 'in'
+      : after - last.balance === -amount ? 'out'
+      : null;
+    const hers = chosen.get(row.ref);
+    const direction = hers === 'in' || hers === 'out' ? hers : measured ?? row.direction;
+    if (amount != null && direction != null && direction !== row.direction) decided.set(row.ref, direction);
+    if (after != null && !copy) latest.set(row.accountId, { balance: after, amount, direction });
+  }
+  if (!decided.size) return rows;
+  return rows.map((row) => {
+    const direction = decided.get(row.ref);
+    if (direction == null) return row;
+    const amount = row.amountRial!;
+    return { ...row, direction, signedRial: direction === 'in' ? amount : -amount, inferred: false };
+  });
 }
 
 /**

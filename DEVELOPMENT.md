@@ -667,6 +667,22 @@ one entry per part; `spendableRows` keeps it whole for the per-purchase question
 kind: the member rides the owner's `transaction` payload and the split rides the `category`
 record (any member may split any shared row), both as defaulted fields an older build ignores.
 
+Which way a row's money went is the exception: `settleDirections` lays it on in `derive`, because
+filing, rules and transfer links all read the direction. Her `direction` answer wins; failing that,
+a row whose stated مانده sits exactly its amount above or below the one stated before it on the
+same account goes that way, whatever its words said; failing that, the parser's words stand. A
+row repeating the previous مانده and amount is a copy and goes the way its original did, so the
+duplicate check still pairs them.
+
+An account is a bank's, told from its siblings only by the figure a message labels «حساب»
+(`accountNoIn`, kept as its last four digits — never `accountIn`'s card masks and references,
+which once forked one Saman account into thirty-eight). The bank's first account keeps the bank's
+own name as its key, so a phone's typed figures, switches and cheques stay on it; each further
+number is `BANK:1234`. A message naming none goes to the account the bank last spoke about. The
+prefs fold (`accountFor`), derive (`assignAccounts`) and the PWA's accounts sheet apply the same
+rule; a bank's switch and its family exclusion stay per bank. Balances are untouched: the phone's are its fold over each
+message as parsed, and the PWA's accounts sheet reads the rows as parsed for the same reason.
+
 ### Shipping a parser fix
 
 Bump `PARSER_VERSION` in `Derived.kt`. The next launch re-derives every transaction from the

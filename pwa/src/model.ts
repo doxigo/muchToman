@@ -75,7 +75,7 @@ export interface Rule {
 
 export type DecisionKind =
   | 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment' | 'loan'
-  | 'amount' | 'day' | 'member' | 'split';
+  | 'amount' | 'day' | 'member' | 'split' | 'direction';
 
 /** `txn_decision`: one per (ref, kind). `id` is `${kind}:${ref}` here, which is that key. */
 export interface Decision {
@@ -351,6 +351,8 @@ export interface Txn {
   channel: string;
   unitPrinted: string;
   inferred: boolean;
+  /** The four digits a message labels «حساب» (paste.ts `accountNoIn`); absent or blank for none. */
+  accountNo?: string;
   familyRef: string;
   ownerMemberId: string;
   sourceKind: 'sms' | 'manual';

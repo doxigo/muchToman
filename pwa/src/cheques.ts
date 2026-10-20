@@ -21,7 +21,7 @@ import type { Insight } from './reports';
 import { MAX_PLAUSIBLE_RIAL, bankFa } from './sms';
 
 /** What the warning reads off an account — the bank accounts sheet's own rows. */
-export type ChequeAccount = Pick<BankAccountView, 'bank' | 'balanceRial' | 'anchored'>;
+export type ChequeAccount = Pick<BankAccountView, 'bank' | 'balanceRial' | 'anchored'> & { key?: string };
 
 /** A cheque she has just written, or null when the answers are not one. */
 export function newCheque(id: string, nameFa: string, amountRial: number, due: number, bank: string, now: number, mineId = ''): Goal | null {
@@ -65,7 +65,8 @@ export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: r
   const need = cheque.targetRial + open
     .filter((c) => c.id !== cheque.id && c.categoryId === cheque.categoryId && bySooner(c, cheque) < 0)
     .reduce((sum, c) => sum + c.targetRial, 0);
-  const account = accounts.find((a) => a.bank === cheque.categoryId && a.anchored);
+  // A cheque names its bank, not which of its accounts: read against the first, which keeps the bank's name.
+  const account = accounts.find((a) => (a.key ?? a.bank) === cheque.categoryId && a.anchored);
   if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 3)} ${moneyUnit()} توش هست.`;
   if (account.balanceRial >= need) return null;
   const earlier = need > cheque.targetRial ? 'با چک‌های زودتر همین حساب، ' : '';

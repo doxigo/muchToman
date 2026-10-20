@@ -117,7 +117,8 @@
         "refNo": "",
         "printedAt": "",
         "channel": "unknown",
-        "unitPrinted": "rial"
+        "unitPrinted": "rial",
+        "account": ""
       }
     },
     {
@@ -368,6 +369,56 @@
         "printedAt": "",
         "channel": "unknown",
         "unitPrinted": "none"
+      }
+    },
+    {
+      "id": "shape-masked-account-tail-is-the-account",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "برداشت مبلغ 2,000,000 ریال از حساب ***6460",
+        "مانده 10,000,000 ریال"
+      ],
+      "why": "A bank that stars out all but the tail of the account it labels «حساب» names the same account as one printing it whole — «حساب7591126460» — so both read as its last four digits, or one account would fork into two balances and the total count it twice.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 2000000,
+        "balanceRial": 10000000,
+        "account": "6460"
+      }
+    },
+    {
+      "id": "shape-transfer-naming-two-accounts-names-none",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "انتقال مبلغ 1,000,000 ریال از حساب 0101234567890 به حساب 0109876543210",
+        "مانده 5,000,000 ریال"
+      ],
+      "why": "Two accounts named in one message are a transfer between them, and which one is hers is a guess. It names none, so it lands on the account the bank last spoke about rather than forking a new one.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 1000000,
+        "balanceRial": 5000000,
+        "account": ""
+      }
+    },
+    {
+      "id": "shape-bill-and-balance-labels-are-no-account",
+      "sender": "0999 992 0000",
+      "at": 1,
+      "body": [
+        "پرداخت قبض صورتحساب 1234567",
+        "مبلغ 500,000 ریال",
+        "مانده حساب: 9,000,000 ریال",
+        "حساب: 25000000 ریال"
+      ],
+      "why": "«صورتحساب» is a bill and its number a bill's; «مانده حساب» labels the balance; and a figure followed by its unit is money however it is labelled. None of them is an account, and reading one as such forks a bank's single account.",
+      "expect": {
+        "direction": "out",
+        "amountRial": 500000,
+        "balanceRial": 9000000,
+        "account": ""
       }
     }
   ]

@@ -92,7 +92,12 @@ import kotlinx.coroutines.sync.withLock
 // category. Every one already stored is still sitting in the deck until this rebuild refiles it.
 // 20: a transfer «در حال بررسی» is not a spend. Blu's notice that it is reviewing a transfer had
 // been stored as a withdrawal beside the real debit that follows it, counting the money twice.
-const val PARSER_VERSION = 20
+// 21: a row whose مانده moved from the one before it by exactly its amount goes the way the
+// مانده went, whatever its words said — see [settleDirections]. Deposits worded with «انتقال» or
+// «پرداخت» had been stored as spends, and ones naming both a deposit and a fee with no direction.
+// And a row is kept on the account its «حساب» names ([assignAccounts]): two accounts at one bank
+// had been one account, so a transfer between them read as a spend and an income both.
+const val PARSER_VERSION = 21
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
@@ -162,13 +167,14 @@ data class Txn(
     val day: Long,
     val bank: String,
     /**
-     * The account this belongs to, which is the bank and only the bank.
+     * The account this belongs to: the bank's own name for its first account, `BANK:1234` for
+     * each one after it — [BankAccount.key], settled by [assignAccounts].
      *
-     * Not the printed identifier, and per-transaction rows do not change why. One real Saman
-     * account prints its number on a transfer, a card mask on a purchase, and nothing at all on
-     * some alerts; keying on what was printed forked it into three accounts, each anchored at
-     * the same full balance, and the total added all three. [mask] and [instrument] live on the
-     * row where they group card spend and key nothing.
+     * Told apart only by the number a message labels «حساب», never by whatever identifier it
+     * printed. One real Saman account prints its number on a transfer, a card mask on a purchase,
+     * and nothing at all on some alerts; keying on what was printed forked it into three accounts,
+     * each anchored at the same full balance, and the total added all three. [mask] and
+     * [instrument] live on the row where they group card spend and key nothing.
      */
     @ColumnInfo(name = "account_id") val accountId: String,
     /** "in", "out", or null when the message did not say. */
@@ -304,7 +310,8 @@ fun parseToRows(source: SmsSource, extra: Map<String, Bank>, now: Long = System.
             at = at,
             day = tehranDay(at),
             bank = read.bank.name,
-            accountId = read.bank.name,
+            // The account it names, if any; [assignAccounts] settles which of the bank's that is.
+            accountId = if (read.accountNo.isEmpty()) read.bank.name else "${read.bank.name}:${read.accountNo}",
             direction = direction,
             amountRial = read.amountRial,
             signedRial = read.amountRial?.let { a -> direction?.let { if (it == "in") a else -a } },
@@ -322,6 +329,84 @@ fun parseToRows(source: SmsSource, extra: Map<String, Bank>, now: Long = System.
             parserVer = PARSER_VERSION,
         )
     )
+}
+
+/**
+ * Each message row on the account it belongs to, by [accountFor]'s rule walked oldest first: a
+ * row naming a number keeps that number's account, the first number a bank names takes the bank's
+ * own name, and a row naming none lands on the account the bank last spoke about.
+ *
+ * ponytail: the phone's balances also count a figure she typed as the bank last speaking about
+ * that account, and these rows do not. They part only for a message naming no account right
+ * after she typed one in, and only in which row it is linked against.
+ */
+fun assignAccounts(rows: List<Txn>): List<Txn> {
+    val accountOf = HashMap<String, String>()   // `BANK:1234` as read → the key it is kept under
+    val named = HashSet<String>()               // banks whose own name a number already holds
+    val latest = HashMap<String, String>()      // bank → the key it last spoke about
+    val moved = HashMap<String, String>()
+    for (row in rows.sortedWith(compareBy({ it.at }, { it.ref }))) {
+        if (!row.ref.startsWith("s:")) continue
+        val bank = row.bank
+        val key = if (row.accountId == bank) latest[bank] ?: bank
+        else accountOf.getOrPut(row.accountId) { if (named.add(bank)) bank else row.accountId }
+        latest[bank] = key
+        if (key != row.accountId) moved[row.ref] = key
+    }
+    if (moved.isEmpty()) return rows
+    return rows.map { row -> moved[row.ref]?.let { row.copy(accountId = it) } ?: row }
+}
+
+/** The مانده an account last stated, how much moved on that row, and which way it was settled. */
+private class Stated(val balance: Long, val amount: Long?, val direction: String?)
+
+/**
+ * Which way each of her rows' money went, by the best evidence there is: her own answer, then the
+ * bank's arithmetic, then the words [parseBankSms] read.
+ *
+ * Words are a guess about wording. «انتقال» heads a transfer whichever way it went, «پرداخت سود» is
+ * interest paid *to* her, and a deposit that names its کارمزد names a spend word too — so a deposit
+ * read as a spend, or as no direction at all, depends on which bank wrote it. Two مانده do not:
+ * when the one a row states sits exactly its amount above the one stated before it on the same
+ * account, the money came in, and exactly below, it went out. Anything else — a message missed in
+ * between, a second account at the same bank — matches neither and leaves the words standing.
+ *
+ * A row stating the مانده and amount the row before it stated is a copy of that message — Blu's
+ * SMS and its app's notification — and goes whichever way that one was settled, or the duplicate
+ * check, which pairs copies by their signed figure, would stop seeing them as one.
+ *
+ * Her answer beats both: it is how a row with no مانده, from a bank whose words this file has never
+ * seen, is put right. Applied here and not where the ledger is read, so filing, rules and transfer
+ * links all see the money going the way she said.
+ *
+ * ponytail: measured against the one مانده just before. Walk further back if two accounts at one
+ * bank interleave often enough to matter.
+ */
+fun settleDirections(rows: List<Txn>, chosen: Map<String, String?> = emptyMap()): List<Txn> {
+    val decided = HashMap<String, String>()
+    val latest = HashMap<String, Stated>()
+    for (row in rows.sortedWith(compareBy({ it.at }, { it.ref }))) {
+        val amount = row.amountRial
+        val after = row.balanceRial
+        val last = latest[row.accountId]
+        val copy = last != null && after == last.balance && amount == last.amount
+        val measured = when {
+            amount == null || after == null || last == null -> null
+            copy -> last.direction
+            after - last.balance == amount -> "in"
+            after - last.balance == -amount -> "out"
+            else -> null
+        }
+        val direction = chosen[row.ref]?.takeIf { it == "in" || it == "out" } ?: measured ?: row.direction
+        if (amount != null && direction != null && direction != row.direction) decided[row.ref] = direction
+        if (after != null && !copy) latest[row.accountId] = Stated(after, amount, direction)
+    }
+    if (decided.isEmpty()) return rows
+    return rows.map { row ->
+        val direction = decided[row.ref] ?: return@map row
+        val amount = row.amountRial!!
+        row.copy(direction = direction, signedRial = if (direction == "in") amount else -amount, inferred = false)
+    }
 }
 
 /** A hand-entered transaction, in the same shape as one read from a message. */
@@ -442,10 +527,12 @@ suspend fun derive(
         derived.classes().deleteAll()
         derived.links().deleteAll()
 
-        val parsed = sources.flatMap { parseToRows(it, extra, now) }
         // Typed in here, or on the iPhone and synced across. From this line down nothing
         // distinguishes them from a message — they classify, link and report identically.
-        val manual = durable.manual().all().map(::manualToRow)
+        val hers = settleDirections(
+            assignAccounts(sources.flatMap { parseToRows(it, extra, now) }) + durable.manual().all().map(::manualToRow),
+            durable.decisions().ofKind(DecisionKind.DIRECTION).associate { it.ref to it.value },
+        )
         val familyRecords = durable.familyTxns().all()
         val family = familyRecords.map(::familyToRow)
 
@@ -454,9 +541,9 @@ suspend fun derive(
         // deleted came back as a second spend of its own, and deleting one leg of a transfer
         // turned the other into income. The echo goes with the row she deleted — it was only
         // ever a copy of it.
-        val links = findLinks(parsed + manual + family, verdicts)
+        val links = findLinks(hers + family, verdicts)
         val dropped = hiddenByHer + hiddenRefs(links.filter { it.aRef in hiddenByHer || it.bRef in hiddenByHer })
-        val all = (parsed + manual).filterNot { it.ref in dropped } + family
+        val all = hers.filterNot { it.ref in dropped } + family
         for (chunk in all.chunked(500)) derived.txn().insertAll(chunk)
         written = all.size
         derived.links().putAll(links)
@@ -687,6 +774,8 @@ suspend fun ledgerEntries(
     val days = edits.getValue(DecisionKind.DAY)
     val attributed = edits.getValue(DecisionKind.MEMBER)
     val splits = edits.getValue(DecisionKind.SPLIT)
+    // Laid on in derive, not here — see [settleDirections] — so only asked whether she answered it.
+    val turned = durable.decisions().ofKind(DecisionKind.DIRECTION).mapTo(HashSet()) { it.ref }
     val entries = transactions.map { original ->
         val txn = editedTxn(original, amounts[original.ref]?.toLongOrNull(), days[original.ref]?.toLongOrNull())
         val filed = classes[txn.ref]
@@ -696,7 +785,7 @@ suspend fun ledgerEntries(
         val categoryEditorId = categoryDecisions[txn.ref]?.memberId.orEmpty()
         LedgerEntry(
             txn = txn,
-            edited = txn != original,
+            edited = txn != original || txn.ref in turned,
             split = splitOf(splits[txn.ref], txn.amountRial, names),
             categoryId = filed?.categoryId ?: CAT_UNCATEGORISED,
             categoryFa = names[filed?.categoryId] ?: "دسته‌بندی نشده",

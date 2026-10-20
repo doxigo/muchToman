@@ -564,7 +564,8 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
     if (sms.delta != null && abs(sms.delta) > MAX_PLAUSIBLE_TOMAN) return accounts
     val at = sms.at.coerceIn(0L, now)
     val held = accounts.map { if (it.bank == sms.bank.name && it.updatedAt > now) it.copy(updatedAt = at) else it }
-    val known = held.firstOrNull { it.bank == sms.bank.name }
+    val known = accountFor(held, sms)
+    val key = accountKeyFor(held, sms)
     val ref = if (sms.balance == null && sms.delta != null && sms.refNo.isNotEmpty()) "${sms.refNo}|${sms.delta}" else null
     val folded = ref?.let { known?.refs?.get(it) }
     if (folded != null && abs(at - folded) <= DUPLICATE_REFNO_WINDOW_MS) return held
@@ -581,7 +582,7 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
     val pending = if (sms.balance == null) known?.pending else null
     val refs = (known?.refs.orEmpty() + listOfNotNull(ref?.to(at)))
         .filterValues { at - it <= DUPLICATE_REFNO_WINDOW_MS }
-    return next.map { if (it.bank == sms.bank.name) it.copy(pending = pending, refs = refs) else it }
+    return next.map { if (it.key == key) it.copy(pending = pending, refs = refs) else it }
 }
 
 /**
@@ -1077,7 +1078,7 @@ class Store(context: Context) {
         set(v) { prefs.edit().putBoolean("smsEnabled", v).apply() }
 
     /**
-     * One balance per bank, built from her messages. Collapsed on the way in as well as on the
+     * One balance per account, built from her messages. Collapsed on the way in as well as on the
      * way out, so a phone carrying the rows an older build wrote — one per printed identifier,
      * thirty-eight of them on a real device — is put right the first time it is read, without
      * waiting for a new message to arrive.

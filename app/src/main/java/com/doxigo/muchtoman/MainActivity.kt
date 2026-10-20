@@ -809,7 +809,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // different span on each side, and comparing those two numbers only ever prints noise.
         for (balance in allBalances(derived, durable)) {
             if (!balance.anchored) continue
-            val folded = store.bankAccounts.firstOrNull { it.bank == balance.accountId } ?: continue
+            val folded = store.bankAccounts.firstOrNull { it.key == balance.accountId } ?: continue
             if (!folded.anchored) continue
             if (balance.at > folded.updatedAt) continue
             val foldedRial = Math.round(folded.balance * 10.0)
@@ -1151,12 +1151,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Her figure, day and member for one of this phone's own rows — see [editRow]. */
-    fun editTxn(entry: LedgerEntry, rial: Long?, day: Long?, memberId: String?) =
-        ledgerEdit("editTxn") { durable -> editRow(durable, entry, rial, day, memberId, loadSession(durable)?.member.orEmpty()) }
+    /**
+     * Her figure, day, member and direction for one of this phone's own rows — see [editRow]. A
+     * direction is laid on in derive, so only that one costs a derive.
+     */
+    fun editTxn(entry: LedgerEntry, rial: Long?, day: Long?, memberId: String?, direction: String?) =
+        ledgerEdit("editTxn", rederive = direction != null) { durable ->
+            editRow(durable, entry, rial, day, memberId, loadSession(durable)?.member.orEmpty(), direction = direction)
+        }
 
     fun revertTxnEdits(entry: LedgerEntry) =
-        ledgerEdit("revertTxnEdits") { durable -> revertRow(durable, entry, loadSession(durable)?.member.orEmpty()) }
+        ledgerEdit("revertTxnEdits", rederive = true) { durable -> revertRow(durable, entry, loadSession(durable)?.member.orEmpty()) }
 
     /** The row in parts, or whole again — see [splitRow]. Refiling is a derive; an edit is not. */
     fun splitTxn(entry: LedgerEntry, parts: List<Pair<String, Long>>) =

@@ -58,6 +58,7 @@ describe('quick paste', () => {
       for (const key of ['printedAt', 'mask', 'instrument', 'merchant', 'refNo', 'channel', 'unitPrinted'] as const) {
         if (key in c.expect) expect(got[key], `${where} (${key})`).toBe(c.expect[key] ?? '');
       }
+      if ('account' in c.expect) expect(got.accountNo, `${where} (account)`).toBe(c.expect.account);
       if ('feeRial' in c.expect) expect(got.feeRial, `${where} (feeRial)`).toBe(c.expect.feeRial ?? null);
       if ('inferred' in c.expect) expect(got.inferred, `${where} (inferred)`).toBe(c.expect.inferred);
       checked++;

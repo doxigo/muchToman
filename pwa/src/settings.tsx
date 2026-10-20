@@ -385,7 +385,7 @@ function SmsPage() {
 /**
  * A bank she keeps by hand (Settings.kt AddBankSheet): which one, then what is in it. Two steps in
  * one sheet, so the field is not a long scroll below the bank she tapped. The banks already on the
- * page are left out — one account per bank — and the rest run alphabetically without the «بانک»
+ * page are left out — a bank kept by hand is one account — and the rest run alphabetically without the «بانک»
  * nearly all of them start with, which is how she looks for one.
  */
 function AddBankSheet() {

@@ -213,8 +213,11 @@ family outside the two sizes is the title line (دفتر, دارایی) — the 
 (`TitleAddButton`), the paste and search discs,
 «دسته‌ها» and the review pill — a 48dp toolbar on the neutral well, sized as one row; a 44dp pill
 in it would sit visibly short of its neighbours.
-Inside a card, routine acts share a row in equal cells and the one that loses something takes
-its own full-width row, so its armed sentence always has room. A **door** that leads elsewhere
+Inside a card, answers to one question share a row in equal cells («آره / لازم بود / نه»), and
+the one act that loses something takes its own full-width row, so its armed sentence always has
+room. A card whose subject is a figure — a bank account — keeps its tools as a foot instead: pills
+as wide as their words at the start edge, so they never outweigh the figure, and its delete waits
+inside the correction it belongs to («اصلاح موجودی»), not one stray tap away on every card. A **door** that leads elsewhere
 (the backup reminder) is a card with a chevron, not a pill.
 
 **A commit never greys out.** It is `PRIMARY` from the moment the sheet opens, and a tap on an

@@ -1195,7 +1195,7 @@ private fun SmsPage(
  *
  * Two steps in one sheet rather than a list with the field under it: twenty-five banks put the
  * field a long scroll below the one she had just tapped. The list leaves out the banks already on
- * the page — one account per bank, as everywhere else — and runs in alphabetical order without
+ * the page — a bank kept by hand is one account — and runs in alphabetical order without
  * the «بانک» nearly all of them start with, which is how she looks for one.
  */
 @OptIn(ExperimentalMaterial3Api::class)

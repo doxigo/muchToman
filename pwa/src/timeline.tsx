@@ -117,7 +117,7 @@ function transactionDetails(entry: LedgerEntry): Array<[string, string]> {
   const out: Array<[string, string]> = [['نوع', txn.direction === 'in' ? 'واریز' : txn.direction === 'out' ? 'برداشت' : 'نامشخص']];
   if (entry.ownerName.trim()) out.push(['صاحب تراکنش', entry.ownerName]);
   if (entry.categoryEditorName.trim()) out.push(['دسته‌بندی توسط', entry.categoryEditorName]);
-  if (entry.edited) out.push(['ویرایش', 'مبلغ یا تاریخش دستی اصلاح شده']);
+  if (entry.edited) out.push(['ویرایش', 'نوع، مبلغ یا تاریخش دستی اصلاح شده']);
   // The hero says «امروز»; the written-out date and its minute belong here. «زمان ثبت» is a
   // different fact: the stamp the bank printed, often a bare date.
   out.push(['تاریخ', faMoment(txn.at, txn.day)]);
@@ -682,9 +682,10 @@ function SourcePreview({ entry }: { entry: LedgerEntry }) {
 
 /** The categories in her most-used order, held for as long as this transaction is up: a grid that
  * reshuffles between two taps is one she has to read again. Keyed on the categories' content,
- * because every derive hands over a new array of the same categories. */
+ * because every derive hands over a new array of the same categories, and on the direction, which
+ * the edit sheet can turn. */
 function useChoices(entry: LedgerEntry, view: LedgerView) {
-  const key = `${entry.txn.ref}|${view.categories.map((c) => `${c.id}:${c.nameFa}`).join(',')}`;
+  const key = `${entry.txn.ref}|${entry.txn.direction}|${view.categories.map((c) => `${c.id}:${c.nameFa}`).join(',')}`;
   const memo = useRef<{ key: string; choices: Category[] } | null>(null);
   if (memo.current?.key !== key) memo.current = { key, choices: categoryChoices(view.categories, entry.txn.direction, view.categoryUse) };
   return memo.current.choices;

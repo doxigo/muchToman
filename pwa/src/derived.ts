@@ -20,7 +20,7 @@ import type { LoanLink } from './loans';
 import { editedTxn, splitOf } from './edits';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify, noteUseOf } from './rules';
 import type { NoteUse, TxnClass } from './rules';
-import { BANKS, MAX_PLAUSIBLE_RIAL, bankFa, clampAt, isBank, merchantNorm, parseToRows, sha256Hex } from './sms';
+import { BANKS, MAX_PLAUSIBLE_RIAL, assignAccounts, bankFa, clampAt, isBank, merchantNorm, parseToRows, settleDirections, sha256Hex } from './sms';
 import { dataVersion, pref, rows, useData } from './state';
 import type {
   BalanceAnchor, Category, Decision, FamilyMember, FamilyTxn, LedgerEntry, LinkDecision, ManualTxn, Rule, Source, Txn,
@@ -165,9 +165,16 @@ export function deriveBalance(accountId: string, transactions: readonly Txn[], t
   return { accountId, rial: anchor.rial + since, at: newestAt, anchored: true };
 }
 
-/** One bank's balance, as the accounts sheet shows it. */
+/** One account's balance, as the accounts sheet shows it. */
 export interface BankAccountView {
+  /**
+   * The bank's own name for its first account, `BANK:1234` for each one after it — Sms.kt
+   * `BankAccount.key`. What anchors, switches and cheques are kept against.
+   */
+  key: string;
   bank: string;
+  /** The four digits its messages label «حساب», blank while none has named it. */
+  number: string;
   bankFa: string;
   /** Whichever message named the account most recently — a label only, never a key. */
   mask: string;
@@ -202,6 +209,7 @@ type Account = Omit<BankAccountView, 'bankFa' | 'trusted' | 'disabled'> & { pend
  * into a small account left it stuck at the old figure.
  */
 function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined {
+  const named = { key: t.accountId, number: t.accountNo || existing?.number || '' };
   const delta = t.signedRial;
   if (t.balanceRial != null && Math.abs(t.balanceRial) > MAX_PLAUSIBLE_RIAL) return existing;
   if (delta != null && Math.abs(delta) > MAX_PLAUSIBLE_RIAL) return existing;
@@ -213,11 +221,11 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
   if (existing && t.at < existing.updatedAt) return existing;
   const mask = t.mask.trim() ? t.mask : existing?.mask ?? '';
   if (t.balanceRial != null) {
-    return { bank: t.bank, mask, balanceRial: t.balanceRial, updatedAt: t.at, inferred: t.inferred, anchored: true, manual: false };
+    return { ...named, bank: t.bank, mask, balanceRial: t.balanceRial, updatedAt: t.at, inferred: t.inferred, anchored: true, manual: false };
   }
   if (delta == null) return existing;
   return {
-    bank: t.bank, mask,
+    ...named, bank: t.bank, mask,
     balanceRial: (existing?.balanceRial ?? 0) + delta,
     updatedAt: Math.max(t.at, existing?.updatedAt ?? 0),
     // Accumulating never un-marks a guess, and never turns a running total into an anchored one.
@@ -228,12 +236,16 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
   };
 }
 
-/** The id of the tombstone [forgetAccount] leaves: nothing at or before its `at` counts for that bank. */
-export const forgetMarkId = (bank: string): string => `forget:${bank}`;
+/** The id of the tombstone [forgetAccount] leaves: nothing at or before its `at` counts for that account. */
+export const forgetMarkId = (key: string): string => `forget:${key}`;
+
+/** The bank an account key is at: `MELLAT` for `MELLAT` and for `MELLAT:0457`. */
+export const bankOfKey = (key: string): string => key.split(':')[0];
 
 /**
- * One account per bank, from the pasted messages and the figures she typed — the phone's prefs
- * fold, rebuilt from scratch each time rather than carried, since here the messages are all kept.
+ * One balance per account — a bank's own, and one more for each further «حساب» its messages name
+ * (assignAccounts) — from the pasted messages and the figures she typed: the phone's prefs fold,
+ * rebuilt from scratch each time rather than carried, since here the messages are all kept.
  *
  * Folded oldest first, a typed figure ahead of a message at the same millisecond so the bank takes
  * the tie as it does in [deriveBalance]. Two messages at one moment — a purchase and its fee under
@@ -254,27 +266,29 @@ export function bankAccountsOf(
   pastedAt: ReadonlyMap<string, number> = new Map(),
 ): BankAccountView[] {
   const floors = new Map(anchors.filter((a) => a.id === forgetMarkId(a.accountId)).map((a) => [a.accountId, a.at]));
-  type Event = { at: number; order: number; pasted: number; txn?: Txn; anchor?: BalanceAnchor; bank: string };
+  type Event = { at: number; order: number; pasted: number; txn?: Txn; anchor?: BalanceAnchor; key: string; bank: string };
   const events = [
-    ...anchors.filter((a) => !a.deleted).map((a): Event => ({ at: a.at, order: 0, pasted: 0, anchor: a, bank: a.accountId })),
+    ...anchors.filter((a) => !a.deleted)
+      .map((a): Event => ({ at: a.at, order: 0, pasted: 0, anchor: a, key: a.accountId, bank: bankOfKey(a.accountId) })),
     ...txns.filter((t) => t.sourceKind === 'sms' && t.ref.startsWith('s:') && !(hidden.has(t.ref) && t.balanceRial == null))
-      .map((t): Event => ({ at: t.at, order: 1, pasted: pastedAt.get(t.srcHash) ?? 0, txn: t, bank: t.bank })),
-  ].filter((e) => isBank(e.bank) && e.bank !== 'OTHER' && e.at > (floors.get(e.bank) ?? -Infinity))
+      .map((t): Event => ({ at: t.at, order: 1, pasted: pastedAt.get(t.srcHash) ?? 0, txn: t, key: t.accountId, bank: t.bank })),
+  ].filter((e) => isBank(e.bank) && e.bank !== 'OTHER' && e.at > (floors.get(e.key) ?? -Infinity))
     .sort((a, b) => a.at - b.at || a.order - b.order || a.pasted - b.pasted ||
       ((a.txn?.ref ?? '') < (b.txn?.ref ?? '') ? -1 : 1));
   const accounts = new Map<string, Account>();
   for (const e of events) {
-    const existing = accounts.get(e.bank);
+    const existing = accounts.get(e.key);
     // Her figure makes an account even where no message has yet: the ledger's allBalances reads it so.
     const next = e.anchor
-      ? { bank: e.bank, mask: existing?.mask ?? '', balanceRial: e.anchor.balanceRial, updatedAt: e.anchor.at, inferred: false, anchored: true, manual: existing?.manual ?? true }
+      ? { key: e.key, bank: e.bank, number: existing?.number ?? '', mask: existing?.mask ?? '', balanceRial: e.anchor.balanceRial, updatedAt: e.anchor.at, inferred: false, anchored: true, manual: existing?.manual ?? true }
       : foldBankSms(existing, e.txn!);
-    if (next) accounts.set(e.bank, next);
+    if (next) accounts.set(e.key, next);
   }
   const disabled = new Set(disabledBanks);
   return [...accounts.values()]
+    // Switched on and off per bank, as the phone does: the Settings band is one switch a bank.
     .map(({ pending: _, ...a }) => ({ ...a, bankFa: bankFa(a.bank), trusted: a.anchored && !a.inferred, disabled: disabled.has(a.bank) }))
-    .sort((a, b) => bankOrder(a.bank) - bankOrder(b.bank));
+    .sort((a, b) => bankOrder(a.bank) - bankOrder(b.bank) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 const BANK_ORDER = new Map(BANKS.map((b, i) => [b.name, i]));
 const bankOrder = (name: string): number => BANK_ORDER.get(name) ?? BANKS.length;
@@ -355,7 +369,11 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const rules = input.rules.filter((r) => !r.deleted);
 
   const family = input.familyTxns.filter((f) => !f.deleted);
-  const hers = [...input.sources.flatMap((s) => parseToRows(s, now)), ...input.manual.filter((m) => !m.deleted).map(manualToRow)];
+  const read = assignAccounts(input.sources.flatMap((s) => parseToRows(s, now)));
+  // Her answer and the bank's arithmetic say which way the money went before anything files or
+  // links a row — see settleDirections.
+  const turned = new Map(ofKind(DecisionKind.DIRECTION).map((d) => [d.ref, d.value]));
+  const hers = settleDirections([...read, ...input.manual.filter((m) => !m.deleted).map(manualToRow)], turned);
   const familyRows = family.map((f) => familyToRow(f, now));
   // Linked with the rows she deleted still in, and only then are they dropped: dropped first, the
   // echo of a message she deleted came back as a spend of its own, and deleting one leg of a
@@ -392,7 +410,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
     const note = notes.get(txn.ref);
     return {
       txn,
-      edited: txn !== original,
+      edited: txn !== original || turned.has(txn.ref),
       split: splitOf(splits.get(txn.ref), txn.amountRial, names),
       categoryId: filed?.categoryId ?? CAT_UNCATEGORISED,
       categoryFa: names.get(filed?.categoryId ?? '') ?? 'دسته‌بندی نشده',
@@ -415,7 +433,9 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
 
   // Set aside here, at the view, and nowhere earlier: every balance still reads every message.
   const kept = startingFrom(entries, startsOn);
-  const bankAccounts = bankAccountsOf(all, input.anchors, input.disabledBanks, hidden,
+  // The messages as read, not as settled: the phone's balances are its prefs fold over each message
+  // as the parser read it, and a direction she set never moves a balance the bank stated.
+  const bankAccounts = bankAccountsOf(read.filter((t) => !dropped.has(t.ref)), input.anchors, input.disabledBanks, hidden,
     new Map(input.sources.map((s) => [s.id, s.ingestedAt])));
   const marks: Record<string, string> = {};
   for (const c of everyCategory) if (c.glyph.trim()) marks[c.nameFa] = c.glyph;

@@ -13,7 +13,8 @@ import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/j
 import type { BalanceAnchor, Decision, FamilyTxn, LedgerEntry, ManualTxn, Source, Txn } from '../src/model';
 import { BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_OTHER, CAT_SHOPPING_ID, CAT_UNCATEGORISED } from '../src/rules';
 import { readBundle } from '../src/paste';
-import { AT_FUTURE_SLACK_MS, bankOf, parseToRows, pastedMoment, printedMoment, sha256Hex, sourceId } from '../src/sms';
+import { findDuplicates } from '../src/links';
+import { AT_FUTURE_SLACK_MS, assignAccounts, bankOf, parseToRows, pastedMoment, printedMoment, settleDirections, sha256Hex, sourceId } from '../src/sms';
 
 /** Derived.kt, as DeriveTest.kt, LedgerStartTest.kt and FilingTest.kt pin it, and AppVm's ledger actions. */
 
@@ -161,6 +162,43 @@ describe('reading pasted messages', () => {
   });
 });
 
+describe('which way the money went', () => {
+  // DeriveTest.kt's case, message for message.
+  const saman = (at: number, body: string, bank = 'SAMAN', id?: string): Txn => parseToRows(source(bank, body, at, id), 1e12)[0];
+  const rows = [
+    saman(1, 'بانک سامان\nواریز مبلغ 1,000,000 ریال\nمانده 10,000,000 ریال'),
+    // A deposit worded with a spend word, as some banks head an incoming transfer.
+    saman(2, 'بانک سامان\nانتقال وجه مبلغ 2,000,000 ریال\nمانده 12,000,000 ریال'),
+    // The same transaction told again, worded its own way: a copy, measured as its original was.
+    saman(3, 'بانک سامان\nواریز مبلغ 2,000,000 ریال\nمانده 12,000,000 ریال'),
+    // A deposit that names its fee names a spend word too, and read as no direction at all.
+    saman(4, 'بانک سامان\nواریز مبلغ 3,000,000 ریال\nکارمزد 5,000 ریال\nمانده 15,000,000 ریال'),
+    // A message went missing before this one, so its مانده proves nothing and the words stand.
+    saman(5, 'بانک سامان\nبرداشت مبلغ 1,000,000 ریال\nمانده 5,000,000 ریال'),
+    // No مانده to measure by.
+    saman(6, 'بانک سامان\nانتقال وجه مبلغ 700,000 ریال'),
+  ];
+  const byAt = (txns: Txn[]): Map<number, Txn> => new Map(txns.map((t) => [t.at, t]));
+  const paired = (txns: Txn[]): boolean => findDuplicates(txns)
+    .some((l) => new Set([l.aRef, l.bRef, rows[1].ref, rows[2].ref]).size === 2);
+
+  it("reads it off the bank's own مانده where the words got it wrong or said nothing", () => {
+    expect(rows.map((r) => r.direction)).toEqual(['in', 'out', 'in', null, 'out', 'out']);
+    const settled = byAt(settleDirections([...rows].reverse()));
+    expect([1, 2, 3, 4, 5, 6].map((at) => settled.get(at)!.signedRial))
+      .toEqual([1_000_000, 2_000_000, 2_000_000, 3_000_000, -1_000_000, -700_000]);
+    expect(settled.get(4)!.inferred).toBe(false);
+    expect(paired([...settled.values()])).toBe(true);
+  });
+
+  it('takes her answer over the words and the مانده both, and her copy with it', () => {
+    const hers = byAt(settleDirections(rows, new Map([[rows[5].ref, 'in'], [rows[1].ref, 'out']])));
+    expect([6, 2, 3].map((at) => hers.get(at)!.signedRial)).toEqual([700_000, -2_000_000, -2_000_000]);
+    expect(paired([...hers.values()])).toBe(true);
+    expect(settleDirections([rows[0]], new Map([[rows[0].ref, 'sideways']]))[0]).toBe(rows[0]);
+  });
+});
+
 describe('what an account holds', () => {
   it('anchors on a stated balance and builds on it', () => {
     const b = deriveBalance('SAMAN', [
@@ -201,6 +239,23 @@ describe('what an account holds', () => {
 });
 
 describe('the accounts sheet', () => {
+  it("keeps a bank's two accounts apart by the «حساب» they name", () => {
+    const mellat = (at: number, body: string): Txn => parseToRows(source('MELLAT', body, at), 1e12)[0];
+    const rows = assignAccounts([
+      mellat(1, 'برداشت1,000,000\nمانده9,000,000'),
+      mellat(2, 'حساب7591126460\nبرداشت1,000,000\nمانده8,000,000'),
+      mellat(3, 'حساب9750457\nواریز2,000,000\nمانده50,000,000'),
+      mellat(4, 'برداشت500,000\nمانده49,500,000'),
+      mellat(5, 'حساب***6460\nبرداشت700,000\nمانده7,300,000'),
+    ]);
+    expect(rows.map((r) => r.accountId)).toEqual(['MELLAT', 'MELLAT', 'MELLAT:0457', 'MELLAT:0457', 'MELLAT']);
+    // Her figure for the second lands on the second; switching the bank off switches off both.
+    const accounts = bankAccountsOf(rows, [anchor(6, 60_000_000, 'MELLAT:0457')], ['MELLAT']);
+    expect(accounts.map((a) => [a.key, a.number, a.balanceRial, a.disabled])).toEqual([
+      ['MELLAT', '6460', 7_300_000, true], ['MELLAT:0457', '0457', 60_000_000, true],
+    ]);
+  });
+
   const stated = (at: number, rial: number, account = 'SAMAN'): Txn => txn({ at, balance: rial, account });
 
   it('refuses one message claiming a hundred-fold jump over an anchored balance', () => {
@@ -580,6 +635,17 @@ describe('ledger actions', () => {
     expect(state.rows('rules').filter((r) => r.originRef === filed.txn.ref && !r.deleted)).toMatchObject([{ categoryId: 'cat_dining' }]);
     ledger.learnSimilarNow(derived.ledger().entries[0], false);
     expect(state.rows('rules').filter((r) => r.originRef === filed.txn.ref && !r.deleted)).toEqual([]);
+  });
+
+  it('turns a pasted deposit read as a spend by her answer, and back', async () => {
+    // No مانده to measure it by, so only her answer can say it came in.
+    await ledger.addPastedSms('بانک سامان\nانتقال وجه مبلغ 700,000 ریال', 'SAMAN', Date.now() - 86_400_000);
+    const read = derived.ledger().entries[0];
+    expect(read.txn.signedRial).toBe(-700_000);
+    ledger.editTxn(read, null, null, null, 'in');
+    expect(derived.ledger().entries[0]).toMatchObject({ edited: true, txn: { direction: 'in', signedRial: 700_000 } });
+    ledger.revertTxnEdits(derived.ledger().entries[0]);
+    expect(derived.ledger().entries[0]).toMatchObject({ edited: false, txn: { direction: 'out', signedRial: -700_000 } });
   });
 
   it('corrects a figure over the row, and splits it into parts every total counts', async () => {

@@ -185,7 +185,7 @@ fun faDayMoment(at: Long, day: Long, today: Long = tehranDay(System.currentTimeM
 
 internal fun faYear(year: Int): String = faDigits(year.toString())
 
-private fun faDigits(s: String): String = buildString {
+internal fun faDigits(s: String): String = buildString {
     for (c in s) append(if (c in '0'..'9') '۰' + (c - '0') else c)
 }
 
@@ -1245,11 +1245,12 @@ fun TransactionScreen(
     /** Takes back a hand-entered row. Only ever offered on one — a message is evidence. */
     onDelete: ((LedgerEntry) -> Unit)? = null,
     /**
-     * Her figure, day and member for one of this phone's own rows — see `Edits.kt`. Null leaves
-     * that one as it stands. Offered on the rows [onDelete] is: another member's row is theirs.
+     * Her figure, day, member and direction for one of this phone's own rows — see `Edits.kt`.
+     * Null leaves that one as it stands. Offered on the rows [onDelete] is: another member's row
+     * is theirs.
      */
-    onEdit: ((LedgerEntry, Long?, Long?, String?) -> Unit)? = null,
-    /** Back to the figure and day the row came with. */
+    onEdit: ((LedgerEntry, Long?, Long?, String?, String?) -> Unit)? = null,
+    /** Back to the figure, day and direction the row came with. */
     onRevertEdits: ((LedgerEntry) -> Unit)? = null,
     /** The household, for «خرج کی بود؟». Fewer than two and the question is not asked. */
     members: List<FamilyMember> = emptyList(),
@@ -1301,7 +1302,8 @@ fun TransactionScreen(
     // would rearrange the grid under her thumb in the instant after she tapped it. It settles
     // into its new order the next time she opens a transaction, which is the first moment the
     // rearrangement can help rather than startle.
-    val choices = remember(txn.ref, categories) {
+    // Its direction too: turned in the edit sheet, the row now wants the other side's grid.
+    val choices = remember(txn.ref, txn.direction, categories) {
         categoryChoices(categories, txn.direction, categoryUse)
     }
 
@@ -1500,7 +1502,7 @@ fun TransactionScreen(
         EditTxnSheet(
             entry = entry,
             members = members,
-            onSave = { rial, day, member -> onEdit(entry, rial, day, member) },
+            onSave = { rial, day, member, direction -> onEdit(entry, rial, day, member, direction) },
             onRevert = onRevertEdits?.takeIf { entry.edited }?.let { revert -> { revert(entry) } },
             onDismiss = { editing = false },
         )
@@ -1704,7 +1706,7 @@ private fun transactionDetails(entry: LedgerEntry): List<Pair<String, String>> {
         })
         entry.ownerName.takeIf { it.isNotBlank() }?.let { add("صاحب تراکنش" to it) }
         entry.categoryEditorName.takeIf { it.isNotBlank() }?.let { add("دسته‌بندی توسط" to it) }
-        if (entry.edited) add("ویرایش" to "مبلغ یا تاریخش دستی اصلاح شده")
+        if (entry.edited) add("ویرایش" to "نوع، مبلغ یا تاریخش دستی اصلاح شده")
         // The field above says «امروز» for the two days she is thinking about, so the written-out
         // date belongs here — with the minute beside it, which nothing else on the screen states.
         // «زمان ثبت» below is a different fact: the stamp the bank itself printed in the message,

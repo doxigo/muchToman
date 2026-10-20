@@ -107,6 +107,7 @@ class SmsCorpusTest {
         string("channel", read.channel.name.lowercase())
         string("instrument", read.instrument.name.lowercase())
         string("unitPrinted", read.unitPrinted.name.lowercase())
+        string("account", read.accountNo)
 
         // **This is the guarantee that enrichment is read-only with respect to the money.**
         //
@@ -139,7 +140,7 @@ class SmsCorpusTest {
 /** Fields a case may assert. Anything else is a typo, and typos assert nothing silently. */
 private val EXPECT_KEYS = setOf(
     "bank", "mask", "direction", "amountRial", "balanceRial", "inferred",
-    "feeRial", "merchant", "refNo", "printedAt", "channel", "instrument", "unitPrinted",
+    "feeRial", "merchant", "refNo", "printedAt", "channel", "instrument", "unitPrinted", "account",
 )
 
 private val CORPUS_JSON = Json {

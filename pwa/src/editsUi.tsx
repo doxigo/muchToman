@@ -1,6 +1,6 @@
 /**
- * «ویرایش تراکنش» and «تقسیم بین دسته‌ها» (EditsUi.kt) — the figure, the day and whose it was on
- * one of her own rows, and one payment broken into the things it bought.
+ * «ویرایش تراکنش» and «تقسیم بین دسته‌ها» (EditsUi.kt) — which way the money went, the figure, the
+ * day and whose it was on one of her own rows, and one payment broken into the things it bought.
  */
 import { useEffect, useState } from 'preact/hooks';
 import './settings.css';
@@ -18,7 +18,7 @@ import { CAT_TRANSFER, CAT_UNCATEGORISED, categoryChoices } from './rules';
 import { closeSheet, registerSheet } from './nav';
 import { DayStepper } from './manualTxn';
 import { CategoryDisc, MemberFace, glyphsOf, useTehranDay } from './timeline';
-import { AmountField, PillButton, Sheet, SheetLabel, SheetTitle } from './ui';
+import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle } from './ui';
 import { Chevron, PlusMark } from './icons';
 import type { LedgerEntry, SplitPart } from './model';
 
@@ -36,6 +36,8 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
   const [amount, setAmount] = useState(txn?.amountRial != null ? rialToField(txn.amountRial) : '');
   const [day, setDay] = useState(txn?.day ?? today);
   const [member, setMember] = useState(entry?.ownerMemberId ?? '');
+  // Null on a row whose message named no direction: neither side is lit until she picks one.
+  const [outgoing, setOutgoing] = useState<boolean | null>(txn?.direction == null ? null : txn.direction === 'out');
   if (!entry || !txn) return null;
   const rial = tomanFieldToRial(amount);
   const members = family.members;
@@ -45,14 +47,20 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
     // keyboard off those words.
     (document.activeElement as HTMLElement | null)?.blur();
     if (rial == null) return;
+    const direction = outgoing == null ? null : outgoing ? 'out' : 'in';
     editTxn(entry, rial !== txn.amountRial ? rial : null, day !== txn.day ? day : null,
-      member !== entry.ownerMemberId && members.length > 1 ? member : null);
+      member !== entry.ownerMemberId && members.length > 1 ? member : null,
+      direction !== txn.direction ? direction : null);
     closeSheet();
   };
 
   return (
     <Sheet label="ویرایش تراکنش">
       <SheetTitle>ویرایش تراکنش</SheetTitle>
+
+      {/* Where a deposit read as a spend is put right — in the words «نوع» shows on the transaction page. */}
+      <SheetLabel>برداشت بود یا واریز؟</SheetLabel>
+      <SegmentedChoice<boolean | null> options={[true, false]} selected={outgoing} label={(it) => (it ? 'برداشت' : 'واریز')} onSelect={setOutgoing} />
 
       <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
       <AmountField ariaLabel={`مبلغ به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
@@ -84,7 +92,7 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
       <div class="sheet-actions">
         <PillButton label="ذخیره" voice="primary" block onClick={save} />
         {entry.edited && (
-          <PillButton label={txn.ref.startsWith('s:') ? 'برگردون به عدد پیامک' : 'برگردون به عدد اول'} block
+          <PillButton label={txn.ref.startsWith('s:') ? 'برگردون به همونی که پیامک گفته' : 'برگردون به همونی که اول نوشتی'} block
             onClick={() => { revertTxnEdits(entry); closeSheet(); }} />
         )}
         <PillButton label="انصراف" block onClick={closeSheet} />

@@ -867,6 +867,24 @@ class MoneyTest {
         assertEquals(146_775_927.2, bankTotal(accounts, emptySet()), 0.01)
     }
 
+    @Test
+    fun `two accounts at one bank keep a balance each, and a message naming neither goes to the last`() {
+        val mellat = "Bank Mellat"
+        // What a phone held before this build: both accounts as one row under the bank's name.
+        var accounts = listOf(BankAccount(Bank.MELLAT.name, balance = 1_000_000.0, updatedAt = 1L, anchored = true))
+        accounts = foldBankSms(accounts, parseBankSms(mellat, "حساب7591126460\nبرداشت500,000,000\nمانده140,285,187", 2L)!!, 10L)
+        accounts = foldBankSms(accounts, parseBankSms(mellat, "حساب9750457\nبرداشت4,960,000\nمانده1,990,880,025", 3L)!!, 10L)
+        // The row she had keeps the bank's own name — and with it every figure and switch she set.
+        assertEquals(listOf("MELLAT" to "6460", "MELLAT:0457" to "0457"), accounts.map { it.key to it.number })
+        assertEquals(14_028_518.7 + 199_088_002.5, bankTotal(accounts, emptySet()), 0.01)
+
+        accounts = foldBankSms(accounts, parseBankSms(mellat, "برداشت1,000,000\nمانده1,989,880,025", 4L)!!, 10L)
+        assertEquals(198_988_002.5, accounts.single { it.key == "MELLAT:0457" }.balance, 0.01)
+        assertEquals(14_028_518.7, accounts.single { it.key == "MELLAT" }.balance, 0.01)
+        // The store collapses what it reads and writes by account, so the second one survives it.
+        assertEquals(accounts, collapseAccounts(accounts))
+    }
+
     // ─────────────────── reading the body ───────────────────
     // Shaped like the real messages but shortened. The senders are real, because nothing is
     // read without one.

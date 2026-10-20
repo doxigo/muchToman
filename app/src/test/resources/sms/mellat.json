@@ -25,7 +25,8 @@
         "printedAt": "05/05/11-11:52",
         "channel": "unknown",
         "unitPrinted": "none",
-        "inferred": false
+        "inferred": false,
+        "account": "6460"
       }
     },
     {
@@ -57,7 +58,8 @@
         "printedAt": "05/04/27",
         "channel": "unknown",
         "unitPrinted": "none",
-        "inferred": false
+        "inferred": false,
+        "account": "0457"
       }
     },
     {
@@ -87,7 +89,8 @@
         "printedAt": "",
         "channel": "unknown",
         "unitPrinted": "none",
-        "inferred": false
+        "inferred": false,
+        "account": "0457"
       }
     }
   ]

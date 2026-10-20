@@ -22,7 +22,8 @@
         "printedAt": "",
         "channel": "paya",
         "unitPrinted": "none",
-        "inferred": false
+        "inferred": false,
+        "account": "7007"
       }
     },
     {
@@ -45,7 +46,8 @@
         "refNo": "",
         "printedAt": "",
         "channel": "pos",
-        "unitPrinted": "none"
+        "unitPrinted": "none",
+        "account": "7007"
       }
     }
   ]

@@ -95,7 +95,10 @@ fun chequeWarningFa(
                 compareValuesBy(it, cheque, { c -> c.startsOn }, { c -> c.createdAt }) < 0
         }
         .sumOf { it.targetRial }
-    val account = accounts.firstOrNull { it.bank == cheque.categoryId && it.anchored }
+    // A cheque names its bank, not which of the bank's accounts: it is read against the first, the
+    // one that keeps the bank's own name. ponytail: a cheque picks its account once someone writes
+    // them on a second account at the same bank.
+    val account = accounts.firstOrNull { it.key == cheque.categoryId && it.anchored }
         ?: return "موجودی حساب $bank رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), dec = 3)} $moneyUnit توش هست."
     val balanceRial = Math.round(account.balance * 10.0)
     if (balanceRial >= need) return null

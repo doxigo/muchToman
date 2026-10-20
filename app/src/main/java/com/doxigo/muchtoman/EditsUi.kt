@@ -88,7 +88,8 @@ internal fun rialToField(rial: Long): String = when {
 }
 
 /**
- * «ویرایش تراکنش» — the figure, the day, and in a household whose spending it was.
+ * «ویرایش تراکنش» — which way the money went, the figure, the day, and in a household whose
+ * spending it was.
  *
  * Nothing is saved until she says so, and what she leaves alone is not written at all: a sheet
  * opened to fix the day must not pin the figure it happened to show. On a message's row the one
@@ -100,7 +101,7 @@ internal fun rialToField(rial: Long): String = when {
 fun EditTxnSheet(
     entry: LedgerEntry,
     members: List<FamilyMember>,
-    onSave: (rial: Long?, day: Long?, memberId: String?) -> Unit,
+    onSave: (rial: Long?, day: Long?, memberId: String?, direction: String?) -> Unit,
     onRevert: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
@@ -113,6 +114,8 @@ fun EditTxnSheet(
     var amount by rememberSaveable(txn.ref) { mutableStateOf(txn.amountRial?.let(::rialToField).orEmpty()) }
     var day by rememberSaveable(txn.ref) { mutableLongStateOf(txn.day) }
     var member by rememberSaveable(txn.ref) { mutableStateOf(entry.ownerMemberId) }
+    // Null on a row whose message named no direction: neither side is lit until she picks one.
+    var outgoing by rememberSaveable(txn.ref) { mutableStateOf(txn.direction?.let { it == "out" }) }
     val rial = remember(amount) { tomanFieldToRial(amount) }
     val focus = LocalFocusManager.current
 
@@ -132,6 +135,16 @@ fun EditTxnSheet(
                 .padding(bottom = Space.l),
         ) {
             SheetTitle("ویرایش تراکنش")
+
+            // A bank's wording is a guess at which way its money went, and this is where a deposit
+            // read as a spend is put right — in the words «نوع» shows on the transaction page.
+            SheetLabel("برداشت بود یا واریز؟")
+            SegmentedChoice(
+                options = listOf<Boolean?>(true, false),
+                selected = outgoing,
+                label = { if (it == true) "برداشت" else "واریز" },
+                onSelect = { outgoing = it },
+            )
 
             SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(
@@ -188,6 +201,7 @@ fun EditTxnSheet(
                             clean.takeIf { it != txn.amountRial },
                             day.takeIf { it != txn.day },
                             member.takeIf { it != entry.ownerMemberId && members.size > 1 },
+                            outgoing?.let { if (it) "out" else "in" }?.takeIf { it != txn.direction },
                         )
                         onDismiss()
                     }
@@ -199,7 +213,7 @@ fun EditTxnSheet(
             if (onRevert != null) {
                 Spacer(Modifier.height(Space.s))
                 PillButton(
-                    if (txn.ref.startsWith("s:")) "برگردون به عدد پیامک" else "برگردون به عدد اول",
+                    if (txn.ref.startsWith("s:")) "برگردون به همونی که پیامک گفته" else "برگردون به همونی که اول نوشتی",
                     { close { onRevert(); onDismiss() } },
                     block = true,
                     modifier = Modifier.fillMaxWidth(),

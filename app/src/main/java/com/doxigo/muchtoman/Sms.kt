@@ -154,8 +154,8 @@ fun bankOf(sender: String, extra: Map<String, Bank> = emptyMap()): Bank? {
 }
 
 /**
- * One balance we are tracking, identified by bank and the masked account tail the message
- * carried.
+ * One balance we are tracking: a bank's account, told from its siblings by the number its
+ * messages label «حساب» — see [accountFor].
  *
  * [inferred] means at least one message folded into it was read at low confidence — an
  * unrecognised bank, or an amount with no ریال/تومان on it. [anchored] means the balance was
@@ -184,9 +184,16 @@ data class BankAccount(
      * any other once they stop.
      */
     val manual: Boolean = false,
+    /** The four digits its messages name it by ([accountNoIn]), blank while none has named it. */
+    val number: String = "",
+    /**
+     * Blank for the bank's first account, which keeps the bank's own name as its key — so every
+     * figure she typed, every switch she set and every cheque she wrote against the bank before a
+     * second account was told apart is still this one's. `BANK:1234` for each account after it.
+     */
+    val id: String = "",
 ) {
-    /** The bank alone: see [applyBankSms] for why the printed identifier cannot key an account. */
-    val key: String get() = bank
+    val key: String get() = id.ifEmpty { bank }
     val bankFa: String
         get() = runCatching { Bank.valueOf(bank) }.getOrDefault(Bank.OTHER).fa
 
@@ -221,6 +228,8 @@ data class BankSms(
     val channel: Channel = Channel.UNKNOWN,
     val instrument: Instrument = Instrument.UNKNOWN,
     val unitPrinted: PrintedUnit = PrintedUnit.NONE,
+    /** Which of the bank's accounts, as [accountNoIn] reads it: four digits, or blank for unnamed. */
+    val accountNo: String = "",
 ) {
     /** Nothing to fold in — no amount and no balance means the message was not a transaction. */
     val empty: Boolean get() = delta == null && balance == null
@@ -693,6 +702,41 @@ private fun accountIn(text: String): String =
         // longer than any date, so length is what tells them apart.
         ?: DASHED.findAll(text).map { it.value }.firstOrNull { digitsIn(it) >= 10 }.orEmpty()
 
+/** A figure a bank labels «حساب»: the label, an optional colon, and digits on the same line. */
+private val ACCOUNT_NO = Regex("(?<!\\p{L})حساب[^\\S\\n]*:?[^\\S\\n]*([0-9۰-۹٠-٩*][0-9۰-۹٠-٩*.\\-]*)")
+
+/**
+ * The account a message names, as the last four digits of the figure it labels «حساب» — blank when
+ * it names none, or two.
+ *
+ * What tells two accounts at one bank apart, and deliberately not [accountIn]: that takes a card
+ * mask or a starred reference as readily as an account, and keying on it once forked one Saman
+ * account into thirty-eight rows. A figure the bank itself labels «حساب» is the account. ملت glues
+ * it on — «حساب7591126460» — and ملی and صادرات set it after a colon, «حساب:15102».
+ *
+ * Four digits, because some banks print no more than a tail, and a full number and its tail — or
+ * its starred form — must land on one account rather than two.
+ *
+ * Not a «مانده حساب», which labels the balance and is followed by money; not «صورتحساب», a bill;
+ * and not a figure written the way money is, grouped in threes or followed by its unit. A message
+ * naming two accounts — a transfer from one to the other — names none, because which one is hers
+ * would be a guess.
+ */
+internal fun accountNoIn(text: String): String =
+    ACCOUNT_NO.findAll(text).mapNotNull { m ->
+        val run = m.groups[1]!!
+        val label = text.substring(maxOf(0, m.range.first - 8), m.range.first)
+        val digits = digitsOf(run.value)
+        val tail = text.substring(run.range.last + 1).take(8).substringBefore('\n')
+        when {
+            BALANCE_WORDS.any { it in label } -> null
+            digits.length < 4 -> null
+            tail.firstOrNull()?.let { it in ",،٬" } == true -> null
+            UNIT_WORDS.any { it in tail } -> null
+            else -> digits.takeLast(4)
+        }
+    }.toSet().singleOrNull().orEmpty()
+
 /**
  * Read one message, or decline it.
  *
@@ -774,6 +818,7 @@ fun parseBankSms(
             10.0 -> PrintedUnit.RIAL
             else -> PrintedUnit.NONE
         },
+        accountNo = accountNoIn(text),
     )
     return sms
 }
@@ -1032,18 +1077,7 @@ fun extraLookup(numbers: Map<String, List<String>>): Map<String, Bank> =
  * a newer balance with an older one.
  */
 fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
-    // One balance per bank, keyed by the bank alone — the identifier a message prints is kept
-    // for her to read and never used to tell accounts apart.
-    //
-    // It cannot be used for that, because one account has several. Saman prints
-    // "829-800-1092308-1" on a transfer, the card mask "6037****1234" on a purchase, and
-    // nothing at all on some alerts, and every one of those states the same مانده. Keying on
-    // what was printed forked that single account into two and three rows, each anchored at the
-    // full balance, and the total added them all: her money doubled on screen, with nothing
-    // flagged, which is precisely the failure this app exists to prevent. A second real account
-    // at one bank is the lesser risk — its balance would be one figure rather than two, wrong
-    // but visible and correctable in the sheet.
-    val existing = accounts.firstOrNull { it.bank == sms.bank.name }
+    val existing = accountFor(accounts, sms)
 
     // Nothing older than what we already know may change it — neither a stated balance, nor a
     // transaction that predates the balance she typed in by hand.
@@ -1052,6 +1086,10 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
     // Whichever side actually named the account wins, so the record reads more specific, never
     // less. It is a label only.
     val mask = sms.mask.ifBlank { existing?.mask.orEmpty() }
+
+    // An account no message has named yet takes the first number one gives it.
+    val number = existing?.number?.ifEmpty { sms.accountNo } ?: sms.accountNo
+    val id = existing?.id ?: newAccountId(accounts, sms)
 
     val next = when {
         sms.balance != null ->
@@ -1064,6 +1102,8 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
                 inferred = sms.inferred,
                 anchored = true,
                 sender = sms.sender,
+                number = number,
+                id = id,
             )
         sms.delta != null -> BankAccount(
             bank = sms.bank.name,
@@ -1075,21 +1115,56 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
             inferred = sms.inferred || existing?.inferred == true,
             anchored = existing?.anchored == true,
             sender = sms.sender.ifBlank { existing?.sender.orEmpty() },
+            number = number,
+            id = id,
         )
         else -> return accounts
     }
-    // Every row for this bank collapses into the one, so a phone upgraded from the build that
+    // Every row under this key collapses into the one, so a phone upgraded from the build that
     // keyed on the printed identifier stops double-counting at the next message it reads.
-    return accounts.filterNot { it.bank == sms.bank.name } + next
+    return accounts.filterNot { it.key == next.key } + next
 }
+
+/**
+ * The one of the bank's accounts [sms] is about, or null for one the bank has no row for yet.
+ *
+ * Told apart by the number the message labels «حساب» ([accountNoIn]) and by nothing else the
+ * message prints. Not by every identifier it carries: one account has several — Saman prints
+ * "829-800-1092308-1" on a transfer, the card mask "6037****1234" on a purchase and nothing on
+ * some alerts — and keying on whatever was printed forked one account into thirty-eight rows,
+ * each anchored at the full balance, her money multiplied on screen with nothing flagged. A bank
+ * whose messages label no «حساب» stays one account, as every bank was before.
+ *
+ * A message naming none goes to the account the bank spoke about last, which for a bank with one
+ * account is that account. One naming a number no account holds yet goes to the bank's own row
+ * if that has never been named — the account its earlier messages were about — and else is a
+ * second account.
+ */
+internal fun accountFor(accounts: List<BankAccount>, sms: BankSms): BankAccount? {
+    val mine = accounts.filter { it.bank == sms.bank.name }
+    if (sms.accountNo.isEmpty()) return mine.maxByOrNull { it.updatedAt }
+    return mine.firstOrNull { it.number == sms.accountNo }
+        ?: mine.firstOrNull { it.id.isEmpty() && it.number.isEmpty() }
+}
+
+/** The key the account [sms] lands on: [accountFor]'s, or the one a new account takes. */
+internal fun accountKeyFor(accounts: List<BankAccount>, sms: BankSms): String =
+    accountFor(accounts, sms)?.key ?: newAccountId(accounts, sms).ifEmpty { sms.bank.name }
+
+/** The bank's first account is the bank's own name; a second named one is `BANK:1234`. */
+private fun newAccountId(accounts: List<BankAccount>, sms: BankSms): String =
+    if (sms.accountNo.isNotEmpty() && accounts.any { it.bank == sms.bank.name && it.id.isEmpty() }) {
+        "${sms.bank.name}:${sms.accountNo}"
+    } else ""
 
 /** Legacy anchors have no manual/bank provenance, so only equally recent bank evidence replaces them. */
 fun rebuildBankAccounts(previous: List<BankAccount>, messages: List<BankSms>): List<BankAccount> {
     var rebuilt = previous
     for ((bank, rows) in messages.groupBy { it.bank.name }) {
-        val anchor = previous.firstOrNull { it.bank == bank && it.anchored }
-        if (anchor == null) rebuilt = rebuilt.filterNot { it.bank == bank }
+        val anchors = previous.filter { it.bank == bank && it.anchored }.associateBy { it.key }
+        if (anchors.isEmpty()) rebuilt = rebuilt.filterNot { it.bank == bank }
         for (sms in rows.sortedBy { it.at }) {
+            val anchor = anchors[accountKeyFor(rebuilt, sms)]
             if (anchor != null && (sms.at < anchor.updatedAt ||
                     (sms.at == anchor.updatedAt && sms.balance == null))) continue
             rebuilt = foldBankSms(rebuilt, sms)
@@ -1110,14 +1185,15 @@ fun anchorAccount(accounts: List<BankAccount>, key: String, balance: Double, at:
     }
 
 /**
- * One row per bank, whatever is already on disk.
+ * One row per account, whatever is already on disk.
  *
  * The build that keyed an account by the identifier a message happened to print kept a row per
  * identifier: a real phone came back with thirty-eight of them across three banks, because
  * reference numbers, card numbers and account numbers all look alike to [accountIn]. Every one
  * of them was summed into her total. They are not separate accounts and never were, so they
- * fold back into one — and they must, because a bank is one key now, and duplicate keys in the
- * accounts list crash the sheet the moment she opens it.
+ * fold back into one — none carries an [BankAccount.id], so all of them are the bank's own key —
+ * and they must, because duplicate keys in the accounts list crash the sheet the moment she
+ * opens it.
  *
  * The survivor is the best evidence available: a stated balance beats a running total, and the
  * more recent beats the older. Adding them together would be the doubling all over again.
@@ -1135,7 +1211,7 @@ fun collapseAccounts(accounts: List<BankAccount>, extra: Map<String, Bank> = emp
         // than known by their number, are exactly this: unnameable and unfixable. A bank she
         // keeps by hand is neither, numbers or not — she is the one who corrects it.
         .filter { it.bank in read || it.manual }
-        .groupBy { it.bank }
+        .groupBy { it.key }
         .map { (_, rows) -> rows.maxWith(compareBy({ it.anchored }, { it.updatedAt })) }
 }
 

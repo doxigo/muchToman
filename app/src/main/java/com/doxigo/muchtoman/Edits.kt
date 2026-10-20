@@ -60,8 +60,9 @@ fun splitOf(value: String?, amountRial: Long?, names: Map<String, String>): List
 
 /**
  * The row as she corrected it: her figure in place of the one read, her day in place of the
- * stamp's — keeping the minute, so a row from ۱۴:۰۳ is still from ۱۴:۰۳. The direction never
- * changes: money that came in is not made to have gone out by a typo in its figure.
+ * stamp's — keeping the minute, so a row from ۱۴:۰۳ is still from ۱۴:۰۳. The figure never turns
+ * the direction: money that came in is not made to have gone out by a typo in its figure. Which
+ * way it went is an answer of its own, laid on in derive by [settleDirections].
  */
 fun editedTxn(txn: Txn, amountRial: Long?, day: Long?): Txn {
     var edited = txn
@@ -139,6 +140,7 @@ internal suspend fun putAnswer(
  * Her corrections to one of her own rows; null leaves that one as it stands. The day stops at
  * today — the ledger records what happened — and a row put back to its own member takes the
  * attribution back rather than storing it, so the published row is the one it always was.
+ * [direction] is "in" or "out", and needs a derive to take effect.
  */
 internal suspend fun editRow(
     durable: DurableDb,
@@ -148,9 +150,12 @@ internal suspend fun editRow(
     memberId: String?,
     member: String,
     now: Long = System.currentTimeMillis(),
+    direction: String? = null,
 ) {
     if (!editable(entry)) return
     durable.withTransaction {
+        direction?.takeIf { (it == "in" || it == "out") && it != entry.txn.direction }
+            ?.let { putAnswer(durable, entry.txn, DecisionKind.DIRECTION, it, member, now) }
         rial?.takeIf { it in 1..MAX_PLAUSIBLE_RIAL && it != entry.txn.amountRial }
             ?.let { putAnswer(durable, entry.txn, DecisionKind.AMOUNT, it.toString(), member, now) }
         day?.coerceAtMost(tehranDay(now))?.takeIf { it != entry.txn.day }
@@ -162,11 +167,12 @@ internal suspend fun editRow(
     }
 }
 
-/** Back to the figure and day the row was read or typed with. Whose it was stays. */
+/** Back to the figure, day and direction the row was read or typed with. Whose it was stays. */
 internal suspend fun revertRow(durable: DurableDb, entry: LedgerEntry, member: String) {
     durable.withTransaction {
         putAnswer(durable, entry.txn, DecisionKind.AMOUNT, null, member)
         putAnswer(durable, entry.txn, DecisionKind.DAY, null, member)
+        putAnswer(durable, entry.txn, DecisionKind.DIRECTION, null, member)
     }
 }
 
