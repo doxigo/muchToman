@@ -69,7 +69,7 @@ export function BankLogo({ bank, size = 32 }: { bank: string; size?: number }) {
     }}>
       {logo
         ? <svg viewBox={logo[0]} width="100%" height="100%" style={{ display: 'block' }} dangerouslySetInnerHTML={{ __html: logo[1] }} />
-        : <span style={{ fontSize: size / 2, lineHeight: 1 }}>💳</span>}
+        : <span style={{ fontSize: `calc(${size / 2}px * var(--text))`, lineHeight: 1 }}>💳</span>}
     </span>
   );
 }
@@ -83,7 +83,7 @@ export function WalletNetworkLogo({ network, size = 28 }: { network: string; siz
       width: size, height: size, borderRadius: '50%', overflow: 'hidden',
       background: logo ? undefined : 'var(--surface-variant)', color: 'var(--on-surface-variant)',
       // Scaled, not fixed: two letters at a fixed size are wider than the disc at badge size.
-      fontSize: size * 0.36, fontWeight: 700, lineHeight: 1,
+      fontSize: `calc(${size * 0.36}px * var(--text))`, fontWeight: 700, lineHeight: 1,
     }}>
       {logo
         ? <svg viewBox={logo[0]} width="100%" height="100%" style={{ display: 'block' }} dangerouslySetInnerHTML={{ __html: logo[1] }} />

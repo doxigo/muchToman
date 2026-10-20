@@ -31,7 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -709,7 +708,7 @@ private fun MoveLineSheet(
     val error = if (short) "توی دارایی‌هات فقط ${loanAmountFa(type(back!!.typeId), back.amount)} هست." else null
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -909,7 +908,7 @@ internal fun LoanPersonSheet(
     // Raised by a save tap that could not save: from then on every blank answer says so.
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1063,7 +1062,7 @@ internal fun LoanMoveSheet(
     // Raised by a save tap that could not save: from then on every blank answer says so.
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -1203,7 +1202,7 @@ internal fun LoanLinkSheet(
     // Raised by a save tap that could not save: from then on every blank answer says so.
     var tried by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

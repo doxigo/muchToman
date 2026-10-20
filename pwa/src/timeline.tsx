@@ -418,7 +418,7 @@ export function MemberFace({ name, avatar, size = 44 }: { name: string; avatar: 
   const photo = avatar.startsWith('b64:');
   return (
     // The name is always said beside the face, so the face says nothing itself.
-    <span class="member-face" aria-hidden="true" style={{ width: `${size}px`, height: `${size}px`, fontSize: `${size * (avatar && !photo ? 0.62 : 0.56)}px` }}>
+    <span class="member-face" aria-hidden="true" style={{ width: `${size}px`, height: `${size}px`, fontSize: `calc(${size * (avatar && !photo ? 0.62 : 0.56)}px * var(--text))` }}>
       {photo ? <img src={`data:image/jpeg;base64,${avatar.slice(4)}`} alt="" />
         : avatar.trim() ? avatar
           : <b>{name.trim().charAt(0)}</b>}
@@ -933,13 +933,13 @@ function AutoFileSheet({ skipped = [] }: { skipped?: string[] }) {
   return (
     <Sheet label="دسته‌بندی خودکار">
       <SheetTitle>دسته‌بندی خودکار</SheetTitle>
-      <p class="muted" style={{ paddingTop: 'var(--s)', fontSize: '14px' }}>{`${faNumber(plan.total)} تراکنش منتظر، در یک حرکت:`}</p>
+      <p class="muted" style={{ paddingTop: 'var(--s)', fontSize: 'calc(14px * var(--text))' }}>{`${faNumber(plan.total)} تراکنش منتظر، در یک حرکت:`}</p>
       <div class="autofile-lines">
         {line(plan.suggested, 'با همون پیشنهاد خود برنامه تأیید می‌شن')}
         {line(plan.shopping, 'برداشتِ بی‌نشونه می‌رن توی «خرید روزانه»')}
         {line(plan.other, 'مورد نامشخص می‌رن توی «سایر»')}
       </div>
-      <p class="muted small" style={{ marginTop: 'var(--m)', lineHeight: '21px' }}>
+      <p class="muted small" style={{ marginTop: 'var(--m)', lineHeight: 'calc(21px * var(--text))' }}>
         هیچ قانونی ساخته نمی‌شه — هر کدوم رو بعداً می‌تونی از دفتر باز کنی و عوض کنی.
       </p>
       <div class="sheet-actions">

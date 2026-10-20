@@ -37,7 +37,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
@@ -116,7 +115,7 @@ fun EditTxnSheet(
     val rial = remember(amount) { tomanFieldToRial(amount) }
     val focus = LocalFocusManager.current
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
@@ -294,7 +293,7 @@ fun SplitSheet(
     val complete = ids.all { it != null } && chosen.toSet().size == chosen.size &&
         rest.all { it != null } && firstRial > 0
 
-    ModalBottomSheet(
+    AppSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),

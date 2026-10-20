@@ -24,12 +24,13 @@ import { ledger, useLedger } from './derived';
 import type { LedgerHealth } from './derived';
 import { csvBalances, useFamily } from './family';
 import { bidi, faAgo, faCompact, faDate, faNumber, moneyUnit, parseAmount, showRial, tomanOf, tomanOfShown } from './format';
-import { Chevron, PersonMark, PlusMark } from './icons';
+import { Chevron, MinusMark, PersonMark, PlusMark } from './icons';
 import { INSTALLMENT_REMINDER_DAYS, installmentReminderFa } from './installments';
 import { tehranDay } from './jalali';
 import { setBankBalance, setLedgerStartsOn, toggleBankDisabled } from './ledger';
 import { disableLock, enableLock, lockAvailable } from './lock';
 import { BankLogo } from './logos';
+import { TEXT_SIZES } from './model';
 import type { QuipTone, ThemeMode } from './model';
 import { closeSheet, openPage, openSheet, registerPage, registerSheet } from './nav';
 import { QUIP_TONES, QUIP_TONE_CAPTION, QUIP_TONE_FA, quipToneOf } from './quips';
@@ -37,7 +38,8 @@ import { reportMonthOf } from './reports';
 import type { ReportMonth } from './reports';
 import { BANKS, PICKABLE_BANKS } from './sms';
 import type { Bank } from './sms';
-import { pref, setPref, useData } from './state';
+import { StepButton } from './report';
+import { pref, setPref, textSize, useData } from './state';
 import { AmountField, ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 
 type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH' | 'FEEDBACK';
@@ -265,9 +267,15 @@ function NameSheet() {
   );
 }
 
-/** Three choices; picking closes the sheet, because the whole app re-themes under it. */
+/**
+ * Three choices; picking closes the sheet, because the whole app re-themes under it. A text-size
+ * step does not close it: the app under the sheet, and the sheet itself, are its preview, and
+ * «یکی دو سایز» is two taps.
+ */
 function ThemeSheet() {
   useData();
+  const size = textSize();
+  const step = TEXT_SIZES.indexOf(size);
   return (
     <Sheet label="ظاهر برنامه">
       <SheetTitle>ظاهر برنامه</SheetTitle>
@@ -275,6 +283,12 @@ function ThemeSheet() {
       <div style={{ height: 'var(--l)' }} />
       <SegmentedChoice options={THEMES} selected={pref('themeMode')} label={(t) => THEME_FA[t]} fontSize={16}
         onSelect={(t) => { setPref('themeMode', t); closeSheet(); }} />
+      <div class="text-size">
+        <span class="grow">اندازهٔ نوشته‌ها</span>
+        <StepButton label="کوچیک‌تر" enabled={step > 0} mark={<MinusMark />} onClick={() => setPref('textSize', TEXT_SIZES[step - 1])} />
+        <span class="value" aria-live="polite">{`${faNumber(size)}٪`}</span>
+        <StepButton label="بزرگ‌تر" enabled={step < TEXT_SIZES.length - 1} mark={<PlusMark />} onClick={() => setPref('textSize', TEXT_SIZES[step + 1])} />
+      </div>
     </Sheet>
   );
 }
@@ -667,7 +681,7 @@ function RestoreSheet({ file }: { file: File }) {
         </>
       ) : (
         <>
-          <p style={{ fontSize: '15px', lineHeight: '24px', marginTop: 'var(--xs)' }}>{`${ready.words} خونده شد و رمزش درسته.`}</p>
+          <p style={{ fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(24px * var(--text))', marginTop: 'var(--xs)' }}>{`${ready.words} خونده شد و رمزش درسته.`}</p>
           <p class="sheet-body" style={{ marginTop: 'var(--m)' }}>با بازگردانی، همه‌چیزِ الانِ برنامه — پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات — با نسخهٔ پشتیبان عوض می‌شه و برنمی‌گرده.</p>
           {problem && <p class="set-note error" aria-live="polite">{problem}</p>}
           <div style={{ height: 'var(--xl)' }} />
@@ -687,7 +701,7 @@ function CachePage() {
   const [cleared, setCleared] = useState(false);
   return (
     <SettingsPage title="حافظهٔ موقت">
-      <p class="muted" style={{ fontSize: '15px', lineHeight: '26px', padding: '0 var(--xs)' }}>
+      <p class="muted" style={{ fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(26px * var(--text))', padding: '0 var(--xs)' }}>
         نرخ‌های ذخیره‌شده، نشان کوین‌ها و جدول‌هایی که از روی پیامک‌ها ساخته شدن پاک و از نو ساخته می‌شن. پیامک‌ها، دسته‌بندی‌ها و هر چیزی که خودت وارد کردی دست نمی‌خوره.
       </p>
       <div style={{ height: 'var(--xl)' }} />
@@ -837,7 +851,7 @@ function LedgerStartSheet() {
             <button type="button" class="set-row" role="radio" aria-checked={selected} style={{ padding: 'var(--m) var(--l)' }}
               onClick={() => { setLedgerStartsOn(day); closeSheet(); }}>
               <span class="grow">
-                <span style={{ display: 'block', fontSize: '16px', fontWeight: selected ? 700 : 600 }}>{label}</span>
+                <span style={{ display: 'block', fontSize: 'calc(16px * var(--text))', fontWeight: selected ? 700 : 600 }}>{label}</span>
                 {detail && <span class="set-sub" style={{ display: 'block', marginTop: 0 }}>{detail}</span>}
               </span>
               <span class="radio" aria-hidden="true" />

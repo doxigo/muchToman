@@ -92,6 +92,12 @@ export function PlusMark({ size = 20, color = 'currentColor' }: Mark) {
   return <Svg size={size}><path {...s} d={`M${size * .5} ${size * .14} L${size * .5} ${size * .86} M${size * .14} ${size * .5} L${size * .86} ${size * .5}`} /></Svg>;
 }
 
+/** PlusMark's crossbar alone. */
+export function MinusMark({ size = 20, color = 'currentColor' }: Mark) {
+  const s = { ...PEN, stroke: color, 'stroke-width': 2.2 };
+  return <Svg size={size}><path {...s} d={`M${size * .14} ${size * .5} L${size * .86} ${size * .5}`} /></Svg>;
+}
+
 export function SearchMark({ size = 20, color = 'currentColor' }: Mark) {
   const s = { ...PEN, stroke: color, 'stroke-width': 2.2 };
   return (

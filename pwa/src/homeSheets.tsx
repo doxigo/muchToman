@@ -24,7 +24,7 @@ import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
 import type { WalletOption } from './model';
 import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
-import { pref, useData } from './state';
+import { pref, textSize, useData } from './state';
 import { AmountField, ArmedButton, PillButton, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField } from './ui';
 import './home.css';
 
@@ -40,27 +40,28 @@ export const rateIn = (rates: Record<string, number>, id: string): number | null
  */
 export function useAutoSize<T extends HTMLElement>(max: number, min: number, text: string) {
   const ref = useRef<T>(null);
+  const scale = textSize();
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const fit = () => {
-      el.style.fontSize = `${max}px`;
+      el.style.fontSize = `calc(${max}px * var(--text))`;
       const over = el.scrollWidth / Math.max(1, el.clientWidth);
-      el.style.fontSize = `${over > 1.001 ? Math.max(min, Math.floor(max / over)) : max}px`;
+      el.style.fontSize = `calc(${over > 1.001 ? Math.max(min, Math.floor(max / over)) : max}px * var(--text))`;
     };
     fit();
     void document.fonts?.ready.then(fit);
     const watch = new ResizeObserver(fit);
     if (el.parentElement) watch.observe(el.parentElement);
     return () => watch.disconnect();
-  }, [max, min, text]);
+  }, [max, min, text, scale]);
   return ref;
 }
 
 /** A row's title: gives up a point or two of size before it gives up letters. */
 export function RowTitle({ text, max = 18, class: cls = '' }: { text: string; max?: number; class?: string }) {
   const ref = useAutoSize<HTMLSpanElement>(max, 13, text);
-  return <span ref={ref} class={`row-title ${cls}`} style={{ fontSize: `${max}px` }}>{text}</span>;
+  return <span ref={ref} class={`row-title ${cls}`} style={{ fontSize: `calc(${max}px * var(--text))` }}>{text}</span>;
 }
 
 /**
@@ -71,7 +72,7 @@ export function RowAmount({ toman, struck, unit, class: cls = '' }: { toman: num
   const text = faCompact(toman, 3, true);
   const ref = useAutoSize<HTMLSpanElement>(19, 13, text + (unit ?? ''));
   return (
-    <span ref={ref} class={`row-amount figure${struck ? ' struck' : ''} ${cls}`} style={{ maxWidth: unit ? '140px' : '116px', fontSize: '19px' }}>
+    <span ref={ref} class={`row-amount figure${struck ? ' struck' : ''} ${cls}`} style={{ maxWidth: unit ? '140px' : '116px', fontSize: 'calc(19px * var(--text))' }}>
       {text}{unit && <> <span class="unit">{unit}</span></>}
     </span>
   );
@@ -124,7 +125,7 @@ export function AssetIcon({ type, size = 44, network }: { type: AssetType; size?
       </>
     );
   } else if (glyph) inner = <AssetGlyph glyph={glyph} size={size * 0.55} color={ink} />;
-  else if (type.emoji) inner = <span style={{ fontSize: `${size * 0.52}px`, lineHeight: 1 }}>{type.emoji}</span>;
+  else if (type.emoji) inner = <span style={{ fontSize: `calc(${size * 0.52}px * var(--text))`, lineHeight: 1 }}>{type.emoji}</span>;
   else inner = letters;
   return (
     <span class="asset-icon" aria-hidden="true">
@@ -527,13 +528,13 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 /** One line that shrinks rather than wraps (the sheet's «یعنی …» and the balance card's figures). */
 function FitLine({ text, max, min, weight, class: cls = '' }: { text: string; max: number; min: number; weight: number; class?: string }) {
   const ref = useAutoSize<HTMLSpanElement>(max, min, text);
-  return <span ref={ref} class={`fit figure ${cls}`} style={{ fontSize: `${max}px`, fontWeight: weight }}>{text}</span>;
+  return <span ref={ref} class={`fit figure ${cls}`} style={{ fontSize: `calc(${max}px * var(--text))`, fontWeight: weight }}>{text}</span>;
 }
 
 function WalletBalanceCard({ held, toman, status, error }: { held: string; toman: number | null; status: string; error: boolean }) {
   return (
     <div class="edit-card">
-      <p style={{ fontSize: '13px', fontWeight: 700 }}>موجودی فعلی</p>
+      <p style={{ fontSize: 'calc(13px * var(--text))', fontWeight: 700 }}>موجودی فعلی</p>
       {/* faHeld, not full precision: the row outside says the same number the same length. */}
       <FitLine text={held} max={30} min={18} weight={800} />
       {toman != null && <FitLine class="sub" text={`${faCompact(toman, 3, true)} ${moneyUnit()}`} max={17} min={13} weight={600} />}
@@ -602,7 +603,7 @@ function BankSheet() {
     <Sheet label="حساب‌های بانکی">
       <div class="home-sheet">
         <SheetTitle>حساب‌های بانکی</SheetTitle>
-        <p class="muted" style={{ fontSize: '13px', lineHeight: '20px', marginTop: 'var(--xs)' }}>
+        <p class="muted" style={{ fontSize: 'calc(13px * var(--text))', lineHeight: 'calc(20px * var(--text))', marginTop: 'var(--xs)' }}>
           {view.bankAccounts.every((a) => a.manual)
             ? 'موجودی این حساب‌ها رو خودت نوشتی؛ هر وقت عوض شد، همین‌جا اصلاحش کن. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'
             : 'موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'}

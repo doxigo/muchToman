@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from 'preact/hooks';
 import { LOCAL, PREFS, open, reopen } from './db';
-import { PREF_DEFAULTS, TABLES } from './model';
+import { PREF_DEFAULTS, TABLES, TEXT_SIZES } from './model';
 import type { Prefs, TableName, Tables } from './model';
 
 const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()])) as { [K in TableName]: Map<string, Tables[K]> };
@@ -51,6 +51,11 @@ export const dataVersion = (): number => version;
 
 export function pref<K extends keyof Prefs>(key: K): Prefs[K] {
   return (prefs[key] ?? PREF_DEFAULTS[key]) as Prefs[K];
+}
+/** Her text size, read safely: a backup or an older build can hand back anything. */
+export function textSize(): number {
+  const size = pref('textSize');
+  return TEXT_SIZES.includes(size) ? size : 100;
 }
 /** Every row of a table, tombstones included — the caller decides, as a DAO query would. */
 export function rows<K extends TableName>(table: K): Tables[K][] {

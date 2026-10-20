@@ -102,7 +102,7 @@ export function SegmentedChoice<T>({ options, selected, label, onSelect, enabled
     <div class="segmented" role="radiogroup">
       {options.map((o) => (
         <button type="button" role="radio" aria-checked={o === selected} disabled={!enabled(o)}
-          style={fontSize ? { fontSize: `${fontSize}px` } : undefined} onClick={() => onSelect(o)}>{label(o)}</button>
+          style={fontSize ? { fontSize: `calc(${fontSize}px * var(--text))` } : undefined} onClick={() => onSelect(o)}>{label(o)}</button>
       ))}
     </div>
   );
@@ -180,7 +180,7 @@ export function EmptyState({ icon, title, body, children }: { icon: ComponentChi
   return (
     <div class="empty">
       <span class="disc">{icon}</span>
-      <p style={{ fontWeight: 800, fontSize: '17px' }}>{title}</p>
+      <p style={{ fontWeight: 800, fontSize: 'calc(17px * var(--text))' }}>{title}</p>
       {body && <p class="muted">{body}</p>}
       {children}
     </div>

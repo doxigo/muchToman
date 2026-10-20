@@ -8,68 +8,68 @@
 .hero-door.loan-hero { display: flex; width: max-content; margin-top: 0; }
 .loan-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; margin-inline-end: var(--s); border-radius: 50%; background: var(--hero-well); color: var(--hero-strong); }
 .loan-hero .said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.loan-hero b { font-size: 14px; font-weight: 700; color: var(--hero-strong); }
+.loan-hero b { font-size: calc(14px * var(--text)); font-weight: 700; color: var(--hero-strong); }
 
 /* ---- the آینده door ------------------------------------------------------------------------------ */
 .plan-row.loan-door { display: flex; align-items: center; gap: var(--m); }
 .loan-door .grow > span { display: block; }
-.loan-door-line { font-size: 16px; font-weight: 700; }
-.loan-people { margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); }
+.loan-door-line { font-size: calc(16px * var(--text)); font-weight: 700; }
+.loan-people { margin-top: 2px; font-size: calc(13px * var(--text)); color: var(--on-surface-variant); }
 .loan-door > svg { color: var(--on-surface-variant); }
 
 /* ---- the list ------------------------------------------------------------------------------------ */
 .loan-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--xl); padding-inline: var(--xs); }
 .loan-pair > div { min-width: 0; }
-.loan-pair .k { font-size: 14px; font-weight: 700; color: var(--on-surface-variant); }
-.loan-pair .v { display: block; margin-top: 2px; font-size: clamp(26px, 8.5vw, 34px); font-weight: 900; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.loan-pair .v .unit { font-size: 15px; }
-.loan-pair .s { margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); }
-.loan-note { margin-top: var(--l); padding-inline: var(--xs); font-size: 13px; line-height: 21px; color: var(--on-surface-variant); }
+.loan-pair .k { font-size: calc(14px * var(--text)); font-weight: 700; color: var(--on-surface-variant); }
+.loan-pair .v { display: block; margin-top: 2px; font-size: clamp(calc(26px * var(--text)), 8.5vw, calc(34px * var(--text))); font-weight: 900; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loan-pair .v .unit { font-size: calc(15px * var(--text)); }
+.loan-pair .s { margin-top: 2px; font-size: calc(13px * var(--text)); color: var(--on-surface-variant); }
+.loan-note { margin-top: var(--l); padding-inline: var(--xs); font-size: calc(13px * var(--text)); line-height: calc(21px * var(--text)); color: var(--on-surface-variant); }
 .loan-note.caution { margin-top: var(--xs); color: var(--secondary); }
 
 .band > .band-row.loan-row { display: flex; align-items: center; gap: var(--m); }
 /* app.css's `.band > .band-row` is block; the add row is the band's one flex row. */
 .band > .band-row.loan-add { display: flex; }
-.loan-letter { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-container); color: var(--on-primary-container); font-size: 18px; font-weight: 800; }
+.loan-letter { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-container); color: var(--on-primary-container); font-size: calc(18px * var(--text)); font-weight: 800; }
 .loan-row .grow > span { display: block; }
-.loan-name { font-size: 16px; font-weight: 600; line-height: 1.35; }
-.loan-sub { margin-top: 2px; font-size: 13px; line-height: 1.45; color: var(--on-surface-variant); }
+.loan-name { font-size: calc(16px * var(--text)); font-weight: 600; line-height: 1.35; }
+.loan-sub { margin-top: 2px; font-size: calc(13px * var(--text)); line-height: 1.45; color: var(--on-surface-variant); }
 .loan-sub.caution { color: var(--secondary); }
 .loan-dot { display: inline-block; width: 6px; height: 6px; margin-inline-end: 6px; border-radius: 50%; background: currentColor; vertical-align: middle; }
-.loan-amount { flex: none; font-size: 16px; font-weight: 800; white-space: nowrap; }
-.loan-amount .unit { font-size: 13px; }
+.loan-amount { flex: none; font-size: calc(16px * var(--text)); font-weight: 800; white-space: nowrap; }
+.loan-amount .unit { font-size: calc(13px * var(--text)); }
 
 /* ---- one person ---------------------------------------------------------------------------------- */
 .loan-top { display: flex; justify-content: flex-end; gap: var(--s); margin-top: var(--l); }
 .loan-who { display: flex; align-items: center; gap: var(--m); margin-top: var(--m); }
 .loan-who .screen-title { flex: 1; }
-.loan-lead { margin-top: var(--xl); font-size: 16px; font-weight: 600; color: var(--on-surface-variant); }
-.loan-owed { margin-top: var(--xs); font-size: 46px; font-weight: 900; line-height: 1.12; overflow-wrap: anywhere; }
-.loan-owed .u { margin-inline-start: 6px; font-size: 24px; font-weight: 800; }
-.loan-owed.later { font-size: 30px; }
-.loan-owed.later .u { font-size: 18px; }
-.loan-words { margin-top: var(--s); font-size: 15px; line-height: 24px; color: var(--on-surface-variant); }
-.loan-value { display: flex; align-items: center; gap: var(--s); margin-top: var(--m); font-size: 14px; color: var(--on-surface-variant); }
+.loan-lead { margin-top: var(--xl); font-size: calc(16px * var(--text)); font-weight: 600; color: var(--on-surface-variant); }
+.loan-owed { margin-top: var(--xs); font-size: calc(46px * var(--text)); font-weight: 900; line-height: 1.12; overflow-wrap: anywhere; }
+.loan-owed .u { margin-inline-start: 6px; font-size: calc(24px * var(--text)); font-weight: 800; }
+.loan-owed.later { font-size: calc(30px * var(--text)); }
+.loan-owed.later .u { font-size: calc(18px * var(--text)); }
+.loan-words { margin-top: var(--s); font-size: calc(15px * var(--text)); line-height: calc(24px * var(--text)); color: var(--on-surface-variant); }
+.loan-value { display: flex; align-items: center; gap: var(--s); margin-top: var(--m); font-size: calc(14px * var(--text)); color: var(--on-surface-variant); }
 .loan-value b { font-weight: 800; color: var(--on-bg); }
 .loan-value .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tertiary); }
 .loan-value.caution { margin-top: var(--xs); color: var(--secondary); }
 .loan-actions { display: flex; gap: var(--s); margin-top: var(--xl); }
 .loan-actions > .pill { flex: 1; min-width: 0; }
-.loan-promise { display: flex; align-items: center; gap: var(--m); width: 100%; margin-top: var(--l); padding: 14px var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); font-size: 14px; text-align: start; }
+.loan-promise { display: flex; align-items: center; gap: var(--m); width: 100%; margin-top: var(--l); padding: 14px var(--l); border: 0; border-radius: var(--r-card); background: var(--surface-variant); color: var(--on-surface); font-size: calc(14px * var(--text)); text-align: start; }
 .loan-promise b { font-weight: 800; }
-.loan-promise > span:last-child { flex: none; font-size: 13px; }
+.loan-promise > span:last-child { flex: none; font-size: calc(13px * var(--text)); }
 .loan-asset { flex: none; margin-inline-end: var(--m); }
 
 /* ---- the sheets ---------------------------------------------------------------------------------- */
-.loan-sheet-sub { font-size: 13px; line-height: 21px; color: var(--on-surface-variant); }
+.loan-sheet-sub { font-size: calc(13px * var(--text)); line-height: calc(21px * var(--text)); color: var(--on-surface-variant); }
 .loan-amount-field { position: relative; margin-top: var(--m); }
 /* Past the field's own focus padding too, or the digits would run under the unit. */
 .loan-amount-field .field > input, .loan-amount-field .field > input:focus { padding-inline-end: 72px; }
-.loan-amount-field .suffix { position: absolute; top: 28px; inset-inline-end: var(--l); transform: translateY(-50%); font-size: 14px; color: var(--on-surface-variant); pointer-events: none; }
+.loan-amount-field .suffix { position: absolute; top: 28px; inset-inline-end: var(--l); transform: translateY(-50%); font-size: calc(14px * var(--text)); color: var(--on-surface-variant); pointer-events: none; }
 .loan-link-row { align-items: flex-start; }
 .loan-link-row .radio { margin-top: 12px; }
 .loan-link-row .grow { padding-block: var(--s); }
-.loan-preview { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--primary); }
+.loan-preview { margin-top: 6px; font-size: calc(13px * var(--text)); font-weight: 700; color: var(--primary); }
 /* Under a sheet's figure: where the account will stand, and what moves in دارایی, once she saves. */
-p.loan-preview { margin-top: var(--xs); padding-inline: var(--xs); line-height: 21px; }
+p.loan-preview { margin-top: var(--xs); padding-inline: var(--xs); line-height: calc(21px * var(--text)); }
 

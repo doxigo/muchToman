@@ -30,7 +30,7 @@ import type { ReportMode } from './nav';
 import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberWindow, noteTotalFa, noteTotals, reportMonthOf } from './reports';
 import type { CashFlowReport, Insight, MemberShare, PeriodReport, RunningSpend, SpendRhythm } from './reports';
 import { CAT_UNCATEGORISED } from './rules';
-import { pref, rows, setPref } from './state';
+import { pref, rows, setPref, textSize } from './state';
 import { FilterCategoryChip, MemberFace, TimelineRow, openTxn } from './timeline';
 import { ChipChoice, Panel, PillButton, PillToggle, ScreenTitle, SegmentedChoice, Sheet, SheetLabel, SheetTitle } from './ui';
 
@@ -92,6 +92,7 @@ function Fit({ text, min, max, lines = 1, class: cls = '', color, spoken }: {
   text: string; min: number; max: number; lines?: number; class?: string; color?: string; spoken?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const scale = textSize() / 100;
   useLayoutEffect(() => {
     const el = ref.current!;
     let width = -1;
@@ -100,19 +101,19 @@ function Fit({ text, min, max, lines = 1, class: cls = '', color, spoken }: {
       if (!el.clientWidth || el.clientWidth === width) return;
       width = el.clientWidth;
       let size = max;
-      el.style.fontSize = `${size}px`;
+      el.style.fontSize = `calc(${size}px * var(--text))`;
       if (lines === 1) {
         if (el.scrollWidth > width) size = Math.max(min, Math.floor(((max * width) / el.scrollWidth) * 4) / 4);
       } else {
-        while (size > min && (el.scrollWidth > width || el.scrollHeight > size * 1.3 * lines + 1)) size--;
+        while (size > min && (el.scrollWidth > width || el.scrollHeight > size * scale * 1.3 * lines + 1)) size--;
       }
-      el.style.fontSize = `${size}px`;
+      el.style.fontSize = `calc(${size}px * var(--text))`;
     };
     fit();
     const watch = new ResizeObserver(fit);
     watch.observe(el);
     return () => watch.disconnect();
-  }, [text, min, max, lines]);
+  }, [text, min, max, lines, scale]);
   const shown = <span ref={ref} class={`rp-fit${lines > 1 ? ' wrap' : ''} ${cls}`} style={{ color }} aria-hidden={spoken ? 'true' : undefined}>{text}</span>;
   return spoken ? <>{shown}<span class="sr">{spoken}</span></> : shown;
 }
@@ -567,11 +568,13 @@ function WindowNavigator({ cash, onWindow }: { cash: CashFlowReport; onWindow: O
 }
 
 /** A 40px well inside a 48px target, dimmed with the button so a spent arrow looks spent. */
-function StepButton({ label, enabled, previous = false, onClick }: { label: string; enabled: boolean; previous?: boolean; onClick: () => void }) {
+export function StepButton({ label, enabled, previous = false, mark, onClick }: {
+  label: string; enabled: boolean; previous?: boolean; mark?: ComponentChildren; onClick: () => void;
+}) {
   return (
     <button type="button" class="rp-step" aria-label={label} disabled={!enabled} onClick={onClick}>
       {/* «قبل» points the way the page reads backwards: right, in RTL. */}
-      <span><Chevron size={24} back={previous} /></span>
+      <span>{mark ?? <Chevron size={24} back={previous} />}</span>
     </button>
   );
 }
