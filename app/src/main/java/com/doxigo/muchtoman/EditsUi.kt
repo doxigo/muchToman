@@ -154,7 +154,13 @@ fun EditTxnSheet(
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 supportingText = {
-                    Text(rial?.let { faWordsToman(tomanOf(it)) } ?: "مبلغ رو فقط با عدد بنویس.")
+                    Text(
+                        rial?.let { faWordsToman(tomanOf(it)) }
+                            // The row the message named no figure for: the field is empty because
+                            // the bank left it out, not because she typed something wrong.
+                            ?: if (amount.isBlank() && txn.amountRial == null) "پیامک مبلغ رو نگفته؛ خودت بنویسش."
+                            else "مبلغ رو فقط با عدد بنویس."
+                    )
                 },
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier

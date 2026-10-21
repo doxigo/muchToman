@@ -48,12 +48,13 @@ export function splitOf(value: string | null | undefined, amountRial: number | n
 
 /**
  * The row as she corrected it, keeping its minute and its direction: the figure never turns it.
- * Which way it went is an answer of its own, laid on in the derive by `settleDirections`.
+ * Which way it went is an answer of its own, laid on in the derive by `settleDirections` — on a row
+ * whose message named no amount too, which is how the figure she types there gets its sign.
  */
 export function editedTxn(txn: Txn, amountRial: number | null, day: number | null): Txn {
   let edited = txn;
-  if (amountRial != null && amountRial > 0 && txn.amountRial != null) {
-    edited = { ...edited, amountRial, signedRial: txn.signedRial == null ? null : txn.signedRial < 0 ? -amountRial : amountRial };
+  if (amountRial != null && amountRial > 0) {
+    edited = { ...edited, amountRial, signedRial: txn.direction === 'in' ? amountRial : txn.direction === 'out' ? -amountRial : null };
   }
   if (day != null && day !== txn.day) {
     const minute = Math.min(Math.max(txn.at - tehranDayStart(txn.day), 0), DAY_MS - 1);
@@ -78,9 +79,12 @@ export function splitParts(entry: LedgerEntry): LedgerEntry[] {
   }));
 }
 
-/** Whether this device may correct the row: its own, typed or pasted. Another member's is theirs. */
+/**
+ * Whether this device may correct the row: its own, typed or pasted. Another member's is theirs.
+ * A row whose message named no amount is hers to correct too — typing it in is the only way it gets one.
+ */
 export const editable = (entry: LedgerEntry): boolean =>
-  (entry.txn.ref.startsWith('m:') || entry.txn.ref.startsWith('s:')) && entry.txn.amountRial != null;
+  entry.txn.ref.startsWith('m:') || entry.txn.ref.startsWith('s:');
 
 /** Whether the row can be broken into parts: any row that moved money and is not a transfer. */
 export const splittable = (entry: LedgerEntry): boolean =>

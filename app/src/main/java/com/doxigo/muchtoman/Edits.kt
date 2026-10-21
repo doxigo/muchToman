@@ -62,14 +62,19 @@ fun splitOf(value: String?, amountRial: Long?, names: Map<String, String>): List
  * The row as she corrected it: her figure in place of the one read, her day in place of the
  * stamp's — keeping the minute, so a row from ۱۴:۰۳ is still from ۱۴:۰۳. The figure never turns
  * the direction: money that came in is not made to have gone out by a typo in its figure. Which
- * way it went is an answer of its own, laid on in derive by [settleDirections].
+ * way it went is an answer of its own, laid on in derive by [settleDirections] — on a row whose
+ * message named no amount too, which is how the figure she types there gets its sign.
  */
 fun editedTxn(txn: Txn, amountRial: Long?, day: Long?): Txn {
     var edited = txn
-    if (amountRial != null && amountRial > 0 && txn.amountRial != null) {
+    if (amountRial != null && amountRial > 0) {
         edited = edited.copy(
             amountRial = amountRial,
-            signedRial = txn.signedRial?.let { if (it < 0) -amountRial else amountRial },
+            signedRial = when (txn.direction) {
+                "in" -> amountRial
+                "out" -> -amountRial
+                else -> null
+            },
         )
     }
     if (day != null && day != txn.day) {
@@ -97,9 +102,13 @@ fun splitParts(entry: LedgerEntry): List<LedgerEntry> =
         )
     }
 
-/** Whether this phone may correct the row: its own, typed or read. Another member's is theirs. */
+/**
+ * Whether this phone may correct the row: its own, typed or read. Another member's is theirs.
+ * A row whose message named no amount is hers to correct too — typing the figure in is the only
+ * way it ever gets one when the parser could not read it.
+ */
 fun editable(entry: LedgerEntry): Boolean =
-    (entry.txn.ref.startsWith("m:") || entry.txn.ref.startsWith("s:")) && entry.txn.amountRial != null
+    entry.txn.ref.startsWith("m:") || entry.txn.ref.startsWith("s:")
 
 /** Whether the row can be broken into parts: any row that moved money and is not a transfer. */
 fun splittable(entry: LedgerEntry): Boolean =

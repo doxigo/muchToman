@@ -25,6 +25,35 @@
         "channel": "unknown",
         "unitPrinted": "rial"
       }
+    },
+    {
+      "id": "refah-channel-glued-to-signed-deposit",
+      "sender": "Refah Bank",
+      "at": 2,
+      "body": [
+        "بانک رفاه",
+        "حساب1234508",
+        "پایا15,201,000+",
+        "مانده792,423,073",
+        "07/26-10:04"
+      ],
+      "why": "Issue #59. Refah heads the amount with its channel — «پایا», «کارت» — instead of «واریز», and glues the figure to it with the sign behind, so no word names a direction and the sign is the only thing that does. A sign was only read after whitespace or a colon, and every deposit arrived with no amount. The account's leading digits are invented; the reporter blacked them out.",
+      "expect": {
+        "bank": "REFAH",
+        "direction": "in",
+        "amountRial": 15201000,
+        "balanceRial": 792423073,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "07/26-10:04",
+        "channel": "paya",
+        "unitPrinted": "none",
+        "inferred": false,
+        "account": "4508"
+      }
     }
   ]
 }

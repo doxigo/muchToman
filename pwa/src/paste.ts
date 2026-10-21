@@ -76,10 +76,12 @@ const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹
  * from خاورمیانه, پاسارگاد and رسالت, or behind after a label, «پایانه فروش: 4,100,000-» and
  * «سود:2,472,328+» from صادرات and ملی. The sign is the direction and outranks the words:
  * «انتقال از اینترنت بانک از کارت 9295» is money arriving. Thousands separators are required so a
- * "+98…" phone number is not a deposit, and only whitespace or a colon may stand in front of it.
+ * "+98…" phone number is not a deposit, and only whitespace, a colon or a letter may stand in front
+ * of it. The letter is for any bank that glues the figure to a word; رفاه is where it was seen —
+ * «پایا15,201,000+», with no direction named in words at all.
  */
 const GROUPED = '[0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+';
-const SIGNED = new RegExp(`(?<![^\\s:])(?:([+-])(${GROUPED})|(${GROUPED})([+-]))(?![0-9۰-۹٠-٩])`, 'g');
+const SIGNED = new RegExp(`(?<![^\\s:\\p{L}])(?:([+-])(${GROUPED})|(${GROUPED})([+-]))(?![0-9۰-۹٠-٩])`, 'gu');
 
 /**
  * The first signed figure that is not a balance: one with «مانده» or «موجودی» in front of it on its

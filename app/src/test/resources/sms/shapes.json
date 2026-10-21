@@ -420,6 +420,34 @@
         "balanceRial": 9000000,
         "account": ""
       }
+    },
+    {
+      "id": "shape-sign-in-front-glued-to-a-word",
+      "sender": "Refah Bank",
+      "at": 1000,
+      "body": [
+        "بانک رفاه",
+        "حساب1234508",
+        "کارت-1,250,000",
+        "مانده791,173,073"
+      ],
+      "why": "The Refah message from issue #59 the other way round: the sign in front of the figure, still glued to the channel word. Shown right to left the two look alike, so whichever way the bank writes it, the sign is read, and a minus is a withdrawal.",
+      "expect": {
+        "bank": "REFAH",
+        "direction": "out",
+        "amountRial": 1250000,
+        "balanceRial": 791173073,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false,
+        "account": "4508"
+      }
     }
   ]
 }

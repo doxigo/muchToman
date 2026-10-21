@@ -97,7 +97,9 @@ import kotlinx.coroutines.sync.withLock
 // «پرداخت» had been stored as spends, and ones naming both a deposit and a fee with no direction.
 // And a row is kept on the account its «حساب» names ([assignAccounts]): two accounts at one bank
 // had been one account, so a transfer between them read as a spend and an income both.
-const val PARSER_VERSION = 21
+// 22: a sign glued to a word is read — رفاه's «پایا15,201,000+». Its deposits name the channel
+// instead of «واریز», and every one had been stored with no amount and no direction.
+const val PARSER_VERSION = 22
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"
@@ -398,14 +400,16 @@ fun settleDirections(rows: List<Txn>, chosen: Map<String, String?> = emptyMap())
             else -> null
         }
         val direction = chosen[row.ref]?.takeIf { it == "in" || it == "out" } ?: measured ?: row.direction
-        if (amount != null && direction != null && direction != row.direction) decided[row.ref] = direction
+        // Kept on a row with no amount as well: only her answer can reach one, and the figure she
+        // typed for it is laid on afterwards by [editedTxn], which signs it by this direction.
+        if (direction != null && direction != row.direction) decided[row.ref] = direction
         if (after != null && !copy) latest[row.accountId] = Stated(after, amount, direction)
     }
     if (decided.isEmpty()) return rows
     return rows.map { row ->
         val direction = decided[row.ref] ?: return@map row
-        val amount = row.amountRial!!
-        row.copy(direction = direction, signedRial = if (direction == "in") amount else -amount, inferred = false)
+        val signed = row.amountRial?.let { if (direction == "in") it else -it }
+        row.copy(direction = direction, signedRial = signed, inferred = false)
     }
 }
 

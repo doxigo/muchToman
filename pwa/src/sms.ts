@@ -269,15 +269,18 @@ export function settleDirections(rows: Txn[], chosen: ReadonlyMap<string, string
       : null;
     const hers = chosen.get(row.ref);
     const direction = hers === 'in' || hers === 'out' ? hers : measured ?? row.direction;
-    if (amount != null && direction != null && direction !== row.direction) decided.set(row.ref, direction);
+    // Kept on a row with no amount as well: only her answer can reach one, and the figure she typed
+    // for it is laid on afterwards by editedTxn, which signs it by this direction.
+    if (direction != null && direction !== row.direction) decided.set(row.ref, direction);
     if (after != null && !copy) latest.set(row.accountId, { balance: after, amount, direction });
   }
   if (!decided.size) return rows;
   return rows.map((row) => {
     const direction = decided.get(row.ref);
     if (direction == null) return row;
-    const amount = row.amountRial!;
-    return { ...row, direction, signedRial: direction === 'in' ? amount : -amount, inferred: false };
+    const amount = row.amountRial;
+    const signedRial = amount == null ? null : direction === 'in' ? amount : -amount;
+    return { ...row, direction, signedRial, inferred: false };
   });
 }
 

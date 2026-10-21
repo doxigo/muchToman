@@ -64,7 +64,10 @@ function EditTxnSheet({ txnRef }: { txnRef: string }) {
 
       <SheetLabel>چقدر، به {moneyUnit()}</SheetLabel>
       <AmountField ariaLabel={`مبلغ به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
-        error={rial == null ? 'مبلغ رو فقط با عدد بنویس.' : null} />
+        error={rial != null ? null
+          // The row the message named no figure for: empty because the bank left it out.
+          : amount.trim() === '' && txn.amountRial == null ? 'پیامک مبلغ رو نگفته؛ خودت بنویسش.'
+          : 'مبلغ رو فقط با عدد بنویس.'} />
 
       <SheetLabel>کِی؟</SheetLabel>
       <DayStepper day={day} today={today} onDay={setDay} />

@@ -8,6 +8,7 @@ import {
   bankAccountsOf, bankTotal, deriveBalance, familyLocalRef, familyToRow, ledgerView, manualToRow, startingFrom,
 } from '../src/derived';
 import type { DeriveInput } from '../src/derived';
+import { editedTxn } from '../src/edits';
 import { autoFilePlan } from '../src/filing';
 import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/jalali';
 import type { BalanceAnchor, Decision, FamilyTxn, LedgerEntry, ManualTxn, Source, Txn } from '../src/model';
@@ -196,6 +197,15 @@ describe('which way the money went', () => {
     expect([6, 2, 3].map((at) => hers.get(at)!.signedRial)).toEqual([700_000, -2_000_000, -2_000_000]);
     expect(paired([...hers.values()])).toBe(true);
     expect(settleDirections([rows[0]], new Map([[rows[0].ref, 'sideways']]))[0]).toBe(rows[0]);
+  });
+
+  it('keeps her answer on a row with no amount, and signs the figure she types by it', () => {
+    // A channel and a figure, no sign and no direction word: only the مانده is read.
+    const bare = saman(7, 'بانک سامان\nپایا 15,201,000\nمانده 792,423,073');
+    expect(bare.amountRial).toBeNull();
+    const turned = settleDirections([bare], new Map([[bare.ref, 'in']]))[0];
+    expect([turned.direction, turned.signedRial]).toEqual(['in', null]);
+    expect(editedTxn(turned, 15_201_000, null).signedRial).toBe(15_201_000);
   });
 });
 

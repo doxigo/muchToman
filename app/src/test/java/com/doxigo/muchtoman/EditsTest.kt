@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -102,6 +103,40 @@ class EditsTest {
             derive(durable, derived, emptyMap())
             val back = ledgerEntries(derived, durable).entries.single()
             assertEquals(-700_000L, back.txn.signedRial)
+            assertFalse(back.edited)
+        } finally {
+            derived.close()
+            durable.close()
+        }
+    }
+
+    @Test
+    fun `a row whose message named no amount takes the one she types, the way she says it went`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val durable = Room.inMemoryDatabaseBuilder(context, DurableDb::class.java).build()
+        val derived = Room.inMemoryDatabaseBuilder(context, DerivedDb::class.java).build()
+        try {
+            seedBuiltins(durable)
+            // A channel and a figure, no sign and no direction word: the parser reads the مانده only.
+            val sender = "0999 992 0000"
+            val body = "بانک سامان\nپایا 15,201,000\nمانده 792,423,073"
+            val at = System.currentTimeMillis() - DAY_MS
+            durable.smsSource().insertAll(listOf(SmsSource(srcHash(sender, body, at), sender, srcAddrKeyV1(sender), body, at, 0L)))
+            derive(durable, derived, emptyMap())
+            val read = ledgerEntries(derived, durable).entries.single()
+            assertNull(read.txn.amountRial)
+            assertTrue(editable(read))
+
+            editRow(durable, read, 15_201_000L, null, null, "", direction = "in")
+            derive(durable, derived, emptyMap())
+            val typed = ledgerEntries(derived, durable).entries.single()
+            assertEquals(15_201_000L, typed.txn.signedRial)
+            assertTrue(typed.edited)
+
+            revertRow(durable, typed, "")
+            derive(durable, derived, emptyMap())
+            val back = ledgerEntries(derived, durable).entries.single()
+            assertNull(back.txn.amountRial)
             assertFalse(back.edited)
         } finally {
             derived.close()

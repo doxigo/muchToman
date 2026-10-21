@@ -429,11 +429,14 @@ private val NUMBER = Regex("[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-�
  * words left the amount unknown.
  *
  * Thousands separators are required, which keeps a "+98…" phone number from reading as a
- * deposit, and only whitespace, a colon or the start of the text may stand in front of it. A
- * figure without them falls through to the words, as before.
+ * deposit, and only whitespace, a colon, a letter or the start of the text may stand in front of
+ * it — never a digit or a dash, which would make it the tail of an account number. The letter is
+ * for any bank that glues the figure to a word. رفاه is where it was seen: «پایا15,201,000+», with
+ * no direction named in words at all, so its deposits arrived with no amount. A figure without
+ * separators falls through to the words, as before.
  */
 private const val GROUPED = "[0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+"
-private val SIGNED = Regex("(?<![^\\s:])(?:([+-])($GROUPED)|($GROUPED)([+-]))(?![0-9۰-۹٠-٩])")
+private val SIGNED = Regex("(?<![^\\s:\\p{L}])(?:([+-])($GROUPED)|($GROUPED)([+-]))(?![0-9۰-۹٠-٩])")
 
 private class Signed(val figure: Figure, val plus: Boolean)
 
