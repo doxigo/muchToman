@@ -340,6 +340,40 @@ export async function avatarThumbnail(file: Blob): Promise<string | null> {
   }
 }
 
+/** The long side a photo is scaled down to before it is searched. Family.kt `SCAN_PX`. */
+const SCAN_PX = 1600;
+
+/**
+ * The text of a QR in RGBA pixels, or null when there is none to read. Family.kt `decodeQr`. The
+ * decoder is fetched on the first scan rather than with the app: iOS Safari has no
+ * BarcodeDetector, and most people never scan anything here.
+ */
+export async function decodeQr(rgba: Uint8ClampedArray, width: number, height: number): Promise<string | null> {
+  const { default: jsQR } = await import('jsqr');
+  // The code is always dark on its white plate (InviteCode), so there is no inverted one to try.
+  return jsQR(rgba, width, height, { inversionAttempts: 'dontInvert' })?.data ?? null;
+}
+
+/** The invite in the camera's photo of someone's family page. Family.kt `scannedInvite`. */
+export async function scannedInvite(photo: Blob): Promise<string | null> {
+  try {
+    const bitmap = await createImageBitmap(photo);
+    const scale = Math.min(1, SCAN_PX / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context || !width || !height) return null;
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    return await decodeQr(context.getImageData(0, 0, width, height).data, width, height);
+  } catch {
+    return null;
+  }
+}
+
 /** Pasted messages are this browser's SMS rows, so this switch is theirs. */
 export function setFamilySmsSharing(enabled: boolean): void {
   if (!session) return;

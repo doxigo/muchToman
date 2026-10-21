@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The camera's photo of a family invite — see the provider in AndroidManifest.xml. -->
+<paths>
+    <cache-path name="scan" path="scan/" />
+</paths>

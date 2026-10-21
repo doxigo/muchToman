@@ -1548,7 +1548,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Called from the Android deep link opened by a scanned family invitation. */
+    /** Called with a family invitation: the deep link a scanned QR opens, or one scanned on خانواده. */
     fun acceptPairing(link: String?) {
         if (link.isNullOrBlank()) return
         val pairing = parsePairingLink(link)

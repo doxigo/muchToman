@@ -1,6 +1,10 @@
 package com.doxigo.muchtoman
 
 import android.net.Uri
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -71,5 +75,21 @@ class PairingLinkTest {
                 allowed,
             )
         )
+    }
+
+    @Test
+    fun `an invite QR scans back to the link it was drawn from`() {
+        val shown = link(allowed)
+        // qrBitmap's settings, without the Bitmap: error correction M, a two-module quiet zone.
+        val hints = mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 2)
+        val matrix = QRCodeWriter().encode(shown, BarcodeFormat.QR_CODE, 480, 480, hints)
+        val pixels = IntArray(matrix.width * matrix.height) {
+            if (matrix.get(it % matrix.width, it / matrix.width)) 0xFF000000.toInt() else -1
+        }
+        val scanned = decodeQr(pixels, matrix.width, matrix.height)
+        assertEquals(shown, scanned)
+        assertNotNull(parsePairingLink(scanned!!, allowed))
+        // A photo with no code in it reads as nothing, not as an error.
+        assertNull(decodeQr(IntArray(400 * 300) { -1 }, 400, 300))
     }
 }

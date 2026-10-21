@@ -104,7 +104,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="muchtoman" android:host="join" />
             </intent-filter>
-            <intent-filter>
+            <!--
+                Verified against pwa/public/.well-known/assetlinks.json, which the sync Worker
+                serves. Unverified, Android 12+ hands this link to the browser every time and the
+                QR a phone's own camera reads opens the PWA instead of the app. Verification goes
+                through Google and can still fail from inside Iran, which is why the family page
+                can also scan the code itself.
+            -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -114,6 +121,21 @@
                     android:pathPrefix="/join" />
             </intent-filter>
         </activity>
+
+        <!--
+            Where the camera app writes the photo of a family invite, so the family page can read
+            the QR in it without the app ever holding the CAMERA permission. One file in the
+            cache, deleted as soon as it is read — the code in it carries the household key.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.scan"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/scan_paths" />
+        </provider>
 
         <!--
             SMS_RECEIVED is one of the implicit broadcasts the platform still delivers to a

@@ -86,11 +86,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.EncodeHintType
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeReader
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -113,6 +120,32 @@ fun qrBitmap(content: String, size: Int = 720): Bitmap {
     bitmap.setPixels(pixels, 0, matrix.width, 0, 0, matrix.width, matrix.height)
     return bitmap
 }
+
+/** The text of a QR in ARGB pixels, or null when there is none to read. The PWA's `decodeQr`. */
+fun decodeQr(pixels: IntArray, width: Int, height: Int): String? = runCatching {
+    val image = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(width, height, pixels)))
+    QRCodeReader().decode(image, mapOf(DecodeHintType.TRY_HARDER to true)).text
+}.getOrNull()
+
+/**
+ * The invite in the camera's photo of someone's family page. Sampled down first: a
+ * twelve-megapixel photo is far more than a QR needs and would take seconds to search.
+ */
+fun scannedInvite(photo: File): String? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(photo.path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= SCAN_PX) sample *= 2
+    val bitmap = BitmapFactory.decodeFile(photo.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        ?: return null
+    val pixels = IntArray(bitmap.width * bitmap.height)
+    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+    decodeQr(pixels, bitmap.width, bitmap.height)
+}.getOrNull()
+
+/** How far a photo is sampled down: by halves, while its long side stays at least this. The PWA's `SCAN_PX`. */
+private const val SCAN_PX = 1600
 
 /**
  * Her — on the home bar's way into تنظیمات and the card at the top of it. It used to be the mark
@@ -177,6 +210,8 @@ fun CompanionScreen(
     suggestedName: String,
     onStart: (String) -> Unit,
     onJoin: (String) -> Unit,
+    /** A link read off an invite QR in here, taken the way a tapped one is. */
+    onScan: (String) -> Unit,
     /** The confirmed replace: bury this phone's household and join the scanned one. */
     onRejoin: () -> Unit,
     onDismissRejoin: () -> Unit,
@@ -235,6 +270,29 @@ fun CompanionScreen(
         }
     }
 
+    // The invite, scanned here rather than by the phone's own camera app, whose link Android may
+    // hand to the browser instead. The camera app takes the photo, so there is no CAMERA
+    // permission to ask for; the photo holds the household key, so it goes as soon as it is read.
+    // A fixed file, so a result arriving after the process was killed still finds it.
+    val scanPhoto = remember { File(appContext.cacheDir, "scan/invite.jpg") }
+    val scanner = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        actionScope.launch {
+            val link = withContext(Dispatchers.IO) {
+                try { if (taken) scannedInvite(scanPhoto) else null } finally { scanPhoto.delete() }
+            }
+            when {
+                link != null -> onScan(link)
+                taken -> actionError = "کد دعوت توی عکس پیدا نشد. دوباره امتحان کن."
+            }
+        }
+    }
+    fun scanInvite() {
+        actionError = null
+        scanPhoto.parentFile?.mkdirs()
+        val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.scan", scanPhoto)
+        runCatching { scanner.launch(uri) }.onFailure { actionError = "دوربین باز نشد." }
+    }
+
     val me = state.members.firstOrNull { it.id == state.memberId }
     val myName = state.memberName.ifBlank { me?.name.orEmpty() }
     val others = state.members.filterNot { it.id == state.memberId }
@@ -289,6 +347,13 @@ fun CompanionScreen(
                     working = state.working,
                     onNameChange = { name = it.take(32) },
                     onSubmit = { onStart(name.trim()) },
+                )
+                PillButton(
+                    "اسکن کد دعوت",
+                    ::scanInvite,
+                    Modifier.fillMaxWidth().padding(top = Space.s),
+                    enabled = !state.working,
+                    block = true,
                 )
             }
 
@@ -693,7 +758,7 @@ private fun InviteCode(url: String) {
         }
         Spacer(Modifier.height(Space.l))
         Text(
-            "در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.",
+            "از صفحه خانواده‌ی خود اپ، با «اسکن کد دعوت». کد ده دقیقه اعتبار داره و یک‌بار مصرفه.",
             fontSize = 13.sp,
             lineHeight = 20.sp,
             textAlign = TextAlign.Center,

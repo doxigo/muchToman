@@ -19,6 +19,7 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
+    "jsqr": "^1.4.0",
     "preact": "^10.29.8",
     "uqr": "^0.1.3"
   }

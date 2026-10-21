@@ -678,6 +678,7 @@ private fun AppScreens(
             suggestedName = state.name,
             onStart = vm::startFamily,
             onJoin = vm::joinFamily,
+            onScan = vm::acceptPairing,
             onRejoin = vm::confirmRejoin,
             onDismissRejoin = vm::dismissRejoin,
             onNameChange = vm::setFamilyName,

@@ -86,8 +86,8 @@ export async function openSealed(key: CryptoKey, nonce: string, body: string, aa
  *
  * The fragment is the whole trick: a browser never sends it in an HTTP request, so the scope key
  * reaches this device without ever passing through the Worker. The iPhone's own Camera app scans
- * the code and opens the URL — no barcode library on this side at all, which matters because
- * iOS Safari has no BarcodeDetector.
+ * the code and opens the URL in Safari — which is not the home-screen app, whose storage is its
+ * own, so خانواده can also read the code off a photo (family.ts `scannedInvite`).
  *
  * Ceiling, named and worth stating in the privacy screen: the URL sits in Safari's history until
  * the caller replaces it, and it is legible in any screenshot of the QR itself.

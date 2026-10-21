@@ -176,3 +176,24 @@ describe('phones that hold a key and have no profile', () => {
     expect(family.familyState().unnamed.map((d) => d.memberId)).toEqual([BURIED]);
   });
 });
+
+describe('an invite scanned off a photo', () => {
+  it('reads back the link the QR was drawn from, and nothing from a photo without one', async () => {
+    const { encode } = await import('uqr');
+    const { readPairing, toBase64Url } = await import('../src/crypto');
+    // pairingUrl's shape.
+    const shown = `https://sync.test/join#url=${encodeURIComponent('https://sync.test')}&hid=${HID}&pair=code123` +
+      `&scope=${encodeURIComponent(`family:${HID}`)}&k=${toBase64Url(new Uint8Array(32))}`;
+    // InviteCode's settings, each module four pixels wide, dark on white.
+    const { data } = encode(shown, { ecc: 'M', border: 2 });
+    const px = 4, side = data.length * px;
+    const rgba = new Uint8ClampedArray(side * side * 4).fill(255);
+    for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+      if (data[Math.floor(y / px)][Math.floor(x / px)]) rgba.fill(0, (y * side + x) * 4, (y * side + x) * 4 + 3);
+    }
+    const scanned = await family.decodeQr(rgba, side, side);
+    expect(scanned).toBe(shown);
+    expect(readPairing(scanned!.slice(scanned!.indexOf('#') + 1))).not.toBeNull();
+    expect(await family.decodeQr(new Uint8ClampedArray(64 * 48 * 4).fill(255), 64, 48)).toBeNull();
+  });
+});

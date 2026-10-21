@@ -14,8 +14,8 @@ import './settings.css';
 import { CategoryIcon } from './categoryIcon';
 import { useLedger } from './derived';
 import {
-  avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, loadDevices, rejoinLead, removeMember,
-  renewFamily, setFamilyAssetSharing, setFamilyAvatar, setFamilyName, setFamilySmsSharing, startFamily, syncFamily,
+  acceptPairing, avatarThumbnail, confirmRejoin, contributionsOf, dismissRejoin, inviteDevice, joinFamily, leaveFamily, loadDevices, rejoinLead, removeMember,
+  renewFamily, scannedInvite, setFamilyAssetSharing, setFamilyAvatar, setFamilyName, setFamilySmsSharing, startFamily, syncFamily,
   toggleFamilyExcludedBank, useFamily,
 } from './family';
 import type { FamilyState } from './family';
@@ -145,7 +145,7 @@ function InviteCode({ url }: { url: string }) {
           <path d={path.d} fill="#000" />
         </svg>
       </div>
-      <p class="set-note" style={{ paddingTop: 'var(--l)', textAlign: 'center' }}>در اندروید، صفحه بازشده رو با اپ چقدر تومن باز کن. کد ده دقیقه اعتبار داره و یک‌بار مصرفه.</p>
+      <p class="set-note" style={{ paddingTop: 'var(--l)', textAlign: 'center' }}>از صفحه خانواده‌ی خود اپ، با «اسکن کد دعوت». کد ده دقیقه اعتبار داره و یک‌بار مصرفه.</p>
     </div>
   );
 }
@@ -235,6 +235,10 @@ function Family() {
   const [name, setName] = useState(() => state.memberName || pref('name'));
   const household = state.paired && !state.pendingRejoin && !state.pendingPairing;
   const banks = [...new Set(view.bankAccounts.map((a) => a.bank))];
+  // The invite, scanned here rather than by the Camera app, whose link opens in Safari — not in
+  // this home-screen app. `capture` opens the camera itself; the photo is read and never kept.
+  const scanner = useRef<HTMLInputElement>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   return (
     <SettingsPage title="خانواده">
@@ -252,10 +256,21 @@ function Family() {
           <Welcome heading="خرج‌های خونه رو با هم توی یک دفتر ببینید" />
           <NameForm name={name} caption="اعضای بعدی با کد دعوت وارد می‌شن." action={state.working ? 'در حال ساختن...' : 'ساختن خانواده'}
             working={state.working} onName={(v) => setName(v.slice(0, 32))} onSubmit={() => void startFamily(name.trim())} />
+          <QuietButton label="اسکن کد دعوت" disabled={state.working} onClick={() => { setScanError(null); scanner.current?.click(); }} />
+          <input ref={scanner} type="file" accept="image/*" capture="environment" hidden onChange={async (e) => {
+            const input = e.currentTarget;
+            const file = input.files?.[0];
+            input.value = '';
+            if (!file) return;
+            const link = await scannedInvite(file);
+            if (link == null) setScanError('کد دعوت توی عکس پیدا نشد. دوباره امتحان کن.');
+            else await acceptPairing(link.slice(link.indexOf('#') + 1));
+          }} />
         </>
       ) : <Household state={state} contributions={contributions} />}
 
       {state.error && <Note tone="error">{state.error}</Note>}
+      {scanError && <Note tone="error">{scanError}</Note>}
 
       {household && (
         <>

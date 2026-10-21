@@ -1,0 +1,18 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.doxigo.muchtoman",
+      "sha256_cert_fingerprints": ["7F:66:B7:E8:59:32:7E:8A:63:2D:64:BD:29:50:32:60:D8:23:29:D8:C4:C4:85:97:18:2A:6D:7D:D6:6F:2C:D2"]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.doxigo.muchtoman.lite",
+      "sha256_cert_fingerprints": ["7F:66:B7:E8:59:32:7E:8A:63:2D:64:BD:29:50:32:60:D8:23:29:D8:C4:C4:85:97:18:2A:6D:7D:D6:6F:2C:D2"]
+    }
+  }
+]
