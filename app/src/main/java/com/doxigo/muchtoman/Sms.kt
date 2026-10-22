@@ -228,7 +228,10 @@ data class BankSms(
     val channel: Channel = Channel.UNKNOWN,
     val instrument: Instrument = Instrument.UNKNOWN,
     val unitPrinted: PrintedUnit = PrintedUnit.NONE,
-    /** Which of the bank's accounts, as [accountNoIn] reads it: four digits, or blank for unnamed. */
+    /**
+     * Which of the bank's accounts: four digits as [accountNoIn] reads them, else the card
+     * [cardNoIn] reads, or blank for unnamed.
+     */
     val accountNo: String = "",
 ) {
     /** Nothing to fold in — no amount and no balance means the message was not a transaction. */
@@ -586,12 +589,19 @@ private fun qualifiedAt(text: String, at: Int): Boolean {
     return text.getOrNull(i - 4)?.isLetter() != true
 }
 
+/**
+ * Whether the word found at [at] is the «پرداخت» inside «بازپرداخت». صادرات heads a deposit
+ * «بازپرداخت/واریز», and that «پرداخت» had it naming both directions, so it had none. On its own
+ * «بازپرداخت» is a repayment, which leaves or arrives depending on whose; the مانده decides.
+ */
+private fun repaidAt(text: String, at: Int): Boolean = at >= 3 && text.startsWith("بازپرداخت", at - 3)
+
 /** Whether any of [words] appears unqualified: a message whose only «برداشت» follows «قابل» states no direction. */
 private fun statesDirection(text: String, words: List<String>): Boolean {
     for (word in words) {
         var i = text.indexOf(word)
         while (i >= 0) {
-            if (!qualifiedAt(text, i)) return true
+            if (!qualifiedAt(text, i) && !repaidAt(text, i)) return true
             i = text.indexOf(word, i + 1)
         }
     }
@@ -740,6 +750,47 @@ internal fun accountNoIn(text: String): String =
         }
     }.toSet().singleOrNull().orEmpty()
 
+/** Marks an account a bank names only by its card, so card 5915 and an account ending 5915 stay two. */
+internal const val CARD_PREFIX = "card"
+
+/** A figure a bank labels «کارت»: the label, an optional colon, and digits or a starred mask on the same line. */
+private val CARD_NO = Regex("(?<!\\p{L})کارت[^\\S\\n]*:?[^\\S\\n]*([0-9۰-۹٠-٩][0-9۰-۹٠-٩*\\-]*)")
+
+/** «به کارت 9525», «از کارت 9295»: the other side of a transfer, someone else's card. */
+private val OTHER_SIDE = Regex("(?<!\\p{L})(?:به|از)\\s*$")
+
+/**
+ * The card a message names as [CARD_PREFIX] and its last four digits, for a message that names no
+ * «حساب» — blank when it names none, or two. صادرات sends a card's alerts as «کارت:5915» with no
+ * account at all, and a card is usually an account of its own: folded onto the bank's «حساب:84007»,
+ * the card's purchases and that account's transfers took turns setting one balance.
+ *
+ * Not the other side of a transfer, and not a figure written the way money is: رفاه glues its
+ * channel word to the amount, «کارت2,870,000+».
+ *
+ * ponytail: one account a bank labels «حساب» on some messages and names by its card on others shows
+ * as two. None in the corpus does; link a card to the account whose مانده its message continues if
+ * one turns up.
+ */
+internal fun cardNoIn(text: String): String =
+    CARD_NO.findAll(text).mapNotNull { m ->
+        val run = m.groups[1]!!
+        val digits = digitsOf(run.value)
+        val tail = text.substring(run.range.last + 1).take(8).substringBefore('\n')
+        when {
+            OTHER_SIDE.containsMatchIn(text.substring(0, m.range.first)) -> null
+            digits.length < 4 -> null
+            tail.firstOrNull()?.let { it in ",،٬" } == true -> null
+            UNIT_WORDS.any { it in tail } -> null
+            else -> CARD_PREFIX + digits.takeLast(4)
+        }
+    }.toSet().singleOrNull().orEmpty()
+
+/** How an account's [BankAccount.number] reads under its bank's name: «حساب ۴۰۰۷», or «کارت ۵۹۱۵». */
+internal fun accountLabel(number: String): String =
+    if (number.startsWith(CARD_PREFIX)) "کارت ${faDigits(number.removePrefix(CARD_PREFIX))}"
+    else "حساب ${faDigits(number)}"
+
 /**
  * Read one message, or decline it.
  *
@@ -821,7 +872,7 @@ fun parseBankSms(
             10.0 -> PrintedUnit.RIAL
             else -> PrintedUnit.NONE
         },
-        accountNo = accountNoIn(text),
+        accountNo = accountNoIn(text).ifEmpty { cardNoIn(text) },
     )
     return sms
 }
@@ -1131,12 +1182,14 @@ fun applyBankSms(accounts: List<BankAccount>, sms: BankSms): List<BankAccount> {
 /**
  * The one of the bank's accounts [sms] is about, or null for one the bank has no row for yet.
  *
- * Told apart by the number the message labels «حساب» ([accountNoIn]) and by nothing else the
- * message prints. Not by every identifier it carries: one account has several — Saman prints
- * "829-800-1092308-1" on a transfer, the card mask "6037****1234" on a purchase and nothing on
- * some alerts — and keying on whatever was printed forked one account into thirty-eight rows,
- * each anchored at the full balance, her money multiplied on screen with nothing flagged. A bank
- * whose messages label no «حساب» stays one account, as every bank was before.
+ * Told apart by the number the message labels «حساب» ([accountNoIn]), or where it labels none the
+ * card it labels «کارت» ([cardNoIn]), and by nothing else the message prints. Not by every
+ * identifier it carries: one account has several — Saman prints "829-800-1092308-1" on a
+ * transfer, the card mask "6037****1234" on a purchase and nothing on some alerts — and keying on
+ * whatever was printed forked one account into thirty-eight rows, each anchored at the full
+ * balance, her money multiplied on screen with nothing flagged. Saman's card is the first number
+ * its messages name, so it takes the bank's own row below and the transfers stay on it. A bank
+ * whose messages name neither stays one account, as every bank was before.
  *
  * A message naming none goes to the account the bank spoke about last, which for a bank with one
  * account is that account. One naming a number no account holds yet goes to the bank's own row

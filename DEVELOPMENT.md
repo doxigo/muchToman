@@ -676,9 +676,13 @@ duplicate check still pairs them.
 
 An account is a bank's, told from its siblings only by the figure a message labels «حساب»
 (`accountNoIn`, kept as its last four digits — never `accountIn`'s card masks and references,
-which once forked one Saman account into thirty-eight). The bank's first account keeps the bank's
-own name as its key, so a phone's typed figures, switches and cheques stay on it; each further
-number is `BANK:1234`. A message naming none goes to the account the bank last spoke about. The
+which once forked one Saman account into thirty-eight). A message labelling no «حساب» is kept on
+the card it labels «کارت» (`cardNoIn`, `card` and the last four digits), because a card is usually
+an account of its own: صادرات's «کارت:5915» alerts are one account and its «حساب:84007» messages
+another. Never the other side of a transfer («به کارت», «از کارت»). The bank's first account keeps
+the bank's own name as its key, so a phone's typed figures, switches and cheques stay on it — which
+is also why Saman's card and its unlabelled transfers stay one account; each further number is
+`BANK:1234` or `BANK:card1234`. A message naming none goes to the account the bank last spoke about. The
 prefs fold (`accountFor`), derive (`assignAccounts`) and the PWA's accounts sheet apply the same
 rule; a bank's switch and its family exclusion stay per bank. Balances are untouched: the phone's are its fold over each
 message as parsed, and the PWA's accounts sheet reads the rows as parsed for the same reason.

@@ -13,7 +13,7 @@ import { autoFilePlan } from '../src/filing';
 import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/jalali';
 import type { BalanceAnchor, Decision, FamilyTxn, LedgerEntry, ManualTxn, Source, Txn } from '../src/model';
 import { BUILTIN_CATEGORIES, BUILTIN_RULES, CAT_OTHER, CAT_SHOPPING_ID, CAT_UNCATEGORISED } from '../src/rules';
-import { readBundle } from '../src/paste';
+import { accountLabel, readBundle } from '../src/paste';
 import { findDuplicates } from '../src/links';
 import { AT_FUTURE_SLACK_MS, assignAccounts, bankOf, parseToRows, pastedMoment, printedMoment, settleDirections, sha256Hex, sourceId } from '../src/sms';
 
@@ -263,6 +263,22 @@ describe('the accounts sheet', () => {
     const accounts = bankAccountsOf(rows, [anchor(6, 60_000_000, 'MELLAT:0457')], ['MELLAT']);
     expect(accounts.map((a) => [a.key, a.number, a.balanceRial, a.disabled])).toEqual([
       ['MELLAT', '6460', 7_300_000, true], ['MELLAT:0457', '0457', 60_000_000, true],
+    ]);
+  });
+
+  it('keeps a card a bank names with no «حساب» apart from the account it does name', () => {
+    const saderat = (at: number, body: string): Txn => parseToRows(source('SADERAT', body, at), 1e12)[0];
+    const rows = settleDirections(assignAccounts([
+      saderat(1, 'کارت:5915\nخرید شتابي:2,800,000\nمانده:39,829,135'),
+      saderat(2, 'انتقال: 100,000,000+\nحساب:84007\nمانده:300,347,667'),
+      saderat(3, 'کارت:5915\nخرید شتابي:4,190,000\nمانده:35,639,135'),
+      saderat(4, 'کارت:5915\nبازپرداخت/واریز:50,000,000\nمانده:85,639,135'),
+    ]));
+    expect(rows.map((r) => [r.accountId, r.direction])).toEqual([
+      ['SADERAT', 'out'], ['SADERAT:4007', 'in'], ['SADERAT', 'out'], ['SADERAT', 'in'],
+    ]);
+    expect(bankAccountsOf(rows, [], []).map((a) => [a.key, accountLabel(a.number), a.balanceRial])).toEqual([
+      ['SADERAT', 'کارت ۵۹۱۵', 85_639_135], ['SADERAT:4007', 'حساب ۴۰۰۷', 300_347_667],
     ]);
   });
 

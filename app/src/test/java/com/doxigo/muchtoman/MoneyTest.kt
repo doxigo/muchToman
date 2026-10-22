@@ -885,6 +885,23 @@ class MoneyTest {
         assertEquals(accounts, collapseAccounts(accounts))
     }
 
+    @Test
+    fun `a card a bank names with no «حساب» is an account of its own`() {
+        val saderat = "98700719"
+        // What 1.4.6 left on the phone: the card's alerts folded onto «حساب:84007», holding the card's مانده.
+        var accounts = listOf(
+            BankAccount(Bank.SADERAT.name, balance = 3_982_913.5, updatedAt = 1L, anchored = true, number = "4007"),
+        )
+        accounts = foldBankSms(accounts, parseBankSms(saderat, "کارت:5915\nخرید شتابي:4,190,000\nمانده:35,639,135", 2L)!!, 10L)
+        accounts = foldBankSms(accounts, parseBankSms(saderat, "انتقال: 100,000,000+\nحساب:84007\nمانده:300,347,667", 3L)!!, 10L)
+        assertEquals(
+            listOf("SADERAT" to "4007", "SADERAT:card5915" to "card5915"),
+            accounts.map { it.key to it.number }.sortedBy { it.first },
+        )
+        assertEquals(30_034_766.7 + 3_563_913.5, bankTotal(accounts, emptySet()), 0.01)
+        assertEquals(listOf("حساب ۴۰۰۷", "کارت ۵۹۱۵"), listOf(accountLabel("4007"), accountLabel("card5915")))
+    }
+
     // ─────────────────── reading the body ───────────────────
     // Shaped like the real messages but shortened. The senders are real, because nothing is
     // read without one.

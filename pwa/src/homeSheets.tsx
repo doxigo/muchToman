@@ -18,7 +18,8 @@ import {
 } from './data';
 import { useLedger } from './derived';
 import type { BankAccountView } from './derived';
-import { bidi, faAgo, faCompact, faDigits, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
+import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
+import { accountLabel } from './paste';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
 import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
@@ -644,7 +645,7 @@ function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onFor
     if (parsed != null) onAnchor(tomanOfShown(parsed));
   };
   // Which of the bank's accounts, where its messages say: two at one bank are two cards with one name.
-  const named = account.number ? `حساب ${faDigits(account.number)}` : account.mask.trim() ? bidi(account.mask) : null;
+  const named = account.number ? accountLabel(account.number) : account.mask.trim() ? bidi(account.mask) : null;
   // A second line rather than an ellipsis: the account and its age both have to be read. It breaks
   // only at a bullet — each part keeps its words together, so «۲ روز پیش» is never cut in half.
   const caption = [named, faAgo(account.updatedAt, now), off ? 'خاموش' : null]

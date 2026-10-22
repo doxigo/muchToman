@@ -2806,7 +2806,7 @@ private fun BankAccountRow(
                         listOfNotNull(
                             // Which of the bank's accounts, where its messages say: two at one bank
                             // are two cards with one name, and this is the line that tells them apart.
-                            account.number.takeIf { it.isNotBlank() }?.let { "حساب ${faDigits(it)}" }
+                            account.number.takeIf { it.isNotBlank() }?.let(::accountLabel)
                                 ?: account.mask.takeIf { it.isNotBlank() }?.let { bidi(it) },
                             faAgo(account.updatedAt, now),
                             "خاموش".takeIf { off },

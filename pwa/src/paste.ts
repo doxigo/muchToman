@@ -9,6 +9,7 @@
  * the two implementations cannot drift apart on anything they both read without a red test.
  */
 
+import { faDigits } from './format';
 import type { Channel, Instrument, PrintedUnit } from './sms';
 
 const IN_WORDS = ['واریز', 'بستانکار', 'افزایش یافت', 'دریافت وجه', 'نشست'];
@@ -39,7 +40,7 @@ export interface Pasted {
   unitPrinted: PrintedUnit;
   /** An amount and a balance, but no word for which way the money went. */
   inferred: boolean;
-  /** Which of the bank's accounts — {@link accountNoIn}: four digits, or blank for unnamed. */
+  /** Which of the bank's accounts — {@link accountNoIn}'s four digits, else {@link cardNoIn}'s card, or blank for unnamed. */
   accountNo: string;
 }
 
@@ -202,12 +203,19 @@ function qualifiedAt(text: string, at: number): boolean {
   return !/\p{L}/u.test(text.charAt(i - 4));
 }
 
+/**
+ * Whether the word found at [at] is the «پرداخت» inside «بازپرداخت» — Sms.kt `repaidAt`. صادرات heads
+ * a deposit «بازپرداخت/واریز», and that «پرداخت» had it naming both directions, so it had none. On
+ * its own «بازپرداخت» is a repayment, which leaves or arrives depending on whose; the مانده decides.
+ */
+const repaidAt = (text: string, at: number): boolean => at >= 3 && text.startsWith('بازپرداخت', at - 3);
+
 /** Whether any of [words] appears unqualified: a message whose only «برداشت» follows «قابل» states no direction. */
 function statesDirection(text: string, words: string[]): boolean {
   for (const word of words) {
     let i = text.indexOf(word);
     while (i >= 0) {
-      if (!qualifiedAt(text, i)) return true;
+      if (!qualifiedAt(text, i) && !repaidAt(text, i)) return true;
       i = text.indexOf(word, i + 1);
     }
   }
@@ -534,6 +542,36 @@ export function accountNoIn(text: string): string {
   return found.size === 1 ? [...found][0] : '';
 }
 
+/** Marks an account a bank names only by its card — Sms.kt `CARD_PREFIX`. */
+export const CARD_PREFIX = 'card';
+
+const CARD_NO = /(?<!\p{L})کارت[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩][0-9۰-۹٠-٩*\-]*)/gu;
+/** «به کارت 9525», «از کارت 9295»: the other side of a transfer, someone else's card. */
+const OTHER_SIDE = /(?<!\p{L})(?:به|از)\s*$/u;
+
+/**
+ * The card a message names as `CARD_PREFIX` and its last four digits, for a message that names no
+ * «حساب» — Sms.kt `cardNoIn`; blank when it names none, or two. صادرات sends a card's alerts as
+ * «کارت:5915» with no account at all, and a card is usually an account of its own. Not the other
+ * side of a transfer, and not a figure written the way money is: رفاه's «کارت2,870,000+».
+ */
+export function cardNoIn(text: string): string {
+  const found = new Set<string>();
+  for (const m of text.matchAll(CARD_NO)) {
+    const digits = digitsOf(m[1]);
+    const end = m.index! + m[0].length;
+    const tail = text.slice(end, end + 8).split('\n')[0];
+    if (OTHER_SIDE.test(text.slice(0, m.index!)) || digits.length < 4) continue;
+    if (',،٬'.includes(tail[0] ?? '_') || UNIT_WORDS.some((w) => tail.includes(w))) continue;
+    found.add(CARD_PREFIX + digits.slice(-4));
+  }
+  return found.size === 1 ? [...found][0] : '';
+}
+
+/** How an account's number reads under its bank's name: «حساب ۴۰۰۷», or «کارت ۵۹۱۵». Sms.kt `accountLabel`. */
+export const accountLabel = (number: string): string =>
+  number.startsWith(CARD_PREFIX) ? `کارت ${faDigits(number.slice(CARD_PREFIX.length))}` : `حساب ${faDigits(number)}`;
+
 function instrumentOf(mask: string): Instrument {
   if (!mask) return 'unknown';
   if (mask.includes('*')) return 'card';
@@ -645,6 +683,6 @@ export function parsePasted(body: string): Pasted {
     channel: channelOf(text),
     unitPrinted: amount?.divisor === 1 ? 'toman' : amount?.divisor === 10 ? 'rial' : 'none',
     inferred: direction == null && balance != null && amount != null,
-    accountNo: accountNoIn(text),
+    accountNo: accountNoIn(text) || cardNoIn(text),
   };
 }

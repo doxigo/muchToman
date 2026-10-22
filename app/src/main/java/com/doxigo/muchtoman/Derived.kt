@@ -99,7 +99,10 @@ import kotlinx.coroutines.sync.withLock
 // had been one account, so a transfer between them read as a spend and an income both.
 // 22: a sign glued to a word is read — رفاه's «پایا15,201,000+». Its deposits name the channel
 // instead of «واریز», and every one had been stored with no amount and no direction.
-const val PARSER_VERSION = 22
+// 23: the «پرداخت» inside «بازپرداخت» is not a spend word — صادرات's «بازپرداخت/واریز» deposits
+// had named both directions and been stored with none. And a message naming no «حساب» is kept on
+// the card it names ([cardNoIn]): صادرات's «کارت:5915» alerts had shared one account with «حساب:84007».
+const val PARSER_VERSION = 23
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

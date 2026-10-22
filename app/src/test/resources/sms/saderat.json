@@ -49,6 +49,90 @@
         "unitPrinted": "none",
         "account": "7007"
       }
+    },
+    {
+      "id": "saderat-repaid-deposit-names-pardakht",
+      "sender": "98700719",
+      "at": 3,
+      "body": [
+        "کارت:5915",
+        "بازپرداخت/واریز:50,000,000",
+        "مانده:58,163,135",
+        "1405/07/27 15:31:45"
+      ],
+      "why": "A deposit headed «بازپرداخت/واریز». The «پرداخت» inside «بازپرداخت» is not a spend word: read as one, the message named both directions and was stored with none. It names a card and no «حساب», so the card is its account.",
+      "expect": {
+        "bank": "SADERAT",
+        "direction": "in",
+        "amountRial": 50000000,
+        "balanceRial": 58163135,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "1405/07/27 15:31:45",
+        "channel": "unknown",
+        "unitPrinted": "none",
+        "inferred": false,
+        "account": "card5915"
+      }
+    },
+    {
+      "id": "saderat-card-alert-names-card-only",
+      "sender": "98700719",
+      "at": 4,
+      "body": [
+        "کارت:5915",
+        "خرید شتابي:2,800,000",
+        "مانده:39,829,135",
+        "1405/07/19 18:36:44"
+      ],
+      "why": "صادرات's card alerts name the card and no «حساب». Here the card is a different account from the «حساب:84007» below — their مانده are 39 and 300 million — and keyed on the account last spoken about, the two took turns setting one balance.",
+      "expect": {
+        "bank": "SADERAT",
+        "direction": "out",
+        "amountRial": 2800000,
+        "balanceRial": 39829135,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "1405/07/19 18:36:44",
+        "channel": "pos",
+        "unitPrinted": "none",
+        "inferred": false,
+        "account": "card5915"
+      }
+    },
+    {
+      "id": "saderat-transfer-in-names-account",
+      "sender": "98700719",
+      "at": 5,
+      "body": [
+        "انتقال: 100,000,000+",
+        "حساب:84007",
+        "مانده:300,347,667",
+        "0720 - 09:17"
+      ],
+      "why": "The same person's other صادرات account, named by «حساب» and never by a card. A + behind the figure is a deposit, whatever «انتقال» says.",
+      "expect": {
+        "bank": "SADERAT",
+        "direction": "in",
+        "amountRial": 100000000,
+        "balanceRial": 300347667,
+        "feeRial": null,
+        "mask": "",
+        "instrument": "unknown",
+        "merchant": "",
+        "refNo": "",
+        "printedAt": "",
+        "channel": "transfer",
+        "unitPrinted": "none",
+        "inferred": false,
+        "account": "4007"
+      }
     }
   ]
 }

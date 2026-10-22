@@ -357,7 +357,7 @@ export interface Txn {
   channel: string;
   unitPrinted: string;
   inferred: boolean;
-  /** The four digits a message labels «حساب» (paste.ts `accountNoIn`); absent or blank for none. */
+  /** The four digits a message labels «حساب» (paste.ts `accountNoIn`), else its card (`cardNoIn`); absent or blank for none. */
   accountNo?: string;
   familyRef: string;
   ownerMemberId: string;
