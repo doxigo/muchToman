@@ -5,13 +5,14 @@ every feature ships on both (see `AGENTS.md`). The browser cannot read the SMS i
 ledger takes a pasted bank message instead. How the port maps onto the Kotlin, and how to work on
 it, is in `DEVELOPMENT.md` § The PWA.
 
-`npm ci && npm run check` runs the TypeScript, the unit tests (the parser against the shared golden
-SMS corpus, the ledger engine, reports, budgets, sync, backup) and builds the production shell.
+`pnpm install && pnpm run check` runs the TypeScript, the unit tests (the parser against the shared
+golden SMS corpus, the ledger engine, reports, budgets, sync, backup) and builds the production shell.
 
-`npx playwright install chromium && npm run test:browser` tests the built application in Chromium.
+`pnpm exec playwright install chromium && pnpm run test:browser` tests the built application in
+Chromium.
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` optionally selects an existing local browser.
 
-`npm run dev` serves it at http://localhost:5173 with the public price endpoints proxied;
+`pnpm run dev` serves it at http://localhost:5173 with the public price endpoints proxied;
 `?demo=1` seeds the phone's demo household.
 
 The build generates `dist/sw.js` from `sw-template.js` and the complete emitted asset list. The

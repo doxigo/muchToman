@@ -48,7 +48,7 @@ Both builds talk to the deployed Worker, so a debug install behaves like the shi
 same prices, same wallet lookups. Point it somewhere else with `-Pmuchtoman.ratesUrl`:
 
 ```bash
-cd worker && npx wrangler dev --port 8787
+cd worker && pnpm exec wrangler dev --port 8787
 ./gradlew installFullDebug -Pmuchtoman.ratesUrl=http://10.0.2.2:8787/rates
 ```
 
@@ -102,17 +102,17 @@ publishes that choice and tombstones the other copies in one local transaction. 
 choices use the existing member-id tie break.
 
 ```bash
-cd pwa && npm ci && npm run check
-cd sync && npm ci && npm run check
+cd pwa && pnpm install && pnpm run check
+cd sync && pnpm install && pnpm run check
 ```
 
 ## The Worker
 
 ```bash
 cd worker
-npm ci
-npm run check
-npm run deploy
+pnpm install
+pnpm run check
+pnpm run deploy
 ```
 
 It is served from `rates.muchtoman.com`, **not** the `muchtoman-rates.milaniz.workers.dev`
@@ -189,8 +189,8 @@ Read* and nothing else, set once as secrets so the page can use it:
 
 ```bash
 cd worker
-npx wrangler secret put ANALYTICS_ACCOUNT_ID
-npx wrangler secret put ANALYTICS_TOKEN
+pnpm exec wrangler secret put ANALYTICS_ACCOUNT_ID
+pnpm exec wrangler secret put ANALYTICS_TOKEN
 ```
 
 The crash reports, newest first, and one of them turned back into names with that release's
@@ -556,7 +556,7 @@ The lines live in `worker/src/quips.json` and ride the `/rates` payload, so **ad
 deploy of the rates Worker, not an app release**:
 
 ```bash
-cd worker && npm run check && npm run deploy
+cd worker && pnpm run check && pnpm run deploy
 ```
 
 Phones pick them up on their next rates fetch (the edge cache holds `/rates` for ten minutes) and
@@ -701,8 +701,8 @@ one figure no rescan can rebuild.
 
 ```bash
 ./gradlew test                    # 327 JVM tests, no device
-cd sync && npm run check          # real Durable Objects under workerd
-cd pwa  && npm run check          # incl. the shared-corpus agreement check
+cd sync && pnpm run check         # real Durable Objects under workerd
+cd pwa  && pnpm run check         # incl. the shared-corpus agreement check
 ```
 
 The golden corpus is `app/src/test/resources/sms/*.json` — real bank messages kept verbatim,
@@ -713,8 +713,8 @@ An absent key is not asserted; an unknown key fails the run, so a typo cannot qu
 ### Deploying
 
 ```bash
-cd pwa  && npm run build          # sync/ serves this as its assets
-cd sync && npm run deploy
+cd pwa  && pnpm run build         # sync/ serves this as its assets
+cd sync && pnpm run deploy
 ```
 
 `sync.muchtoman.com`, custom domain only — `workers.dev` is DNS-sinkholed inside Iran, same as
@@ -751,10 +751,10 @@ run against the production build:
 
 ```bash
 cd pwa
-npm ci --no-audit
-npx playwright install chromium
-npm run check
-npm run test:browser
+pnpm install
+pnpm exec playwright install chromium
+pnpm run check
+pnpm run test:browser
 ```
 
 Dependency advisory checking was intentionally skipped for this review.
@@ -798,7 +798,7 @@ The browser is a full member of a household: it publishes and applies every reco
 Working on it:
 
 ```bash
-cd pwa && npm run dev             # http://localhost:5173 — /rates, /wallet-balance, /coin-icon proxied
+cd pwa && pnpm run dev            # http://localhost:5173 — /rates, /wallet-balance, /coin-icon proxied
 open http://localhost:5173/?demo=1   # Demo.kt's household, row for row (dev builds only)
 ```
 
@@ -807,6 +807,6 @@ update a hand-typed `import('/src/state.ts')` can be a second, empty copy. The s
 a real household (`/v1` proxied to production; the page's CSP is `connect-src 'self'`):
 
 ```bash
-cd pwa && npm run build && SYNC_PROXY=https://sync.muchtoman.com npx vite preview --port 4175
+cd pwa && pnpm run build && SYNC_PROXY=https://sync.muchtoman.com pnpm exec vite preview --port 4175
 ```
 

@@ -9,10 +9,10 @@
 # at this folder: ad.html stands in for its template, render.mjs for its render.cjs, and its rules
 # hold — every claim on the landing page, real captures only.
 #
-# Needs pwa/'s dev dependencies (`cd pwa && npm ci && npx playwright install chromium`), GSAP
-# (`cd tools/ad && npm ci`), ffmpeg, and python3 with numpy. The iPhone scene's PWA captures are
-# committed; retake them with `node tools/ad/capture-pwa.mjs`. Preview in a browser: serve the repo
-# root (`python3 -m http.server`) and open /tools/ad/ad.html.
+# Needs pwa/'s dev dependencies (`cd pwa && pnpm install && pnpm exec playwright install
+# chromium`), GSAP (`cd tools/ad && pnpm install`), ffmpeg, and python3 with numpy. The iPhone
+# scene's PWA captures are committed; retake them with `node tools/ad/capture-pwa.mjs`. Preview in
+# a browser: serve the repo root (`python3 -m http.server`) and open /tools/ad/ad.html.
 # Usage: tools/ad/make.sh [out.mp4]      (default tools/ad/out/muchtoman-ad-4x5.mp4, not committed)
 #        tools/ad/make.sh wide [out.mp4] (the 16:9 cut from wide.html, 1920×1080, for Aparat / Cafe Bazaar,
 #                                          and its 720p copy as the landing page's film, into worker/public/)

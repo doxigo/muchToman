@@ -1,3 +1,6 @@
 allowBuilds:
-  esbuild: set this to true or false
-  workerd: set this to true or false
+  esbuild: true
+  workerd: true
+# Wrangler's transitive undici carried a high-severity advisory (SEC-08); hold the fixed release.
+overrides:
+  undici: 7.29.0

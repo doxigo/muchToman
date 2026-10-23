@@ -32,8 +32,8 @@ updates:
       all:
         patterns: ["*"]
     # @cloudflare/vitest-pool-workers peers on one vitest major, and a vitest bump the pool
-    # hasn't caught up with fails `npm ci` for the whole group. Drop this once the pool's
-    # peerDependencies accept the next major (`npm view @cloudflare/vitest-pool-workers peerDependencies`).
+    # hasn't caught up with fails the whole group. Drop this once the pool's
+    # peerDependencies accept the next major (`pnpm view @cloudflare/vitest-pool-workers peerDependencies`).
     ignore:
       - dependency-name: vitest
         update-types: ["version-update:semver-major"]

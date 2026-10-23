@@ -3,13 +3,12 @@
   "configurations": [
     {
       "name": "pwa",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "pnpm",
       "runtimeArgs": [
+        "--dir",
+        "pwa",
         "run",
         "dev",
-        "--prefix",
-        "pwa",
-        "--",
         "--port",
         "5173",
         "--strictPort"
@@ -18,20 +17,20 @@
     },
     {
       "name": "sync",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "sync", "--", "--port", "8787"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "sync", "run", "dev", "--port", "8787"],
       "port": 8787
     },
     {
       "name": "pwa-live",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd pwa && npm run build && SYNC_PROXY=https://sync.muchtoman.com npx vite preview --port 4175 --strictPort"],
+      "runtimeArgs": ["-c", "cd pwa && pnpm run build && SYNC_PROXY=https://sync.muchtoman.com pnpm exec vite preview --port 4175 --strictPort"],
       "port": 4175
     },
     {
       "name": "www",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "worker", "--", "--port", "8788", "--local-upstream", "muchtoman.com"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "worker", "run", "dev", "--port", "8788", "--local-upstream", "muchtoman.com"],
       "port": 8788
     }
   ]

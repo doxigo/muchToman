@@ -1,6 +1,6 @@
 // Store-listing images (CafeBazaar) from docs/screenshots, so they follow the README captures
-// whenever those are retaken. Needs pwa/'s dev dependencies (`cd pwa && npm ci`, then
-// `npx playwright install chromium`). Writes docs/store/<id>.png, or .jpg for promo-*, which
+// whenever those are retaken. Needs pwa/'s dev dependencies (`cd pwa && pnpm install`, then
+// `pnpm exec playwright install chromium`). Writes docs/store/<id>.png, or .jpg for promo-*, which
 // Bazaar takes only as JPEG. Usage: node tools/store/render.mjs [id ...]
 //
 // Bazaar's slots (developers.cafebazaar.ir, 2026-09): icon PNG 512², square, no corner radius or

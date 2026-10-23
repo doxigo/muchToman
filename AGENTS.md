@@ -25,9 +25,9 @@ Run the block for every package you touched:
 
 ```bash
 ./gradlew testFullDebugUnitTest testLiteDebugUnitTest lint   # app/ (CI runs these + assembleDebug)
-cd worker && npm ci && npm run check                         # worker/
-cd pwa && npm ci && npm run check                            # pwa/ (browser tests: npm run test:browser)
-cd pwa && npm run build && cd ../sync && npm ci && npm run check   # sync/ serves ../pwa/dist, build it first
+cd worker && pnpm install && pnpm run check                  # worker/
+cd pwa && pnpm install && pnpm run check                     # pwa/ (browser tests: pnpm run test:browser)
+cd pwa && pnpm run build && cd ../sync && pnpm install && pnpm run check   # sync/ serves ../pwa/dist, build it first
 ```
 
 `pwa/`'s tests read the golden SMS corpus out of `app/src/test/resources/sms/`, so a parser
@@ -76,7 +76,7 @@ unknown key fails the run, so a typo cannot quietly weaken it.
 
 ## Deploy
 
-`npm run deploy` in each Worker's directory. When record kinds change, deploy `sync/` before
+`pnpm run deploy` in each Worker's directory. When record kinds change, deploy `sync/` before
 any app release that sends them. Android releases go by annotated tag with a Persian message
 (that message is the in-app update sheet); `versionName` comes from the tag and `versionCode`
 from arithmetic on it (`v1.2.3` → `1020300`) — see `DEVELOPMENT.md` § Releasing.

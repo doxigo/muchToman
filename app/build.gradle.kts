@@ -115,7 +115,7 @@ android {
 
     // Where the household ledger syncs. Same override shape as ratesUrl above, for the same
     // reason: pointing a dev install at a local Worker must be a flag rather than an edit.
-    //   cd sync && npx wrangler dev --port 8788
+    //   cd sync && pnpm exec wrangler dev --port 8788
     //   adb reverse tcp:8788 tcp:8788
     //   ./gradlew installFullDev -Pmuchtoman.syncUrl=http://localhost:8788
     val syncUrl = providers.gradleProperty("muchtoman.syncUrl")
