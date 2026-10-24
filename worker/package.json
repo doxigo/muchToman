@@ -10,10 +10,10 @@
     "check": "pnpm run typecheck && pnpm run test && wrangler deploy --dry-run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260928.1",
+    "@cloudflare/workers-types": "^5.20261021.1",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2",
-    "wrangler": "^4.149.0"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.151.3"
   },
   "packageManager": "pnpm@10.30.2"
 }
