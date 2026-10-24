@@ -11,11 +11,11 @@
     "check": "pnpm run typecheck && pnpm run test && wrangler deploy --dry-run"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@types/node": "^26.6.3",
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.143.0"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.151.3"
   },
   "packageManager": "pnpm@10.30.2"
 }
