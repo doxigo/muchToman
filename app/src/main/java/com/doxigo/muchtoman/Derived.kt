@@ -102,7 +102,10 @@ import kotlinx.coroutines.sync.withLock
 // 23: the «پرداخت» inside «بازپرداخت» is not a spend word — صادرات's «بازپرداخت/واریز» deposits
 // had named both directions and been stored with none. And a message naming no «حساب» is kept on
 // the card it names ([cardNoIn]): صادرات's «کارت:5915» alerts had shared one account with «حساب:84007».
-const val PARSER_VERSION = 23
+// 24: a purchase is no longer filed under «خرید روزانه», nor money in under «درآمد» — both were
+// guesses, and a خاورمیانه «خرید با کارت» showed the guess as if the message had said it. The rules
+// retired in [BUILTIN_RULES]; only classifying again takes them off the rows already stored.
+const val PARSER_VERSION = 24
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

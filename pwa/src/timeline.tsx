@@ -937,7 +937,6 @@ function AutoFileSheet({ skipped = [] }: { skipped?: string[] }) {
       <p class="muted" style={{ paddingTop: 'var(--s)', fontSize: 'calc(14px * var(--text))' }}>{`${faNumber(plan.total)} تراکنش منتظر، در یک حرکت:`}</p>
       <div class="autofile-lines">
         {line(plan.suggested, 'با همون پیشنهاد خود برنامه تأیید می‌شن')}
-        {line(plan.shopping, 'برداشتِ بی‌نشونه می‌رن توی «خرید روزانه»')}
         {line(plan.other, 'مورد نامشخص می‌رن توی «سایر»')}
       </div>
       <p class="muted small" style={{ marginTop: 'var(--m)', lineHeight: 'calc(21px * var(--text))' }}>

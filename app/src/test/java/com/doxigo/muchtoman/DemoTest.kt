@@ -113,7 +113,7 @@ class DemoTest {
         // A queue for the deck and the tab badge…
         val waiting = entries.filter { it.needsReview && !it.transfer }
         assertTrue("the review deck needs cards", waiting.isNotEmpty())
-        assertTrue("nothing incoming is left unfiled — rule_income would file it anyway", waiting.all { (it.txn.signedRial ?: 0) < 0 })
+        assertTrue("nothing incoming is left unfiled", waiting.all { (it.txn.signedRial ?: 0) < 0 })
 
         // …and both legs of her own money moving, which the report must count as neither side.
         val legs = entries.filter { it.transfer }

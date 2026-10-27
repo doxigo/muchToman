@@ -2511,7 +2511,7 @@ private fun CheckMark(tint: Color, size: androidx.compose.ui.unit.Dp = 40.dp) {
 
 /**
  * The plan spelled out before anything is written: how many keep the app's own suggestion, how
- * many fall back to «خرید روزانه», how many to «سایر». Nothing here is a rule — every filing is
+ * many go to «سایر». Nothing here is a rule — every filing is
  * an ordinary answer she can undo one row at a time from دفتر, and the sheet says so, because
  * that sentence is what makes one tap over fifty-three transactions a relief instead of a risk.
  */
@@ -2556,9 +2556,6 @@ private fun AutoFileSheet(
             ) {
                 if (plan.suggested > 0) {
                     AutoFileLine(plan.suggested, "با همون پیشنهاد خود برنامه تأیید می‌شن")
-                }
-                if (plan.shopping > 0) {
-                    AutoFileLine(plan.shopping, "برداشتِ بی‌نشونه می‌رن توی «خرید روزانه»")
                 }
                 if (plan.other > 0) {
                     AutoFileLine(plan.other, "مورد نامشخص می‌رن توی «سایر»")

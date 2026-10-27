@@ -91,12 +91,13 @@ describe('rules', () => {
     expect(classify(txn({ signed: -1000 }), [])).toMatchObject({ categoryId: CAT_UNCATEGORISED, confidence: Confidence.NONE, needsReview: true });
   });
 
-  it('asks about a shipped guess once, and her answer never asks again', () => {
+  it('asks about a purchase or a deposit once, and her answer never asks again', () => {
+    // The app does not know what a card purchase bought or what a deposit was: a خاورمیانه
+    // «خرید با کارت» had shown «خرید روزانه» as if the message said so.
     const pos = txn({ signed: -2_000_000, channel: 'pos' });
-    const shipped = classify(pos, BUILTIN_RULES);
-    expect(shipped.categoryId).toBe(CAT_SHOPPING_ID);
-    expect(shipped.needsReview).toBe(true);
-    expect(shipped.confidence).toBeLessThan(REVIEW_BELOW);
+    for (const t of [pos, txn({ signed: 4_000_000 })]) {
+      expect(classify(t, BUILTIN_RULES)).toMatchObject({ categoryId: CAT_UNCATEGORISED, needsReview: true });
+    }
     const hers = ruleFrom(pos, CAT_SHOPPING_ID, '20004861', 5);
     const after = classify(pos, [...BUILTIN_RULES, hers], null, new Set(), '20004861');
     expect(after.categoryId).toBe(CAT_SHOPPING_ID);
@@ -124,7 +125,7 @@ describe('rules', () => {
     expect(r1).toMatchObject({ pMerchantNorm: 'فروشگاه رفاه', pAddrKey: null, priority: Priority.USER_EXACT_MERCHANT, originRef: withMerchant.ref });
     const r2 = ruleFrom(txn({ signed: -1000, channel: 'atm' }), CAT_CASH, '20004861', 1);
     expect(r2).toMatchObject({ pMerchantNorm: null, pAddrKey: '20004861', pChannel: 'atm', priority: Priority.USER_OTHER });
-    // A learned rule outranks every shipped one: her merchant rule beats rule_pos on the same row.
+    // A learned rule outranks every shipped one.
     const learned = classify(withMerchant, [...BUILTIN_RULES, ruleFrom(withMerchant, 'cat_groceries', 'SAMAN', 2)]);
     expect(learned).toMatchObject({ categoryId: 'cat_groceries', confidence: Confidence.RULE_EXACT, needsReview: false });
   });

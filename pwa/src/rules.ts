@@ -87,7 +87,7 @@ export const BUILTIN_CATEGORIES: readonly Category[] = [
   // Retired, archived rather than deleted so every row filed under it still says what it was.
   shipped('cat_send', 'انتقال وجه', 'expense', 205, true),
 
-  // the income grid — درآمد first, because it is what `rule_income` files every incoming message as
+  // the income grid — درآمد first, the plain «money came in» most deposits get
   shipped(CAT_INCOME, 'درآمد', 'income', 210),
   shipped('cat_salary', 'حقوق', 'income', 220),
   shipped('cat_sales', 'فروش', 'income', 230),
@@ -258,15 +258,17 @@ const rule = (id: string, priority: number, categoryId: string, p: Partial<Rule>
 });
 
 /**
- * What the app ships knowing: channels the parser identified outright, landing under the review
- * threshold so each shape is confirmed once and never asked about again — except NAMED_CHANNELS.
+ * What the app ships knowing, and only what the message says outright: a channel whose name is its
+ * category (NAMED_CHANNELS). A purchase as «خرید روزانه» and money in as «درآمد» were guesses that
+ * read as if the bank had said them; both are retired, kept as deleted rows because seedBuiltins
+ * replaces by id and a dropped one would stay live in every stored copy.
  */
 export const BUILTIN_RULES: readonly Rule[] = [
   rule('rule_atm', Priority.SHIPPED, CAT_CASH, { pChannel: 'atm', builtin: true }),
   rule('rule_fee', Priority.SHIPPED, CAT_FEES, { pChannel: 'fee', builtin: true }),
   rule('rule_bill', Priority.SHIPPED, CAT_BILLS_ID, { pChannel: 'bill', builtin: true }),
-  rule('rule_pos', Priority.SHIPPED, CAT_SHOPPING_ID, { pChannel: 'pos', pDirection: 'out', builtin: true }),
-  rule('rule_income', Priority.SHIPPED, CAT_INCOME, { pDirection: 'in', builtin: true }),
+  rule('rule_pos', Priority.SHIPPED, CAT_SHOPPING_ID, { pChannel: 'pos', pDirection: 'out', builtin: true, deleted: true }),
+  rule('rule_income', Priority.SHIPPED, CAT_INCOME, { pDirection: 'in', builtin: true, deleted: true }),
 ];
 
 /** How many predicates a rule names. More specific wins a tie on priority. */

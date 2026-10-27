@@ -194,8 +194,8 @@ fun demoLedger(today: Long, now: Long, months: Int = DEMO_MONTHS): DemoLedger {
         for (line in OUTGOINGS) {
             repeat(dice.int(line.times.first, line.times.last)) {
                 // One in fourteen is left unfiled, which is what the review deck and the badge on
-                // the ledger tab are for. Only ever an outflow: an unfiled *incoming* row is
-                // caught by `rule_income` and filed anyway, so it would prove nothing.
+                // the ledger tab are for. Only ever an outflow, so the demo's income side stays
+                // fully filed and its report reads whole.
                 val unfiled = dice.chance(7)
                 add(
                     day(2, length),

@@ -485,14 +485,14 @@ describe('filing the whole backlog', () => {
     ownerMemberId: '', ownerName: '', ownerAvatar: '', categoryEditorName: '', note: '', noteAuthorName: '', sharedWithFamily: true,
   });
 
-  it('keeps a suggestion, and falls back by direction', () => {
+  it('keeps a suggestion, and files everything else under «سایر»', () => {
     const suggested = waiting(-4_500_000, CAT_SHOPPING_ID);
     const out = waiting(-4_500_000);
     const inflow = waiting(4_000_000);
     const unknown = waiting(null);
     const plan = autoFilePlan([suggested, out, inflow, unknown]);
-    expect(plan).toMatchObject({ total: 4, suggested: 1, shopping: 1, other: 2 });
-    expect(plan.assignments.map(([, c]) => c)).toEqual([CAT_SHOPPING_ID, CAT_SHOPPING_ID, CAT_OTHER, CAT_OTHER]);
+    expect(plan).toMatchObject({ total: 4, suggested: 1, other: 3 });
+    expect(plan.assignments.map(([, c]) => c)).toEqual([CAT_SHOPPING_ID, CAT_OTHER, CAT_OTHER, CAT_OTHER]);
     expect(autoFilePlan([])).toMatchObject({ total: 0, assignments: [] });
   });
 });
@@ -596,7 +596,7 @@ describe('ledger actions', () => {
     ledger.categorise(entry(outRef), 'cat_groceries', false);
     expect(state.rows('links')).toMatchObject([{ kind: 'transfer', verdict: 'rejected' }]);
     expect(entry(outRef)).toMatchObject({ transfer: false, categoryId: 'cat_groceries' });
-    expect(entry(inRef)).toMatchObject({ transfer: false, categoryId: 'cat_income' });
+    expect(entry(inRef)).toMatchObject({ transfer: false, categoryId: CAT_UNCATEGORISED });
   });
 
   it('files the whole deck with rising stamps', async () => {

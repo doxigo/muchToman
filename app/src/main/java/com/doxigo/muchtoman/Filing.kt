@@ -349,20 +349,18 @@ fun familyAlertBody(news: List<LedgerEntry>): String =
 /**
  * Filing the whole backlog in one gesture, worked out before anything is written.
  *
- * Three buckets, in order of how much the app actually knows. A row the rules already guessed at
- * keeps that guess — the deck was only ever going to ask her to agree with it. A withdrawal nothing
- * matched goes to «خرید روزانه», which is where most everyday spending lands anyway, and anything
- * else — money in with no rule, a message with no direction — goes to «سایر», the honest word for
- * «none of the above». Every filing is an ordinary pinned decision, so any one of them can be
- * refiled by hand later exactly as if she had answered the card herself.
+ * Two buckets, by whether the app knows anything. A row the rules already suggested keeps that
+ * suggestion — the deck was only ever going to ask her to agree with it. Everything else goes to
+ * «سایر», the honest word for «none of the above»: a withdrawal nothing matched is not a daily
+ * purchase just because most spending is, and filing it there put a guess on the row as if she
+ * had made it. Every filing is an ordinary pinned decision, so any one of them can be refiled by
+ * hand later exactly as if she had answered the card herself.
  */
 data class AutoFilePlan(
     /** Each card in the deck, paired with where it goes. */
     val assignments: List<Pair<LedgerEntry, String>>,
     /** How many keep the category the rules already suggested. */
     val suggested: Int,
-    /** How many withdrawals fall back to «خرید روزانه». */
-    val shopping: Int,
     /** How many land in «سایر» because nothing else is known. */
     val other: Int,
 ) {
@@ -370,17 +368,9 @@ data class AutoFilePlan(
 }
 
 fun autoFilePlan(review: List<LedgerEntry>): AutoFilePlan {
-    val assignments = mutableListOf<Pair<LedgerEntry, String>>()
-    var suggested = 0
-    var shopping = 0
-    var other = 0
-    for (entry in review) {
-        val category = when {
-            entry.categoryId != CAT_UNCATEGORISED -> entry.categoryId.also { suggested++ }
-            entry.txn.direction == "out" -> CAT_SHOPPING_ID.also { shopping++ }
-            else -> CAT_OTHER.also { other++ }
-        }
-        assignments += entry to category
+    val assignments = review.map { entry ->
+        entry to (entry.categoryId.takeIf { it != CAT_UNCATEGORISED } ?: CAT_OTHER)
     }
-    return AutoFilePlan(assignments, suggested, shopping, other)
+    val suggested = review.count { it.categoryId != CAT_UNCATEGORISED }
+    return AutoFilePlan(assignments, suggested, review.size - suggested)
 }

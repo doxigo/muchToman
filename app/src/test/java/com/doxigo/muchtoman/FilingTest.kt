@@ -195,7 +195,7 @@ class FilingTest {
     // ─────────────────────────── filing the whole backlog ───────────────────────────
 
     @Test
-    fun `a suggested category is kept, and the fallbacks split by direction`() {
+    fun `a suggested category is kept, and everything else is «سایر»`() {
         val suggested = waiting(at = 100L)
             .copy(categoryId = CAT_SHOPPING_ID, categoryFa = "خرید روزانه")
         val out = waiting(at = 200L)
@@ -205,13 +205,12 @@ class FilingTest {
         val plan = autoFilePlan(listOf(suggested, out, inflow, unknown))
         assertEquals(4, plan.total)
         assertEquals(1, plan.suggested)
-        assertEquals(1, plan.shopping)
-        assertEquals(2, plan.other)
+        assertEquals(3, plan.other)
 
         val byRef = plan.assignments.associate { it.first.txn.ref to it.second }
         assertEquals(CAT_SHOPPING_ID, byRef[suggested.txn.ref])
-        assertEquals(CAT_SHOPPING_ID, byRef[out.txn.ref])
-        // Money in with no rule, and a message with no direction: «سایر» is the honest word.
+        // A withdrawal nothing matched is not a daily purchase just because most spending is.
+        assertEquals(CAT_OTHER, byRef[out.txn.ref])
         assertEquals(CAT_OTHER, byRef[inflow.txn.ref])
         assertEquals(CAT_OTHER, byRef[unknown.txn.ref])
     }

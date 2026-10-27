@@ -201,9 +201,8 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category("cat_send", nameFa = "انتقال وجه", kind = CategoryKind.EXPENSE, sort = 205, builtin = true, archived = true),
 
     // ── the income grid ──
-    // درآمد stays first: it is what `rule_income` files every incoming message as, so it is the
-    // answer she is confirming rather than one she has to choose. The rest are for when she wants
-    // to say more than «money came in», in the order a household earns them.
+    // درآمد stays first: it is the plain «money came in», the answer most deposits get. The rest
+    // are for when she wants to say more than that, in the order a household earns them.
     Category(CAT_INCOME, nameFa = "درآمد", kind = CategoryKind.INCOME, sort = 210, builtin = true),
     Category("cat_salary", nameFa = "حقوق", kind = CategoryKind.INCOME, sort = 220, builtin = true),
     Category("cat_sales", nameFa = "فروش", kind = CategoryKind.INCOME, sort = 230, builtin = true),
@@ -402,7 +401,7 @@ fun noteSuggestions(uses: List<NoteUse>, draft: String, categoryId: String?, lim
  *
  * «انتقال بین حساب‌ها» is offered in both directions, because it is the only way back from a
  * rejected transfer link. Filing one leg of a real transfer under a spending category rejects
- * that link for ever and hands the other leg to the income rule — the same money counted twice,
+ * that link for ever and leaves the other leg counted as money in — the same money counted twice,
  * with no undo anywhere in the app. The detector settling most transfers is not a reason to make
  * the correction unreachable.
  *
@@ -550,17 +549,21 @@ object Confidence {
 const val REVIEW_BELOW = 70
 
 /**
- * What the app ships knowing. Everything here is a channel the parser identified outright, so
- * it is right far more often than not — but it lands at [Confidence.CHANNEL_ONLY], under the
- * review threshold, so each shape is confirmed once and then never asked about again. Except
- * [NAMED_CHANNELS], where there is nothing to confirm.
+ * What the app ships knowing, and it only ships what the message says outright: a channel whose
+ * name is its category ([NAMED_CHANNELS]). Anything less is a guess, and a guess on a row reads
+ * as if the bank had said it — every خاورمیانه «خرید با کارت» showed «خرید روزانه», and every
+ * deposit «درآمد», when the app knew neither. Those go to the deck uncategorised instead, and her
+ * answer is what files the next one.
+ *
+ * The two retired guesses stay as deleted rows: [seedBuiltins] REPLACEs by id, and dropping them
+ * from this list would leave every installed phone's copy live.
  */
 val BUILTIN_RULES: List<Rule> = listOf(
     Rule("rule_atm", Priority.SHIPPED, CAT_CASH, pChannel = "atm", builtin = true),
     Rule("rule_fee", Priority.SHIPPED, CAT_FEES, pChannel = "fee", builtin = true),
     Rule("rule_bill", Priority.SHIPPED, CAT_BILLS_ID, pChannel = "bill", builtin = true),
-    Rule("rule_pos", Priority.SHIPPED, CAT_SHOPPING_ID, pChannel = "pos", pDirection = "out", builtin = true),
-    Rule("rule_income", Priority.SHIPPED, CAT_INCOME, pDirection = "in", builtin = true),
+    Rule("rule_pos", Priority.SHIPPED, CAT_SHOPPING_ID, pChannel = "pos", pDirection = "out", builtin = true, deleted = true),
+    Rule("rule_income", Priority.SHIPPED, CAT_INCOME, pDirection = "in", builtin = true, deleted = true),
 )
 
 /**

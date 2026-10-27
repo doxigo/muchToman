@@ -125,14 +125,17 @@ class ClassifyTest {
     }
 
     @Test
-    fun `a shipped guess asks once and her answer never asks again`() {
-        // The whole learning loop, and it is a threshold rather than a model.
+    fun `a purchase or a deposit is asked about once, and her answer never asks again`() {
+        // The app does not know what a card purchase bought or what a deposit was: a خاورمیانه
+        // «خرید با کارت» had shown «خرید روزانه» as if the message said so.
         val pos = txn(signed = -2_000_000, channel = "pos")
-        val shipped = classify(pos, BUILTIN_RULES)
-        assertEquals(CAT_SHOPPING_ID, shipped.categoryId)
-        assertTrue("a shipped guess must be confirmed once", shipped.needsReview)
-        assertTrue(shipped.confidence < REVIEW_BELOW)
+        for (t in listOf(pos, txn(signed = 4_000_000))) {
+            val shipped = classify(t, BUILTIN_RULES)
+            assertEquals(CAT_UNCATEGORISED, shipped.categoryId)
+            assertTrue(shipped.needsReview)
+        }
 
+        // The whole learning loop, and it is a threshold rather than a model.
         val hers = ruleFrom(pos, CAT_SHOPPING_ID, addrKey = "20004861", now = 5)
         val after = classify(pos, BUILTIN_RULES + hers, addrKey = "20004861")
         assertEquals(CAT_SHOPPING_ID, after.categoryId)
