@@ -175,7 +175,15 @@ Radius scale: field 14 · card 18 · group 22 · sheet 28 · hero 34 · pill ∞
   added up day by day, solid `onSurface`, over the whole window before's, dashed
   `onSurfaceVariant`, time left to right and today ringed as on the asset chart. Above it, the
   two figures the same day in («مهر تا امروز» / «شهریور تا همین روز»), neither called better. The
-  window before draws only when the ledger watched all of it. Longer spans keep «ماه به ماه».
+  window before draws only when the ledger watched all of it. Holding the chart (hovering, on a
+  desktop) reads one lived day: a hairline through both lines, and the two figures become what
+  each window spent on that day under its weekday and date («سه‌شنبه ۱۴ مهر»), «بدون خرج» for
+  none; letting go puts the totals back. Longer spans keep «ماه به ماه».
+- **A category's sheet says whose it is** on a household's window: «نفر به نفر», each member's
+  part as the report's own share row, in whole percents that add up to ۱۰۰ (truncated, the
+  leftover points to the largest remainders). While the report reads Toman, the sheet's total
+  and each part carry their dollars under them (`UsdAside`, at the window's own rate), and
+  nothing at all where no rate is on file.
 - **A row on آینده leads with what it is**: a budget with its category's disc, a cheque with
   the logo of the bank it draws on (`BankLogo`, 36dp, the disc's slot). Goals and installments
   have no such mark and lead with their name. A cheque's caution follows the budget's: the

@@ -588,6 +588,55 @@ export function memberWindow(
   return { ...window, breakdown: biggestFirst(byCategory) };
 }
 
+/**
+ * Whole percents of [parts] that add up to exactly 100, for a split read as «۴۰٪ سهیل، ۶۰٪ فاطمه»
+ * (Reports.kt wholePercents). Each is truncated, as every figure here is, and the points truncation
+ * left over go one each to the largest remainders; a tie goes to the smaller part, so a half point
+ * never turns ۹۹٫۵ against ۰٫۵ into ۱۰۰ against ۰. Rounding each alone could say ۳۳ + ۳۳ + ۳۳, or
+ * ۵۱ + ۵۰. Nothing to split is all zeros.
+ */
+export function wholePercents(parts: readonly number[]): number[] {
+  const total = parts.reduce((s, p) => s + p, 0);
+  if (total <= 0) return parts.map(() => 0);
+  const floors = parts.map((p) => Math.floor((p * 100) / total));
+  const up = new Set(parts.map((_, i) => i)
+    .sort((a, b) => (parts[b] * 100) % total - (parts[a] * 100) % total || parts[a] - parts[b])
+    .slice(0, 100 - floors.reduce((s, f) => s + f, 0)));
+  return floors.map((floor, i) => (up.has(i) ? floor + 1 : floor));
+}
+
+/** One member's part of a category's window (Reports.kt `MemberPart`). */
+export interface MemberPart {
+  id: string;
+  name: string;
+  avatar: string;
+  rial: number;
+  percent: number;
+}
+
+/**
+ * A category's rows split by whose they are, biggest first, each with its whole-percent share
+ * (wholePercents). From the very rows the sheet lists, which categoryWindow already walked through
+ * spendable, so a transfer or a duplicate is in nobody's share and the parts add up to the sheet's figure.
+ */
+export function memberParts(rows: readonly LedgerEntry[]): MemberPart[] {
+  const byOwner = new Map<string, LedgerEntry[]>();
+  for (const e of rows) {
+    const list = byOwner.get(e.ownerMemberId);
+    if (list) list.push(e); else byOwner.set(e.ownerMemberId, [e]);
+  }
+  const owners = [...byOwner].map(([id, own]) => ({ id, row: own[0], rial: sumAbs(own) })).sort((a, b) => b.rial - a.rial);
+  const percents = wholePercents(owners.map((o) => o.rial));
+  return owners.map(({ id, row, rial }, i) => ({
+    id,
+    // A row can outlive its member's name.
+    name: row.ownerName.trim() ? row.ownerName : 'عضو قبلی',
+    avatar: row.ownerAvatar,
+    rial,
+    percent: percents[i],
+  }));
+}
+
 // ─────────────────────────── the narrative ───────────────────────────
 
 export type InsightTone = 'NEUTRAL' | 'GOOD' | 'ATTENTION';

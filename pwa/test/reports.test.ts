@@ -4,13 +4,13 @@
  * and review-queue tests belong to the ledger module.)
  */
 import { describe, expect, it } from 'vitest';
-import { faNumber } from '../src/format';
+import { faNumber, faUsd, tomanOf, usdOf } from '../src/format';
 import { jalaliDay, jalaliMonthLength, weekStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
 import {
   REPORT_SPANS, ReportMonth, ReportRange, ReportSpan, availableReportMonths, bufferDays, buildCashFlow, buildStory,
-  categoryWindow, chartWindow, incomeInDollars, memberShares, memberWindow, monthReport, narrate, noteTotalFa, noteTotals, periodReport,
-  quietWins, runningSpend, spendRhythm, weekRange,
+  categoryWindow, chartWindow, incomeInDollars, memberParts, memberShares, memberWindow, monthReport, narrate, noteTotalFa, noteTotals, periodReport,
+  quietWins, runningSpend, spendRhythm, weekRange, wholePercents,
 } from '../src/reports';
 import type { PeriodReport } from '../src/reports';
 import { entry as row } from './plans-fixture';
@@ -774,6 +774,47 @@ describe('reports', () => {
     expect(spent.breakdown.reduce((s, [, rial]) => s + rial, 0)).toBe(spent.totalRial);
     expect(memberWindow(rows, amir, true, range, amir.incomeRial).breakdown).toEqual([['حقوق', 50_000_000]]);
     expect(categoryWindow(rows, 'خوراک', false, range, 0).breakdown).toEqual([]);
+  });
+
+  it("a category's sheet splits its figure by member, in whole percents that make 100", () => {
+    const range = new ReportRange(here, here);
+    const food = (day: number, signed: number, owner: string, ownerName: string, o: EntryOptions = {}) =>
+      entry(day, signed, { category: 'خوراک', categoryId: 'cat_food', owner, ownerName, ...o });
+    const rows = [
+      food(first, -4_000_000, 'a', 'سهیل'),
+      food(first + 1, -2_000_000, 'b', 'فاطمه'),
+      food(first + 2, -4_000_000, 'b', 'فاطمه'),
+      // Neither a transfer nor a duplicate is anybody's spending.
+      food(first + 3, -50_000_000, 'a', 'سهیل', { transfer: true }),
+      food(first + 4, -4_000_000, 'a', 'سهیل', { duplicate: true }),
+    ];
+    const win = categoryWindow(rows, 'خوراک', false, range, 0);
+    const parts = memberParts(win.rows);
+    expect(parts.map((p) => [p.name, p.percent])).toEqual([['فاطمه', 60], ['سهیل', 40]]);
+    expect(parts.reduce((s, p) => s + p.rial, 0)).toBe(win.totalRial);
+
+    // The dollars the sheet sets under the total and each part, at the window's rate and
+    // truncated: ۶۰۰ هزار تومن at ۷۰ هزار is $8.57, said «$۸»; the ۱ میلیون total is «$۱۴».
+    // With no rate, or a zero one, there is nothing to say — never «$۰».
+    const rate = 70_000;
+    expect(faUsd(usdOf(tomanOf(parts[0].rial), rate)!)).toBe(faUsd(8));
+    expect(faUsd(usdOf(tomanOf(win.totalRial), rate)!)).toBe(faUsd(14));
+    expect(usdOf(tomanOf(parts[0].rial), null)).toBeNull();
+    expect(usdOf(tomanOf(parts[0].rial), 0)).toBeNull();
+
+    // Truncated, then the leftover points to the largest remainders: never ۳۳ + ۳۳ + ۳۳.
+    expect(wholePercents([1, 1, 1])).toEqual([34, 33, 33]);
+    expect(wholePercents([2, 1])).toEqual([67, 33]);
+    expect(wholePercents([1_005, 995])).toEqual([50, 50]);
+    expect(wholePercents([995, 5])).toEqual([99, 1]);
+    expect(wholePercents([7, 0])).toEqual([100, 0]);
+    expect(wholePercents([0, 0])).toEqual([0, 0]);
+    for (const split of [[3, 3, 3, 1], [1, 2, 3, 4, 5, 6], [999_999, 1]]) {
+      expect(wholePercents(split).reduce((s, p) => s + p, 0)).toBe(100);
+    }
+
+    // A row whose member was removed still counts, under a name that says so.
+    expect(memberParts([food(first, -1_000, 'c', '')])[0].name).toBe('عضو قبلی');
   });
 
   it("a category's sheet adds its rows up note by note", () => {

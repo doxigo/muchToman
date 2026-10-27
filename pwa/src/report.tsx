@@ -19,7 +19,7 @@ import type { Change } from './data';
 import { ledger, useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { setReportExcluded, useFamily } from './family';
-import { MONTHS, WEEKDAYS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, tomanOf, usdOf, moneyUnit, shownOf } from './format';
+import { MONTHS, WEEKDAYS, bidi, faCompact, faDecimal, faNumber, faRate, faUsd, faWeekday, tomanOf, usdOf, moneyUnit, shownOf } from './format';
 import { isTotal, worthItAnswers, worthItSummary } from './goals';
 import type { WorthItSummary } from './goals';
 import { Chevron, TrendCaret } from './icons';
@@ -27,7 +27,7 @@ import { DAY_MS, jalaliOf, tehranDay } from './jalali';
 import { faDayMonth } from './loans';
 import { closeSheet, openPage, openSheet, registerSheet, registerTab, reportIntent, useNav } from './nav';
 import type { ReportMode } from './nav';
-import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberWindow, noteTotalFa, noteTotals, reportMonthOf } from './reports';
+import { REPORT_SPANS, ReportRange, ReportSpan, buildCashFlow, categoryWindow, memberParts, memberWindow, noteTotalFa, noteTotals, reportMonthOf, wholePercents } from './reports';
 import type { CashFlowReport, Insight, MemberShare, PeriodReport, RunningSpend, SpendRhythm } from './reports';
 import { CAT_UNCATEGORISED } from './rules';
 import { pref, rows, setPref, textSize } from './state';
@@ -68,7 +68,10 @@ const SPEND_TINT = 'var(--on-surface-variant)';
  * sheet opens outside the report's tree.
  */
 function usdFor(range: ReportRange, today = tehranDay(Date.now())): number | null {
-  if (!pref('reportUsd')) return null;
+  return pref('reportUsd') ? windowRate(range, today) : null;
+}
+/** The same rate whichever unit the report reads in, for the dollar asides under a Toman figure. */
+function windowRate(range: ReportRange, today = tehranDay(Date.now())): number | null {
   const rate = range.contains(today) ? currentEffective().usd ?? null : range.usdRate(pref('rateHistory'));
   return rate != null && rate > 0 && Number.isFinite(rate) ? rate : null;
 }
@@ -518,7 +521,8 @@ function CashFlowReportContent({ anchor, span, onWindow }: { anchor: number | nu
           <div class="rp-xxl"><RunningChart cash={cash} running={cash.running} rate={rate} /></div>
         : cash.series.filter((r) => r.incomeRial > 0 || r.spentRial > 0).length > 1 &&
           <div class="rp-xxl"><MonthBars cash={cash} onWindow={onWindow} usd={rate != null} /></div>}
-      {(period.transactions > 0 || heldApart) && <div class="rp-xxl"><CategoryDetail period={period} rate={rate} /></div>}
+      {/* Whose each category is, only where the window is a household's (memberShares). */}
+      {(period.transactions > 0 || heldApart) && <div class="rp-xxl"><CategoryDetail period={period} rate={rate} household={cash.members.length > 0} /></div>}
       {cash.members.length > 0 && <div class="rp-xxl"><MemberDetail members={cash.members} period={period} excluded={excluded} rate={rate} /></div>}
       {/* Present even when the window is empty while an exclusion stands: a report quietly
           missing a category with no way to see why is the friendlier kind of lie. */}
@@ -735,23 +739,44 @@ function RunningChart({ cash, running, rate }: { cash: CashFlowReport; running: 
   // "$" is read out as punctuation, or not at all.
   const heard = (v: number) => (rate != null ? `${faRate(v)} دلار` : said(v));
   const spoken = `${nowLabel}: ${heard(end)}` + (sameDay != null ? `، ${thenLabel}: ${heard(sameDay)}` : '');
+  // The day under her pointer, or null. While she holds (or hovers) the chart the two figures above
+  // it read that one day — what each window spent on it — and letting go puts the totals back.
+  const [touched, setTouched] = useState<number | null>(null);
+  // The lived days only: past today there is no figure of hers to read.
+  const dayAt = (e: PointerEvent) => {
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return Math.min(Math.max(Math.round(((e.clientX - box.left) / box.width) * last), 0), now.length - 1);
+  };
+  // Off the Rial, not the drawn line, so a day's figure is the ledger's own and truncates once.
+  const spentOn = (rials: number[], i: number) => rials[i] - (rials[i - 1] ?? 0);
+  const dayFa = (start: number, i: number) => `${faWeekday(start + i)} ${faDayMonth(start + i, cash.today)}`;
+  // A zero at this size is a floating dot; the day said nothing, so the figure says so.
+  const daySaid = (rial: number, at: number) => (rial === 0 ? 'بدون خرج' : said(tomanOf(rial) / at));
+  const figure = (label: string, text: string, color: string) => (
+    <div class="rp-fitbox rp-side">
+      <p class="muted rp-running-label">{label}</p>
+      <Fit text={bidi(text)} min={13} max={20} class="figure rp-w800 rp-side-figure" color={color} />
+    </div>
+  );
   return (
     <div>
       <h2 class="rp-heading">خرج روز به روز</h2>
       <div class="rp-sides rp-m">
-        <div class="rp-fitbox rp-side">
-          <p class="muted rp-running-label">{nowLabel}</p>
-          <Fit text={bidi(said(end))} min={13} max={20} class="figure rp-w800 rp-side-figure" color="var(--on-surface)" />
-        </div>
-        {sameDay != null && (
-          <div class="rp-fitbox rp-side">
-            <p class="muted rp-running-label">{thenLabel}</p>
-            <Fit text={bidi(said(sameDay))} min={13} max={20} class="figure rp-w800 rp-side-figure" color={SPEND_TINT} />
-          </div>
-        )}
+        {touched == null
+          ? figure(nowLabel, said(end), 'var(--on-surface)')
+          : figure(dayFa(cash.range.startDay, touched), daySaid(spentOn(running.current, touched), rate ?? 1), 'var(--on-surface)')}
+        {sameDay != null && beforeRate != null && (touched == null
+          ? figure(thenLabel, said(sameDay), SPEND_TINT)
+          : touched < running.previous.length
+            ? figure(dayFa(before.startDay, touched), daySaid(spentOn(running.previous, touched), beforeRate), SPEND_TINT)
+            // A shorter window before has no such day; its half stays, so hers does not jump wider.
+            : <div class="rp-side" />)}
       </div>
       <div class="rp-chart-card" role="img" aria-label={spoken}>
-        <div class="rp-running">
+        {/* Hover on a desktop, hold and slide on a phone; pan-y leaves the page's own scroll to the
+            browser, which cancels the pointer and lets go of the chart. */}
+        <div class="rp-running" onPointerDown={(e) => setTouched(dayAt(e))} onPointerMove={(e) => setTouched(dayAt(e))}
+          onPointerLeave={() => setTouched(null)} onPointerCancel={() => setTouched(null)}>
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} aria-hidden="true">
             <line x1="0" y1={H - padY} x2={W} y2={H - padY} style={{ stroke: SPEND_TINT }} stroke-opacity={0.3} stroke-width={1}
               vector-effect="non-scaling-stroke" />
@@ -763,9 +788,21 @@ function RunningChart({ cash, running, rate }: { cash: CashFlowReport; running: 
               <path d={line(now)} fill="none" style={{ stroke: 'var(--on-surface)' }} stroke-width={3}
                 stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
             )}
+            {/* The day she is holding: a hairline down through both lines. */}
+            {touched != null && (
+              <line x1={px(touched)} y1={padY} x2={px(touched)} y2={H - padY} style={{ stroke: SPEND_TINT }} stroke-opacity={0.5}
+                stroke-width={1} vector-effect="non-scaling-stroke" />
+            )}
           </svg>
           {/* Where the window stands, ringed as the asset chart rings today. */}
           <span class="rp-history-end" style={{ left: `${(px(now.length - 1) / W) * 100}%`, top: `${py(end)}px`, '--tone': 'var(--on-surface)' }} />
+          {/* And the same ring on her line at the held day, so the figures above say which point they read. */}
+          {touched != null && then[touched] != null && (
+            <span class="rp-running-dot" style={{ left: `${(px(touched) / W) * 100}%`, top: `${py(then[touched])}px` }} />
+          )}
+          {touched != null && (
+            <span class="rp-history-end" style={{ left: `${(px(touched) / W) * 100}%`, top: `${py(now[touched])}px`, '--tone': 'var(--on-surface)' }} />
+          )}
         </div>
         {/* Time runs left to right, so in this RTL row the first label lands on the right, under the last day. */}
         <div class="rp-captions">
@@ -878,6 +915,8 @@ interface ReportCategoryProps {
   member?: MemberShare;
   countPassThrough?: boolean;
   excluded?: ReadonlySet<string>;
+  /** Split a category's figure by whose rows it is — a household's window only. */
+  household?: boolean;
 }
 const openCategory = (props: ReportCategoryProps): void => openSheet('reportCategory', props as unknown as Record<string, unknown>);
 
@@ -886,7 +925,7 @@ const openCategory = (props: ReportCategoryProps): void => openSheet('reportCate
  * came to for the detail. Money the report is deliberately not counting is listed under the
  * counted rows rather than hidden.
  */
-function CategoryDetail({ period, rate }: { period: PeriodReport; rate: number | null }) {
+function CategoryDetail({ period, rate, household }: { period: PeriodReport; rate: number | null; household: boolean }) {
   // خرج unless there is nothing on that side, counted or held apart.
   const [side, setSide] = useState<Lens>(() =>
     period.spentRial <= 0 && !period.excludedSpending.length && (period.incomeRial > 0 || period.excludedIncome.length > 0)
@@ -908,7 +947,7 @@ function CategoryDetail({ period, rate }: { period: PeriodReport; rate: number |
         : list.map(([name, rial]) => (
           <ShareRow key={name} name={name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined} rate={rate}
             lead={<CategoryDisc name={name} size={32} icon={17} stroke={1.5} />}
-            onOpen={() => openCategory({ name, income, range: period.range, sideRial: total })} />
+            onOpen={() => openCategory({ name, income, range: period.range, sideRial: total, household })} />
         ))}
       {heldOut.length > 0 && (
         <>
@@ -916,7 +955,7 @@ function CategoryDetail({ period, rate }: { period: PeriodReport; rate: number |
           {heldOut.map(([name, rial]) => (
             <AsideCategoryRow key={name} name={name} rial={rial} rate={rate}
               // sideRial zero: this category is inside no total, so its sheet claims no share.
-              onOpen={() => openCategory({ name, income, range: period.range, sideRial: 0 })} />
+              onOpen={() => openCategory({ name, income, range: period.range, sideRial: 0, household })} />
           ))}
         </>
       )}
@@ -959,6 +998,8 @@ function MemberDetail({ members, period, excluded, rate }: {
     .filter(([, rial]) => rial > 0)
     .sort((a, b) => b[1] - a[1]);
   const total = list.reduce((s, [, rial]) => s + rial, 0);
+  // Shares that say ۱۰۰ between them, as a category's «نفر به نفر» does (wholePercents).
+  const percents = wholePercents(list.map(([, rial]) => rial));
   const named = period.range.fa;
   return (
     <div>
@@ -968,8 +1009,8 @@ function MemberDetail({ members, period, excluded, rate }: {
       </div>
       {!list.length || total <= 0
         ? <p class="rp-none muted">{income ? `در ${named} درآمدی از اعضا ثبت نشده.` : `در ${named} خرجی از اعضا ثبت نشده.`}</p>
-        : list.map(([member, rial]) => (
-          <ShareRow key={member.id} name={member.name} rial={rial} total={total} tint={income ? INCOME_TINT : undefined} rate={rate}
+        : list.map(([member, rial], i) => (
+          <ShareRow key={member.id} name={member.name} rial={rial} total={total} pct={percents[i]} tint={income ? INCOME_TINT : undefined} rate={rate}
             lead={<MemberFace name={member.name} avatar={member.avatar} size={32} />}
             // Her rows on the side she is reading, in the sheet the category rows open.
             onOpen={() => openCategory({
@@ -986,27 +1027,36 @@ function MemberDetail({ members, period, excluded, rate }: {
  * that survives inflation. The amount comes before the fixed-width share box, so the shares line
  * up on the box and the amounts on where it begins.
  */
-function ShareRow({ name, rial, total, tint, lead, onOpen, rate = null }: {
+function ShareRow({ name, rial, total, tint, lead, onOpen, rate = null, pct, aside = null }: {
   name: string; rial: number; total: number; tint?: string; lead: ComponentChildren; onOpen?: () => void;
   /** The dollar the report reads at, or null — خانه's card always reads Toman. */
   rate?: number | null;
+  /** The share as stated, where a split has to add up to 100 (wholePercents). */
+  pct?: number;
+  /** A dollar rate to set the amount's dollars under it at (UsdAside). */
+  aside?: number | null;
 }) {
   const share = shareOf(rial, total);
-  const percent = faNumber(roundEven(share * 100));
+  const percent = faNumber(pct ?? roundEven(share * 100));
+  const usd = usdOf(tomanOf(rial), aside);
   const body = (
     <>
       <span class="rp-share-row">
         {lead}
         {/* Wraps rather than truncates: a clipped name is the one thing she cannot reconstruct. */}
         <span class="rp-share-name">{name}</span>
-        <span class="figure rp-share-amount">{bidi(figureOf(rial, rate))}</span>
+        <span class="figure rp-share-amount">
+          {bidi(figureOf(rial, rate))}
+          {/* Its dollars under it, hugging the edge the amounts line up on. */}
+          {usd != null && <span class="rp-share-usd muted">{faUsd(usd)}</span>}
+        </span>
         <span class="figure rp-share-pct">{`${percent}٪`}</span>
         {onOpen && <span class="muted"><Chevron size={18} /></span>}
       </span>
       <span class="rp-track"><span style={{ width: `${share * 100}%`, background: tint ?? 'var(--primary)' }} /></span>
     </>
   );
-  const label = `${name}: ${spokenOf(rial, rate)}، ${percent} درصد`;
+  const label = `${name}: ${spokenOf(rial, rate)}${usd != null ? `، ${faRate(usd)} دلار` : ''}، ${percent} درصد`;
   return onOpen
     ? <button type="button" class="rp-btn rp-share" aria-label={label} onClick={onOpen}>{body}</button>
     : <div class="rp-share" role="group" aria-label={label}>{body}</div>;
@@ -1123,7 +1173,7 @@ function ReportExclusions({ excluded, capsTotal, householdShared }: { excluded: 
  * the transactions it is made of — each a door to its own page, because a share bar is as
  * accountable to «چرا این را می‌بینم؟» as any other number here.
  */
-function ReportCategorySheet({ name, income, range, sideRial, member, countPassThrough = false, excluded }: ReportCategoryProps) {
+function ReportCategorySheet({ name, income, range, sideRial, member, countPassThrough = false, excluded, household = false }: ReportCategoryProps) {
   const view = useLedger();
   const win = member
     ? memberWindow(view.entries, member, income, range, sideRial, countPassThrough, excluded)
@@ -1133,8 +1183,12 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
   const tone = win.face == null ? hue(win.name) : income ? INCOME_TINT : 'var(--primary)';
   // The report's own reading of this window — the same rule, so the sheet and the row agree.
   const rate = usdFor(range);
+  // Its dollars beside its Toman, as the month card sets them; in dollars the figures already are.
+  const aside = rate == null ? windowRate(range) : null;
   // Not on a member's sheet, which is already asking «کجا؟» by category.
   const byNote = win.face == null ? noteTotals(win.rows) : [];
+  // Nor on a member's, which is one person's by construction.
+  const byOwner = household && win.face == null ? memberParts(win.rows) : [];
   return (
     <Sheet label={win.name}>
       <div class="rp-sheet-head">
@@ -1149,6 +1203,7 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
         <Fit text={bidi(amountOf(win.totalRial, rate))} min={22} max={34} class="figure rp-w900"
           color={income ? INCOME_TINT : 'var(--on-surface)'} />
       </div>
+      <UsdAside rial={win.totalRial} rate={aside} />
       {win.share != null && (
         <p class="muted rp-sheet-share">{`${faNumber(roundEven(win.share * 100))}٪ از ${income ? 'درآمد' : 'خرج'} این بازه`}</p>
       )}
@@ -1159,6 +1214,17 @@ function ReportCategorySheet({ name, income, range, sideRial, member, countPassT
           {win.breakdown.map(([cat, rial]) => (
             <ShareRow key={cat} name={cat} rial={rial} total={Math.max(win.totalRial, 1)} tint={income ? INCOME_TINT : undefined} rate={rate}
               lead={<CategoryDisc name={cat} size={32} icon={17} stroke={1.5} />} />
+          ))}
+        </>
+      )}
+      {/* Whose this category is: each member's part of the figure above, as shares that say ۱۰۰
+          between them. One member alone still says so — «۱۰۰٪» is an answer here. */}
+      {byOwner.length > 0 && (
+        <>
+          <SheetLabel>نفر به نفر</SheetLabel>
+          {byOwner.map((part) => (
+            <ShareRow key={part.id} name={part.name} rial={part.rial} total={Math.max(win.totalRial, 1)} pct={part.percent} aside={aside}
+              tint={income ? INCOME_TINT : undefined} rate={rate} lead={<MemberFace name={part.name} avatar={part.avatar} size={32} />} />
           ))}
         </>
       )}

@@ -5,6 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
@@ -68,6 +72,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -82,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.round
+import kotlin.math.roundToInt
 
 /**
  * The report answers one follow-up question: "بیشتر شده یا کمتر؟" — over a window she picks.
@@ -835,14 +841,19 @@ private fun CashFlowReportContent(
         // apart, which still has to be visible somewhere or the report is hiding it.
         if (period.transactions > 0 || heldApart) {
             Spacer(Modifier.height(Space.xxl))
-            CategoryDetail(period, entries, onOpenEntry)
+            // Whose each category is, only where the window is a household's — see [memberShares].
+            CategoryDetail(
+                period, entries, onOpenEntry,
+                household = cash.members.isNotEmpty(),
+                usdRate = rateFor(period.range),
+            )
         }
 
         // Only on a ledger the family actually shares — see [memberShares], which returns
         // nothing when every row in the window belongs to the same person.
         if (cash.members.isNotEmpty()) {
             Spacer(Modifier.height(Space.xxl))
-            MemberDetail(cash.members, period, entries, excluded, onOpenEntry)
+            MemberDetail(cash.members, period, entries, excluded, onOpenEntry, usdRate = rateFor(period.range))
         }
 
         // Under the categories it governs, and present even when the window is empty while an
@@ -1392,10 +1403,10 @@ private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
     val weekly = cash.range.week != null
     // Each line at its own window's dollar, as each column of the month bars is. A window before
     // with no rate on file loses its line rather than borrowing this one's.
-    val now = running.current.map { tomanOf(it) / (usd?.rate ?: 1.0) }
-    val then = (if (usd == null) 1.0 else usd.rateFor(before))
-        ?.let { rate -> running.previous.map { tomanOf(it) / rate } }
-        .orEmpty()
+    val nowRate = usd?.rate ?: 1.0
+    val beforeRate = if (usd == null) 1.0 else usd.rateFor(before)
+    val now = running.current.map { tomanOf(it) / nowRate }
+    val then = beforeRate?.let { rate -> running.previous.map { tomanOf(it) / rate } }.orEmpty()
     // The same day in: the last one lived, or the window before's last when it was shorter.
     val sameDay = then.getOrNull(now.lastIndex) ?: then.lastOrNull()
     fun said(v: Double) = if (usd != null) faUsd(v) else "${faCompact(v)} $moneyUnit"
@@ -1411,6 +1422,15 @@ private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
     val tone = MaterialTheme.colorScheme.onSurface
     val quiet = MaterialTheme.colorScheme.onSurfaceVariant
     val surface = MaterialTheme.colorScheme.surface
+    val last = (maxOf(running.days, then.size) - 1).coerceAtLeast(1)
+    // The day under her finger, or null. While she holds the chart the two figures above it read
+    // that one day — what each window spent on it — and letting go puts the totals back.
+    var touched by remember(running) { mutableStateOf<Int?>(null) }
+    // Off the Rial, not the drawn line, so a day's figure is the ledger's own and truncates once.
+    fun spentOn(rials: List<Long>, i: Int) = rials[i] - (rials.getOrNull(i - 1) ?: 0L)
+    fun dayFa(start: Long, i: Int) = (start + i).let { "${faWeekday(it)} ${faDayMonth(it, cash.today)}" }
+    // A zero at this size is a floating dot; the day said nothing, so the figure says so.
+    fun daySaid(rial: Long, rate: Double) = if (rial == 0L) "بدون خرج" else said(tomanOf(rial) / rate)
 
     Column {
         Text(
@@ -1421,10 +1441,26 @@ private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
         )
         Spacer(Modifier.height(Space.m))
         Row(Modifier.fillMaxWidth()) {
-            RunningFigure(nowLabel, said(now.last()), tone, Modifier.weight(1f))
-            if (sameDay != null) {
+            val i = touched
+            if (i == null) {
+                RunningFigure(nowLabel, said(now.last()), tone, Modifier.weight(1f))
+            } else {
+                RunningFigure(dayFa(cash.range.startDay, i), daySaid(spentOn(running.current, i), nowRate), tone, Modifier.weight(1f))
+            }
+            if (sameDay != null && beforeRate != null) {
                 Spacer(Modifier.width(Space.m))
-                RunningFigure(thenLabel, said(sameDay), quiet, Modifier.weight(1f))
+                when {
+                    i == null -> RunningFigure(thenLabel, said(sameDay), quiet, Modifier.weight(1f))
+                    i < running.previous.size -> RunningFigure(
+                        dayFa(before.startDay, i),
+                        daySaid(spentOn(running.previous, i), beforeRate),
+                        quiet,
+                        Modifier.weight(1f),
+                    )
+                    // A shorter window before has no such day; its half stays, so hers does not
+                    // jump wider under her finger.
+                    else -> Spacer(Modifier.weight(1f))
+                }
             }
         }
         Spacer(Modifier.height(Space.m))
@@ -1443,9 +1479,29 @@ private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
                         .semantics {
                             contentDescription = "$nowLabel: ${spoken(now.last())}" +
                                 (sameDay?.let { "، $thenLabel: ${spoken(it)}" } ?: "")
+                        }
+                        .pointerInput(last, now.size) {
+                            // The lived days only: past today there is no figure of hers to read.
+                            fun dayAt(x: Float) = (x / size.width * last).roundToInt().coerceIn(0, now.lastIndex)
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                touched = dayAt(down.position.x)
+                                // Sideways reads along the line; up or down is the page scrolling,
+                                // which takes the gesture and lets go of the chart.
+                                val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ ->
+                                    change.consume()
+                                    touched = dayAt(change.position.x)
+                                }
+                                if (drag != null) {
+                                    horizontalDrag(drag.id) {
+                                        it.consume()
+                                        touched = dayAt(it.position.x)
+                                    }
+                                }
+                                touched = null
+                            }
                         },
                 ) {
-                    val last = (maxOf(running.days, then.size) - 1).coerceAtLeast(1)
                     val top = (now + then).maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
                     val padY = 8.dp.toPx()
                     fun px(i: Int) = i / last.toFloat() * size.width
@@ -1478,11 +1534,26 @@ private fun RunningChart(cash: CashFlowReport, running: RunningSpend) {
                             style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
                         )
                     }
+                    fun ring(at: Offset) {
+                        drawCircle(tone.copy(alpha = 0.18f), radius = 10.dp.toPx(), center = at)
+                        drawCircle(surface, radius = 5.dp.toPx(), center = at)
+                        drawCircle(tone, radius = 3.5.dp.toPx(), center = at)
+                    }
                     // Where the window stands, ringed as [HistoryChart] rings today.
-                    val end = Offset(px(now.lastIndex), py(now.last()))
-                    drawCircle(tone.copy(alpha = 0.18f), radius = 10.dp.toPx(), center = end)
-                    drawCircle(surface, radius = 5.dp.toPx(), center = end)
-                    drawCircle(tone, radius = 3.5.dp.toPx(), center = end)
+                    ring(Offset(px(now.lastIndex), py(now.last())))
+                    // The day she is holding: a hairline down through both lines, and the same
+                    // ring on hers, so the figures above say which point they are reading.
+                    touched?.let { i ->
+                        val x = px(i)
+                        drawLine(
+                            quiet.copy(alpha = 0.5f),
+                            Offset(x, padY),
+                            Offset(x, size.height - padY),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                        then.getOrNull(i)?.let { drawCircle(quiet, radius = 3.dp.toPx(), center = Offset(x, py(it))) }
+                        ring(Offset(x, py(now[i])))
+                    }
                 }
                 Spacer(Modifier.height(Space.s))
                 // Time runs left to right, so in this RTL row the first label lands on the right,
@@ -1745,6 +1816,10 @@ private fun CategoryDetail(
     period: PeriodReport,
     entries: List<LedgerEntry>,
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+    /** Whether more than one member's rows are in the window, so a category's sheet says whose it is. */
+    household: Boolean = false,
+    /** The window's dollar, for the sheet's dollar asides — see [UsdAside]. */
+    usdRate: Double? = null,
 ) {
     // خرج unless there is nothing on that side to show — counted or held apart — which is the
     // only case where opening on it would be an empty screen with a full one one tap away.
@@ -1837,6 +1912,8 @@ private fun CategoryDetail(
             window = window,
             onOpenEntry = onOpenEntry,
             onDismiss = { opened = null },
+            byMember = household,
+            usdRate = usdRate,
         )
     }
 
@@ -1850,6 +1927,8 @@ private fun CategoryDetail(
             window = window,
             onOpenEntry = onOpenEntry,
             onDismiss = { openedAside = null },
+            byMember = household,
+            usdRate = usdRate,
         )
     }
 }
@@ -1921,6 +2000,8 @@ private fun MemberDetail(
     entries: List<LedgerEntry>,
     excluded: Set<String>,
     onOpenEntry: ((LedgerEntry) -> Unit)? = null,
+    /** The window's dollar, for the sheet's dollar asides — see [UsdAside]. */
+    usdRate: Double? = null,
 ) {
     val named = period.range.fa
     var side by rememberSaveable {
@@ -1938,6 +2019,8 @@ private fun MemberDetail(
         .filter { it.second > 0L }
         .sortedByDescending { it.second }
     val total = rows.sumOf { it.second }
+    // Shares that say ۱۰۰ between them, as a category's «نفر به نفر» does — see [wholePercents].
+    val percents = wholePercents(rows.map { it.second })
     // The member she has opened up, by id — the one thing about a member that outlives a name.
     var opened by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -1965,8 +2048,11 @@ private fun MemberDetail(
                 modifier = Modifier.padding(vertical = Space.m),
             )
         } else {
-            for ((member, rial) in rows) {
-                MemberShareRow(member, rial, total, if (income) INCOME_TINT else null) {
+            rows.forEachIndexed { i, (member, rial) ->
+                MemberShareRow(
+                    member.name, member.avatar, rial, total, if (income) INCOME_TINT else null,
+                    percent = percents[i],
+                ) {
                     opened = member.id
                 }
             }
@@ -1987,6 +2073,7 @@ private fun MemberDetail(
                 window = window,
                 onOpenEntry = onOpenEntry,
                 onDismiss = { opened = null },
+                usdRate = usdRate,
             )
         }
     }
@@ -1999,14 +2086,20 @@ private fun MemberDetail(
  */
 @Composable
 private fun MemberShareRow(
-    member: MemberShare,
+    name: String,
+    avatar: String,
     rial: Long,
     total: Long,
     tint: Color?,
+    /** The share as stated, where a split has to add up to 100 — see [wholePercents]. */
+    percent: Int? = null,
+    /** A dollar rate to set the amount's dollars under it at — see [UsdAside]. */
+    usdRate: Double? = null,
     onOpen: (() -> Unit)? = null,
 ) {
     val spoken = spokenOf(rial)
     val share = (rial.toFloat() / total).coerceIn(0f, 1f)
+    val pct = faNumber(percent?.toDouble() ?: round(share * 100.0))
     Column(
         Modifier
             .fillMaxWidth()
@@ -2015,7 +2108,7 @@ private fun MemberShareRow(
                 if (onOpen != null) {
                     Modifier.clickable(
                         role = Role.Button,
-                        onClickLabel = "تراکنش‌های ${member.name}",
+                        onClickLabel = "تراکنش‌های $name",
                         onClick = onOpen,
                     )
                 } else {
@@ -2024,24 +2117,27 @@ private fun MemberShareRow(
             )
             .padding(vertical = Space.s)
             .semantics(mergeDescendants = true) {
-                contentDescription = "${member.name}: $spoken، " +
-                    "${faNumber(round(share * 100.0))} درصد"
+                contentDescription = "$name: $spoken، $pct درصد"
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // The face they picked — the family screen's own disc, at the category disc's size.
-            MemberFace(member.name, member.avatar, size = 32.dp)
+            MemberFace(name, avatar, size = 32.dp)
             Spacer(Modifier.width(Space.m))
-            Text(member.name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+            Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.width(Space.s))
+            // Its dollars under it, hugging the edge the amounts line up on.
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    bidi(figureOf(rial)),
+                    style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
+                    fontSize = 14.sp,
+                )
+                UsdAside(rial, usdRate, align = TextAlign.End)
+            }
             Spacer(Modifier.width(Space.s))
             Text(
-                bidi(figureOf(rial)),
-                style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
-                fontSize = 14.sp,
-            )
-            Spacer(Modifier.width(Space.s))
-            Text(
-                "${faNumber(round(share * 100.0))}٪",
+                "${pct}٪",
                 style = figureStyle(MaterialTheme.colorScheme.onSurfaceVariant, FontWeight.Bold),
                 fontSize = 12.sp,
                 textAlign = TextAlign.End,
@@ -2205,6 +2301,10 @@ private fun CategorySheet(
     window: CategoryWindow,
     onOpenEntry: ((LedgerEntry) -> Unit)?,
     onDismiss: () -> Unit,
+    /** Split a category's figure by whose rows it is — a household's window only. */
+    byMember: Boolean = false,
+    /** The window's dollar, when the report reads Toman — see [UsdAside]. */
+    usdRate: Double? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -2219,6 +2319,12 @@ private fun CategorySheet(
     }
     // Not on a member's sheet, which is already asking «کجا؟» by category.
     val byNote = remember(window) { if (window.face == null) noteTotals(window.rows) else emptyList() }
+    // Its dollars beside its Toman, as the month card sets them; in dollars the figures already are.
+    val aside = usdRate.takeIf { LocalReportUsd.current == null }
+    // Nor on a member's, which is one person's by construction.
+    val byOwner = remember(window, byMember) {
+        if (byMember && window.face == null) memberParts(window.rows) else emptyList()
+    }
 
     AppSheet(
         onDismissRequest = onDismiss,
@@ -2269,6 +2375,7 @@ private fun CategorySheet(
                         FontWeight.Black,
                     ),
                 )
+                UsdAside(window.totalRial, aside)
                 window.share?.let { share ->
                     Spacer(Modifier.height(Space.xs))
                     Text(
@@ -2292,6 +2399,27 @@ private fun CategorySheet(
                                 rial,
                                 window.totalRial.coerceAtLeast(1L),
                                 if (window.income) INCOME_TINT else null,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Whose this category is: each member's part of the figure above, as shares that say
+            // ۱۰۰ between them. One member alone still says so — «۱۰۰٪» is an answer here.
+            if (byOwner.isNotEmpty()) {
+                item(key = "members") {
+                    SheetLabel("نفر به نفر")
+                    Column {
+                        for (part in byOwner) {
+                            MemberShareRow(
+                                part.name,
+                                part.avatar,
+                                part.rial,
+                                window.totalRial.coerceAtLeast(1L),
+                                if (window.income) INCOME_TINT else null,
+                                percent = part.percent,
+                                usdRate = aside,
                             )
                         }
                     }

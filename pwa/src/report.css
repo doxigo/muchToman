@@ -49,7 +49,8 @@
 .rp-history-end::before, .rp-history-end::after { content: ""; position: absolute; border-radius: 50%; }
 .rp-history-end::before { inset: 5px; background: var(--surface); }
 .rp-history-end::after { inset: 7px; background: var(--tone); }
-.rp-running { position: relative; direction: ltr; height: 160px; }
+.rp-running { position: relative; direction: ltr; height: 160px; touch-action: pan-y; }
+.rp-running-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--on-surface-variant); }
 .rp-running svg { display: block; overflow: visible; }
 .rp-running-label { font-size: calc(12px * var(--text)); }
 .rp-running-axis { font-size: calc(11px * var(--text)); }
@@ -114,6 +115,7 @@
 .rp-share-row > .disc, .rp-share-row > .member-face { margin-inline-end: var(--m); }
 .rp-share-name { flex: 1; min-width: 0; margin-inline-end: var(--s); color: var(--on-bg); }
 .rp-share-amount { font-size: calc(14px * var(--text)); font-weight: 700; color: var(--on-surface-variant); white-space: nowrap; }
+.rp-share-usd { display: block; text-align: end; font-size: calc(11px * var(--text)); font-weight: 400; }
 .rp-share-pct { min-width: 36px; margin-inline-start: var(--s); font-size: calc(12px * var(--text)); font-weight: 700; color: var(--on-surface-variant); text-align: end; }
 .rp-track { display: block; height: 6px; margin-top: var(--xs); border-radius: 3px; background: var(--surface-variant); overflow: hidden; }
 .rp-track > span { display: block; height: 100%; border-radius: 3px; }

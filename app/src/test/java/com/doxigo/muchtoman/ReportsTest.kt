@@ -1218,6 +1218,49 @@ class ReportsTest {
     }
 
     @Test
+    fun `a category's sheet splits its figure by member, in whole percents that make 100`() {
+        val range = ReportRange(here, here)
+        fun food(day: Long, signed: Long, id: String, name: String, transfer: Boolean = false, duplicate: Boolean = false) =
+            entry(day, signed, category = "خوراک", categoryId = "cat_food", transfer = transfer, duplicate = duplicate,
+                ownerId = id, ownerName = name)
+        val rows = listOf(
+            food(first, -4_000_000, "a", "سهیل"),
+            food(first + 1, -2_000_000, "b", "فاطمه"),
+            food(first + 2, -4_000_000, "b", "فاطمه"),
+            // Neither a transfer nor a duplicate is anybody's spending.
+            food(first + 3, -50_000_000, "a", "سهیل", transfer = true),
+            food(first + 4, -4_000_000, "a", "سهیل", duplicate = true),
+        )
+        val window = categoryWindow(rows, "خوراک", income = false, range, sideRial = 0L)
+        val parts = memberParts(window.rows)
+        assertEquals(listOf("فاطمه" to 60, "سهیل" to 40), parts.map { it.name to it.percent })
+        assertEquals(window.totalRial, parts.sumOf { it.rial })
+
+        // The dollars the sheet sets under the total and each part, at the window's rate and
+        // truncated: ۶۰۰ هزار تومن at ۷۰ هزار is $8.57, said «$۸»; the ۱ میلیون total is «$۱۴».
+        // With no rate, or a zero one, there is nothing to say — never «$۰».
+        val rate = 70_000.0
+        assertEquals(faUsd(8.0), faUsd(usdOf(tomanOf(parts[0].rial), rate)!!))
+        assertEquals(faUsd(14.0), faUsd(usdOf(tomanOf(window.totalRial), rate)!!))
+        assertNull(usdOf(tomanOf(parts[0].rial), null))
+        assertNull(usdOf(tomanOf(parts[0].rial), 0.0))
+
+        // Truncated, then the leftover points to the largest remainders: never ۳۳ + ۳۳ + ۳۳.
+        assertEquals(listOf(34, 33, 33), wholePercents(listOf(1L, 1L, 1L)))
+        assertEquals(listOf(67, 33), wholePercents(listOf(2L, 1L)))
+        assertEquals(listOf(50, 50), wholePercents(listOf(1_005L, 995L)))
+        assertEquals(listOf(99, 1), wholePercents(listOf(995L, 5L)))
+        assertEquals(listOf(100, 0), wholePercents(listOf(7L, 0L)))
+        assertEquals(listOf(0, 0), wholePercents(listOf(0L, 0L)))
+        for (split in listOf(listOf(3L, 3L, 3L, 1L), listOf(1L, 2L, 3L, 4L, 5L, 6L), listOf(999_999L, 1L))) {
+            assertEquals(100, wholePercents(split).sum())
+        }
+
+        // A row whose member was removed still counts, under a name that says so.
+        assertEquals("عضو قبلی", memberParts(listOf(food(first, -1_000, "c", ""))).single().name)
+    }
+
+    @Test
     fun `a category's sheet adds its rows up note by note`() {
         val range = ReportRange(here, here)
         fun food(day: Long, signed: Long, note: String) =

@@ -728,6 +728,44 @@ fun memberWindow(
     )
 }
 
+/**
+ * Whole percents of [parts] that add up to exactly 100, for a split read as «۴۰٪ سهیل، ۶۰٪ فاطمه».
+ * Each is truncated, as every figure here is, and the points truncation left over go one each to
+ * the largest remainders. A tie goes to the smaller part, so a half point is never what turns ۹۹٫۵
+ * against ۰٫۵ into ۱۰۰ against ۰. Rounding each alone could say ۳۳ + ۳۳ + ۳۳, or ۵۱ + ۵۰, and leave
+ * her to wonder where the rest went. Nothing to split is all zeros.
+ */
+fun wholePercents(parts: List<Long>): List<Int> {
+    val total = parts.sum()
+    if (total <= 0L) return parts.map { 0 }
+    val floors = parts.map { (it * 100 / total).toInt() }
+    val up = parts.indices
+        .sortedWith(compareByDescending<Int> { parts[it] * 100 % total }.thenBy { parts[it] })
+        .take(100 - floors.sum())
+        .toSet()
+    return floors.mapIndexed { i, floor -> if (i in up) floor + 1 else floor }
+}
+
+/** One member's part of a category's window — see [memberParts]. */
+data class MemberPart(val id: String, val name: String, val avatar: String, val rial: Long, val percent: Int)
+
+/**
+ * A category's rows split by whose they are, biggest first, each with its share as a whole
+ * percent ([wholePercents]). From the very rows the sheet lists, which [categoryWindow] already
+ * walked through [spendable], so a transfer or a duplicate is in nobody's share and the parts
+ * add up to the figure at the top of the sheet.
+ */
+fun memberParts(rows: List<LedgerEntry>): List<MemberPart> {
+    val owners = rows.groupBy { it.ownerMemberId }
+        .map { (id, own) -> Triple(id, own.first(), own.sumOf { abs(it.txn.signedRial ?: 0L) }) }
+        .sortedByDescending { it.third }
+    val percents = wholePercents(owners.map { it.third })
+    return owners.mapIndexed { i, (id, row, rial) ->
+        // A row can outlive its member's name — a member removed after their rows landed.
+        MemberPart(id, row.ownerName.ifBlank { "عضو قبلی" }, row.ownerAvatar, rial, percents[i])
+    }
+}
+
 // ─────────────────────────── the narrative ───────────────────────────
 
 /**
