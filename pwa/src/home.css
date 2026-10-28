@@ -225,11 +225,18 @@
 .toggle-row .grow > span + span { font-size: calc(12px * var(--text)); color: var(--on-surface-variant); }
 .toggle-row .switch { display: inline-block; }
 
-.bank-list { display: flex; flex-direction: column; gap: var(--s); padding: var(--l) 0 var(--xxl); }
-.bank-card { padding: var(--l); border-radius: var(--r-card); background: var(--surface); }
-.bank-card .top { display: flex; align-items: flex-start; gap: var(--s); }
-.bank-card .top .grow > span:last-child { display: block; margin-top: 2px; font-size: calc(12px * var(--text)); line-height: calc(18px * var(--text)); color: var(--on-surface-variant); }
-.bank-card .toggle-row { margin-top: var(--xs); font-size: calc(14px * var(--text)); }
-.bank-card .doubt { margin-top: var(--s); font-size: calc(12px * var(--text)); line-height: calc(19px * var(--text)); color: var(--error); }
-.bank-card .forget { display: flex; flex-direction: column; margin-top: var(--m); }
+/* The accounts sheet: one band of rows, the asset rows' make (Ui.kt BankRow); each opens its page. */
+.bank-band { margin: var(--l) 0 var(--xxl); }
+.bank-caption { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 2px; font-size: calc(13px * var(--text)); line-height: calc(19px * var(--text)); color: var(--on-surface-variant); white-space: normal; }
+.bank-caption .quiet { font-weight: 600; color: var(--secondary); }
+.bank-caption .part { white-space: nowrap; }
+/* A bank's page (Ui.kt BankPage): the figure at a person's page size, its words, its caption. */
+.bank-figure { margin-top: var(--xs); font-size: calc(46px * var(--text)); font-weight: 900; line-height: 1.2; color: var(--on-bg); white-space: nowrap; overflow: hidden; }
+.bank-figure .magnitude { font-size: .58em; font-weight: 800; }
+.bank-figure.struck { text-decoration: line-through; }
+.bank-figure.off { color: var(--on-surface-variant); }
+.bank-words { margin-top: var(--xs); font-size: calc(15px * var(--text)); line-height: calc(25px * var(--text)); color: var(--on-surface-variant); }
+.bank-caption.page { margin-top: var(--m); font-size: calc(14px * var(--text)); line-height: calc(20px * var(--text)); }
+.bank-doubt { margin-top: var(--s); font-size: calc(13px * var(--text)); line-height: calc(20px * var(--text)); color: var(--error); }
+.bank-fix { margin-top: var(--xl); }
 .off { color: var(--on-surface-variant); }

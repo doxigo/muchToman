@@ -275,9 +275,12 @@ export function ActRow({ title, glyph, value = null, onClick }: { title: string;
 
 /**
  * Error ink until the first tap; then the row fills with error and its name becomes the question. A
- * person's page in طلب و بدهی ends on the same row.
+ * person's page in طلب و بدهی ends on the same row, and so does a bank's, whose `armedLabel` says what
+ * the delete loses rather than only asking.
  */
-export function DeleteRow({ id, onConfirmed, label = 'حذف این تراکنش' }: { id: string; onConfirmed: () => void; label?: string }) {
+export function DeleteRow({ id, onConfirmed, label = 'حذف این تراکنش', armedLabel = 'مطمئنی؟ برای حذف دوباره بزن' }: {
+  id: string; onConfirmed: () => void; label?: string; armedLabel?: string;
+}) {
   const [armed, setArmed] = useState(false);
   // A row reused for another transaction never arrives armed.
   useEffect(() => setArmed(false), [id]);
@@ -286,7 +289,7 @@ export function DeleteRow({ id, onConfirmed, label = 'حذف این تراکنش
       onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}>
       <span class="set-disc"><ActIcon glyph="TRASH" /></span>
       <span class="set-text"><span class="set-title" style={{ display: 'block' }} aria-live="polite">
-        {armed ? 'مطمئنی؟ برای حذف دوباره بزن' : label}
+        {armed ? armedLabel : label}
       </span></span>
     </button>
   );

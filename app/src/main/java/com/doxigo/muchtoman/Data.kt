@@ -229,6 +229,87 @@ fun countedBankAccounts(accounts: List<BankAccount>, smsEnabled: Boolean, notifi
     }
 
 /**
+ * Whole days since a counted bank's figure last moved, once that is long enough to say so: null while
+ * it is fresh, switched off or never anchored (neither is in her total), and for a bank she keeps by
+ * hand.
+ *
+ * [QUIET_AFTER_DAYS], the quiet note's five, on purpose. The app already holds five days without a
+ * spend to be worth asking about, and five days without one message from a bank it reads is the same
+ * evidence at one bank's scale: either nothing moved, or the messages stopped reaching it (a new
+ * sender number, a permission taken back), and only she can tell which. So the row states the fact
+ * and leaves the judgement to her. A savings account that rarely moves reads as quiet too, which is
+ * true; fixing its balance, even to the same figure, starts the count again, because
+ * [BankAccount.updatedAt] is the newer of its last message and her last correction — and either way
+ * no message has come in those days.
+ *
+ * Never for a bank she keeps by hand: nothing reads it, so silence says nothing about it, and «no
+ * message» would be untrue of a bank that never sends one here. Its caption says «دستی» and when she
+ * wrote the figure, as a holding she types does.
+ */
+fun bankStaleDays(account: BankAccount, off: Boolean, now: Long): Int? {
+    if (off || !account.anchored || account.manual || account.updatedAt <= 0L) return null
+    return ((now - account.updatedAt) / DAY_MS).toInt().takeIf { it >= QUIET_AFTER_DAYS }
+}
+
+/**
+ * «۸ روزه پیامی ازش ندیدیم» — the quiet note's «۵ روزه خرجی ندیدیم», for one bank. «پیام», not
+ * «پیامک»: Blu's may come as its app's notifications, and the PWA's as messages she pastes.
+ */
+fun bankStaleFa(days: Int): String = "${faNumber(days.toDouble())} روزه پیامی ازش ندیدیم"
+
+/**
+ * An account's caption, in the accounts sheet and on its own page, in parts: which of the bank's
+ * accounts (two at one bank are two rows with one name), how fresh — [bankStaleFa] in place of the
+ * age once it is stale, so the age is never said twice — and the state that keeps it out of the
+ * total or makes it a figure to check.
+ */
+fun bankCaptionFa(account: BankAccount, off: Boolean, now: Long): List<String> = listOfNotNull(
+    account.number.takeIf { it.isNotBlank() }?.let(::accountLabel)
+        ?: account.mask.takeIf { it.isNotBlank() }?.let(::bidi),
+    bankStaleDays(account, off, now)?.let(::bankStaleFa) ?: faAgo(account.updatedAt, now),
+    when {
+        off -> "خاموش"
+        !account.anchored -> "توی جمع حساب نشده"
+        account.inferred -> "نیاز به بررسی"
+        // تنظیمات's word for it: nothing will move this figure but her.
+        account.manual -> "دستی"
+        else -> null
+    },
+)
+
+/**
+ * What the switch on a bank's page takes away. Since a switched-off bank also leaves the ledger, a
+ * bank whose messages are read loses both; one she keeps by hand has no rows to lose, and the lite
+ * edition keeps no ledger to lose them from.
+ */
+fun bankSwitchFa(balanceOnly: Boolean): String =
+    if (balanceOnly) "خاموشش کنی، موجودیش توی جمع نمیاد."
+    else "خاموشش کنی، نه موجودیش توی جمع میاد نه تراکنش‌هاش توی دفتر."
+
+/**
+ * The bank row's second line on دارایی. It names how many accounts are behind the figure and, when
+ * any of them is still a guess or has gone quiet, says so there rather than only inside the sheet — a
+ * number she has to open something to distrust is a number she will trust. [shown] is
+ * [countedBankAccounts]: with SMS off the row stands for the banks she keeps by hand, and a frozen
+ * one beside them would be counted here and not there.
+ */
+fun bankCountNoteFa(shown: List<BankAccount>, disabled: Set<String>, now: Long): String {
+    val live = shown.filterNot { it.bank in disabled }
+    val off = shown.size - live.size
+    val quiet = live.count { bankStaleDays(it, off = false, now) != null }
+    // Just "۴ حساب": the row is already titled حساب‌های بانکی, and the longer wording pushed the
+    // warning off the end of a single line, which is the half it cannot afford to lose. «قدیمی» is the
+    // hero's word for rates past their day («نرخ‌ها قدیمی‌ان»).
+    val counted = "${faNumber(live.size.toDouble())} حساب"
+    return when {
+        live.any { !it.trusted } -> "$counted  •  نیاز به بررسی"
+        quiet > 0 -> "$counted  •  ${faNumber(quiet.toDouble())} قدیمی"
+        off > 0 -> "$counted  •  ${faNumber(off.toDouble())} خاموش"
+        else -> counted
+    }
+}
+
+/**
  * What the list actually shows: her own holdings, plus — once there is anything to show —
  * one row standing for every bank account, dropped in right after her cash so the تومان
  * section reads cash first, then bank. It is not persisted with the holdings: its amount

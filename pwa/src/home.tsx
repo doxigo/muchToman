@@ -20,7 +20,7 @@ import { BANK_ID, KIND_FA, compositionByKind, holdingsByKind, resolveType, value
 import type { AssetType, Kind } from './catalog';
 import { changeOver, computeTotals, backupReminderDue, currentEffective, currentList, dollarLens, heldTomanCostUsd, nameOr, refreshAll, useWealthStatus } from './data';
 import type { Change, DollarLens, Totals } from './data';
-import { useLedger } from './derived';
+import { bankCountNoteFa, useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { familyAssetViews, setFamilyTotal, useFamily } from './family';
 import type { FamilyAssetView } from './family';
@@ -568,18 +568,8 @@ function Holdings({ list, effective, coins, view, refreshing, errors }: {
   );
 }
 
-/**
- * The bank row's second line: how many accounts are behind the figure, and when any is still a
- * guess, that too — a number she has to open something to distrust is a number she will trust.
- */
-function bankNote(view: LedgerView): string {
-  const live = view.bankAccounts.filter((a) => !a.disabled);
-  const off = view.bankAccounts.length - live.length;
-  const counted = `${faNumber(live.length)} حساب`;
-  if (live.some((a) => !a.trusted)) return `${counted}  •  نیاز به بررسی`;
-  if (off > 0) return `${counted}  •  ${faNumber(off)} خاموش`;
-  return counted;
-}
+/** The bank row's second line — see derived.ts `bankCountNoteFa`. */
+const bankNote = (view: LedgerView): string => bankCountNoteFa(view.bankAccounts, Date.now());
 
 const shortWalletAddress = (address: string): string =>
   address.length <= 15 ? address : `${address.slice(0, 7)}...${address.slice(-5)}`;

@@ -195,7 +195,27 @@ test('a pasted bank message lands in دفتر and sets the account balance', asy
   const bank = page.getByRole('button').filter({ hasText: 'حساب‌های بانکی' });
   await expect(bank).toContainText('۱۹۹٫۰۸ میلیون');
   await bank.click();
-  await expect(page.getByRole('dialog', { name: 'حساب‌های بانکی' })).toContainText('۱۹۹٫۰۸ میلیون');
+  const accounts = page.getByRole('dialog', { name: 'حساب‌های بانکی' });
+  // One row an account; its tools live on its own page, so the sheet carries no switch and no delete.
+  const row = accounts.getByRole('button', { name: /بانک ملت/ });
+  await expect(row).toContainText('۱۹۹٫۰۸ میلیون');
+  await expect(row).toContainText('همین الان');
+  await expect(accounts.getByRole('switch')).toHaveCount(0);
+  await row.click();
+  // The sheet goes as the page comes.
+  await expect(accounts).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'بانک ملت' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: /توی جمع حساب بشه/ })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('button', { name: 'اصلاح موجودی' }).click();
+  await page.getByRole('textbox', { name: 'موجودی به تومان' }).pressSequentially('250500000');
+  await page.getByRole('button', { name: 'ذخیره موجودی' }).click();
+  await expect(page.locator('.bank-figure')).toContainText('۲۵۰٫۵۰ میلیون');
+  // Two taps: the first only says what goes.
+  await page.getByRole('button', { name: 'حذف حساب' }).click();
+  await expect(page.getByRole('button', { name: 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن' })).toBeVisible();
+  // Back lands where the sheet was opened from, with the figure she wrote.
+  await page.getByRole('button', { name: 'برگشت' }).click();
+  await expect(bank).toContainText('۲۵۰٫۵۰ میلیون');
 });
 
 test('a one-time code is refused on the paste sheet', async ({ page }) => {

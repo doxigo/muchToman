@@ -668,10 +668,16 @@ internal fun ActRow(
  * The delete, as a row of its own band. Error ink on the band's own ground until the first tap;
  * then the row fills with error and the name becomes the question — the colour confirms, the
  * words carry it, and TalkBack hears it. Keyed by [ref], so a row reused for another transaction
- * never arrives armed. A person's page in طلب و بدهی ends on the same row.
+ * never arrives armed. A person's page in طلب و بدهی ends on the same row, and so does a bank's, whose
+ * [armedLabel] says what the delete loses rather than only asking.
  */
 @Composable
-internal fun DeleteRow(ref: String, onConfirmed: () -> Unit, label: String = "حذف این تراکنش") {
+internal fun DeleteRow(
+    ref: String,
+    onConfirmed: () -> Unit,
+    label: String = "حذف این تراکنش",
+    armedLabel: String = "مطمئنی؟ برای حذف دوباره بزن",
+) {
     var armed by remember(ref) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     val ground by animateColorAsState(
@@ -699,7 +705,7 @@ internal fun DeleteRow(ref: String, onConfirmed: () -> Unit, label: String = "ح
             ActIcon(ActGlyph.TRASH, ink)
         }
         Text(
-            if (armed) "مطمئنی؟ برای حذف دوباره بزن" else label,
+            if (armed) armedLabel else label,
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = ink,

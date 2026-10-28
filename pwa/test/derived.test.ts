@@ -5,9 +5,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  bankAccountsOf, bankTotal, deriveBalance, familyLocalRef, familyToRow, ledgerView, manualToRow, startingFrom,
+  bankAccountsOf, bankCaptionFa, bankCountNoteFa, bankStaleDays, bankSwitchFa, bankTotal, deriveBalance, familyLocalRef,
+  familyToRow, ledgerView, manualToRow, startingFrom,
 } from '../src/derived';
-import type { DeriveInput } from '../src/derived';
+import type { BankAccountView, DeriveInput } from '../src/derived';
+import { QUIET_AFTER_DAYS } from '../src/quips';
 import { editedTxn } from '../src/edits';
 import { autoFilePlan } from '../src/filing';
 import { jalaliDay, jalaliMonthStart, tehranDay, tehranDayStart } from '../src/jalali';
@@ -734,5 +736,53 @@ describe('ledger actions', () => {
     expect(derived.ledger().entries).toEqual([]);
     expect(derived.ledger().bankTotalRial).toBe(50_000_000);
     await state.settled();
+  });
+});
+
+/** BankCaptionTest.kt: what the accounts sheet, a bank's page and the bank row on دارایی say. */
+describe('bank captions', () => {
+  const now = 1_800_000_000_000;
+  const DAY = 86_400_000;
+  const daysAgo = (days: number): number => now - days * DAY - 60_000;
+  const read: BankAccountView = {
+    key: 'MELLAT', bank: 'MELLAT', number: '', bankFa: 'بانک ملت', mask: '', balanceRial: 10_000, updatedAt: daysAgo(2),
+    anchored: true, inferred: false, trusted: true, disabled: false, manual: false,
+  };
+  const manual: BankAccountView = { ...read, key: 'SAMAN', bank: 'SAMAN', manual: true };
+
+  it("goes quiet at the quiet note's five days, for a bank read from its messages", () => {
+    expect(bankStaleDays({ ...read, updatedAt: daysAgo(QUIET_AFTER_DAYS - 1) }, now)).toBeNull();
+    expect(bankStaleDays({ ...read, updatedAt: daysAgo(5) }, now)).toBe(5);
+    expect(bankCaptionFa({ ...read, updatedAt: daysAgo(8) }, now)).toEqual(['۸ روزه پیامی ازش ندیدیم']);
+    expect(bankCaptionFa(read, now)).toEqual(['۲ روز پیش']);
+  });
+
+  it('is never quiet when out of the total, kept by hand, or never updated', () => {
+    const old = daysAgo(40);
+    expect(bankStaleDays({ ...read, updatedAt: old, disabled: true }, now)).toBeNull();
+    expect(bankCaptionFa({ ...read, updatedAt: old, disabled: true }, now)).toEqual(['۴۰ روز پیش', 'خاموش']);
+    expect(bankCaptionFa({ ...read, updatedAt: old, anchored: false, trusted: false }, now)).toEqual(['۴۰ روز پیش', 'توی جمع حساب نشده']);
+    expect(bankStaleDays({ ...manual, updatedAt: old }, now)).toBeNull();
+    expect(bankCaptionFa({ ...manual, updatedAt: old }, now)).toEqual(['۴۰ روز پیش', 'دستی']);
+    expect(bankStaleDays({ ...read, updatedAt: 0 }, now)).toBeNull();
+  });
+
+  it('names which account and a figure to check', () => {
+    expect(bankCaptionFa({ ...read, number: '1234', updatedAt: daysAgo(6), inferred: true, trusted: false }, now))
+      .toEqual([accountLabel('1234'), '۶ روزه پیامی ازش ندیدیم', 'نیاز به بررسی']);
+    expect(accountLabel('1234')).toBe('حساب ۱۲۳۴');
+  });
+
+  it('counts the quiet ones on دارایی after the guesses and before the switched off', () => {
+    const quiet: BankAccountView = { ...read, key: 'SAMAN', bank: 'SAMAN', updatedAt: daysAgo(9) };
+    expect(bankCountNoteFa([read, { ...manual, updatedAt: daysAgo(30) }], now)).toBe('۲ حساب');
+    expect(bankCountNoteFa([read, quiet], now)).toBe('۲ حساب  •  ۱ قدیمی');
+    expect(bankCountNoteFa([{ ...read, inferred: true, trusted: false }, quiet], now)).toBe('۲ حساب  •  نیاز به بررسی');
+    expect(bankCountNoteFa([read, { ...quiet, disabled: true }], now)).toBe('۱ حساب  •  ۱ خاموش');
+  });
+
+  it('says what the switch takes away', () => {
+    expect(bankSwitchFa(false)).toBe('خاموشش کنی، نه موجودیش توی جمع میاد نه تراکنش‌هاش توی دفتر.');
+    expect(bankSwitchFa(true)).toBe('خاموشش کنی، موجودیش توی جمع نمیاد.');
   });
 });

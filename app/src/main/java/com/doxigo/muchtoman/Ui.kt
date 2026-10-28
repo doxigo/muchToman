@@ -460,6 +460,9 @@ private fun AppScreens(
     // page that opened it.
     var categoriesPage by rememberSaveable { mutableStateOf(false) }
     var banks by remember { mutableStateOf(false) }
+    // One account's page, opened from its row in that sheet — where she is standing, like the pages
+    // below, so it outlives a process death.
+    var bankPage by rememberSaveable { mutableStateOf<String?>(null) }
     var deck by rememberSaveable { mutableStateOf(false) }
     // The hand-entered transaction sheet, over دفتر — the room where its row will land.
     var addingTxn by remember { mutableStateOf(false) }
@@ -538,6 +541,7 @@ private fun AppScreens(
             transactionRef = null
             loansPage = false
             loanPerson = null
+            bankPage = null
             tab = wanted
             vm.consumeOpenTab()
         }
@@ -560,6 +564,7 @@ private fun AppScreens(
             transactionRef = null
             loansPage = false
             loanPerson = null
+            bankPage = null
             tab = Tab.LEDGER
             deck = state.ledger.review.isNotEmpty()
             vm.consumeOpenDeck()
@@ -845,6 +850,33 @@ private fun AppScreens(
             ask = loanAsk, state = state, vm = vm, notices = notices, type = loanType,
             onClose = { loanAsk = null },
             onPerson = { loansPage = true; loanPerson = it },
+        )
+        return@SaveableStateProvider
+    }
+
+    // Opened from the accounts sheet, which goes as the page comes — the PWA's openPage from a sheet
+    // does the same — so back lands where the sheet was opened from, as it does after a person made in
+    // a loan sheet opens their page.
+    bankPage?.let { key ->
+        val account = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified)
+            .firstOrNull { it.key == key }
+        if (account == null) {
+            // Forgotten, or no longer read: there is nothing left to stand on.
+            LaunchedEffect(key) { bankPage = null }
+            return@let
+        }
+        BackHandler { bankPage = null }
+        BankPage(
+            account = account,
+            off = account.bank in state.disabledBanks,
+            onAnchor = { balance -> vm.setBankBalance(key, balance) },
+            onToggle = { on -> vm.setBankEnabled(account.bank, on) },
+            onOpenSms = account.sender.takeIf { it.isNotBlank() }?.let { sender -> { openSmsThread(context, sender) } },
+            onForget = {
+                bankPage = null
+                vm.forgetBankAccount(key)
+            },
+            onBack = { bankPage = null },
         )
         return@SaveableStateProvider
     }
@@ -1472,9 +1504,7 @@ private fun AppScreens(
             accounts = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified),
             reads = state.readsBanks,
             disabled = state.disabledBanks,
-            onAnchor = vm::setBankBalance,
-            onToggle = vm::setBankEnabled,
-            onForget = vm::forgetBankAccount,
+            onOpen = { key -> banks = false; bankPage = key },
             onAddNumber = vm::addBankNumber,
             loadSenders = vm::loadSenderCandidates,
             onRescan = vm::rescanSms,
@@ -2476,26 +2506,12 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
     }
 }
 
-/**
- * The bank row's second line. It names how many accounts are behind the figure and, when any
- * of them is still a guess, says so there rather than only inside the sheet — a number she has
- * to open something to distrust is a number she will trust.
- */
-private fun bankNote(state: UiState): String {
-    // The accounts behind the figure, not every one on file: with SMS off the row stands for the
-    // banks she keeps by hand, and a frozen one beside them would be counted here and not there.
-    val shown = countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified)
-    val live = shown.filterNot { it.bank in state.disabledBanks }
-    val off = shown.size - live.size
-    // Just "۴ حساب": the row is already titled حساب‌های بانکی, and the longer wording pushed
-    // the warning off the end of a single line, which is the half it cannot afford to lose.
-    val counted = "${faNumber(live.size.toDouble())} حساب"
-    return when {
-        live.any { !it.trusted } -> "$counted  •  نیاز به بررسی"
-        off > 0 -> "$counted  •  ${faNumber(off.toDouble())} خاموش"
-        else -> counted
-    }
-}
+/** The bank row's second line — see [bankCountNoteFa]. */
+private fun bankNote(state: UiState): String = bankCountNoteFa(
+    countedBankAccounts(state.bankAccounts, state.smsEnabled, state.notified),
+    state.disabledBanks,
+    System.currentTimeMillis(),
+)
 
 // Material3's sheet hands whatever fling velocity its content leaves over to settle(), even
 // when the sheet is already fully expanded and the leftover points further up — which kicks
@@ -2512,9 +2528,10 @@ internal val SheetFlingGuard = object : NestedScrollConnection {
 }
 
 /**
- * Every tracked account, one line each, with the raw figure and when it last moved. This is
- * the audit surface: a balance read out of a message is only safe to act on if the message it
- * came from can be found and the number corrected, so nothing here is hidden behind a summary.
+ * Every tracked account, one row each, with the raw figure and how fresh it is — the audit surface's
+ * index. A row opens the account's own page ([BankPage]), which holds what acts on it. It was a card
+ * each, with the switch, the doubt and a foot of pills on every one, so a sheet she mostly opens to
+ * read was four phones tall; the rows are a band, as the asset list they open from is.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2523,9 +2540,7 @@ private fun BankSheet(
     /** Whether anything reads her banks. Off, every account here is one she keeps by hand. */
     reads: Boolean,
     disabled: Set<String>,
-    onAnchor: (String, Double) -> Unit,
-    onToggle: (String, Boolean) -> Unit,
-    onForget: (String) -> Unit,
+    onOpen: (String) -> Unit,
     onAddNumber: (String, String) -> Unit,
     loadSenders: suspend () -> List<SenderCandidate>?,
     onRescan: () -> Unit,
@@ -2534,17 +2549,7 @@ private fun BankSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    // «همین الان» must not still say that half an hour later — the same slow tick as the hero
-    // card keeps every row's faAgo honest while the sheet sits open; nothing finer than the
-    // minute would ever show anyway.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(30_000)
-        }
-    }
-    var fixing by rememberSaveable { mutableStateOf<String?>(null) }
+    val now = rememberNow()
     // The picker reads the inbox only once she opens it; null afterwards means the app may not
     // read messages at all.
     var picking by remember { mutableStateOf(false) }
@@ -2562,42 +2567,28 @@ private fun BankSheet(
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
+        // As tall as its rows, not a fixed 88%: with the cards gone, four banks are a third of that,
+        // and a sheet of air under them reads as something still loading.
         Column(
             Modifier
                 .nestedScroll(SheetFlingGuard)
-                .fillMaxHeight(0.88f)
                 .navigationBarsPadding()
-                .imePadding()
                 .padding(horizontal = Space.xl),
         ) {
             SheetTitle("حساب‌های بانکی")
-            Text(
-                if (accounts.all { it.manual }) "موجودی این حساب‌ها رو خودت نوشتی؛ هر وقت عوض شد، همین‌جا اصلاحش کن. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد."
-                else "موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.",
-                fontSize = 13.sp,
-                color = muted,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(top = Space.xs),
-            )
 
             LazyColumn(
                 contentPadding = PaddingValues(top = Space.l, bottom = Space.xxl),
-                verticalArrangement = Arrangement.spacedBy(Space.s),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                items(accounts, key = { it.key }) { acc ->
-                    BankAccountRow(
+                itemsIndexed(accounts, key = { _, acc -> acc.key }) { i, acc ->
+                    BankRow(
                         account = acc,
                         off = acc.bank in disabled,
                         now = now,
-                        fixing = fixing == acc.key,
-                        onFix = { fixing = if (fixing == acc.key) null else acc.key },
-                        onAnchor = { v -> onAnchor(acc.key, v); fixing = null },
-                        onToggle = { on -> onToggle(acc.bank, on) },
-                        onForget = { onForget(acc.key) },
-                        onOpenSms = { openSmsThread(context, acc.sender) },
+                        shape = bandShape(i, accounts.size),
+                        divided = i < accounts.size - 1,
+                        onClick = { onOpen(acc.key) },
                     )
                 }
 
@@ -2609,8 +2600,8 @@ private fun BankSheet(
                 // A bank that starts sending from a new number simply freezes, which looks like a
                 // reading bug. This lists every unknown sender whose messages would be read, and
                 // she names the bank.
-                // Full-width pills, a gap below the last card: these act on the whole list, not
-                // on the card above them, and two floating green lines read as neither.
+                // Full-width pills, a gap below the band: these act on the whole list, not on the
+                // row above them, and two floating green lines read as neither.
                 if (!picking) {
                     item {
                         PillButton(
@@ -2618,7 +2609,7 @@ private fun BankSheet(
                             { picking = true; reading = true },
                             Modifier
                                 .fillMaxWidth()
-                                .padding(top = Space.l),
+                                .padding(top = Space.xl, bottom = Space.s),
                             block = true,
                         )
                     }
@@ -2637,7 +2628,7 @@ private fun BankSheet(
                             lineHeight = 20.sp,
                             color = muted,
                             modifier = Modifier
-                                .padding(top = Space.l)
+                                .padding(top = Space.xl, bottom = Space.s)
                                 .semantics { liveRegion = LiveRegionMode.Polite },
                         )
                     }
@@ -2650,6 +2641,7 @@ private fun BankSheet(
                                 onAddNumber(bank.name, candidate.sender)
                                 found = found?.minus(candidate)
                             },
+                            modifier = Modifier.padding(bottom = Space.s),
                         )
                     }
                 }
@@ -2664,7 +2656,7 @@ private fun BankSheet(
                         onRescan,
                         Modifier
                             .fillMaxWidth()
-                            .padding(top = if (picking) Space.l else 0.dp),
+                            .padding(top = if (picking) Space.s else 0.dp),
                         voice = ButtonVoice.TONAL,
                         block = true,
                     )
@@ -2673,6 +2665,22 @@ private fun BankSheet(
         }
     }
 
+}
+
+/**
+ * «همین الان» must not still say that half an hour later — the same slow tick as the hero card keeps
+ * every faAgo honest while a sheet or page sits open; nothing finer than the minute would ever show.
+ */
+@Composable
+private fun rememberNow(): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(30_000)
+        }
+    }
+    return now
 }
 
 /**
@@ -2686,6 +2694,7 @@ private fun SenderCandidateCard(
     now: Long,
     onOpen: () -> Unit,
     onAdd: (Bank) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     var bank by remember(candidate.sender) { mutableStateOf<Bank?>(null) }
@@ -2694,7 +2703,7 @@ private fun SenderCandidateCard(
         onClick = onOpen,
         shape = RoundedCornerShape(Radius.card),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(Space.l)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2763,123 +2772,166 @@ private fun SenderCandidateCard(
     }
 }
 
+/**
+ * One account in the sheet: [HoldingRow]'s anatomy, the bank's logo in the icon's slot. Out of the
+ * total — switched off, or never anchored — reads the way a set-aside holding does: the logo dimmed,
+ * name and figure muted, the figure struck, and the caption saying which.
+ */
 @Composable
-private fun BankAccountRow(
+private fun BankRow(
     account: BankAccount,
     off: Boolean,
     now: Long,
-    fixing: Boolean,
-    onFix: () -> Unit,
+    shape: Shape,
+    divided: Boolean,
+    onClick: () -> Unit,
+) {
+    val counted = !off && account.anchored
+    val ink = if (counted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        // Top, as on the asset rows: the logo belongs to the name, and the caption may run to two lines.
+        Row(Modifier.padding(Space.l), verticalAlignment = Alignment.Top) {
+            Box(Modifier.alpha(if (counted) 1f else 0.55f)) { BankLogo(account.bank, size = 44.dp) }
+            Spacer(Modifier.width(Space.m))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    RowTitle(account.bankFa, color = ink, max = 17.sp, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(Space.s))
+                    RowAmount(account.balance, color = ink, struck = !counted, unit = moneyUnit)
+                }
+                BankCaption(account, off, now, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        if (divided) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = Space.l + 44.dp + Space.m),
+            )
+        }
+    }
+}
+
+/**
+ * [bankCaptionFa] on screen. A second line rather than an ellipsis, broken only at a bullet: each part
+ * keeps its words together, so «۲ روز پیش» is never cut in half — with an ordinary space and a word
+ * joiner after it, as [setAsideFa] holds «وضعیت دفتر»: Modam's no-break space draws three and a half
+ * spaces wide, and the cards these rows replaced opened a hole between every word. A quiet bank's
+ * sentence is set in amber and a weight up — the words say it, the colour only confirms.
+ */
+@Composable
+private fun BankCaption(account: BankAccount, off: Boolean, now: Long, fontSize: TextUnit, modifier: Modifier = Modifier) {
+    val quiet = bankStaleDays(account, off, now)?.let(::bankStaleFa)
+    val amber = MaterialTheme.colorScheme.secondary
+    Text(
+        buildAnnotatedString {
+            bankCaptionFa(account, off, now).forEachIndexed { i, part ->
+                if (i > 0) append(" \u2060• ")
+                val kept = part.replace(" ", " \u2060")
+                if (part == quiet) withStyle(SpanStyle(color = amber, fontWeight = FontWeight.SemiBold)) { append(kept) }
+                else append(kept)
+            }
+        },
+        fontSize = fontSize,
+        lineHeight = fontSize * 1.45f,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
+}
+
+/**
+ * One account's own page, opened from its row: the figure, how fresh it is, and everything that acts
+ * on it. Built the way a transaction's page and a person's in طلب و بدهی are — the reading on top, the
+ * acts as a band at the foot, and the delete last in a band of its own, two taps, its armed line
+ * naming what goes. The switch is the settings page's bank row ([SettingCard] with the logo), so the
+ * one switch reads the same in both places it lives.
+ */
+@Composable
+private fun BankPage(
+    account: BankAccount,
+    off: Boolean,
     onAnchor: (Double) -> Unit,
     onToggle: (Boolean) -> Unit,
+    /** Null where the account has no sender to open (one she keeps by hand). */
+    onOpenSms: (() -> Unit)?,
     onForget: () -> Unit,
-    onOpenSms: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val now = rememberNow()
+    val counted = !off && account.anchored
     val focus = LocalFocusManager.current
+    var fixing by rememberSaveable(account.key) { mutableStateOf(false) }
     var draft by rememberSaveable(account.key) { mutableStateOf("") }
     // Raised by a save tap with nothing typed: the field's own words only speak over a malformed
     // figure, so an empty one was refused in silence.
     var missingDraft by remember(account.key, fixing) { mutableStateOf(false) }
+    val field = remember { FocusRequester() }
+    LaunchedEffect(fixing) { if (fixing) field.requestFocus() }
 
-    Card(
-        shape = RoundedCornerShape(Radius.card),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(Space.l)) {
-            // Off dims by colour, not by a blanket alpha: alpha over the whole row took the
-            // 12sp caption — the line that explains the state — below every contrast floor.
-            // Top, and the unit inline, for the same reason the list row outside this sheet
-            // does both: the balance belongs on the account's own line, not floating beside
-            // the caption under it.
-            Row(verticalAlignment = Alignment.Top) {
-                BankLogo(account.bank)
-                Spacer(Modifier.width(Space.s))
-                Column(Modifier.weight(1f)) {
-                    RowTitle(
-                        account.bankFa,
-                        color = if (off) muted else MaterialTheme.colorScheme.onSurface,
-                        max = 17.sp,
-                    )
-                    Text(
-                        listOfNotNull(
-                            // Which of the bank's accounts, where its messages say: two at one bank
-                            // are two cards with one name, and this is the line that tells them apart.
-                            account.number.takeIf { it.isNotBlank() }?.let(::accountLabel)
-                                ?: account.mask.takeIf { it.isNotBlank() }?.let { bidi(it) },
-                            faAgo(account.updatedAt, now),
-                            "خاموش".takeIf { off },
-                        )
-                            // A second line rather than an ellipsis, broken only at a bullet: each
-                            // part keeps its words together, so «۲ روز پیش» is never cut in half.
-                            .joinToString("\u00a0• ") { it.replace(' ', '\u00a0') },
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        color = muted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                Spacer(Modifier.width(Space.s))
-                RowAmount(
-                    account.balance,
-                    color = if (off) muted else MaterialTheme.colorScheme.onSurface,
-                    struck = off,
-                    unit = moneyUnit,
-                )
-            }
+    Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.huge),
+        ) {
+            PageHead(account.bankFa, onBack)
 
-            // The same switch, with the same words, as setting an asset aside in its edit
-            // sheet — one habit covers both. toggleable on the row merges label and switch
-            // into one named control, and makes the whole line the hit target. Only for an
-            // anchored account: an unanchored one is never in the total, and a switch
-            // saying "counted" right above the red caption saying "not counted" would be
-            // the card contradicting itself.
-            if (account.anchored) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .toggleable(value = !off, role = Role.Switch, onValueChange = onToggle)
-                        // With onCheckedChange = null the Switch no longer carries its own
-                        // 48dp minimum; the row has to.
-                        .heightIn(min = 48.dp)
-                        .padding(top = Space.xs),
-                ) {
-                    Text(
-                        "توی جمع حساب بشه",
-                        fontSize = 14.sp,
-                        color = if (off) muted else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = !off, onCheckedChange = null)
-                }
+            // The figure at the size a person's page sets what is owed: digits large, the magnitude
+            // and unit a step down, the words under it as the guard against a misread zero.
+            val (digits, words) = faCompact(account.balance, 2, pad = true).split(' ', limit = 2)
+                .let { it[0] to (listOfNotNull(it.getOrNull(1)) + moneyUnit).joinToString(" ") }
+            Text(
+                buildAnnotatedString {
+                    append(digits)
+                    withStyle(SpanStyle(fontSize = 0.58.em, fontWeight = FontWeight.ExtraBold)) { append(" $words") }
+                },
+                style = figureStyle(if (counted) MaterialTheme.colorScheme.onBackground else muted, FontWeight.Black)
+                    .copy(textDecoration = if (counted) null else TextDecoration.LineThrough),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = 46.sp),
+                modifier = Modifier.padding(top = Space.s),
+            )
+            faWordsToman(account.balance)?.let {
+                Text(it, fontSize = 15.sp, lineHeight = 25.sp, color = muted, modifier = Modifier.padding(top = Space.xs))
             }
+            BankCaption(account, off, now, fontSize = 14.sp, modifier = Modifier.padding(top = Space.m))
 
             // The whole point of the flag: say what is uncertain and offer the one thing that
             // fixes it, rather than leaving a number on screen that quietly might be wrong.
             if (!account.trusted) {
                 Text(
                     if (!account.anchored)
-                            "این عدد فقط جمع تراکنش‌هاست، نه موجودی واقعی، و توی جمع حساب نشده. " +
+                        "این عدد فقط جمع تراکنش‌هاست، نه موجودی واقعی، و توی جمع حساب نشده. " +
                             "موجودی حسابت رو وارد کن تا توی جمع بیاد."
                     else "این عدد از پیامکی خونده شده که از درست بودنش مطمئن نیستیم. اگه اشتباهه، اصلاحش کن.",
-                    fontSize = 12.sp,
-                    lineHeight = 19.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = Space.s),
                 )
             }
 
             if (fixing) {
-                // A label that stays, not a placeholder that vanishes at the first digit —
-                // while she types a balance, the unit must still be on screen.
+                // A label that stays, not a placeholder that vanishes at the first digit — while she
+                // types a balance, the unit must still be on screen.
                 Text(
                     "موجودی به $moneyUnit",
                     fontSize = 14.sp,
                     color = muted,
-                    modifier = Modifier.padding(top = Space.s),
+                    modifier = Modifier.padding(top = Space.xl),
                 )
                 OutlinedTextField(
                     value = draft,
@@ -2904,19 +2956,11 @@ private fun BankAccountRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Space.xs)
+                        .focusRequester(field)
                         .semantics { contentDescription = "موجودی به $moneyUnit" },
                 )
-            }
-
-            // The card is the balance; its acts are a foot, each pill as wide as its words and set
-            // at the start, where the eye leaves the caption — two edge-to-edge bars outweighed the
-            // figure they serve. «ذخیره» lands where «اصلاح» was, under the thumb that asked for
-            // it, and «بستن» is the way back out that the field never had.
-            Row(
-                Modifier.padding(top = Space.m),
-                horizontalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                if (fixing) {
+                // «ذخیره» first, under the thumb that asked for it; «بستن» is the way back out.
+                Row(Modifier.padding(top = Space.m), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
                     PillButton(
                         "ذخیره موجودی",
                         {
@@ -2924,34 +2968,54 @@ private fun BankAccountRow(
                             // cannot save says why, with the keyboard out of the way.
                             focus.clearFocus()
                             missingDraft = draft.isBlank()
-                            parseAmount(draft)?.let { onAnchor(tomanOfShown(it)) }
+                            parseAmount(draft)?.let {
+                                onAnchor(tomanOfShown(it))
+                                draft = ""
+                                fixing = false
+                            }
                         },
                         voice = ButtonVoice.PRIMARY,
                     )
-                    PillButton("بستن", onFix)
-                } else {
-                    PillButton("اصلاح موجودی", onFix)
-                    if (account.sender.isNotBlank()) PillButton("دیدن پیامک‌ها", onOpenSms)
+                    PillButton("بستن", { focus.clearFocus(); fixing = false })
                 }
             }
-            // Forgetting the account is the last word on a balance read wrong, so it waits beside
-            // the field that corrects one: a tap past a figure she meant to fix, never a stray tap
-            // on a card she is only reading. Its own row, full width, so the armed sentence has
-            // room. Two taps, as for deleting a holding: a balance anchored by hand is a number
-            // nothing can rebuild, so the first tap only names what is lost.
-            if (fixing) {
-                ArmedButton(
-                    "حذف حساب",
-                    // Nothing restarts a bank she keeps by hand; the number she wrote just goes.
-                    if (account.manual) "موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن"
-                    else "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
-                    onForget,
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = Space.m),
-                    key = account.key,
+
+            // The acts: while the field is open its own pills are the correction, so the row that
+            // opened it steps out rather than offering the same act twice.
+            val acts = buildList<@Composable (Shape, Boolean) -> Unit> {
+                if (!fixing) add { shape, divided -> ActRow("اصلاح موجودی", ActGlyph.PENCIL, shape, divided, { fixing = true }) }
+                onOpenSms?.let { open -> add { shape, divided -> ActRow("دیدن پیامک‌ها", ActGlyph.MAIL, shape, divided, open) } }
+            }
+            if (acts.isNotEmpty()) Spacer(Modifier.height(Space.xxl))
+            acts.forEachIndexed { i, act -> act(bandShape(i, acts.size), i < acts.size - 1) }
+
+            // Only for an anchored account: an unanchored one is never in the total, and a switch
+            // saying "counted" over the red line saying it is not would be the page contradicting
+            // itself. The same switch, with the same words, as setting an asset aside.
+            if (account.anchored) {
+                Spacer(Modifier.height(if (acts.isEmpty()) Space.xxl else Space.l))
+                SettingCard(
+                    title = "توی جمع حساب بشه",
+                    subtitle = bankSwitchFa(account.manual || BuildConfig.LITE),
+                    checked = !off,
+                    onChange = onToggle,
+                    badge = { BankLogo(account.bank, size = 44.dp) },
                 )
             }
+
+            // Forgetting the account is the last word on a balance read wrong: on the page, where she
+            // looks for it, never a stray tap on a row she is only reading. Two taps, as for deleting a
+            // holding: a balance anchored by hand is a number nothing can rebuild, so the first tap
+            // only names what is lost.
+            Spacer(Modifier.height(Space.l))
+            DeleteRow(
+                account.key,
+                onForget,
+                "حذف حساب",
+                // Nothing restarts a bank she keeps by hand; the number she wrote just goes.
+                armedLabel = if (account.manual) "موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن"
+                else "موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن",
+            )
         }
     }
 }

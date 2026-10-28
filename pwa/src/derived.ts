@@ -12,10 +12,13 @@
  * ever shows it; a household's paste history is milliseconds today.
  */
 import { useEffect, useState } from 'preact/hooks';
-import { jalaliMonthStart, tehranDay } from './jalali';
+import { bidi, faAgo, faNumber } from './format';
+import { DAY_MS, jalaliMonthStart, tehranDay } from './jalali';
 import { findLinks, hiddenRefs, transferRefs } from './links';
 import type { LinkCandidate } from './links';
 import { loanLinks } from './loans';
+import { accountLabel } from './paste';
+import { QUIET_AFTER_DAYS } from './quips';
 import type { LoanLink } from './loans';
 import { editedTxn, splitOf } from './edits';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify, noteUseOf } from './rules';
@@ -299,6 +302,59 @@ const bankOrder = (name: string): number => BANK_ORDER.get(name) ?? BANKS.length
  */
 export function bankTotal(accounts: readonly BankAccountView[]): number {
   return accounts.filter((a) => a.anchored && !a.disabled).reduce((sum, a) => sum + a.balanceRial, 0);
+}
+
+/**
+ * Whole days since a counted bank's figure last moved, once that is long enough to say so (Data.kt
+ * `bankStaleDays`): null while fresh, switched off or never anchored, and for a bank she keeps by hand.
+ * The quiet note's five on purpose: five days without one message from a bank is the same evidence at
+ * one bank's scale — nothing moved, or the messages stopped reaching here — and only she can tell
+ * which. `updatedAt` is the newer of its last message and her last correction, so fixing the figure
+ * starts the count again. A bank kept by hand never sends one here, so silence says nothing about it.
+ */
+export function bankStaleDays(account: BankAccountView, now: number): number | null {
+  if (account.disabled || !account.anchored || account.manual || account.updatedAt <= 0) return null;
+  const days = Math.trunc((now - account.updatedAt) / DAY_MS);
+  return days >= QUIET_AFTER_DAYS ? days : null;
+}
+
+/** «۸ روزه پیامی ازش ندیدیم» — the quiet note's sentence, for one bank; «پیام», for what she pastes too. */
+export const bankStaleFa = (days: number): string => `${faNumber(days)} روزه پیامی ازش ندیدیم`;
+
+/**
+ * An account's caption in the sheet and on its page, in parts (Data.kt `bankCaptionFa`): which of the
+ * bank's accounts, how fresh — the quiet sentence in place of the age once stale — and its state.
+ */
+export function bankCaptionFa(account: BankAccountView, now: number): string[] {
+  const stale = bankStaleDays(account, now);
+  const state = account.disabled ? 'خاموش' : !account.anchored ? 'توی جمع حساب نشده'
+    : account.inferred ? 'نیاز به بررسی' : account.manual ? 'دستی' : null;
+  return [
+    account.number ? accountLabel(account.number) : account.mask.trim() ? bidi(account.mask) : null,
+    stale != null ? bankStaleFa(stale) : faAgo(account.updatedAt, now),
+    state,
+  ].filter((s): s is string => s != null);
+}
+
+/** What the switch on a bank's page takes away (Data.kt `bankSwitchFa`); a bank kept by hand has no rows. */
+export const bankSwitchFa = (balanceOnly: boolean): string => (balanceOnly
+  ? 'خاموشش کنی، موجودیش توی جمع نمیاد.'
+  : 'خاموشش کنی، نه موجودیش توی جمع میاد نه تراکنش‌هاش توی دفتر.');
+
+/**
+ * The bank row's second line on دارایی (Data.kt `bankCountNoteFa`): how many accounts are behind the
+ * figure, and when any is still a guess or has gone quiet, that too — a number she has to open
+ * something to distrust is a number she will trust.
+ */
+export function bankCountNoteFa(accounts: readonly BankAccountView[], now: number): string {
+  const live = accounts.filter((a) => !a.disabled);
+  const off = accounts.length - live.length;
+  const quiet = live.filter((a) => bankStaleDays(a, now) != null).length;
+  const counted = `${faNumber(live.length)} حساب`;
+  if (live.some((a) => !a.trusted)) return `${counted}  •  نیاز به بررسی`;
+  if (quiet > 0) return `${counted}  •  ${faNumber(quiet)} قدیمی`;
+  if (off > 0) return `${counted}  •  ${faNumber(off)} خاموش`;
+  return counted;
 }
 
 // ---- the derive ------------------------------------------------------------------------------

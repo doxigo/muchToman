@@ -223,9 +223,15 @@ family outside the two sizes is the title line (دفتر, دارایی) — the 
 in it would sit visibly short of its neighbours.
 Inside a card, answers to one question share a row in equal cells («آره / لازم بود / نه»), and
 the one act that loses something takes its own full-width row, so its armed sentence always has
-room. A card whose subject is a figure — a bank account — keeps its tools as a foot instead: pills
-as wide as their words at the start edge, so they never outweigh the figure, and its delete waits
-inside the correction it belongs to («اصلاح موجودی»), not one stray tap away on every card. A **door** that leads elsewhere
+room. A list of figures keeps its tools off the list: «حساب‌های بانکی» is one band of rows — logo,
+name, how fresh, figure, the asset row's make — and a row opens that account's own page, built like a
+transaction's or a person's: the figure and its words, then the acts as bands (اصلاح موجودی, دیدن
+پیامک‌ها), the «توی جمع حساب بشه» switch as تنظیمات's bank row, and «حذف حساب» last in a band of its
+own, its armed line naming what goes. A card of switches and pills per bank made the sheet four
+screens tall and put a delete one tap inside every correction. A bank read from messages that has
+gone [`QUIET_AFTER_DAYS`] without one says so on its row in words («۸ روزه پیامی ازش ندیدیم», amber
+confirming) and دارایی's bank row counts it («۱ قدیمی»); a bank she keeps by hand is never called
+quiet — its row says «دستی» and when she wrote it. A **door** that leads elsewhere
 (the backup reminder) is a card with a chevron, not a pill.
 
 **A commit never greys out.** It is `PRIMARY` from the moment the sheet opens, and a tap on an

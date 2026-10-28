@@ -231,8 +231,9 @@ private fun BandAddRow(label: String, shape: Shape, onClick: () -> Unit) {
 
 // ─────────────────────────── the people ───────────────────────────
 
+/** A pushed page's head: its name, and «برگشت» in a pill. A bank's page wears it too. */
 @Composable
-private fun PageHead(title: String, onBack: () -> Unit) {
+internal fun PageHead(title: String, onBack: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,

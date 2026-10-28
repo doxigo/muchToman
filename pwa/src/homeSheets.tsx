@@ -7,6 +7,7 @@
  * card, no unknown sender to suggest and nothing to rescan (every balance is re-derived from the
  * pasted messages on each change), and no بورس source, so the picker's بورس section never shows.
  */
+import { Fragment } from 'preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { KINDS, KIND_FA, TOMAN_ID, catalog, matchesSearch, resolveType, valuedInToman } from './catalog';
@@ -16,17 +17,18 @@ import {
   clearWalletError, connectWallet, currentEffective, currentTotals, isWalletAddressFormatValid, newHoldingId, recordSnapshot,
   reinstateHolding, removeHolding, setExcluded, setHolding, setLabel, setOverride, useWealthStatus,
 } from './data';
-import { useLedger } from './derived';
+import { bankCaptionFa, bankStaleDays, bankStaleFa, bankSwitchFa, useLedger } from './derived';
 import type { BankAccountView } from './derived';
-import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
-import { accountLabel } from './paste';
+import { ActRow, DeleteRow } from './editsUi';
+import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, faWordsToman, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
 import { BankLogo, WalletNetworkLogo } from './logos';
 import { holdingKey } from './model';
 import type { WalletOption } from './model';
-import { closeSheet, openSheet, registerSheet, showNotice } from './nav';
+import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, showNotice } from './nav';
+import { SettingCard } from './settings';
 import { pref, textSize, useData } from './state';
-import { AmountField, ArmedButton, PillButton, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField } from './ui';
+import { AmountField, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField } from './ui';
 import './home.css';
 
 // ---- shared row pieces ------------------------------------------------------------------------
@@ -593,119 +595,164 @@ function Adjust({ dec, unitFa, base, open, onOpen, onApply }: {
 // ---- BankSheet --------------------------------------------------------------------------------
 
 /**
- * Every tracked account, one card each, with the raw figure and when it last moved — the audit
- * surface: a balance read out of a message is only safe to act on if it can be corrected here.
+ * Every tracked account, one row each, with the raw figure and how fresh it is — the audit surface's
+ * index. A row opens the account's own page, which holds what acts on it; a card each, with the switch,
+ * the doubt and a foot of pills on every one, made a sheet she mostly opens to read four screens tall.
  */
 function BankSheet() {
   const view = useLedger();
   const now = useNow();
-  const [fixing, setFixing] = useState<string | null>(null);
   return (
     <Sheet label="حساب‌های بانکی">
       <div class="home-sheet">
         <SheetTitle>حساب‌های بانکی</SheetTitle>
-        <p class="muted" style={{ fontSize: 'calc(13px * var(--text))', lineHeight: 'calc(20px * var(--text))', marginTop: 'var(--xs)' }}>
-          {view.bankAccounts.every((a) => a.manual)
-            ? 'موجودی این حساب‌ها رو خودت نوشتی؛ هر وقت عوض شد، همین‌جا اصلاحش کن. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'
-            : 'موجودی این حساب‌ها از پیامک بانک‌ها خونده می‌شه. اگه بانکی رو خاموش کنی، موجودیش توی جمع نمیاد.'}
-        </p>
-        <div class="bank-list">
-          {view.bankAccounts.map((acc) => (
-            <BankAccountRow key={acc.key} account={acc} now={now} fixing={fixing === acc.key}
-              onFix={() => setFixing(fixing === acc.key ? null : acc.key)}
-              onAnchor={(toman) => { setBankBalance(acc.key, Math.round(toman * 10)); recordSnapshot(); setFixing(null); }}
-              onToggle={(on) => {
-                // What the total counts changes without money moving: the history rebases, not steps.
-                const before = currentTotals();
-                if (on === acc.disabled) toggleBankDisabled(acc.bank);
-                recordSnapshot(before);
-              }}
-              onForget={() => { forgetAccount(acc.key); recordSnapshot(); }} />
-          ))}
+        <div class="band holdings bank-band">
+          {view.bankAccounts.map((acc) => <BankRow key={acc.key} account={acc} now={now} />)}
         </div>
       </div>
     </Sheet>
   );
 }
 
-function BankAccountRow({ account, now, fixing, onFix, onAnchor, onToggle, onForget }: {
-  account: BankAccountView; now: number; fixing: boolean; onFix: () => void; onAnchor: (toman: number) => void;
-  onToggle: (on: boolean) => void; onForget: () => void;
-}) {
-  const off = account.disabled;
+/**
+ * One account: the asset row's anatomy, the bank's logo in the icon's slot. Out of the total — switched
+ * off, or never anchored — reads as a set-aside holding does: logo dimmed, ink muted, figure struck.
+ */
+function BankRow({ account, now }: { account: BankAccountView; now: number }) {
+  const counted = !account.disabled && account.anchored;
+  return (
+    // The sheet goes as the page comes (nav.openPage), so back from the page lands where the sheet opened.
+    <button type="button" class="band-row" onClick={() => openPage('bankAccount', { accountKey: account.key })}>
+      <span class="holding">
+        <span class={counted ? '' : 'dim'}><BankLogo bank={account.bank} size={44} /></span>
+        <span class="body">
+          <span class="top">
+            <span class="grow"><RowTitle text={account.bankFa} max={17} class={counted ? '' : 'off'} /></span>
+            <span class="ends"><RowAmount toman={tomanOf(account.balanceRial)} struck={!counted} unit={moneyUnit()} class={counted ? '' : 'off'} /></span>
+          </span>
+          <BankCaption account={account} now={now} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * bankCaptionFa on screen: a second line rather than an ellipsis, broken only at a bullet, so «۲ روز
+ * پیش» is never cut in half. Each part is an unbreakable span carrying its bullet, not words joined by
+ * no-break spaces: Modam's draws three and a half spaces wide, and the cards these rows replaced
+ * opened a hole between every word.
+ * A quiet bank's sentence is amber and a weight up — words first, colour after.
+ */
+function BankCaption({ account, now, page }: { account: BankAccountView; now: number; page?: boolean }) {
+  const stale = bankStaleDays(account, now);
+  const quiet = stale != null ? bankStaleFa(stale) : null;
+  const parts = bankCaptionFa(account, now);
+  return (
+    <span class={`bank-caption${page ? ' page' : ''}`}>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          <span class="part">{part === quiet ? <b class="quiet">{part}</b> : part}{i < parts.length - 1 && ' •'}</span>
+          {i < parts.length - 1 && ' '}
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** Digits large, the magnitude and unit a step down; one line that shrinks rather than wraps. */
+function BankFigure({ toman, struck }: { toman: number; struck: boolean }) {
+  const [digits, ...rest] = faCompact(toman, 2, true).split(' ');
+  const words = [...rest, moneyUnit()].join(' ');
+  const ref = useAutoSize<HTMLParagraphElement>(46, 28, `${digits} ${words}`);
+  return <p ref={ref} class={`bank-figure figure${struck ? ' off struck' : ''}`}>{digits}<span class="magnitude">{` ${words}`}</span></p>;
+}
+
+/**
+ * One account's own page (Ui.kt BankPage): the figure, how fresh it is, and everything that acts on it —
+ * the reading on top, the acts as bands at the foot, the delete last in a band of its own, two taps, its
+ * armed line naming what goes, as a transaction's page and a person's end. The switch is the settings
+ * page's bank row, so the one switch reads the same in both places it lives. No «دیدن پیامک‌ها»: the
+ * browser has no inbox to open.
+ */
+function BankAccountPage({ accountKey }: { accountKey: string }) {
+  const view = useLedger();
+  const now = useNow();
+  const [fixing, setFixing] = useState(false);
   const [draft, setDraft] = useState('');
   // Raised by a save tap with nothing typed: the field's own words only speak over a malformed figure.
   const [missingDraft, setMissingDraft] = useState(false);
-  useEffect(() => setMissingDraft(false), [fixing]);
+  const account = view.bankAccounts.find((a) => a.key === accountKey);
+  // Forgotten from its own foot, which closes this page with it.
+  if (!account) return null;
+  const counted = !account.disabled && account.anchored;
+  const toman = tomanOf(account.balanceRial);
+  const words = faWordsToman(toman);
   const parsed = parseAmount(draft);
   // Never greyed out — a dead button explains nothing — so a tap that cannot save says why.
   const anchor = () => {
     (document.activeElement as HTMLElement | null)?.blur();
     setMissingDraft(!draft.trim());
-    if (parsed != null) onAnchor(tomanOfShown(parsed));
+    if (parsed == null) return;
+    setBankBalance(account.key, Math.round(tomanOfShown(parsed) * 10));
+    recordSnapshot();
+    setDraft('');
+    setFixing(false);
   };
-  // Which of the bank's accounts, where its messages say: two at one bank are two cards with one name.
-  const named = account.number ? accountLabel(account.number) : account.mask.trim() ? bidi(account.mask) : null;
-  // A second line rather than an ellipsis: the account and its age both have to be read. It breaks
-  // only at a bullet — each part keeps its words together, so «۲ روز پیش» is never cut in half.
-  const caption = [named, faAgo(account.updatedAt, now), off ? 'خاموش' : null]
-    .filter((s): s is string => s != null).map((s) => s.replace(/ /g, '\u00a0')).join('\u00a0• ');
+  const toggle = (on: boolean) => {
+    // What the total counts changes without money moving: the history rebases, not steps.
+    const before = currentTotals();
+    if (on === account.disabled) toggleBankDisabled(account.bank);
+    recordSnapshot(before);
+  };
+  const forget = () => { forgetAccount(account.key); recordSnapshot(); closePage(); };
   return (
-    <div class="bank-card">
-      {/* Off dims by colour, not a blanket alpha, which took the caption below every contrast floor. */}
-      <div class="top">
-        <BankLogo bank={account.bank} />
-        <div class="grow">
-          <RowTitle text={account.bankFa} max={17} class={off ? 'off' : ''} />
-          <span>{caption}</span>
-        </div>
-        <RowAmount toman={tomanOf(account.balanceRial)} struck={off} unit={moneyUnit()} class={off ? 'off' : ''} />
-      </div>
-      {/* Only for an anchored account: an unanchored one is never counted, and a switch saying
-          "counted" above the red line saying it is not would be the card contradicting itself. */}
-      {account.anchored && <ToggleRow title="توی جمع حساب بشه" checked={!off} onChange={onToggle} />}
+    <Screen title={account.bankFa} back tabs={false}>
+      <BankFigure toman={toman} struck={!counted} />
+      {words && <p class="bank-words">{words}</p>}
+      <BankCaption account={account} now={now} page />
       {!account.trusted && (
-        <p class="doubt">
+        <p class="bank-doubt">
           {!account.anchored
             ? 'این عدد فقط جمع تراکنش‌هاست، نه موجودی واقعی، و توی جمع حساب نشده. موجودی حسابت رو وارد کن تا توی جمع بیاد.'
             : 'این عدد از پیامکی خونده شده که از درست بودنش مطمئن نیستیم. اگه اشتباهه، اصلاحش کن.'}
         </p>
       )}
       {fixing && (
-        <>
+        <div class="bank-fix">
           {/* A label that stays: while she types a balance, the unit must still be on screen. */}
           <p class="edit-caption" style={{ marginBottom: 'var(--xs)' }}>موجودی به {moneyUnit()}</p>
           <div class="bare-label">
-            <AmountField label={`موجودی به ${moneyUnit()}`} raw={draft} onRaw={setDraft} decimals={9} words={false} autoFocus onEnter={anchor}
+            <AmountField label={`موجودی به ${moneyUnit()}`} raw={draft} onRaw={(v) => { setDraft(v); setMissingDraft(false); }} decimals={9} words={false} autoFocus onEnter={anchor}
               error={!draft.trim() ? (missingDraft ? 'مبلغش رو بنویس.' : null)
                 : parsed == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
           </div>
-        </>
-      )}
-      {/* The card is the balance; its acts are a foot, each pill as wide as its words and set at the
-          start — two edge-to-edge bars outweighed the figure they serve. «ذخیره» lands where «اصلاح»
-          was; «بستن» is the way out the field never had. */}
-      <div class="btn-row">
-        {fixing ? (
-          <>
+          {/* «ذخیره» first, under the thumb that asked for it; «بستن» is the way back out. */}
+          <div class="btn-row">
             <PillButton voice="primary" label="ذخیره موجودی" onClick={anchor} />
-            <PillButton label="بستن" onClick={onFix} />
-          </>
-        ) : (
-          <PillButton label="اصلاح موجودی" onClick={onFix} />
-        )}
-      </div>
-      {/* Forgetting the account is the last word on a balance read wrong, so it waits beside the field
-          that corrects one, never a stray tap on a card she is only reading. Its own row, full width,
-          so the armed sentence has room; two taps, since a balance anchored by hand is a number nothing
-          can rebuild. Nothing restarts a bank she keeps by hand; the number she wrote just goes. */}
-      {fixing && (
-        <div class="forget">
-          <ArmedButton label="حذف حساب" armedLabel={account.manual ? 'موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن'
-            : 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن'} onConfirmed={onForget} />
+            <PillButton label="بستن" onClick={() => { setFixing(false); setMissingDraft(false); }} />
+          </div>
         </div>
       )}
-    </div>
+      <div class="txn-acts">
+        {/* While the field is open its own pills are the correction, so the row that opened it steps out. */}
+        {!fixing && <div class="set-band"><ActRow title="اصلاح موجودی" glyph="PENCIL" onClick={() => setFixing(true)} /></div>}
+        {/* Only for an anchored account: an unanchored one is never counted, and a switch saying
+            "counted" over the red line saying it is not would be the page contradicting itself. */}
+        {account.anchored && (
+          <div class="set-band">
+            <SettingCard title="توی جمع حساب بشه" subtitle={bankSwitchFa(account.manual)} checked={!account.disabled}
+              onChange={toggle} badge={<BankLogo bank={account.bank} size={44} />} />
+          </div>
+        )}
+        {/* On the page, where she looks for it, never a stray tap on a row she is only reading. Nothing
+            restarts a bank she keeps by hand; the number she wrote just goes. */}
+        <div class="set-band">
+          <DeleteRow id={account.key} label="حذف حساب" onConfirmed={forget}
+            armedLabel={account.manual ? 'موجودی‌ای که نوشتی پاک می‌شه؛ برای حذف دوباره بزن' : 'موجودیش از صفر شروع می‌شه؛ برای حذف دوباره بزن'} />
+        </div>
+      </div>
+    </Screen>
   );
 }
 
@@ -722,4 +769,5 @@ export function useNow(every = 30_000): number {
 registerSheet('pickType', PickTypeSheet);
 registerSheet('editHolding', EditHoldingSheet);
 registerSheet('bank', BankSheet);
+registerPage('bankAccount', BankAccountPage);
 

@@ -454,6 +454,9 @@ enum class ActGlyph(d: String) {
     TRASH("M10 11v6 M14 11v6 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),
     // Anticlockwise, which is the way every spinner in this app turns.
     REFRESH("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5"),
+    // Lucide's `mail`, the mark the app's bank messages already wear (CategoryGlyph.ENVELOPE): a
+    // bank's page opens its SMS thread. Android only — the browser has no inbox to open.
+    MAIL("M22 7l-8.991 5.727a2 2 0 0 1-2.009 0L2 7 M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2z"),
     ;
 
     internal val path: Path by lazy { PathParser().parsePathString(d).toPath() }
