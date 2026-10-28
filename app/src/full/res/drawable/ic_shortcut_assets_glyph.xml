@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  دارایی's two coins (drawAssets in TabBar.kt): see ic_shortcut_txn_glyph. The tab bar clears a hole
+  round the near coin; a vector layer cannot, so the far coin is drawn as the arc that hole leaves,
+  ended so its round caps stop where the hole's edge was.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.2"
+        android:scaleY="2.2"
+        android:translateX="27.6"
+        android:translateY="27.6">
+        <path
+            android:pathData="M10.76,7.41 A4.68,4.68 0 1,1 16.59,13.24 M4.08,15.24 A4.68,4.68 0 1,0 13.44,15.24 A4.68,4.68 0 1,0 4.08,15.24 Z"
+            android:strokeColor="@color/ic_launcher_glyph"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

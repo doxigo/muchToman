@@ -543,6 +543,7 @@ private fun AppScreens(
             loanPerson = null
             bankPage = null
             tab = wanted
+            if (state.openAddTxn) addingTxn = true
             vm.consumeOpenTab()
         }
     }

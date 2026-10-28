@@ -15,8 +15,7 @@ import { configureWealth, refreshIfStale } from './data';
 import { announce } from './plans';
 import { readShowRialFrom } from './format';
 import { acceptPairing, familyState, loadFamily, requestFamilySync } from './family';
-import { openPage, selectTab, showNotice, TABS } from './nav';
-import type { Tab } from './nav';
+import { isTab, landingFrom, openPage, openSheet, selectTab, showNotice } from './nav';
 import './screens';
 
 setWriteErrorHandler(() => showNotice('ذخیره نشد. فضای مرورگر رو چک کن و دوباره امتحان کن.'));
@@ -79,11 +78,19 @@ async function start(): Promise<void> {
     publishing = setTimeout(() => requestFamilySync(true), 2000);
   });
 
-  // Where a tapped notification asked to land: `?tab=` when it opened the app, a message when
-  // the app was already open.
-  const asked = new URLSearchParams(location.search).get('tab');
-  const isTab = (t: unknown): t is Tab => TABS.some(({ id }) => id === t);
-  if (isTab(asked)) { selectTab(asked); history.replaceState(null, '', location.pathname + location.hash); }
+  // Where a tapped notification or a launcher shortcut asked to land: the address when it opened
+  // the app (a shortcut always does — the browser navigates even an open window), a message when
+  // a notification found the app already open. Out of the address before anything opens, so a
+  // reload does not open it again and the sheet's own history entry is pushed on a clean one. The
+  // lock's gate is already standing over all of it.
+  const landing = landingFrom(location.search);
+  if (landing) {
+    history.replaceState(null, '', location.pathname + location.hash);
+    selectTab(landing.tab);
+    if (landing.open === 'manualTxn') openSheet('manualTxn');
+    // As on the phone: the deck only when something waits for her, otherwise دفتر is the answer.
+    else if (landing.open === 'deck' && ledger().review.length) openPage('deck');
+  }
   navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'open-tab' && isTab(e.data.tab)) selectTab(e.data.tab); });
 
   render(<App />, document.getElementById('app')!);

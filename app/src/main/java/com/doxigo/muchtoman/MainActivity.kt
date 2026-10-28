@@ -2450,7 +2450,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(openTab = tab) }
     }
 
-    fun consumeOpenTab() = _state.update { it.copy(openTab = null) }
+    fun consumeOpenTab() = _state.update { it.copy(openTab = null, openAddTxn = false) }
 
     /**
      * The same one-shot, for the note that asks rather than reports — see [EXTRA_OPEN_DECK].
@@ -2465,6 +2465,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumeOpenDeck() = _state.update { it.copy(openDeck = false) }
+
+    /**
+     * The «تراکنش» shortcut: دفتر, with the hand-entry sheet over it — see [EXTRA_ADD_TXN]. Rides
+     * [openTab]'s one-shot rather than a third of its own, so the same effect that closes every
+     * overlay on the way to a tab opens the sheet. Guarded as [openDeck] is: lite has no ledger.
+     */
+    fun openAddTxn(wanted: Boolean) {
+        if (!wanted || Tab.LEDGER !in tabs) return
+        _state.update { it.copy(openTab = Tab.LEDGER, openAddTxn = true) }
+    }
 
     /**
      * Fill the dev build with a household's year, or take it back out again.
@@ -2942,6 +2952,8 @@ data class UiState(
     val openTab: Tab? = null,
     /** Whether that notification wanted the review deck in particular. Same one-shot life. */
     val openDeck: Boolean = false,
+    /** Whether the «تراکنش» shortcut wants the hand-entry sheet over [openTab]. Cleared with it. */
+    val openAddTxn: Boolean = false,
 ) {
     val coins: List<Coin> get() = rates.coins
 
@@ -3078,6 +3090,10 @@ class MainActivity : FragmentActivity() {
             appVm.acceptPairing(intent?.dataString)
             appVm.openTab(intent?.getStringExtra(EXTRA_OPEN_TAB))
             appVm.openDeck(intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true)
+            // A launcher shortcut lands here even when the app is already open: the platform starts
+            // every static shortcut with NEW_TASK | CLEAR_TASK, so the running task is cleared and
+            // this activity opened fresh — a new AppVm, and with it the lock, if she has one on.
+            appVm.openAddTxn(intent?.getBooleanExtra(EXTRA_ADD_TXN, false) == true)
         }
         // A phone that granted READ_SMS before RECEIVE_SMS existed: she already said yes to the
         // messages conversation, this completes it so [SmsReceiver] can hear them land. Both
@@ -3130,5 +3146,6 @@ class MainActivity : FragmentActivity() {
         // tab she left it on, which reads as the notification having done nothing.
         appVm.openTab(intent.getStringExtra(EXTRA_OPEN_TAB))
         appVm.openDeck(intent.getBooleanExtra(EXTRA_OPEN_DECK, false))
+        appVm.openAddTxn(intent.getBooleanExtra(EXTRA_ADD_TXN, false))
     }
 }

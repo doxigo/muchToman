@@ -94,6 +94,66 @@ test('دارایی opens on its own title line, and the pill beside it adds', as
   await expect(page.getByRole('dialog', { name: 'چی می‌خوای اضافه کنی؟' })).toBeVisible();
 });
 
+test('the launcher shortcuts land on the sheet, the deck\'s tab and دارایی, once each', async ({ page }) => {
+  await onboard(page);
+  await page.goto('/?open=txn');
+  const sheet = page.getByRole('dialog', { name: 'تراکنش دستی' });
+  await expect(sheet).toBeVisible();
+  // Out of the address, so the reload below cannot open it a second time.
+  expect(new URL(page.url()).search).toBe('');
+  await sheet.getByRole('button', { name: 'انصراف' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'دفتر' })).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'خانه' })).toHaveAttribute('aria-selected', 'true');
+  await expect(sheet).toHaveCount(0);
+
+  // Nothing waits for her, so مرور lands on دفتر rather than an empty deck.
+  await page.goto('/?open=deck');
+  await expect(page.getByRole('tab', { name: 'دفتر' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'دفتر' })).toBeVisible();
+
+  await page.goto('/?tab=ASSETS');
+  await expect(page.getByRole('heading', { name: 'دارایی', exact: true })).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
+});
+
+test('the lock stands in front of what a shortcut opens', async ({ page }) => {
+  // A platform authenticator for the lock to count on; it holds no credential, so nothing opens it.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasUserVerification: true, isUserVerified: true } });
+  await onboard(page);
+  await page.evaluate(() => new Promise((resolve) => {
+    const open = indexedDB.open('muchtoman');
+    open.onsuccess = () => {
+      const tx = open.result.transaction('prefs_v3', 'readwrite');
+      tx.objectStore('prefs_v3').put(true, 'lockEnabled');
+      tx.objectStore('prefs_v3').put('AAAA', 'lockCredential');
+      tx.oncomplete = () => { open.result.close(); resolve(null); };
+    };
+  }));
+  await page.goto('/?open=txn');
+  await expect(page.getByRole('heading', { name: 'چقدر تومن قفل شده' })).toBeVisible();
+  // Opened underneath, as the phone does, and out of sight until she is in.
+  const sheet = page.locator('[role=dialog]').filter({ hasText: 'تراکنش دستی' });
+  await expect(sheet).toHaveCount(1);
+  await expect(sheet).toBeHidden();
+});
+
+test('the مرور shortcut opens the deck when a transaction waits for her', async ({ page }) => {
+  await onboard(page, `/#paste=${encodeURIComponent(corpus('mellat.json', 'mellat-6104-withdrawal-with-balance'))}`);
+  const paste = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await paste.getByRole('radio', { name: 'بانک ملت' }).click();
+  await paste.getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(paste).toHaveCount(0);
+  await page.goto('/?open=deck');
+  await expect(page.getByRole('heading', { name: 'این خرج رو چی حساب کنم؟' })).toBeVisible();
+  // Closing the deck leaves her on دفتر, the room it belongs to.
+  await page.getByRole('button', { name: 'بستن', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'دفتر' })).toHaveAttribute('aria-selected', 'true');
+});
+
 test('installs every bundle before the first offline reload', async ({ page, context }) => {
   await onboard(page);
   await activeWorker(page);

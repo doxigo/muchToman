@@ -146,6 +146,12 @@ const val EXTRA_OPEN_TAB = "com.doxigo.muchtoman.OPEN_TAB"
 const val EXTRA_OPEN_DECK = "com.doxigo.muchtoman.OPEN_DECK"
 
 /**
+ * Set by the «تراکنش» launcher shortcut (src/full/res/xml/shortcuts.xml), which opens the hand-entry
+ * sheet: cash paid at the till, written down from the home screen without finding the pill first.
+ */
+const val EXTRA_ADD_TXN = "com.doxigo.muchtoman.ADD_TXN"
+
+/**
  * لفظ روی قفل‌صفحه — the public face of every note: the kind of news and nothing else, no
  * merchant, no figure, no category. Android shows it on a secure lock screen only when she has
  * hidden sensitive content there, which is not its default; with the app lock on the lock screen

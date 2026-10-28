@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Long-press on the icon: the three things she opens the app to do, each through the extra a
+  notification would use (Notify.kt), so the lock and every overlay are handled where they
+  already are.
+
+  targetPackage is a literal because it has to be: the system parses this file with its own
+  resources, so an @string reference here is never resolved, and manifest placeholders do not
+  reach res/xml. The dev build's package differs, so src/fullDev/res/xml carries this file again
+  with «.dev» on it — a variant source set, which outranks both src/full and src/dev. Lite has no
+  shortcuts at all (src/full/AndroidManifest.xml). ShortcutsXmlTest fails if the two copies
+  drift apart in anything but the package.
+
+  The platform starts every one with NEW_TASK | CLEAR_TASK: an open app is cleared and opened
+  fresh through onCreate, the lock with it. The action is MAIN only because one is required.
+  targetApi: shortcuts arrived in 7.1; on 7.0 nothing reads this file.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="25">
+    <shortcut
+        android:shortcutId="txn"
+        android:icon="@drawable/ic_shortcut_txn"
+        android:shortcutShortLabel="@string/shortcut_txn_short"
+        android:shortcutLongLabel="@string/shortcut_txn_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.doxigo.muchtoman"
+            android:targetClass="com.doxigo.muchtoman.MainActivity">
+            <extra android:name="com.doxigo.muchtoman.ADD_TXN" android:value="true" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="review"
+        android:icon="@drawable/ic_shortcut_review"
+        android:shortcutShortLabel="@string/shortcut_review_short"
+        android:shortcutLongLabel="@string/shortcut_review_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.doxigo.muchtoman"
+            android:targetClass="com.doxigo.muchtoman.MainActivity">
+            <extra android:name="com.doxigo.muchtoman.OPEN_DECK" android:value="true" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="assets"
+        android:icon="@drawable/ic_shortcut_assets"
+        android:shortcutShortLabel="@string/shortcut_assets_short"
+        android:shortcutLongLabel="@string/shortcut_assets_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="com.doxigo.muchtoman"
+            android:targetClass="com.doxigo.muchtoman.MainActivity">
+            <extra android:name="com.doxigo.muchtoman.OPEN_TAB" android:value="ASSETS" />
+        </intent>
+    </shortcut>
+</shortcuts>

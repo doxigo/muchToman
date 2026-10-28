@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- دفتر's receipt (drawLedger in TabBar.kt), because the deck is that tab's: see ic_shortcut_txn_glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.2"
+        android:scaleY="2.2"
+        android:translateX="27.6"
+        android:translateY="27.6">
+        <path
+            android:pathData="M4.08,19.56 L4.08,4.44 L19.92,4.44 L19.92,19.56 L17.94,17.58 L15.96,19.56 L13.98,17.58 L12,19.56 L10.02,17.58 L8.04,19.56 L6.06,17.58 Z M6.61,9.12 H17.39 M6.61,12.54 H12.54"
+            android:strokeColor="@color/ic_launcher_glyph"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

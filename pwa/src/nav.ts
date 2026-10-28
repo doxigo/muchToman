@@ -20,6 +20,22 @@ export const TABS: Array<{ id: Tab; fa: string }> = [
   { id: 'REPORT', fa: 'گزارش' },
 ];
 
+export const isTab = (t: unknown): t is Tab => TABS.some(({ id }) => id === t);
+
+/**
+ * Where the address asked her to land — MainActivity's extras, as a query: `?tab=` from a tapped
+ * notification (sw.js) and the دارایی shortcut, `?open=txn` and `?open=deck` from the تراکنش and
+ * مرور shortcuts (manifest.webmanifest). Both of those open over دفتر, as on the phone.
+ */
+export function landingFrom(search: string): { tab: Tab; open?: 'manualTxn' | 'deck' } | null {
+  const q = new URLSearchParams(search);
+  const open = q.get('open');
+  if (open === 'txn') return { tab: 'LEDGER', open: 'manualTxn' };
+  if (open === 'deck') return { tab: 'LEDGER', open: 'deck' };
+  const tab = q.get('tab');
+  return isTab(tab) ? { tab } : null;
+}
+
 export interface Route { id: string; props: Record<string, unknown> }
 export interface Notice { key: number; text: string; action?: { label: string; run: () => void } }
 

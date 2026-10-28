@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The long-press menu on the icon (xml/shortcuts.xml). Short labels stay within Android's ten
+  characters; the long ones are words already on the screen each one opens — the sheet's title,
+  the deck's pill, the widget's name. pwa/public/manifest.webmanifest carries the same six.
+-->
+<resources>
+    <string name="shortcut_txn_short">تراکنش</string>
+    <string name="shortcut_txn_long">تراکنش دستی</string>
+    <string name="shortcut_review_short">مرور</string>
+    <string name="shortcut_review_long">مرور تراکنش‌ها</string>
+    <string name="shortcut_assets_short">دارایی</string>
+    <string name="shortcut_assets_long">دارایی من</string>
+</resources>

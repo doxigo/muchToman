@@ -88,10 +88,17 @@
             ponytail: this does not survive process death or "Don't keep activities". The sheets'
             drafts are rememberSaveable (the app lock needs that, see AppScreens), but the flags
             in AppScreens that open them are plain remember, so the sheet itself does not return.
+
+            singleTop, because a task started by anything but the icon — a launcher shortcut, a
+            tapped note while the app was closed — is rooted on an intent the icon's does not
+            match, and the next tap on the icon stacked a second copy of the app on top of it
+            (seen on a Pixel launcher: two MainActivity in one task, two AppVm). Now that tap is
+            an onNewIntent with no extras on the one copy there is.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density|fontScale|layoutDirection"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
