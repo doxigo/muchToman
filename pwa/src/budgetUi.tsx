@@ -33,8 +33,9 @@ import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekda
 import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
-  MAX_INSTALLMENTS, firstInstallmentDue, installmentDueOn, installmentLeftFa, installmentLineFa, installmentNoteFa,
-  installmentPaidBy, installmentSummary, rialToField, tomanFieldToRial,
+  MAX_INSTALLMENTS, NO_END, billsLeftFa, billsLeftThisMonth, firstInstallmentDue, installmentDueOn, installmentLeftFa,
+  installmentLineFa, installmentNoteFa, installmentPaidBy, installmentSummary, installmentUpcomingIndex, isBill, rialToField,
+  tomanFieldToRial,
 } from './installments';
 import type { InstallmentProgress, InstallmentSummary } from './installments';
 import { jalaliMonthsAfter, jalaliOf, tehranDay } from './jalali';
@@ -204,17 +205,18 @@ function BudgetScreen() {
       <AddRow label={goals.length === 0 ? 'اولین هدف' : 'هدف تازه'} radius={bandShape(goals.length, goals.length + 1)}
         onClick={() => openSheet('goal')} />
 
-      <SectionLabel>قسط‌ها</SectionLabel>
+      <SectionLabel>قسط‌ها و قبض‌ها</SectionLabel>
       {installments.length === 0 && (
         // Says where the payments come from — the one thing nobody would guess: nothing here is typed twice.
-        <p class="plan-empty">قسط گوشی، وام یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.</p>
+        <p class="plan-empty">قسط گوشی و وام، اجاره، قبض اینترنت یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.</p>
       )}
-      <InstallmentSummaryLines summary={installmentSummary(installments, tehranToday())} />
+      <InstallmentSummaryLines summary={installmentSummary(installments, tehranToday())}
+        billsLeft={billsLeftThisMonth(installments, tehranToday())} />
       {installments.map((progress, i) => (
         <InstallmentCard key={progress.plan.id} progress={progress} radius={bandShape(i, installments.length + 1)}
           onOpen={() => openSheet('installmentPayments', { id: progress.plan.id })} />
       ))}
-      <AddRow label={installments.length === 0 ? 'اولین قسط' : 'قسط تازه'}
+      <AddRow label={installments.length === 0 ? 'اولین قسط یا قبض' : 'قسط یا قبض تازه'}
         radius={bandShape(installments.length, installments.length + 1)} onClick={() => openSheet('installment')} />
 
       <SectionLabel>چک‌ها</SectionLabel>
@@ -382,7 +384,10 @@ function GoalCard({ progress, radius, onOpen }: { progress: GoalProgress; radius
   );
 }
 
-/** A goal card read as a plan. It opens on «پرداخت‌ها»: saying which transaction paid it is why she comes back. */
+/**
+ * A goal card read as a plan. It opens on «پرداخت‌ها»: saying which transaction paid it is why she
+ * comes back. A bill has no whole, so no figure and no bar — its name, its month and its one line.
+ */
 function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentProgress; radius: string; onOpen: () => void }) {
   const tone = progress.done ? 'var(--tertiary)' : progress.overdueRial > 0 ? 'var(--error)' : 'var(--primary)';
   const note = installmentNoteFa(progress);
@@ -396,10 +401,14 @@ function InstallmentCard({ progress, radius, onOpen }: { progress: InstallmentPr
         </span>
         <EditHint label="پرداخت‌ها" />
       </span>
-      <span class="plan-figure-row mt-s">
-        <FitFigure text={bidi(`${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(progress.totalRial))}`)} />
-      </span>
-      <span class="mt-s"><Bar share={progress.share} /></span>
+      {progress.totalRial != null && (
+        <>
+          <span class="plan-figure-row mt-s">
+            <FitFigure text={bidi(`${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(progress.totalRial))}`)} />
+          </span>
+          <span class="mt-s"><Bar share={progress.share} /></span>
+        </>
+      )}
       {left && <span class="plan-sub mt-s">{left}</span>}
       {note && <span class={`plan-note quiet mt-xs${note[1] ? ' loud' : ''}`}>{note[0]}</span>}
     </BandCard>
@@ -449,15 +458,21 @@ function ChequeCard({ cheque, warning, today, radius, onOpen }: {
  * Every plan at once, above their cards: what leaves each month, what is left and until when, and how
  * this month's payments stand. Words on the page, not a card — a card here would read as one more plan.
  */
-function InstallmentSummaryLines({ summary }: { summary: InstallmentSummary | null }) {
-  if (!summary) return null;
+function InstallmentSummaryLines({ summary, billsLeft }: { summary: InstallmentSummary | null; billsLeft: number | null }) {
+  if (!summary && billsLeft == null) return null;
   return (
     <div class="inst-summary">
-      <FitFigure text={bidi(`ماهی ${faCompact(tomanOf(summary.monthlyRial))} ${moneyUnit()} قسط`)} />
-      <p class="plan-lede">{faCompact(tomanOf(summary.leftRial))} {moneyUnit()} مونده، تا {faDate(summary.lastDue)}</p>
-      {summary.dueThisMonth > 0 && (
-        <p class="plan-lede">این ماه {faNumber(summary.paidThisMonth)} از {faNumber(summary.dueThisMonth)} قسط پرداخت شده.</p>
+      {summary && (
+        <>
+          <FitFigure text={bidi(`ماهی ${faCompact(tomanOf(summary.monthlyRial))} ${moneyUnit()} قسط`)} />
+          <p class="plan-lede">{faCompact(tomanOf(summary.leftRial))} {moneyUnit()} مونده، تا {faDate(summary.lastDue)}</p>
+          {summary.dueThisMonth > 0 && (
+            <p class="plan-lede">این ماه {faNumber(summary.paidThisMonth)} از {faNumber(summary.dueThisMonth)} قسط پرداخت شده.</p>
+          )}
+        </>
       )}
+      {/* Under the installments' sentence, in its small voice: one more thing this month asks. */}
+      {billsLeft != null && <p class="plan-lede">{billsLeftFa(billsLeft)}</p>}
     </div>
   );
 }
@@ -753,8 +768,9 @@ function ChequeSheet({ id }: { id?: string }) {
 // ─────────────────────────── an installment ───────────────────────────
 
 /**
- * A plan in four answers: what for, how much each month, how many are left, and on which day. The
- * two dates they imply are written out before she saves. [fromPayment] is a payment she has just
+ * A plan in four answers: what for, how much each month, how many are left, and on which day — or,
+ * for a bill, three: a rent has no count. The choice leads because it decides what the rest asks.
+ * The dates they imply are written out before she saves. [fromPayment] is a payment she has just
  * filed: its amount, its day, and the day of the month is not asked — it is the day money left.
  */
 function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
@@ -768,6 +784,7 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState(paid != null ? rialToField(paid) : '');
   const [countText, setCountText] = useState('');
+  const [bill, setBill] = useState(false);
   // Today's day: the likeliest moment to add a plan is the day a payment has just gone.
   const [dayText, setDayText] = useState(String(jalaliOf(firstDue ?? today).day));
   const paymentRial = tomanFieldToRial(amount);
@@ -775,31 +792,41 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
   const dayOfMonth = wholeIn(dayText, 1, 31);
   // Raised by a save tap that could not save, as in BudgetSheet.
   const [tried, setTried] = useState(false);
-  const countBad = count == null && (tried || countText.trim() !== '');
+  const countBad = !bill && count == null && (tried || countText.trim() !== '');
   const first = firstDue ?? (dayOfMonth != null ? firstInstallmentDue(dayOfMonth, today) : null);
   const save = () => {
     // Never dimmed: a tap that cannot save says why, as BudgetSheet's does.
     (document.activeElement as HTMLElement | null)?.blur();
     setTried(true);
-    if (name.trim() === '' || paymentRial == null || count == null || dayOfMonth == null) return;
-    onSave(name.trim(), paymentRial, count, dayOfMonth);
+    const n = bill ? NO_END : count;
+    if (name.trim() === '' || paymentRial == null || n == null || dayOfMonth == null) return;
+    onSave(name.trim(), paymentRial, n, dayOfMonth);
   };
 
   return (
-    <Sheet onClose={onDismiss} label="قسط تازه">
-      <SheetTitle>قسط تازه</SheetTitle>
-      <SheetLabel>قسطِ چی؟</SheetLabel>
-      <TextField label="مثلاً گوشی، یا وام خونه" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
+    <Sheet onClose={onDismiss} label={bill ? 'قبض تازه' : 'قسط تازه'}>
+      <SheetTitle>{bill ? 'قبض تازه' : 'قسط تازه'}</SheetTitle>
+      <div class="mt-m">
+        <SegmentedChoice options={[false, true]} selected={bill} label={(b) => (b ? 'قبض و اجاره' : 'قسط')} onSelect={setBill} />
+      </div>
+      <SheetLabel>{bill ? 'برای چی؟' : 'قسطِ چی؟'}</SheetLabel>
+      <TextField label={bill ? 'مثلاً اجاره، اینترنت یا موبایل' : 'مثلاً گوشی، یا وام خونه'} value={name}
+        onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
         error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
-      <SheetLabel>هر قسط چقدره، به {moneyUnit()}</SheetLabel>
-      <AmountField label="مبلغ هر قسط" ariaLabel={`مبلغ هر قسط به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
+      <SheetLabel>{bill ? 'هر ماه چقدره' : 'هر قسط چقدره'}، به {moneyUnit()}</SheetLabel>
+      <AmountField label={bill ? 'مبلغ هر ماه' : 'مبلغ هر قسط'} ariaLabel={`${bill ? 'مبلغ هر ماه' : 'مبلغ هر قسط'} به ${moneyUnit()}`}
+        raw={amount} onRaw={setAmount} decimals={1}
         error={amount.trim() === '' ? (tried ? 'مبلغش رو بنویس.' : null) : paymentRial == null ? UNREADABLE : null} />
-      <SheetLabel>{firstDue != null ? 'چند قسط، با همین یکی؟' : 'چند قسط مونده؟'}</SheetLabel>
-      {/* The range names the fix for a blank count as well as a wrong one. */}
-      <TextField value={faDigits(countText)} onInput={(v) => setCountText(v.slice(0, 4))} inputMode="numeric"
-        error={countBad ? `یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS)} بنویس.` : null}
-        support={firstDue != null ? 'همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار.'
-          : 'اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.'} />
+      {!bill && (
+        <>
+          <SheetLabel>{firstDue != null ? 'چند قسط، با همین یکی؟' : 'چند قسط مونده؟'}</SheetLabel>
+          {/* The range names the fix for a blank count as well as a wrong one. */}
+          <TextField value={faDigits(countText)} onInput={(v) => setCountText(v.slice(0, 4))} inputMode="numeric"
+            error={countBad ? `یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS)} بنویس.` : null}
+            support={firstDue != null ? 'همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار.'
+              : 'اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.'} />
+        </>
+      )}
       {firstDue == null && (
         <>
           <SheetLabel>چندمِ هر ماه سررسیده؟</SheetLabel>
@@ -813,11 +840,12 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
           only while it is the day's refusal: the dates change with every digit of the count. */}
       <SheetNote live={first == null}>
         {first == null ? 'یه روز بین ۱ و ۳۱.'
+          : bill ? `اولین سررسید ${faDate(first)}، بعد هر ماه همین روز تا وقتی پاکش کنی.`
           : count == null ? `اولین سررسید: ${faDate(first)}`
           : `اولین سررسید ${faDate(first)}، آخری ${faDate(jalaliMonthsAfter(first, count - 1))}.`}
       </SheetNote>
       <div class="sheet-actions">
-        <PillButton voice="primary" block label="ذخیره قسط" onClick={save} />
+        <PillButton voice="primary" block label={bill ? 'ذخیره قبض' : 'ذخیره قسط'} onClick={save} />
       </div>
     </Sheet>
   );
@@ -856,7 +884,7 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
     <Sheet onClose={() => close()} label={plan.nameFa}>
       <SheetTitle>{plan.nameFa}</SheetTitle>
       <p class="plan-lede">
-        ماهی {faCompact(tomanOf(plan.targetRial))} {moneyUnit()}، از {faDate(plan.startsOn)} تا {faDate(plan.endsOn ?? plan.startsOn)}
+        ماهی {faCompact(tomanOf(plan.targetRial))} {moneyUnit()}، از {faDate(plan.startsOn)} {plan.endsOn != null ? `تا ${faDate(plan.endsOn)}` : 'به بعد'}
       </p>
       <InstallmentSchedule progress={progress} />
       {(progress.payments.length > 0 || progress.olderRial > 0) && (
@@ -870,14 +898,14 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
       )}
       {!progress.done && (
         <>
-          <SheetLabel>کدوم تراکنش پرداخت این قسط بود؟</SheetLabel>
+          <SheetLabel>{isBill(plan) ? 'کدوم تراکنش پرداختش بود؟' : 'کدوم تراکنش پرداخت این قسط بود؟'}</SheetLabel>
           {progress.candidates.length === 0
             ? <p class="plan-lede">تراکنشی پیدا نشد که بخوره. اگه نقدی دادی، اول توی دفتر دستی ثبتش کن.</p>
             : progress.candidates.map((entry) => <PaymentRow key={entry.txn.ref} entry={entry} paid={false} onChange={(v) => change(entry, v)} />)}
         </>
       )}
       <div class="mt-l">
-        <SheetDelete label="حذف این قسط" onConfirmed={() => close(synced(paired, () => deleteGoal(plan.id)))} />
+        <SheetDelete label={isBill(plan) ? 'حذف این قبض' : 'حذف این قسط'} onConfirmed={() => close(synced(paired, () => deleteGoal(plan.id)))} />
       </div>
     </Sheet>
   );
@@ -888,33 +916,47 @@ const SCHEDULE_ROWS = 6;
 
 /**
  * The plan month by month: the payments covered folded into one line, then the ones still open, each
- * on its day, with a late one said in words. Covered counts from the first, as paidCount does.
+ * on its day, with a late one said in words. Covered counts from the first, as paidCount does. A bill
+ * has no last row, so it stops at the next date still to come, each row named by its date.
  */
 function InstallmentSchedule({ progress }: { progress: InstallmentProgress }) {
   const today = tehranToday();
+  const { count } = progress;
   const paid = progress.paidCount;
-  const covered = progress.done ? 'همه‌ی قسط‌ها پرداخت شد.'
+  const covered = count == null ? null
+    : progress.done ? 'همه‌ی قسط‌ها پرداخت شد.'
     : paid === 1 ? 'قسط اول پرداخت شد.'
     : paid > 1 ? `${faNumber(paid)} قسط اول پرداخت شد.`
     : null;
-  const open = Array.from({ length: Math.min(progress.count - paid, SCHEDULE_ROWS) }, (_, k) => paid + k);
-  const rest = progress.count - paid - SCHEDULE_ROWS;
+  // A bill always has a next date, so installmentUpcomingIndex is never null for one.
+  const last = count ?? (installmentUpcomingIndex(progress, today) ?? paid) + 1;
+  const open = Array.from({ length: Math.min(last - paid, SCHEDULE_ROWS) }, (_, k) => paid + k);
+  const rest = last - paid - SCHEDULE_ROWS;
   return (
     <>
-      <SheetLabel>جدول قسط‌ها</SheetLabel>
+      <SheetLabel>{count == null ? 'سررسیدها' : 'جدول قسط‌ها'}</SheetLabel>
       {covered && <p class="plan-lede">{covered}</p>}
       {open.map((i) => {
         const due = installmentDueOn(progress.plan, i);
         const state = due < today ? 'late' : due === today ? 'today' : null;
         return (
           <div key={i} class="due-row">
-            <span class="grow plan-title">قسط {faOrdinal(i + 1)}</span>
-            <span class="plan-lede">{faDate(due)}</span>
+            {count == null ? <span class="grow plan-title">{faDate(due)}</span> : (
+              <>
+                <span class="grow plan-title">قسط {faOrdinal(i + 1)}</span>
+                <span class="plan-lede">{faDate(due)}</span>
+              </>
+            )}
             {state && <span class={`due-state ${state}`}>{state === 'late' ? 'گذشته' : 'امروز'}</span>}
           </div>
         );
       })}
-      {rest > 0 && <p class="plan-lede">و {faNumber(rest)} قسط دیگه، تا {faDate(progress.plan.endsOn ?? progress.plan.startsOn)}.</p>}
+      {rest > 0 && (
+        <p class="plan-lede">
+          {count == null ? `و ${faNumber(rest)} ماه دیگه، تا ${faDate(installmentDueOn(progress.plan, last - 1))}.`
+            : `و ${faNumber(rest)} قسط دیگه، تا ${faDate(progress.plan.endsOn ?? progress.plan.startsOn)}.`}
+        </p>
+      )}
     </>
   );
 }
@@ -978,16 +1020,16 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
   const link = (planId: string | null) => close(() => setInstallmentPayment(entry, planId));
 
   return (
-    <Sheet onClose={() => close()} label="پرداخت کدوم قسطه؟">
-      <SheetTitle>پرداخت کدوم قسطه؟</SheetTitle>
+    <Sheet onClose={() => close()} label="پرداخت کدوم قسط یا قبضه؟">
+      <SheetTitle>پرداخت کدوم قسط یا قبضه؟</SheetTitle>
       <p class="plan-lede">
         {txnTitleFa(entry.txn) + '، ' + (amount != null ? bidi(`${faCompact(tomanOf(amount))} ${moneyUnit()}`) + '، ' : '') + faDay(entry.txn.day)}
       </p>
       {offered.length === 0 ? (
         <>
-          <p class="plan-first-plan">هنوز قسطی نساختی. اگه این پرداختِ یه قسط ماهانه‌ست، با همین بسازش تا ببینی چند تا مونده.</p>
+          <p class="plan-first-plan">هنوز قسط یا قبضی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.</p>
           <div class="sheet-actions">
-            <PillButton voice="primary" block label="ساختن قسط" onClick={() => setCreating(true)} />
+            <PillButton voice="primary" block label="ساختن قسط یا قبض" onClick={() => setCreating(true)} />
             <PillButton block label="فعلاً نه" onClick={() => close()} />
           </div>
         </>
@@ -1009,7 +1051,7 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
             })}
           </div>
           <div class="sheet-actions">
-            <PillButton block label="+ قسط تازه با همین پرداخت" onClick={() => setCreating(true)} />
+            <PillButton block label="+ قسط یا قبض تازه با همین پرداخت" onClick={() => setCreating(true)} />
             {current && <PillButton block label="از قسط جداش کن" onClick={() => link(null)} />}
           </div>
         </>
@@ -1027,7 +1069,9 @@ export function InstallmentLinkRow({ current, onOpen }: { current: InstallmentPr
   return (
     <button type="button" class="link-card" onClick={onOpen}>
       <span class="grow">
-        <span class="plan-name">{current ? `پرداخت قسطِ ${current.plan.nameFa}` : 'به هیچ قسطی وصل نیست'}</span>
+        <span class="plan-name">
+          {current ? (isBill(current.plan) ? `پرداختِ ${current.plan.nameFa}` : `پرداخت قسطِ ${current.plan.nameFa}`) : 'به هیچ قسطی وصل نیست'}
+        </span>
         <span class="plan-sub">{current ? installmentLineFa(current) : 'وصلش کن تا توی قسط‌ها حساب بشه.'}</span>
       </span>
       <span class="link-verb">{current ? 'تغییر' : 'وصل کن'}</span>

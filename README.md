@@ -80,7 +80,9 @@ Sample data, live rates.
   or offers to start one from it, with that payment as the first installment; a plan's own sheet
   lists the transactions that could be its payments, the exact amount first. The card shows what is
   paid against the whole, the next due date, and, once a due date has passed unpaid, what is behind.
-  Cash payments go into the ledger by hand and are linked the same way.
+  Cash payments go into the ledger by hand and are linked the same way. Rent, the internet or a
+  phone bill is the same plan with no end: due on the same day every month, its card says whether
+  this month's is paid, when the next one falls due, and how much is behind once a date has passed.
 - **Cheques you have written, checked against the account before the date.** A cheque is its amount,
   the date on it, and the bank account it draws on. As the date nears (the installment reminder's
   window), the card says in words when that account's balance, read from the bank's messages, will

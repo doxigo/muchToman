@@ -20,6 +20,19 @@ package com.doxigo.muchtoman
  * record kind and so a server deploy before any client; add it when two people pay one plan.
  * Editing a plan is delete-and-add for the same reason budgets keep their category — a plan with a
  * different amount or length is a different plan — until somebody's loan actually changes terms.
+ *
+ * ## Bills — «قبض»
+ *
+ * Rent, the internet, the phone: a plan with no last payment, [Goal.endsOn] null ([isBill]). Due on
+ * [Goal.startsOn]'s day every month until she deletes it, with no count, no total and nothing «left
+ * of the whole» — its card says whether this month's is paid, when the next falls due, and that it
+ * is behind once a date has gone by unpaid. Payments link exactly as an installment's do.
+ *
+ * The same kind with no end rather than a kind of its own, because the row already says it: the
+ * column was always nullable, the rows are private so the sync never meets one, and every reader of
+ * a kind — the links, the reminder, home, the backup — takes it as it is. A new kind would be all of
+ * those taught again. An older build reads a bill as `endsOn ?: startsOn`, a plan of one payment:
+ * wrong until it updates, but it neither crashes nor rewrites the row, so nothing is lost.
  */
 
 /** Ten years of monthly payments. Past that it is a mortgage, and a typo is likelier. */
@@ -27,6 +40,18 @@ const val MAX_INSTALLMENTS = 120
 
 /** How many possible payments the sheet offers at once. The exact-amount ones come first. */
 private const val INSTALLMENT_CANDIDATES = 20
+
+/**
+ * The count that makes [newInstallment] a bill: «how many are left?» answered «it never ends». Not
+ * a count any field can type, so a «۰» is still refused rather than read as a bill.
+ *
+ * ponytail: a value of the same Int rather than an `Int?`, so the callbacks between the sheet and
+ * the view model keep their shape; widen it if a third answer ever needs saying.
+ */
+const val NO_END = -1
+
+/** A plan with no last payment — rent, the internet, the phone. See the file comment. */
+val Goal.isBill: Boolean get() = kind == GoalKind.INSTALLMENT && endsOn == null
 
 /**
  * What a [DecisionKind.INSTALLMENT] decision's value holds: the plan it paid, and how much.
@@ -74,6 +99,7 @@ fun installmentLinks(decisions: List<TxnDecision>, plans: List<Goal>): Map<Strin
  *
  * [count] is what is **left** to pay, and the first due is the next [dayOfMonth] from today, today
  * included — so a plan already half paid is entered as its remainder, with nothing to reconstruct.
+ * [NO_END] makes it a bill, with no last payment at all.
  *
  * [firstDue] overrides that, for a plan made from a payment she has just filed: the payment is the
  * first installment, so the plan starts on its day — past or not — and [count] includes it.
@@ -90,7 +116,7 @@ fun newInstallment(
 ): Goal? {
     val name = nameFa.trim().take(40)
     if (name.isEmpty() || paymentRial <= 0L || paymentRial > MAX_PLAUSIBLE_RIAL) return null
-    if (count !in 1..MAX_INSTALLMENTS || dayOfMonth !in 1..31) return null
+    if ((count != NO_END && count !in 1..MAX_INSTALLMENTS) || dayOfMonth !in 1..31) return null
     val first = firstDue ?: firstInstallmentDue(dayOfMonth, tehranDay(now))
     return Goal(
         id = id,
@@ -99,7 +125,7 @@ fun newInstallment(
         kind = GoalKind.INSTALLMENT,
         period = GoalPeriod.MONTH,
         startsOn = first,
-        endsOn = jalaliMonthsAfter(first, count - 1),
+        endsOn = if (count == NO_END) null else jalaliMonthsAfter(first, count - 1),
         createdAt = now,
         updatedAt = now,
         ownerMemberId = mineId,
@@ -136,8 +162,9 @@ fun installmentPayable(entry: LedgerEntry, mineId: String): Boolean =
 fun installmentPaidBy(ref: String, installments: List<InstallmentProgress>): InstallmentProgress? =
     installments.firstOrNull { plan -> plan.payments.any { it.txn.ref == ref } }
 
-/** How many payments the plan has — the months from its first due to its last, both counted. */
-fun installmentCount(plan: Goal): Int {
+/** How many payments the plan has — the months from its first due to its last, both counted. Null for a bill. */
+fun installmentCount(plan: Goal): Int? {
+    if (plan.isBill) return null
     val first = jalaliOf(plan.startsOn)
     val last = jalaliOf(plan.endsOn ?: plan.startsOn)
     return ((last.year - first.year) * 12 + (last.month - first.month) + 1).coerceIn(1, MAX_INSTALLMENTS)
@@ -146,11 +173,19 @@ fun installmentCount(plan: Goal): Int {
 /** The day payment [index] (from 0) falls due. */
 fun installmentDueOn(plan: Goal, index: Int): Long = jalaliMonthsAfter(plan.startsOn, index)
 
+/** Which payment (from 0) falls in [today]'s Jalali month; negative before the first one's month. */
+internal fun installmentIndexIn(plan: Goal, today: Long): Int {
+    val first = jalaliOf(plan.startsOn)
+    val here = jalaliOf(today)
+    return (here.year - first.year) * 12 + (here.month - first.month)
+}
+
 /** Where one plan stands, worked out from her links and nothing else. */
 data class InstallmentProgress(
     val plan: Goal,
-    val count: Int,
-    val totalRial: Long,
+    /** Null for a bill, which has no last payment — and so no [totalRial] either. */
+    val count: Int?,
+    val totalRial: Long?,
     /** What her links add up to, never past [totalRial]: overpaying one plan pays no other. */
     val paidRial: Long,
     /** Payments covered in full — the «۳» of «۳ از ۱۲». */
@@ -162,8 +197,9 @@ data class InstallmentProgress(
     val overdueRial: Long,
     /** When the first payment not yet covered falls due. Null once the plan is paid off. */
     val nextDue: Long?,
+    /** Never, for a bill. */
     val done: Boolean,
-    /** 0..1. */
+    /** 0..1; 0 for a bill, which has no whole to be a share of. */
     val share: Float,
     /** Her linked transactions the ledger still holds, newest first. */
     val payments: List<LedgerEntry>,
@@ -189,14 +225,21 @@ fun installmentProgress(
 ): InstallmentProgress {
     val count = installmentCount(plan)
     // Cannot overflow: a payment is at most MAX_PLAUSIBLE_RIAL and there are at most 120 of them.
-    val total = plan.targetRial * count
+    val total = count?.let { plan.targetRial * it }
     val mine = links.filterValues { it.planId == plan.id }
-    // Clamped as it goes, so a link too large for the plan reads as «paid off» and never wraps.
+    // Clamped as it goes, so a link too large for the plan reads as «paid off» and never wraps. A
+    // bill has no total to clamp to, and would need 92,000 links at the plausibility cap to wrap.
     var paid = 0L
-    for (link in mine.values) paid = minOf(total, paid + link.rial)
-    val done = paid >= total
-    val paidCount = if (plan.targetRial > 0L) (paid / plan.targetRial).toInt() else 0
-    val lateCount = (0 until count).count { installmentDueOn(plan, it) < today }
+    for (link in mine.values) paid = minOf(total ?: Long.MAX_VALUE, paid + link.rial)
+    val done = total != null && paid >= total
+    // Every due day before today: up to the last for a plan, every month so far for a bill.
+    var lateCount = 0
+    while ((count == null || lateCount < count) && installmentDueOn(plan, lateCount) < today) lateCount++
+    // A bill is never counted paid more than ten years ahead of the calendar: past that a link is a
+    // typo, and the months would no longer fit an Int.
+    val paidCount = if (plan.targetRial > 0L) {
+        (paid / plan.targetRial).coerceAtMost((lateCount + MAX_INSTALLMENTS).toLong()).toInt()
+    } else 0
     val payments = entries.filter { it.txn.ref in mine }.sortedByDescending { it.txn.day }
     val held = payments.mapTo(HashSet()) { it.txn.ref }
     // A payment for the first installment is one made after the one before it would have fallen
@@ -211,9 +254,9 @@ fun installmentProgress(
         overdueRial = (plan.targetRial * lateCount - paid).coerceAtLeast(0L),
         nextDue = if (done) null else installmentDueOn(plan, paidCount),
         done = done,
-        share = if (total > 0L) (paid.toDouble() / total).coerceIn(0.0, 1.0).toFloat() else 0f,
+        share = if (total != null && total > 0L) (paid.toDouble() / total).coerceIn(0.0, 1.0).toFloat() else 0f,
         payments = payments,
-        olderRial = minOf(total, mine.filterKeys { it !in held }.values.sumOf { it.rial }),
+        olderRial = minOf(total ?: Long.MAX_VALUE, mine.filterKeys { it !in held }.values.sumOf { it.rial }),
         candidates = if (done) emptyList() else entries
             .filter { installmentPayable(it, mineId) && it.txn.ref !in links && it.txn.day > after }
             .sortedWith(
@@ -231,15 +274,19 @@ fun installmentProgress(
 fun installmentsByDue(installments: List<InstallmentProgress>): List<InstallmentProgress> =
     installments.sortedBy { it.nextDue ?: Long.MAX_VALUE }
 
-/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off. */
+/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off, and for a bill. */
 fun installmentLeftFa(progress: InstallmentProgress): String? {
+    val count = progress.count ?: return null
     if (progress.done) return null
-    val left = progress.count - progress.paidCount
-    return "${faNumber(left.toDouble())} از ${faNumber(progress.count.toDouble())} قسط مونده، " +
+    val left = count - progress.paidCount
+    return "${faNumber(left.toDouble())} از ${faNumber(count.toDouble())} قسط مونده، " +
         "تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}"
 }
 
-/** The «قسط‌ها» section in one place: what leaves each month, what is left, and this month's. */
+/**
+ * The section's installments in one place: what leaves each month, what is left, and this month's.
+ * Bills have a line of their own, [billsLeftThisMonth].
+ */
 data class InstallmentSummary(
     /** One payment of every plan still running. */
     val monthlyRial: Long,
@@ -253,28 +300,81 @@ data class InstallmentSummary(
     val paidThisMonth: Int,
 )
 
-/** Null under two running plans: with one, every figure here is already on its card. */
+/**
+ * Null under two running plans: with one, every figure here is already on its card. Bills are left
+ * out: none of them has a «left» or a last date to add in.
+ */
 fun installmentSummary(installments: List<InstallmentProgress>, today: Long): InstallmentSummary? {
-    val running = installments.filter { !it.done }
+    val plans = installments.filter { !it.plan.isBill }
+    val running = plans.filter { !it.done }
     if (running.size < 2) return null
-    val here = jalaliOf(today)
     var due = 0
     var paid = 0
-    for (p in installments) {
-        // Which payment falls in this month: the months from the first due to today.
-        val first = jalaliOf(p.plan.startsOn)
-        val index = (here.year - first.year) * 12 + (here.month - first.month)
-        if (index !in 0 until p.count) continue
+    for (p in plans) {
+        val count = p.count ?: continue
+        val index = installmentIndexIn(p.plan, today)
+        if (index !in 0 until count) continue
         due++
         if (p.paidCount > index) paid++
     }
     return InstallmentSummary(
         monthlyRial = running.sumOf { it.plan.targetRial },
-        leftRial = running.sumOf { it.totalRial - it.paidRial },
+        leftRial = running.sumOf { (it.totalRial ?: it.paidRial) - it.paidRial },
         lastDue = running.maxOf { it.plan.endsOn ?: it.plan.startsOn },
         dueThisMonth = due,
         paidThisMonth = paid,
     )
+}
+
+/**
+ * What her bills still want this month, between them: each one's payment for this month less what
+ * her links already cover of it. Null under two bills — one bill's card already says it — and when
+ * nothing is left. Months gone by unpaid are not in it; the card of a bill behind says those.
+ */
+fun billsLeftThisMonth(installments: List<InstallmentProgress>, today: Long): Long? {
+    val bills = installments.filter { it.plan.isBill }
+    if (bills.size < 2) return null
+    val left = bills.sumOf { p ->
+        val index = installmentIndexIn(p.plan, today)
+        if (index < 0) 0L else (p.plan.targetRial * (index + 1) - p.paidRial).coerceIn(0L, p.plan.targetRial)
+    }
+    return left.takeIf { it > 0L }
+}
+
+/** «این ماه هنوز ۱۲ میلیون تومان قبض مونده.» — [billsLeftThisMonth], said. */
+fun billsLeftFa(rial: Long): String = "این ماه هنوز ${faCompact(tomanOf(rial))} $moneyUnit قبض مونده."
+
+/**
+ * The card's one line, and whether it is said out loud. Behind is said as a figure and a fact —
+ * what fell due and is not paid — never as a verdict, and only once a due day has actually passed:
+ * on the day itself she can still pay it, and the card says so rather than turning red at breakfast.
+ *
+ * A bill says this month's instead of the next payment's number: paid or not, and the date that
+ * matters next. There is no «قسط سوم» of a rent.
+ */
+fun installmentNoteFa(progress: InstallmentProgress, today: Long): Pair<String, Boolean>? {
+    if (progress.plan.isBill) {
+        val index = installmentIndexIn(progress.plan, today)
+        val next = progress.nextDue ?: progress.plan.startsOn
+        return when {
+            progress.overdueRial > 0L ->
+                "${faCompact(tomanOf(progress.overdueRial))} $moneyUnit از ماه‌هایی که سررسیدشون گذشته، " +
+                    "هنوز پرداخت نشده." to true
+            index < 0 -> "اولین سررسید: ${faDate(progress.plan.startsOn)}" to false
+            progress.paidCount > index -> "این ماه پرداخت شده، بعدی ${faDate(next)}." to false
+            next == today -> "سررسید این ماه امروزه." to false
+            else -> "این ماه هنوز پرداخت نشده، سررسید ${faDate(next)}." to false
+        }
+    }
+    return when {
+        progress.done -> "همه‌ی قسط‌ها پرداخت شد." to true
+        progress.overdueRial > 0L ->
+            "${faCompact(tomanOf(progress.overdueRial))} $moneyUnit از قسط‌هایی که سررسیدشون گذشته، " +
+                "هنوز پرداخت نشده." to true
+        progress.nextDue == today -> "سررسید قسط ${faOrdinal(progress.paidCount + 1)} امروزه." to false
+        progress.nextDue != null -> "قسط ${faOrdinal(progress.paidCount + 1)}: ${faDate(progress.nextDue)}" to false
+        else -> null
+    }
 }
 
 // ─────────────────────────── on home ───────────────────────────
@@ -295,7 +395,7 @@ fun pressingInstallment(
     val window = daysBefore.coerceAtLeast(0)
     return installments
         .mapNotNull { p ->
-            (p.paidCount until p.count).firstOrNull { installmentDueOn(p.plan, it) >= today }
+            installmentUpcomingIndex(p, today)
                 ?.takeIf { installmentDueOn(p.plan, it) - today <= window }
                 ?.let { p to it }
         }
@@ -305,10 +405,14 @@ fun pressingInstallment(
 /** «سررسید قسط «گوشی» فرداست.» — the reminder's words, on home, with the linked payments as evidence. */
 fun installmentInsight(progress: InstallmentProgress, index: Int, today: Long): Insight {
     val due = installmentDueOn(progress.plan, index)
+    val monthly = "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit"
+    val count = progress.count
     return Insight(
-        text = "سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.",
-        why = "قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit، " +
-            "قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count.toDouble())}، ${faDate(due)}.",
+        // A bill is named on its own, «سررسید «اجاره» فرداست.», and never as a قسط.
+        text = if (count == null) "سررسید «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}."
+        else "سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.",
+        why = if (count == null) "قبضی که خودت ساختی: $monthly، ${faDate(due)}."
+        else "قسطی که خودت ساختی: $monthly، قسط ${faOrdinal(index + 1)} از ${faNumber(count.toDouble())}، ${faDate(due)}.",
         refs = progress.payments.map { it.txn.ref },
         tone = Insight.Tone.ATTENTION,
     )
@@ -344,9 +448,16 @@ internal fun remindAwake(now: Long): Boolean = (now + TEHRAN_OFFSET_MS).mod(DAY_
  * follows the calendar, and only a payment linked ahead holds it back.
  */
 fun installmentUpcoming(progress: InstallmentProgress, today: Long): Long? =
-    (progress.paidCount until progress.count).asSequence()
-        .map { installmentDueOn(progress.plan, it) }
-        .firstOrNull { it >= today }
+    installmentUpcomingIndex(progress, today)?.let { installmentDueOn(progress.plan, it) }
+
+/** Which payment (from 0) [installmentUpcoming] is: a bill always has one, a plan until its last. */
+internal fun installmentUpcomingIndex(progress: InstallmentProgress, today: Long): Int? {
+    val last = progress.count ?: Int.MAX_VALUE
+    var i = progress.paidCount
+    // Ends for a bill too: the due days only move forward, a month a step.
+    while (i < last && installmentDueOn(progress.plan, i) < today) i++
+    return i.takeIf { it < last }
+}
 
 /**
  * Which plans are worth a reminder now, and what to remember having said: plan id → the due day it
@@ -389,9 +500,9 @@ internal fun installmentWhenFa(days: Long): String = when {
     else -> "${faNumber(days.toDouble())} روز دیگه‌ست"
 }
 
-/** «گوشی: سررسید قسط فرداست» — the card's own «سررسید قسط اول امروزه», said ahead. */
+/** «گوشی: سررسید قسط فرداست» — the card's own «سررسید قسط اول امروزه», said ahead. A bill: «اجاره: سررسیدش فرداست». */
 fun installmentReminderTitle(plan: Goal, due: Long, today: Long): String =
-    "${plan.nameFa}: سررسید قسط ${installmentWhenFa(due - today)}"
+    "${plan.nameFa}: ${if (plan.isBill) "سررسیدش" else "سررسید قسط"} ${installmentWhenFa(due - today)}"
 
 /** How much, and on which date — what she needs in the banking app. */
 fun installmentReminderBody(plan: Goal, due: Long): String =

@@ -286,20 +286,32 @@ fun BudgetScreen(
                 onClick = { addingGoal = true },
             )
 
-            SectionLabel("قسط‌ها")
+            SectionLabel("قسط‌ها و قبض‌ها")
             if (installments.isEmpty()) {
                 // Says where the payments come from, because that is the one thing about this
                 // section nobody would guess: nothing here is typed twice.
                 Text(
-                    "قسط گوشی، وام یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، " +
+                    "قسط گوشی و وام، اجاره، قبض اینترنت یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، " +
                         "همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 26.sp,
                 )
                 Spacer(Modifier.height(Space.l))
             }
-            installmentSummary(installments, tehranDay(System.currentTimeMillis()))?.let {
-                InstallmentSummaryLines(it)
+            val planDay = tehranDay(System.currentTimeMillis())
+            val summary = installmentSummary(installments, planDay)
+            val billsLeft = billsLeftThisMonth(installments, planDay)
+            if (summary != null || billsLeft != null) {
+                summary?.let { InstallmentSummaryLines(it) }
+                // Under the installments' sentence, in its small voice: one more thing this month asks.
+                billsLeft?.let {
+                    Text(
+                        billsLeftFa(it),
+                        fontSize = 13.sp,
+                        lineHeight = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(Space.l))
             }
             val installmentRows = installments.size + 1
@@ -312,7 +324,7 @@ fun BudgetScreen(
                 )
             }
             AddRow(
-                label = if (installments.isEmpty()) "اولین قسط" else "قسط تازه",
+                label = if (installments.isEmpty()) "اولین قسط یا قبض" else "قسط یا قبض تازه",
                 shape = bandShape(installments.size, installmentRows),
                 onClick = { addingInstallment = true },
             )
@@ -875,7 +887,8 @@ private fun goalNoteFa(progress: GoalProgress): Pair<String, Boolean>? = when {
 
 /**
  * A goal card's construction, read as a plan: what her links add up to out of the whole, and
- * which payment is next.
+ * which payment is next. A bill has no whole, so no figure and no bar: its name, what it costs a
+ * month, and the one sentence about this month — [installmentNoteFa].
  *
  * The card opens on «پرداخت‌ها», not «ویرایش»: what she comes back to it for each month is to say
  * which transaction paid it, and the sheet behind it is that list.
@@ -903,34 +916,36 @@ private fun InstallmentCard(progress: InstallmentProgress, shape: Shape, divided
             }
             EditHint("پرداخت‌ها")
         }
-        Spacer(Modifier.height(Space.s))
-        BasicText(
-            text = bidi("${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(progress.totalRial))}"),
-            maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
-            style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
-        )
-        Spacer(Modifier.height(Space.s))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surface),
-        ) {
+        progress.totalRial?.let { total ->
+            Spacer(Modifier.height(Space.s))
+            BasicText(
+                text = bidi("${faCompact(tomanOf(progress.paidRial))} از ${faCompact(tomanOf(total))}"),
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
+                style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),
+            )
+            Spacer(Modifier.height(Space.s))
             Box(
                 Modifier
-                    .fillMaxWidth(progress.share)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .height(8.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(tone),
-            )
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(progress.share)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(tone),
+                )
+            }
         }
         installmentLeftFa(progress)?.let {
             Spacer(Modifier.height(Space.s))
             Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        installmentNoteFa(progress)?.let { (text, loud) ->
+        installmentNoteFa(progress, tehranDay(System.currentTimeMillis()))?.let { (text, loud) ->
             Spacer(Modifier.height(Space.xs))
             Text(
                 text,
@@ -971,24 +986,6 @@ private fun InstallmentSummaryLines(summary: InstallmentSummary) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-}
-
-/**
- * The card's one line. Behind is said as a figure and a fact — what fell due and is not paid —
- * never as a verdict, and only once a due day has actually passed: on the day itself she can still
- * pay it, and the card says so rather than turning red at breakfast.
- */
-private fun installmentNoteFa(
-    progress: InstallmentProgress,
-    today: Long = tehranDay(System.currentTimeMillis()),
-): Pair<String, Boolean>? = when {
-    progress.done -> "همه‌ی قسط‌ها پرداخت شد." to true
-    progress.overdueRial > 0L ->
-        "${faCompact(tomanOf(progress.overdueRial))} $moneyUnit از قسط‌هایی که سررسیدشون گذشته، " +
-            "هنوز پرداخت نشده." to true
-    progress.nextDue == today -> "سررسید قسط ${faOrdinal(progress.paidCount + 1)} امروزه." to false
-    progress.nextDue != null -> "قسط ${faOrdinal(progress.paidCount + 1)}: ${faDate(progress.nextDue)}" to false
-    else -> null
 }
 
 // ─────────────────────────── one cheque ───────────────────────────
@@ -1606,7 +1603,10 @@ private fun GoalSheet(
 }
 
 /**
- * A plan, in four answers: what for, how much each month, how many are left, and on which day.
+ * A plan, in four answers: what for, how much each month, how many are left, and on which day — or,
+ * for a bill, three, since a rent has no count to ask. The choice between the two leads the sheet
+ * because it decides what the rest of it asks; the line under the day says what a bill means, that
+ * it comes back every month until she deletes it.
  *
  * «چند قسط مونده؟» rather than the plan's full length, so a loan she is a year into is entered as
  * what is left of it — the app never saw the first year's payments and has nothing to link them to.
@@ -1634,6 +1634,7 @@ private fun InstallmentSheet(
     var name by rememberSaveable { mutableStateOf("") }
     var amount by rememberSaveable { mutableStateOf(fromPayment?.txn?.amountRial?.let(::rialToField) ?: "") }
     var countText by rememberSaveable { mutableStateOf("") }
+    var bill by rememberSaveable { mutableStateOf(false) }
     val firstDue = fromPayment?.txn?.day
     // Today's day, because the likeliest moment to add a plan is the day a payment has just gone.
     var dayText by rememberSaveable { mutableStateOf(jalaliOf(firstDue ?: today).day.toString()) }
@@ -1642,7 +1643,7 @@ private fun InstallmentSheet(
     val dayOfMonth = remember(dayText) { wholeIn(dayText, 1..31) }
     // Raised by a save tap that could not save, as in [BudgetSheet].
     var tried by remember { mutableStateOf(false) }
-    val countBad = count == null && (tried || countText.isNotBlank())
+    val countBad = !bill && count == null && (tried || countText.isNotBlank())
 
     AppSheet(
         onDismissRequest = onDismiss,
@@ -1659,13 +1660,20 @@ private fun InstallmentSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("قسط تازه")
+            SheetTitle(if (bill) "قبض تازه" else "قسط تازه")
+            SegmentedChoice(
+                options = listOf(false, true),
+                selected = bill,
+                label = { if (it) "قبض و اجاره" else "قسط" },
+                onSelect = { bill = it },
+                modifier = Modifier.padding(top = Space.m),
+            )
 
-            SheetLabel("قسطِ چی؟")
+            SheetLabel(if (bill) "برای چی؟" else "قسطِ چی؟")
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(40) },
-                label = { Text("مثلاً گوشی، یا وام خونه") },
+                label = { Text(if (bill) "مثلاً اجاره، اینترنت یا موبایل" else "مثلاً گوشی، یا وام خونه") },
                 singleLine = true,
                 isError = tried && name.isBlank(),
                 supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
@@ -1673,11 +1681,11 @@ private fun InstallmentSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            SheetLabel("هر قسط چقدره، به $moneyUnit")
+            SheetLabel(if (bill) "هر ماه چقدره، به $moneyUnit" else "هر قسط چقدره، به $moneyUnit")
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("مبلغ هر قسط") },
+                label = { Text(if (bill) "مبلغ هر ماه" else "مبلغ هر قسط") },
                 singleLine = true,
                 visualTransformation = GroupedNumber,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1691,31 +1699,33 @@ private fun InstallmentSheet(
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ هر قسط به $moneyUnit" },
+                    .semantics { contentDescription = "${if (bill) "مبلغ هر ماه" else "مبلغ هر قسط"} به $moneyUnit" },
             )
 
-            SheetLabel(if (firstDue != null) "چند قسط، با همین یکی؟" else "چند قسط مونده؟")
-            OutlinedTextField(
-                value = countText,
-                onValueChange = { countText = it.take(4) },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                supportingText = {
-                    // The range names the fix for a blank count as well as a wrong one.
-                    if (countBad) {
-                        FieldError("یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس.")
-                    } else {
-                        Text(
-                            if (firstDue != null) "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
-                            else "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.",
-                        )
-                    }
-                },
-                isError = countBad,
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (!bill) {
+                SheetLabel(if (firstDue != null) "چند قسط، با همین یکی؟" else "چند قسط مونده؟")
+                OutlinedTextField(
+                    value = countText,
+                    onValueChange = { countText = it.take(4) },
+                    singleLine = true,
+                    visualTransformation = GroupedNumber,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = {
+                        // The range names the fix for a blank count as well as a wrong one.
+                        if (countBad) {
+                            FieldError("یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس.")
+                        } else {
+                            Text(
+                                if (firstDue != null) "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
+                                else "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.",
+                            )
+                        }
+                    },
+                    isError = countBad,
+                    shape = RoundedCornerShape(Radius.field),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             if (firstDue == null) {
                 SheetLabel("چندمِ هر ماه سررسیده؟")
@@ -1737,6 +1747,7 @@ private fun InstallmentSheet(
             Text(
                 when {
                     first == null -> "یه روز بین ۱ و ۳۱."
+                    bill -> "اولین سررسید ${faDate(first)}، بعد هر ماه همین روز تا وقتی پاکش کنی."
                     count == null -> "اولین سررسید: ${faDate(first)}"
                     else -> "اولین سررسید ${faDate(first)}، آخری ${faDate(jalaliMonthsAfter(first, count - 1))}."
                 },
@@ -1751,13 +1762,13 @@ private fun InstallmentSheet(
 
             Spacer(Modifier.height(Space.xl))
             PillButton(
-                "ذخیره قسط",
+                if (bill) "ذخیره قبض" else "ذخیره قسط",
                 {
                     // Never dimmed: a tap that cannot save says why, as [BudgetSheet]'s does.
                     focus.clearFocus()
                     tried = true
                     val payment = paymentRial ?: return@PillButton
-                    val n = count ?: return@PillButton
+                    val n = if (bill) NO_END else count ?: return@PillButton
                     val day = dayOfMonth ?: return@PillButton
                     if (name.isBlank()) return@PillButton
                     close { onSave(name.trim(), payment, n, day) }
@@ -1963,8 +1974,8 @@ private fun InstallmentPaymentsSheet(
         ) {
             SheetTitle(progress.plan.nameFa)
             Text(
-                "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit، " +
-                    "از ${faDate(progress.plan.startsOn)} تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}",
+                "ماهی ${faCompact(tomanOf(progress.plan.targetRial))} $moneyUnit، از ${faDate(progress.plan.startsOn)} " +
+                    (progress.plan.endsOn?.let { "تا ${faDate(it)}" } ?: "به بعد"),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1989,7 +2000,7 @@ private fun InstallmentPaymentsSheet(
             }
 
             if (!progress.done) {
-                SheetLabel("کدوم تراکنش پرداخت این قسط بود؟")
+                SheetLabel(if (progress.plan.isBill) "کدوم تراکنش پرداختش بود؟" else "کدوم تراکنش پرداخت این قسط بود؟")
                 if (progress.candidates.isEmpty()) {
                     Text(
                         "تراکنشی پیدا نشد که بخوره. اگه نقدی دادی، اول توی دفتر دستی ثبتش کن.",
@@ -2005,7 +2016,7 @@ private fun InstallmentPaymentsSheet(
             }
 
             Spacer(Modifier.height(Space.l))
-            SheetDelete("حذف این قسط") { close(onDelete) }
+            SheetDelete(if (progress.plan.isBill) "حذف این قبض" else "حذف این قسط") { close(onDelete) }
         }
     }
 }
@@ -2017,15 +2028,21 @@ private const val SCHEDULE_ROWS = 6
  * The plan month by month: the payments covered folded into one line, then the ones still open,
  * each on its day, with a late one said in words. Covered counts from the first, as
  * [InstallmentProgress.paidCount] does — a payment settles the oldest one still open.
+ *
+ * A bill has no last row, so its list stops at the next date still to come: the months gone by
+ * unpaid, then that one, each named by its date. Nothing about the months it has covered — the
+ * card already says this month's.
  */
 @Composable
 private fun InstallmentSchedule(
     progress: InstallmentProgress,
     today: Long = tehranDay(System.currentTimeMillis()),
 ) {
-    SheetLabel("جدول قسط‌ها")
+    val count = progress.count
+    SheetLabel(if (count == null) "سررسیدها" else "جدول قسط‌ها")
     val paid = progress.paidCount
     when {
+        count == null -> null
         progress.done -> "همه‌ی قسط‌ها پرداخت شد."
         paid == 1 -> "قسط اول پرداخت شد."
         paid > 1 -> "${faNumber(paid.toDouble())} قسط اول پرداخت شد."
@@ -2033,7 +2050,9 @@ private fun InstallmentSchedule(
     }?.let {
         Text(it, fontSize = 13.sp, lineHeight = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    val open = paid until progress.count
+    // A bill always has a next date, so [installmentUpcomingIndex] is never null for one.
+    val last = count ?: ((installmentUpcomingIndex(progress, today) ?: paid) + 1)
+    val open = paid until last
     open.take(SCHEDULE_ROWS).forEach { i ->
         val due = installmentDueOn(progress.plan, i)
         Row(
@@ -2042,8 +2061,12 @@ private fun InstallmentSchedule(
                 .heightIn(min = 40.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("قسط ${faOrdinal(i + 1)}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-            Text(faDate(due), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (count == null) {
+                Text(faDate(due), Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+            } else {
+                Text("قسط ${faOrdinal(i + 1)}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+                Text(faDate(due), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             when {
                 due < today -> "گذشته" to MaterialTheme.colorScheme.error
                 due == today -> "امروز" to MaterialTheme.colorScheme.primary
@@ -2054,10 +2077,11 @@ private fun InstallmentSchedule(
             }
         }
     }
-    val rest = progress.count - paid - SCHEDULE_ROWS
+    val rest = last - paid - SCHEDULE_ROWS
     if (rest > 0) {
         Text(
-            "و ${faNumber(rest.toDouble())} قسط دیگه، تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}.",
+            if (count == null) "و ${faNumber(rest.toDouble())} ماه دیگه، تا ${faDate(installmentDueOn(progress.plan, last - 1))}."
+            else "و ${faNumber(rest.toDouble())} قسط دیگه، تا ${faDate(progress.plan.endsOn ?: progress.plan.startsOn)}.",
             fontSize = 13.sp,
             lineHeight = 22.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2161,7 +2185,7 @@ internal fun InstallmentLinkSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("پرداخت کدوم قسطه؟")
+            SheetTitle("پرداخت کدوم قسط یا قبضه؟")
             Text(
                 txnTitleFa(entry.txn) + "، " +
                     (amount?.let { bidi(faCompact(tomanOf(it)) + " $moneyUnit") + "، " } ?: "") +
@@ -2173,14 +2197,13 @@ internal fun InstallmentLinkSheet(
             if (offered.isEmpty()) {
                 Spacer(Modifier.height(Space.l))
                 Text(
-                    "هنوز قسطی نساختی. اگه این پرداختِ یه قسط ماهانه‌ست، با همین بسازش تا " +
-                        "ببینی چند تا مونده.",
+                    "هنوز قسط یا قبضی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.",
                     lineHeight = 26.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(Space.xl))
                 PillButton(
-                    "ساختن قسط",
+                    "ساختن قسط یا قبض",
                     { creating = true },
                     Modifier.fillMaxWidth(),
                     voice = ButtonVoice.PRIMARY,
@@ -2221,7 +2244,7 @@ internal fun InstallmentLinkSheet(
                 }
             }
             PillButton(
-                "+ قسط تازه با همین پرداخت",
+                "+ قسط یا قبض تازه با همین پرداخت",
                 { creating = true },
                 Modifier.fillMaxWidth().padding(top = Space.xl),
                 block = true,
@@ -2238,10 +2261,14 @@ internal fun InstallmentLinkSheet(
     }
 }
 
-/** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. */
+/**
+ * «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. A bill has no
+ * count, so its day instead: «ماهی ۸ میلیون تومان • پنجم هر ماه».
+ */
 internal fun installmentLineFa(plan: InstallmentProgress): String =
     "ماهی ${faCompact(tomanOf(plan.plan.targetRial))} $moneyUnit • " +
-        "${faNumber(plan.paidCount.toDouble())} از ${faNumber(plan.count.toDouble())} قسط"
+        (plan.count?.let { "${faNumber(plan.paidCount.toDouble())} از ${faNumber(it.toDouble())} قسط" }
+            ?: "${faOrdinal(jalaliOf(plan.plan.startsOn).day)} هر ماه")
 
 /**
  * The link as the payment's own page shows it: which plan it paid, or that it paid none, and the
@@ -2260,7 +2287,8 @@ internal fun InstallmentLinkRow(current: InstallmentProgress?, onOpen: () -> Uni
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                current?.let { "پرداخت قسطِ ${it.plan.nameFa}" } ?: "به هیچ قسطی وصل نیست",
+                current?.let { if (it.plan.isBill) "پرداختِ ${it.plan.nameFa}" else "پرداخت قسطِ ${it.plan.nameFa}" }
+                    ?: "به هیچ قسطی وصل نیست",
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )

@@ -5,6 +5,10 @@
  * in `startsOn`, the last in `endsOn`, a Jalali month apart. A payment is a transaction the ledger
  * already holds plus an `installment` decision saying which plan it paid — never a figure typed
  * twice. Always private: `shared` is false, so the sync never publishes these.
+ *
+ * A bill (rent, the internet, the phone) is the same kind with `endsOn` null: due on `startsOn`'s
+ * day every month until she deletes it, with no count and no total. Installments.kt says why it is
+ * not a kind of its own, and what an older build makes of one.
  */
 import { faCompact, faDate, faNumber, faOrdinal, parseAmount, showRial, today as tehranToday, tomanOf, tomanOfShown, moneyUnit } from './format';
 import { GoalKind, GoalPeriod } from './goals';
@@ -41,6 +45,15 @@ export const MAX_INSTALLMENTS = 120;
 
 /** How many possible payments the sheet offers at once. */
 const INSTALLMENT_CANDIDATES = 20;
+
+/**
+ * The count that makes [newInstallment] a bill: «how many are left?» answered «it never ends» — no
+ * field can type it, so a «۰» is still refused. ponytail: a value of the same number, as Installments.kt keeps it, so the two stay one to one.
+ */
+export const NO_END = -1;
+
+/** A plan with no last payment — rent, the internet, the phone. */
+export const isBill = (plan: Goal): boolean => plan.kind === GoalKind.INSTALLMENT && plan.endsOn == null;
 
 /**
  * What an `installment` decision's value holds: the plan it paid, and how much. The amount is
@@ -80,8 +93,8 @@ export function installmentLinks(decisions: Decision[], plans: Goal[]): Map<stri
 
 /**
  * A new plan, or null when the answers are not one. [count] is what is left to pay, from the next
- * [dayOfMonth] today included; [firstDue] instead starts it on a payment she just filed, which
- * [count] then includes.
+ * [dayOfMonth] today included, and [NO_END] makes it a bill; [firstDue] instead starts it on a
+ * payment she just filed, which [count] then includes.
  */
 export function newInstallment(
   id: string,
@@ -95,7 +108,7 @@ export function newInstallment(
 ): Goal | null {
   const name = nameFa.trim().slice(0, 40);
   if (!name || !(paymentRial > 0) || paymentRial > MAX_PLAUSIBLE_RIAL) return null;
-  if (!Number.isInteger(count) || count < 1 || count > MAX_INSTALLMENTS) return null;
+  if (count !== NO_END && (!Number.isInteger(count) || count < 1 || count > MAX_INSTALLMENTS)) return null;
   if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) return null;
   const first = firstDue ?? firstInstallmentDue(dayOfMonth, tehranDay(now));
   return {
@@ -106,7 +119,7 @@ export function newInstallment(
     categoryId: null,
     period: GoalPeriod.MONTH,
     startsOn: first,
-    endsOn: jalaliMonthsAfter(first, count - 1),
+    endsOn: count === NO_END ? null : jalaliMonthsAfter(first, count - 1),
     createdAt: now,
     updatedAt: now,
     deleted: false,
@@ -143,8 +156,9 @@ export function installmentPaidBy(ref: string, installments: InstallmentProgress
   return installments.find((plan) => plan.payments.some((p) => p.txn.ref === ref)) ?? null;
 }
 
-/** How many payments the plan has — the months from its first due to its last, both counted. */
-export function installmentCount(plan: Goal): number {
+/** How many payments the plan has — the months from its first due to its last, both counted. Null for a bill. */
+export function installmentCount(plan: Goal): number | null {
+  if (isBill(plan)) return null;
   const first = jalaliOf(plan.startsOn);
   const last = jalaliOf(plan.endsOn ?? plan.startsOn);
   const months = (last.year - first.year) * 12 + (last.month - first.month) + 1;
@@ -156,11 +170,19 @@ export function installmentDueOn(plan: Goal, index: number): number {
   return jalaliMonthsAfter(plan.startsOn, index);
 }
 
+/** Which payment (from 0) falls in [today]'s Jalali month; negative before the first one's month. */
+export function installmentIndexIn(plan: Goal, today: number): number {
+  const first = jalaliOf(plan.startsOn);
+  const here = jalaliOf(today);
+  return (here.year - first.year) * 12 + (here.month - first.month);
+}
+
 /** Where one plan stands, worked out from her links and nothing else. */
 export interface InstallmentProgress {
   plan: Goal;
-  count: number;
-  totalRial: number;
+  /** Null for a bill, which has no last payment — and so no [totalRial] either. */
+  count: number | null;
+  totalRial: number | null;
   /** What her links add up to, never past [totalRial]. */
   paidRial: number;
   /** Payments covered in full — the «۳» of «۳ از ۱۲». */
@@ -169,8 +191,9 @@ export interface InstallmentProgress {
   overdueRial: number;
   /** When the first payment not yet covered falls due. Null once paid off. */
   nextDue: number | null;
+  /** Never, for a bill. */
   done: boolean;
-  /** 0..1. */
+  /** 0..1; 0 for a bill, which has no whole to be a share of. */
   share: number;
   /** Her linked transactions the ledger still holds, newest first. */
   payments: LedgerEntry[];
@@ -190,15 +213,17 @@ export function installmentProgress(
 ): InstallmentProgress {
   const count = installmentCount(plan);
   // ponytail: a Number, exact to 2^53 — past it only for a payment near the plausibility cap × 120.
-  const total = plan.targetRial * count;
+  const total = count == null ? null : plan.targetRial * count;
   const mine = new Map([...links].filter(([, link]) => link.planId === plan.id));
-  // Clamped as it goes, so a link too large reads as «paid off» and never wraps.
+  // Clamped as it goes, so a link too large reads as «paid off» and never wraps. A bill has no total.
   let paid = 0;
-  for (const link of mine.values()) paid = Math.min(total, paid + link.rial);
-  const done = paid >= total;
-  const paidCount = plan.targetRial > 0 ? Math.trunc(paid / plan.targetRial) : 0;
+  for (const link of mine.values()) paid = Math.min(total ?? Infinity, paid + link.rial);
+  const done = total != null && paid >= total;
+  // Every due day before today: up to the last for a plan, every month so far for a bill.
   let lateCount = 0;
-  for (let i = 0; i < count; i++) if (installmentDueOn(plan, i) < today) lateCount++;
+  while ((count == null || lateCount < count) && installmentDueOn(plan, lateCount) < today) lateCount++;
+  // A bill is never counted paid more than ten years ahead of the calendar: past that, a typo.
+  const paidCount = plan.targetRial > 0 ? Math.min(Math.trunc(paid / plan.targetRial), lateCount + MAX_INSTALLMENTS) : 0;
   const payments = entries.filter((e) => mine.has(e.txn.ref)).sort((a, b) => b.txn.day - a.txn.day);
   const held = new Set(payments.map((e) => e.txn.ref));
   let older = 0;
@@ -214,9 +239,9 @@ export function installmentProgress(
     overdueRial: Math.max(plan.targetRial * lateCount - paid, 0),
     nextDue: done ? null : installmentDueOn(plan, paidCount),
     done,
-    share: total > 0 ? Math.min(Math.max(paid / total, 0), 1) : 0,
+    share: total != null && total > 0 ? Math.min(Math.max(paid / total, 0), 1) : 0,
     payments,
-    olderRial: Math.min(total, older),
+    olderRial: Math.min(total ?? Infinity, older),
     candidates: done ? [] : entries
       .filter((e) => installmentPayable(e, mineId) && !links.has(e.txn.ref) && e.txn.day > after)
       .sort((a, b) => Number(a.txn.amountRial !== plan.targetRial) - Number(b.txn.amountRial !== plan.targetRial) ||
@@ -234,14 +259,15 @@ export function installmentsByDue(installments: InstallmentProgress[]): Installm
   return [...installments].sort((a, b) => key(a) - key(b));
 }
 
-/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off. */
+/** «۲۱ از ۲۴ قسط مونده، تا ۷ شهریور ۱۴۰۷» — what is left and when it ends. Null once paid off, and for a bill. */
 export function installmentLeftFa(progress: InstallmentProgress): string | null {
-  if (progress.done) return null;
-  return `${faNumber(progress.count - progress.paidCount)} از ${faNumber(progress.count)} قسط مونده، ` +
+  const { count } = progress;
+  if (progress.done || count == null) return null;
+  return `${faNumber(count - progress.paidCount)} از ${faNumber(count)} قسط مونده، ` +
     `تا ${faDate(progress.plan.endsOn ?? progress.plan.startsOn)}`;
 }
 
-/** The «قسط‌ها» section in one place: what leaves each month, what is left, and this month's. */
+/** The section's installments in one place: what leaves each month, what is left, and this month's. Bills: [billsLeftThisMonth]. */
 export interface InstallmentSummary {
   /** One payment of every plan still running. */
   monthlyRial: number;
@@ -255,28 +281,47 @@ export interface InstallmentSummary {
   paidThisMonth: number;
 }
 
-/** Null under two running plans: with one, every figure here is already on its card. */
+/** Null under two running plans: with one, every figure here is already on its card. Bills are left out. */
 export function installmentSummary(installments: InstallmentProgress[], today: number): InstallmentSummary | null {
-  const running = installments.filter((p) => !p.done);
+  const plans = installments.filter((p) => !isBill(p.plan));
+  const running = plans.filter((p) => !p.done);
   if (running.length < 2) return null;
-  const here = jalaliOf(today);
   let due = 0;
   let paid = 0;
-  for (const p of installments) {
-    // Which payment falls in this month: the months from the first due to today.
-    const first = jalaliOf(p.plan.startsOn);
-    const index = (here.year - first.year) * 12 + (here.month - first.month);
-    if (index < 0 || index >= p.count) continue;
+  for (const p of plans) {
+    const index = installmentIndexIn(p.plan, today);
+    if (p.count == null || index < 0 || index >= p.count) continue;
     due++;
     if (p.paidCount > index) paid++;
   }
   return {
     monthlyRial: running.reduce((sum, p) => sum + p.plan.targetRial, 0),
-    leftRial: running.reduce((sum, p) => sum + p.totalRial - p.paidRial, 0),
+    leftRial: running.reduce((sum, p) => sum + (p.totalRial ?? p.paidRial) - p.paidRial, 0),
     lastDue: Math.max(...running.map((p) => p.plan.endsOn ?? p.plan.startsOn)),
     dueThisMonth: due,
     paidThisMonth: paid,
   };
+}
+
+/**
+ * What her bills still want this month, between them: each one's payment for this month less what
+ * her links already cover of it. Null under two bills (one bill's card already says it) and when
+ * nothing is left. Months gone by unpaid are not in it; a bill behind says those on its card.
+ */
+export function billsLeftThisMonth(installments: InstallmentProgress[], today: number): number | null {
+  const bills = installments.filter((p) => isBill(p.plan));
+  if (bills.length < 2) return null;
+  let left = 0;
+  for (const p of bills) {
+    const index = installmentIndexIn(p.plan, today);
+    if (index >= 0) left += Math.min(Math.max(p.plan.targetRial * (index + 1) - p.paidRial, 0), p.plan.targetRial);
+  }
+  return left > 0 ? left : null;
+}
+
+/** «این ماه هنوز ۱۲ میلیون تومان قبض مونده.» — [billsLeftThisMonth], said. */
+export function billsLeftFa(rial: number): string {
+  return `این ماه هنوز ${faCompact(tomanOf(rial))} ${moneyUnit()} قبض مونده.`;
 }
 
 // ─────────────────────────── on home ───────────────────────────
@@ -297,9 +342,8 @@ export function pressingInstallment(
   const window = Math.max(daysBefore, 0);
   let best: [InstallmentProgress, number] | null = null;
   for (const p of installments) {
-    let i = p.paidCount;
-    while (i < p.count && installmentDueOn(p.plan, i) < today) i++;
-    if (i >= p.count || installmentDueOn(p.plan, i) - today > window) continue;
+    const i = installmentUpcomingIndex(p, today);
+    if (i == null || installmentDueOn(p.plan, i) - today > window) continue;
     if (!best || installmentDueOn(p.plan, i) < installmentDueOn(best[0].plan, best[1])) best = [p, i];
   }
   return best;
@@ -308,10 +352,14 @@ export function pressingInstallment(
 /** «سررسید قسط «گوشی» فرداست.» — the reminder's words, on home, with the linked payments as evidence. */
 export function installmentInsight(progress: InstallmentProgress, index: number, today: number): Insight {
   const due = installmentDueOn(progress.plan, index);
+  const monthly = `ماهی ${faCompact(tomanOf(progress.plan.targetRial))} ${moneyUnit()}`;
+  const { count } = progress;
   return {
-    text: `سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`,
-    why: `قسطی که خودت ساختی: ماهی ${faCompact(tomanOf(progress.plan.targetRial))} ${moneyUnit()}، ` +
-      `قسط ${faOrdinal(index + 1)} از ${faNumber(progress.count)}، ${faDate(due)}.`,
+    // A bill is named on its own, «سررسید «اجاره» فرداست.», and never as a قسط.
+    text: count == null ? `سررسید «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`
+      : `سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`,
+    why: count == null ? `قبضی که خودت ساختی: ${monthly}، ${faDate(due)}.`
+      : `قسطی که خودت ساختی: ${monthly}، قسط ${faOrdinal(index + 1)} از ${faNumber(count)}، ${faDate(due)}.`,
     refs: progress.payments.map((e) => e.txn.ref),
     tone: 'ATTENTION',
   };
@@ -338,11 +386,17 @@ export function remindAwake(now: number): boolean {
  * pays but never links would be reminded once, of a date already gone, and then never again.
  */
 export function installmentUpcoming(progress: InstallmentProgress, today: number): number | null {
-  for (let i = progress.paidCount; i < progress.count; i++) {
-    const due = installmentDueOn(progress.plan, i);
-    if (due >= today) return due;
-  }
-  return null;
+  const i = installmentUpcomingIndex(progress, today);
+  return i == null ? null : installmentDueOn(progress.plan, i);
+}
+
+/** Which payment (from 0) [installmentUpcoming] is: a bill always has one, a plan until its last. */
+export function installmentUpcomingIndex(progress: InstallmentProgress, today: number): number | null {
+  const last = progress.count ?? Infinity;
+  let i = progress.paidCount;
+  // Ends for a bill too: the due days only move forward, a month a step.
+  while (i < last && installmentDueOn(progress.plan, i) < today) i++;
+  return i < last ? i : null;
 }
 
 /**
@@ -383,9 +437,9 @@ export function installmentWhenFa(days: number): string {
   return `${faNumber(days)} روز دیگه‌ست`;
 }
 
-/** «گوشی: سررسید قسط فرداست». */
+/** «گوشی: سررسید قسط فرداست»; a bill, «اجاره: سررسیدش فرداست». */
 export function installmentReminderTitle(plan: Goal, due: number, today: number): string {
-  return `${plan.nameFa}: سررسید قسط ${installmentWhenFa(due - today)}`;
+  return `${plan.nameFa}: ${isBill(plan) ? 'سررسیدش' : 'سررسید قسط'} ${installmentWhenFa(due - today)}`;
 }
 
 /** How much, and on which date — what she needs in the banking app. */
@@ -404,9 +458,22 @@ export function installmentReminderFa(days: number): string {
 
 /**
  * The card's one line, and whether it is said out loud. Behind is a figure and a fact, and only
- * once a due day has passed: on the day itself she can still pay it.
+ * once a due day has passed: on the day itself she can still pay it. A bill says this month's,
+ * paid or not, and the date that matters next — there is no «قسط سوم» of a rent.
  */
 export function installmentNoteFa(progress: InstallmentProgress, today: number = tehranToday()): [text: string, loud: boolean] | null {
+  if (isBill(progress.plan)) {
+    const index = installmentIndexIn(progress.plan, today);
+    const next = progress.nextDue ?? progress.plan.startsOn;
+    if (progress.overdueRial > 0) {
+      return [`${faCompact(tomanOf(progress.overdueRial))} ${moneyUnit()} از ماه‌هایی که سررسیدشون گذشته، ` +
+        'هنوز پرداخت نشده.', true];
+    }
+    if (index < 0) return [`اولین سررسید: ${faDate(progress.plan.startsOn)}`, false];
+    if (progress.paidCount > index) return [`این ماه پرداخت شده، بعدی ${faDate(next)}.`, false];
+    if (next === today) return ['سررسید این ماه امروزه.', false];
+    return [`این ماه هنوز پرداخت نشده، سررسید ${faDate(next)}.`, false];
+  }
   if (progress.done) return ['همه‌ی قسط‌ها پرداخت شد.', true];
   if (progress.overdueRial > 0) {
     return [`${faCompact(tomanOf(progress.overdueRial))} ${moneyUnit()} از قسط‌هایی که سررسیدشون گذشته، ` +
@@ -418,8 +485,14 @@ export function installmentNoteFa(progress: InstallmentProgress, today: number =
   return null;
 }
 
-/** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line, wherever it is offered. */
+/** «ماهی ۴٫۵ میلیون تومان • ۳ از ۲۴ قسط» — a plan in one line; a bill, its day: «… • پنجم هر ماه». */
 export function installmentLineFa(plan: InstallmentProgress): string {
   return `ماهی ${faCompact(tomanOf(plan.plan.targetRial))} ${moneyUnit()} • ` +
-    `${faNumber(plan.paidCount)} از ${faNumber(plan.count)} قسط`;
+    (plan.count == null ? `${faOrdinal(jalaliOf(plan.plan.startsOn).day)} هر ماه`
+      : `${faNumber(plan.paidCount)} از ${faNumber(plan.count)} قسط`);
+}
+
+/** The lock screen's word for one plan's reminder (Notify.kt installmentPublicTitle). */
+export function installmentPublicTitle(plan: Goal): string {
+  return isBill(plan) ? 'یادآوری قبض' : 'یادآوری قسط';
 }

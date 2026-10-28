@@ -520,6 +520,11 @@ count is the Jalali months between them. Due dates keep the first one's day of t
 clamp where a month is shorter (`jalaliMonthsAfter`), so the 31st is the 30th in مهر and back
 to the 31st in فروردین.
 
+A bill (rent, the internet, the phone) is the same row with `ends_on` null: no count, no total,
+due every month until it is deleted (`Goal.isBill`, `NO_END` for the count). Not a new kind, so
+no migration and nothing for the sync to learn; an older build reads it as a one-payment plan
+(`endsOn ?: startsOn`) and never rewrites it.
+
 A payment is never typed in. It is a transaction the ledger already holds, and a
 `txn_decision` with `kind = 'installment'` says which plan it paid, as `<planId>:<rial>`.
 Progress is summed from those decisions rather than from live rows, because sources are pruned

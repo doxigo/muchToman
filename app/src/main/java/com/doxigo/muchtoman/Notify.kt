@@ -158,7 +158,7 @@ internal fun landedPublicTitle(): String = "تراکنش تازه"
 internal fun filingPublicTitle(count: Int): String =
     if (count > 1) "${faNumber(count.toDouble())} تراکنش تازه" else landedPublicTitle()
 
-internal fun installmentPublicTitle(): String = "یادآوری قسط"
+internal fun installmentPublicTitle(plan: Goal): String = if (plan.isBill) "یادآوری قبض" else "یادآوری قسط"
 
 internal fun chequePublicTitle(): String = "یادآوری چک"
 
@@ -700,7 +700,7 @@ fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long
         .setContentIntent(openBudgets(context))
         .setTicker("$title. $body")
         // Kept off the lock screen — see [withLockFace].
-        .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(), openBudgets(context))
+        .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(progress.plan), openBudgets(context))
     runCatching { NotificationManagerCompat.from(context).notify(progress.plan.id, INSTALLMENT_NOTE_ID, note) }
         .onFailure { android.util.Log.w("muchtoman", "installment notify failed: $it") }
 }
@@ -800,7 +800,11 @@ fun announceInstallments(
     val (chequesDue, chequeMarks) = chequeNews(cheques, days, said, now)
     store.installmentMarks = news.marks + chequeMarks
     for ((progress, due) in news.due) {
-        notifyInstallment(context, progress, due, now, store.takeQuip("installment", vars = mapOf("plan" to progress.plan.nameFa)))
+        // No line on a bill: the moment's jokes are about a debt ending («یه قدم نزدیک‌تر به آزادی»),
+        // and a rent does not. ponytail: a «bill» moment in worker/src/quips.json would give it its own.
+        val quip = if (progress.plan.isBill) null
+        else store.takeQuip("installment", vars = mapOf("plan" to progress.plan.nameFa))
+        notifyInstallment(context, progress, due, now, quip)
     }
     if (chequesDue.isEmpty()) return
     val accounts = store.bankAccounts

@@ -2,13 +2,15 @@
 import { describe, expect, it } from 'vitest';
 import { GoalKind, GoalPeriod } from '../src/goals';
 import {
-  MAX_INSTALLMENTS, encodeInstallmentLink, firstInstallmentDue, installmentCount, installmentDueOn, installmentInsight,
-  installmentLeftFa, installmentLineFa, installmentLinks, installmentNews, installmentNoteFa, installmentPaidBy,
-  installmentPayable, installmentProgress, installmentReminderBody, installmentReminderFa, installmentReminderTitle,
-  installmentSummary, installmentsByDue, newInstallment, pressingInstallment, rialToField, tomanFieldToRial,
+  MAX_INSTALLMENTS, NO_END, billsLeftFa, billsLeftThisMonth, encodeInstallmentLink, firstInstallmentDue, installmentCount,
+  installmentDueOn, installmentInsight, installmentLeftFa, installmentLineFa, installmentLinks, installmentNews,
+  installmentNoteFa, installmentPaidBy, installmentPayable, installmentProgress, installmentPublicTitle,
+  installmentReminderBody, installmentReminderFa, installmentReminderTitle, installmentSummary, installmentUpcoming,
+  installmentsByDue, isBill, newInstallment, pressingInstallment, rialToField, tomanFieldToRial,
 } from '../src/installments';
 import { buildStory } from '../src/reports';
 import type { InstallmentLink } from '../src/installments';
+import { faDate } from '../src/format';
 import { jalaliDay, jalaliMonthsAfter, jalaliOf, tehranDayStart } from '../src/jalali';
 import type { Decision, Goal, LedgerEntry } from '../src/model';
 import { MAX_PLAUSIBLE_RIAL } from '../src/sms';
@@ -23,6 +25,11 @@ const entry = (day: number, rial: number, direction: 'in' | 'out' = 'out', owner
 const plan = (id = 'phone', payment = 10_000_000, count = 3): Goal => goalRow({
   id, nameFa: 'گوشی', targetRial: payment, kind: GoalKind.INSTALLMENT, period: GoalPeriod.MONTH,
   startsOn: first, endsOn: jalaliMonthsAfter(first, count - 1),
+});
+
+/** Rent: no end, due on [first]'s day every month. */
+const bill = (id = 'rent', payment = 80_000_000): Goal => goalRow({
+  id, nameFa: 'اجاره', targetRial: payment, kind: GoalKind.INSTALLMENT, period: GoalPeriod.MONTH, startsOn: first, endsOn: null,
 });
 
 const links = (p: Goal, ...paid: Array<[string, number]>): Map<string, InstallmentLink> =>
@@ -263,6 +270,101 @@ describe('installments', () => {
     const quiet = buildStory(rows, 0, first - 1);
     expect(quiet.attentionInstallment).toBeNull();
     expect(quiet.attention!.text).toContain('منتظر');
+  });
+
+  it('a bill is a plan with no end, private like any other', () => {
+    const now = tehranDayStart(jalaliDay(1405, 7, 10)) + 1;
+    const rent = newInstallment('x', 'اجاره', 80_000_000, NO_END, 5, now)!;
+    expect(rent.kind).toBe(GoalKind.INSTALLMENT);
+    expect(rent.endsOn).toBeNull();
+    expect(isBill(rent)).toBe(true);
+    expect(rent.shared).toBe(false);
+    expect(rent.startsOn).toBe(jalaliDay(1405, 8, 5));
+    expect(installmentCount(rent)).toBeNull();
+    // A cheque has no end either until it is passed, and is not a bill.
+    expect(isBill({ ...rent, kind: GoalKind.CHEQUE })).toBe(false);
+    // «۰» left is still no plan at all, and the other answers are checked as before.
+    expect(newInstallment('x', 'اجاره', 80_000_000, 0, 5, now)).toBeNull();
+    expect(newInstallment('x', 'اجاره', 80_000_000, NO_END, 32, now)).toBeNull();
+    const fromPayment = newInstallment('y', 'اینترنت', 3_000_000, NO_END, 31, now, '', first)!;
+    expect(fromPayment.startsOn).toBe(first);
+    expect(fromPayment.endsOn).toBeNull();
+  });
+
+  it('a bill has no count, no total and no end, and is never paid off', () => {
+    const rent = bill();
+    const months = installmentProgress(rent, links(rent, ['a', 80_000_000 * 12]), [], jalaliMonthsAfter(first, 11));
+    expect(months.count).toBeNull();
+    expect(months.totalRial).toBeNull();
+    expect(months.done).toBe(false);
+    expect(months.share).toBe(0);
+    expect(months.paidCount).toBe(12);
+    expect(months.overdueRial).toBe(0);
+    expect(months.nextDue).toBe(jalaliMonthsAfter(first, 12));
+    expect(installmentLeftFa(months)).toBeNull();
+    const next = entry(jalaliMonthsAfter(first, 11), 80_000_000);
+    expect(installmentProgress(rent, new Map(), [next], first).candidates.map((e) => e.txn.ref)).toEqual([next.txn.ref]);
+    expect(installmentLineFa(months)).toBe('ماهی ۸ میلیون تومان • سی و یکم هر ماه');
+  });
+
+  it('a bill falls behind month by month, and only once a date has passed unpaid', () => {
+    const rent = bill();
+    const second = jalaliMonthsAfter(first, 1);
+    const note = (paid: number, today: number) =>
+      installmentNoteFa(installmentProgress(rent, paid > 0 ? links(rent, ['a', paid]) : new Map(), [], today), today);
+    expect(note(0, jalaliDay(1405, 5, 10))).toEqual(['اولین سررسید: ۳۱ شهریور ۱۴۰۵', false]);
+    expect(note(0, first - 1)).toEqual(['این ماه هنوز پرداخت نشده، سررسید ۳۱ شهریور ۱۴۰۵.', false]);
+    expect(note(0, first)).toEqual(['سررسید این ماه امروزه.', false]);
+    expect(note(80_000_000, first)).toEqual(['این ماه پرداخت شده، بعدی ۳۰ مهر ۱۴۰۵.', false]);
+    expect(note(80_000_000, first + 1)).toEqual(['این ماه هنوز پرداخت نشده، سررسید ۳۰ مهر ۱۴۰۵.', false]);
+    expect(note(0, first + 1)).toEqual(['۸ میلیون تومان از ماه‌هایی که سررسیدشون گذشته، هنوز پرداخت نشده.', true]);
+    expect(installmentProgress(rent, new Map(), [], second + 1).overdueRial).toBe(160_000_000);
+    expect(installmentProgress(rent, links(rent, ['a', 40_000_000]), [], first + 1).overdueRial).toBe(40_000_000);
+  });
+
+  it('a link far too large for a bill reads as years ahead, never as a runaway count', () => {
+    const tiny = bill('tiny', 1);
+    const progress = installmentProgress(tiny, links(tiny, ['a', MAX_PLAUSIBLE_RIAL]), [], first);
+    expect(progress.paidCount).toBe(MAX_INSTALLMENTS);
+    expect(progress.nextDue).toBe(jalaliMonthsAfter(first, MAX_INSTALLMENTS));
+    expect(installmentUpcoming(progress, first)).toBe(jalaliMonthsAfter(first, MAX_INSTALLMENTS));
+  });
+
+  it('a bill is reminded of every month, past any count a plan could have', () => {
+    const rent = bill();
+    const far = jalaliMonthsAfter(first, MAX_INSTALLMENTS + 5);
+    const paidUp = installmentProgress(rent, links(rent, ['a', 80_000_000 * (MAX_INSTALLMENTS + 5)]), [], far - 1);
+    expect(installmentNews([paidUp], 1, {}, tehranDayStart(far - 1) + 10 * 3_600_000).due).toEqual([[paidUp, far]]);
+    expect(installmentReminderTitle(rent, far, far - 1)).toBe('اجاره: سررسیدش فرداست');
+    expect(installmentReminderBody(rent, far)).toBe(`۸ میلیون تومان • ${faDate(far)}`);
+    expect(installmentPublicTitle(rent)).toBe('یادآوری قبض');
+    expect(installmentPublicTitle(plan())).toBe('یادآوری قسط');
+
+    const tomorrow = pressingInstallment([installmentProgress(rent, new Map(), [], first - 1)], first - 1, 1)!;
+    const insight = installmentInsight(tomorrow[0], tomorrow[1], first - 1);
+    expect(insight.text).toBe('سررسید «اجاره» فرداست.');
+    expect(insight.why).toBe('قبضی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.');
+    const late = pressingInstallment([installmentProgress(rent, new Map(), [], first + 40)], first + 40, 1)!;
+    expect(late[1]).toBe(0);
+    expect(installmentInsight(late[0], late[1], first + 40).text).toBe('سررسید «اجاره» گذشته.');
+  });
+
+  it("bills are left out of the installments' sum and add up to this month's line instead", () => {
+    const today = jalaliDay(1405, 6, 20);
+    const [phone, tv, rent, net] = [plan('phone'), plan('tv', 5_000_000, 12), bill('rent'), bill('net', 3_000_000)];
+    const paid = new Map([...links(phone, ['a', 10_000_000]), ...links(net, ['b', 1_000_000])]);
+    const all = [phone, tv, rent, net].map((g) => installmentProgress(g, paid, [], today));
+    const summary = installmentSummary(all, today)!;
+    expect(summary.monthlyRial).toBe(15_000_000);
+    expect(summary.dueThisMonth).toBe(2);
+    expect(installmentSummary(all.filter((p) => p.plan.id !== 'tv'), today)).toBeNull();
+    expect(billsLeftThisMonth(all, today)).toBe(80_000_000 + 2_000_000);
+    expect(billsLeftFa(82_000_000)).toBe('این ماه هنوز ۸٫۲ میلیون تومان قبض مونده.');
+    expect(billsLeftThisMonth(all.filter((p) => p.plan.id !== 'net'), today)).toBeNull();
+    const settled = new Map([...links(rent, ['c', 80_000_000]), ...links(net, ['d', 3_000_000])]);
+    expect(billsLeftThisMonth([rent, net].map((g) => installmentProgress(g, settled, [], today)), today)).toBeNull();
+    const later = jalaliMonthsAfter(first, 1);
+    expect(billsLeftThisMonth([rent, net].map((g) => installmentProgress(g, new Map(), [], later)), later)).toBe(83_000_000);
   });
 
   it('a Toman field is whole Rial, or nothing this app would store', () => {

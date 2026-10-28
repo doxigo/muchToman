@@ -276,6 +276,25 @@ test('a budget counts this month against its cap', async ({ page }) => {
   await expect(card).toContainText('۲۵٪');
 });
 
+test('a bill has no count to ask and says this month\'s on its card', async ({ page }) => {
+  await onboard(page);
+  await page.getByRole('tab', { name: 'آینده' }).click();
+  await page.getByRole('button', { name: 'اولین قسط یا قبض' }).click();
+  await page.getByRole('dialog', { name: 'قسط تازه' }).getByRole('radio', { name: 'قبض و اجاره' }).click();
+  const sheet = page.getByRole('dialog', { name: 'قبض تازه' });
+  await expect(sheet.getByText('چند قسط مونده؟')).toHaveCount(0);
+  await sheet.getByRole('textbox', { name: 'مثلاً اجاره، اینترنت یا موبایل' }).fill('اجاره');
+  await sheet.getByRole('textbox', { name: 'مبلغ هر ماه به تومان' }).pressSequentially('8000000');
+  // The day defaults to today's, so the first is due today.
+  await expect(sheet).toContainText('بعد هر ماه همین روز تا وقتی پاکش کنی.');
+  await sheet.getByRole('button', { name: 'ذخیره قبض' }).click();
+  await expect(sheet).toHaveCount(0);
+  const card = page.getByRole('button', { name: /^اجاره/ });
+  await expect(card).toContainText('ماهی ۸ میلیون تومان');
+  await expect(card).toContainText('سررسید این ماه امروزه.');
+  await expect(card).not.toContainText('قسط مونده');
+});
+
 test('joins a household and reads Android payloads that omit their defaults', async ({ page, context }) => {
   const hid = hex(16); const scope = `family:${hid}`; const raw = randomBytes(32); const maryam = hex(16); const now = Date.now();
   // What kotlinx writes with encodeDefaults=false: no `kind`, no field left at its default.

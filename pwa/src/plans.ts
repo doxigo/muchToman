@@ -16,8 +16,8 @@ import { faNumber } from './format';
 import { GoalKind, GoalPeriod, goalProgress, worthItAnswers } from './goals';
 import type { GoalHorizon, GoalProgress } from './goals';
 import {
-  encodeInstallmentLink, installmentLinks, installmentNews, installmentProgress, installmentReminderBody,
-  installmentReminderTitle, installmentsByDue, newInstallment,
+  encodeInstallmentLink, installmentLinks, installmentNews, installmentProgress, installmentPublicTitle,
+  installmentReminderBody, installmentReminderTitle, installmentsByDue, isBill, newInstallment,
 } from './installments';
 import type { InstallmentProgress } from './installments';
 import { jalaliMonthStart, jalaliOf, tehranDay } from './jalali';
@@ -221,7 +221,7 @@ export function deleteGoal(id: string): void {
 
 // ─────────────────────────── installments ───────────────────────────
 
-/** A plan she pays monthly; [count] is what is left, from the next [dayOfMonth]. Private. */
+/** A plan she pays monthly; [count] is what is left, from the next [dayOfMonth], or NO_END for a bill. Private. */
 export function addInstallment(name: string, paymentRial: number, count: number, dayOfMonth: number): void {
   const now = Date.now();
   const plan = newInstallment(uuid7(now), name, paymentRial, count, dayOfMonth, now, mineId());
@@ -403,7 +403,6 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
  * the rest): the kind of news and nothing else, no figure, no category, no plan name.
  */
 const BUDGET_PUBLIC_TITLE = 'خبری از بودجه';
-const INSTALLMENT_PUBLIC_TITLE = 'یادآوری قسط';
 const CHEQUE_PUBLIC_TITLE = 'یادآوری چک';
 const QUIET_PUBLIC_TITLE = 'احوال‌پرسی';
 const PUBLIC_BODY = 'جزئیات توی برنامه';
@@ -493,8 +492,10 @@ export async function announce(entries: LedgerEntry[], kept: LedgerEntry[], goal
     for (const [progress, due] of reminders.due) {
       pending.push(showNote(
         installmentReminderTitle(progress.plan, due, today),
-        withQuip(takeQuip('installment', null, { plan: progress.plan.nameFa }), installmentReminderBody(progress.plan, due)),
-        INSTALLMENT_PUBLIC_TITLE,
+        // No line on a bill (Notify.kt announceInstallments): the moment's jokes are about a debt ending.
+        withQuip(isBill(progress.plan) ? null : takeQuip('installment', null, { plan: progress.plan.nameFa }),
+          installmentReminderBody(progress.plan, due)),
+        installmentPublicTitle(progress.plan),
         installmentTag(progress.plan.id),
         { ...OPEN_BUDGET, due },
       ));

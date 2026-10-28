@@ -50,6 +50,12 @@ class InstallmentsTest {
         createdAt = 0, updatedAt = 0,
     )
 
+    /** Rent: no end, due on [first]'s day every month. */
+    private fun bill(id: String = "rent", payment: Long = 80_000_000) = Goal(
+        id = id, nameFa = "اجاره", targetRial = payment, kind = GoalKind.INSTALLMENT,
+        period = GoalPeriod.MONTH, startsOn = first, endsOn = null, createdAt = 0, updatedAt = 0,
+    )
+
     private fun links(plan: Goal, vararg paid: Pair<String, Long>) =
         paid.associate { (ref, rial) -> ref to InstallmentLink(plan.id, rial) }
 
@@ -316,6 +322,130 @@ class InstallmentsTest {
     }
 
     @Test
+    fun `a bill is a plan with no end, private like any other`() {
+        val now = tehranDayStart(jalaliDay(1405, 7, 10)) + 1
+        val rent = newInstallment("x", "اجاره", 80_000_000, NO_END, 5, now)!!
+        assertEquals(GoalKind.INSTALLMENT, rent.kind)
+        assertNull(rent.endsOn)
+        assertTrue(rent.isBill)
+        assertFalse(rent.shared)
+        assertEquals(jalaliDay(1405, 8, 5), rent.startsOn)
+        assertNull(installmentCount(rent))
+        // A cheque has no end either until it is passed, and is not a bill.
+        assertFalse(rent.copy(kind = GoalKind.CHEQUE).isBill)
+        // «۰» left is still no plan at all, and the other answers are checked as before.
+        assertNull(newInstallment("x", "اجاره", 80_000_000, 0, 5, now))
+        assertNull(newInstallment("x", "اجاره", 80_000_000, NO_END, 32, now))
+        // Made from a payment: it starts on the payment's day, and that payment is its first month.
+        val fromPayment = newInstallment("y", "اینترنت", 3_000_000, NO_END, 31, now, firstDue = first)!!
+        assertEquals(first, fromPayment.startsOn)
+        assertNull(fromPayment.endsOn)
+    }
+
+    @Test
+    fun `a bill has no count, no total and no end, and is never paid off`() {
+        val rent = bill()
+        val months = installmentProgress(rent, links(rent, "a" to 80_000_000L * 12), emptyList(), jalaliMonthsAfter(first, 11))
+        assertNull(months.count)
+        assertNull(months.totalRial)
+        assertFalse(months.done)
+        assertEquals(0f, months.share)
+        assertEquals(12, months.paidCount)
+        assertEquals(0L, months.overdueRial)
+        assertEquals(jalaliMonthsAfter(first, 12), months.nextDue)
+        assertNull(installmentLeftFa(months))
+        // Still offered as the payment of next month's rent.
+        val next = entry(jalaliMonthsAfter(first, 11), 80_000_000)
+        assertEquals(
+            listOf(next.txn.ref),
+            installmentProgress(rent, emptyMap(), listOf(next), first).candidates.map { it.txn.ref },
+        )
+        assertEquals("ماهی ۸ میلیون تومان • سی و یکم هر ماه", installmentLineFa(months))
+    }
+
+    @Test
+    fun `a bill falls behind month by month, and only once a date has passed unpaid`() {
+        val rent = bill()
+        val second = jalaliMonthsAfter(first, 1)
+        fun note(paid: Long, today: Long) =
+            installmentNoteFa(installmentProgress(rent, if (paid > 0) links(rent, "a" to paid) else emptyMap(), emptyList(), today), today)
+
+        assertEquals("اولین سررسید: ۳۱ شهریور ۱۴۰۵" to false, note(0, jalaliDay(1405, 5, 10)))
+        assertEquals("این ماه هنوز پرداخت نشده، سررسید ۳۱ شهریور ۱۴۰۵." to false, note(0, first - 1))
+        assertEquals("سررسید این ماه امروزه." to false, note(0, first))
+        assertEquals("این ماه پرداخت شده، بعدی ۳۰ مهر ۱۴۰۵." to false, note(80_000_000, first))
+        // A new month: last month's is paid, this one's not yet due.
+        assertEquals("این ماه هنوز پرداخت نشده، سررسید ۳۰ مهر ۱۴۰۵." to false, note(80_000_000, first + 1))
+        // Behind, said out loud, and it grows with each month gone by.
+        assertEquals(
+            "۸ میلیون تومان از ماه‌هایی که سررسیدشون گذشته، هنوز پرداخت نشده." to true,
+            note(0, first + 1),
+        )
+        assertEquals(160_000_000L, installmentProgress(rent, emptyMap(), emptyList(), second + 1).overdueRial)
+        // Half a month paid is still behind by the other half.
+        assertEquals(40_000_000L, installmentProgress(rent, links(rent, "a" to 40_000_000), emptyList(), first + 1).overdueRial)
+    }
+
+    @Test
+    fun `a link far too large for a bill reads as years ahead, never as a wrapped count`() {
+        val tiny = bill(payment = 1)
+        val progress = installmentProgress(tiny, links(tiny, "a" to MAX_PLAUSIBLE_RIAL), emptyList(), first)
+        assertEquals(MAX_INSTALLMENTS, progress.paidCount)
+        assertEquals(jalaliMonthsAfter(first, MAX_INSTALLMENTS), progress.nextDue)
+        assertEquals(jalaliMonthsAfter(first, MAX_INSTALLMENTS), installmentUpcoming(progress, first))
+    }
+
+    @Test
+    fun `a bill is reminded of every month, past any count a plan could have`() {
+        val rent = bill()
+        val far = jalaliMonthsAfter(first, MAX_INSTALLMENTS + 5)
+        val paidUp = installmentProgress(rent, links(rent, "a" to 80_000_000L * (MAX_INSTALLMENTS + 5)), emptyList(), far - 1)
+        val news = installmentNews(listOf(paidUp), 1, emptyMap(), tehranDayStart(far - 1) + 10 * 3_600_000L)
+        assertEquals(listOf(paidUp to far), news.due)
+        assertEquals("اجاره: سررسیدش فرداست", installmentReminderTitle(rent, far, far - 1))
+        assertEquals("۸ میلیون تومان • ${faDate(far)}", installmentReminderBody(rent, far))
+        assertEquals("یادآوری قبض", installmentPublicTitle(rent))
+        assertEquals("یادآوری قسط", installmentPublicTitle(plan()))
+
+        // Home: the bill by its own name, with no «قسط سوم از ۲۴».
+        val tomorrow = pressingInstallment(listOf(installmentProgress(rent, emptyMap(), emptyList(), first - 1)), first - 1, 1)!!
+        val insight = installmentInsight(tomorrow.first, tomorrow.second, first - 1)
+        assertEquals("سررسید «اجاره» فرداست.", insight.text)
+        assertEquals("قبضی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.", insight.why)
+        // Behind, it leads home's slot and is said as gone by.
+        val late = pressingInstallment(listOf(installmentProgress(rent, emptyMap(), emptyList(), first + 40)), first + 40, 1)!!
+        assertEquals(0, late.second)
+        assertEquals("سررسید «اجاره» گذشته.", installmentInsight(late.first, late.second, first + 40).text)
+    }
+
+    @Test
+    fun `bills are left out of the installments' sum and add up to this month's line instead`() {
+        val today = jalaliDay(1405, 6, 20)
+        val phone = plan("phone")
+        val tv = plan("tv", payment = 5_000_000, count = 12)
+        val rent = bill("rent")
+        val net = bill("net", payment = 3_000_000)
+        val paid = links(phone, "a" to 10_000_000) + links(net, "b" to 1_000_000)
+        val all = listOf(phone, tv, rent, net).map { installmentProgress(it, paid, emptyList(), today) }
+
+        val summary = installmentSummary(all, today)!!
+        assertEquals(15_000_000L, summary.monthlyRial)
+        assertEquals(2, summary.dueThisMonth)
+        // One installment and two bills is no installments' sum, but the bills' line stands.
+        assertNull(installmentSummary(all.filter { it.plan.id != "tv" }, today))
+        // The rent whole, and what the internet's partial payment leaves of its month.
+        assertEquals(80_000_000L + 2_000_000L, billsLeftThisMonth(all, today))
+        assertEquals("این ماه هنوز ۸٫۲ میلیون تومان قبض مونده.", billsLeftFa(82_000_000))
+        // One bill: its card says it. All paid: nothing to say.
+        assertNull(billsLeftThisMonth(all.filter { it.plan.id != "net" }, today))
+        val settled = links(rent, "c" to 80_000_000) + links(net, "d" to 3_000_000)
+        assertNull(billsLeftThisMonth(listOf(rent, net).map { installmentProgress(it, settled, emptyList(), today) }, today))
+        // Last month gone by unpaid is the card's to say, not this line's.
+        val later = jalaliMonthsAfter(first, 1)
+        assertEquals(83_000_000L, billsLeftThisMonth(listOf(rent, net).map { installmentProgress(it, emptyMap(), emptyList(), later) }, later))
+    }
+
+    @Test
     fun `a figure pre-filled into a Toman field saves back to the same Rial`() {
         // Pre-filled as whole Toman, an installment made from a 4,567,891 Rial payment was stored
         // at 4,567,890 and never matched the next identical payment.
@@ -372,6 +502,27 @@ class InstallmentsLedgerTest {
             assertEquals("plan", plan.plan.id)
             assertEquals(10_000_000L, plan.paidRial)
             assertEquals(0L, plan.overdueRial)
+        } finally {
+            derived.close()
+            durable.close()
+        }
+    }
+
+    @Test
+    fun `a bill keeps its missing end through the database and comes back a bill`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val durable = Room.inMemoryDatabaseBuilder(context, DurableDb::class.java).build()
+        val derived = Room.inMemoryDatabaseBuilder(context, DerivedDb::class.java).build()
+        try {
+            seedBuiltins(durable)
+            val now = System.currentTimeMillis()
+            durable.goals().put(newInstallment("rent", "اجاره", 80_000_000, NO_END, jalaliOf(tehranDay(now)).day, now)!!)
+            val rent = ledgerView(derived, durable).installments.single()
+            assertTrue(rent.plan.isBill)
+            assertNull(rent.count)
+            assertNull(rent.totalRial)
+            assertFalse(rent.done)
+            assertEquals(tehranDay(now), rent.nextDue)
         } finally {
             derived.close()
             durable.close()
