@@ -220,6 +220,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                         derived, durable,
                         excluded = store.reportExcluded,
                         startsOn = store.ledgerStartsOn,
+                        disabledBanks = store.disabledBanks,
                     )
                     announceBudgets(app, store, view.budgets)
                     announceInstallments(app, store, view.installments, view.cheques)

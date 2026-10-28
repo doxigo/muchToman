@@ -204,6 +204,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 derived, durable,
                 excluded = synced ?: store.reportExcluded,
                 startsOn = store.ledgerStartsOn,
+                disabledBanks = store.disabledBanks,
             )
             // The mirror moves in the same update as the cards, so دخل و خرج and «کل خرج»
             // change together rather than a frame apart. Untouched when nothing landed: a
@@ -2751,13 +2752,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (on) scanSms()
     }
 
-    /** A bank she switched off stays tracked and stays listed — it just leaves the total. */
+    /**
+     * A bank she switched off stays tracked and stays listed in تنظیمات, so switching it back on
+     * finds its balance where the bank left it. It leaves the total, and its rows leave the ledger
+     * and its notes — see [ledgerView] — which is the republish.
+     */
     fun setBankEnabled(bank: String, on: Boolean) {
         val before = _state.value.totals
         val next = if (on) store.disabledBanks - bank else store.disabledBanks + bank
         store.disabledBanks = next
         _state.update { it.copy(disabledBanks = next) }
         recordSnapshot(countedBefore = before)
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            publishLedger(DurableDb.get(app), DerivedDb.get(app))
+        }
     }
 
     /** She tells us what an account really holds; everything read after it builds on that. */

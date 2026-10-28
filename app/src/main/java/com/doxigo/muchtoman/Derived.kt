@@ -843,14 +843,23 @@ suspend fun ledgerView(
      * a start the screen honoured and the worker did not would announce money she set aside.
      */
     startsOn: Long = 0L,
+    /**
+     * The banks she switched off in تنظیمات — `Store.disabledBanks`. Taken for [startsOn]'s
+     * reason: the 3am worker's note reads this view, and a bank the screen left out but the
+     * worker did not would announce every one of its spends.
+     */
+    disabledBanks: Set<String> = emptySet(),
 ): LedgerView {
     val ledger = ledgerEntries(derived, durable, limit)
+    // Her rows only: a household member's row at the same bank is their account, not the one
+    // she switched off.
+    val own = ledger.entries.filterNot { it.txn.bank in disabledBanks && !it.txn.ref.startsWith("f:") }
     // Set aside here, at the view, and nowhere earlier. Below this line the months before the
-    // start are gone from the timeline, the deck, the reports and the caps; above it nothing
-    // moved — derived.db still holds them, so every balance still reads every message, and the
-    // family publication, which reads [ledgerEntries] itself, never mistakes a start she chose on
-    // her own phone for deletions to pass on to everyone else's.
-    val kept = startingFrom(ledger.entries, startsOn)
+    // start and the banks she switched off are gone from the timeline, the deck, the reports, the
+    // caps and the notes; above it nothing moved — derived.db still holds them, so every balance
+    // still reads every message, and the family publication, which reads [ledgerEntries] itself,
+    // never mistakes a choice she made on her own phone for deletions to pass on to everyone else's.
+    val kept = startingFrom(own, startsOn)
     val answers = durable.decisions().ofKind(DecisionKind.WORTH_IT)
         .mapNotNull { d -> d.value?.let { d.ref to it } }
         .toMap()
@@ -908,8 +917,8 @@ suspend fun ledgerView(
             derivedAt = derived.meta().get(META_DERIVED_AT)?.toLongOrNull(),
             deriveMs = derived.meta().get(META_DERIVE_MS)?.toLongOrNull(),
             startsOn = startsOn,
-            setAside = ledger.entries.size - kept.size,
-            months = monthCounts(ledger.entries),
+            setAside = own.size - kept.size,
+            months = monthCounts(own),
         ),
     )
 }

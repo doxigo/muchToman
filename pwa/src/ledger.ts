@@ -259,7 +259,7 @@ export function forgetAccount(key: string): void {
   });
 }
 
-/** A bank switched off stays tracked and listed; it just leaves the total. */
+/** A bank switched off stays tracked and listed in settings; it leaves the total and the ledger. */
 export function toggleBankDisabled(bank: string): void {
   const disabled = pref('disabledBanks');
   setPref('disabledBanks', disabled.includes(bank) ? disabled.filter((b) => b !== bank) : [...disabled, bank]);

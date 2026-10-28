@@ -380,6 +380,15 @@ describe('the ledger view', () => {
     expect(startingFrom(whole.entries, 0)).toBe(whole.entries);
   });
 
+  it("leaves a bank she switched off out of her ledger, not out of a member's", () => {
+    const saman = source('SAMAN', 'برداشت مبلغ 2,000,000 ریال', 10);
+    const blu = source('BLU', 'برداشت مبلغ 3,000,000 ریال', 20);
+    const his: FamilyTxn = { id: 'txn:him:1', ownerMemberId: 'him', sourceKind: 'sms', at: 5, day: 0, amountRial: -700, bank: 'SAMAN', merchant: '', updatedAt: 1, deleted: false, transfer: false };
+    const view = ledgerView(input({ sources: [saman, blu], familyTxns: [his], disabledBanks: ['SAMAN'] }));
+    expect(view.entries.map((e) => [e.txn.bank, e.txn.ref[0]])).toEqual([['BLU', 's'], ['SAMAN', 'f']]);
+    expect(view.allEntries).toHaveLength(3);
+  });
+
   it('drops a row she deleted, keeps her answers, and names who wrote what', () => {
     const s = source('SAMAN', 'برداشت مبلغ 2,000,000 ریال', 10);
     const gone = source('SAMAN', 'برداشت مبلغ 3,000,000 ریال', 20);

@@ -432,7 +432,11 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   }).sort((a, b) => -byTime(a.txn, b.txn));
 
   // Set aside here, at the view, and nowhere earlier: every balance still reads every message.
-  const kept = startingFrom(entries, startsOn);
+  // A bank she switched off leaves with the months before the start — her rows only, since a
+  // member's row at the same bank is their account.
+  const disabled = new Set(input.disabledBanks);
+  const own = entries.filter((e) => !disabled.has(e.txn.bank) || e.txn.ref.startsWith('f:'));
+  const kept = startingFrom(own, startsOn);
   // The messages as read, not as settled: the phone's balances are its prefs fold over each message
   // as the parser read it, and a direction she set never moves a balance the bank stated.
   const bankAccounts = bankAccountsOf(read.filter((t) => !dropped.has(t.ref)), input.anchors, input.disabledBanks, hidden,
@@ -460,8 +464,8 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
       derivedAt: now,
       deriveMs: Math.round(performance.now() - started),
       startsOn,
-      setAside: entries.length - kept.length,
-      months: monthCounts(entries),
+      setAside: own.length - kept.length,
+      months: monthCounts(own),
     },
     bankAccounts,
     bankTotalRial: bankTotal(bankAccounts),
