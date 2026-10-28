@@ -435,7 +435,7 @@ function ChequeCard({ cheque, warning, today, radius, onOpen }: {
           <EditHint />
         </span>
         <span class="plan-figure-row mt-m">
-          <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 3)} ${moneyUnit()}`)} />
+          <FitFigure text={bidi(`${faCompact(tomanOf(cheque.targetRial), 2)} ${moneyUnit()}`)} />
           <span class={`cheque-when${warning ? ' warned' : ''}`}>{chequeWhenFa(cheque.startsOn, today)}</span>
         </span>
         {warning && <span class={`plan-note mt-xs${late ? ' loud' : ''}`}>{warning}</span>}

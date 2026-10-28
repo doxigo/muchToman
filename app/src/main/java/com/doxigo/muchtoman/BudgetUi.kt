@@ -1038,7 +1038,7 @@ private fun ChequeCard(
         Spacer(Modifier.height(Space.m))
         Row(verticalAlignment = Alignment.Bottom) {
             BasicText(
-                text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 3)} $moneyUnit"),
+                text = bidi("${faCompact(tomanOf(cheque.targetRial), dec = 2)} $moneyUnit"),
                 maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 20.sp),
                 style = figureStyle(MaterialTheme.colorScheme.onSurface, FontWeight.ExtraBold),

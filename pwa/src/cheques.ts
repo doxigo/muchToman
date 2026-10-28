@@ -67,11 +67,11 @@ export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: r
     .reduce((sum, c) => sum + c.targetRial, 0);
   // A cheque names its bank, not which of its accounts: read against the first, which keeps the bank's name.
   const account = accounts.find((a) => (a.key ?? a.bank) === cheque.categoryId && a.anchored);
-  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 3)} ${moneyUnit()} توش هست.`;
+  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 2)} ${moneyUnit()} توش هست.`;
   if (account.balanceRial >= need) return null;
   const earlier = need > cheque.targetRial ? 'با چک‌های زودتر همین حساب، ' : '';
   return `تو حساب ${bank} ${faCompact(tomanOf(account.balanceRial))} ${moneyUnit()} هست؛ ` +
-    `${earlier}${faCompact(tomanOf(need - account.balanceRial), 3)} کمه.`;
+    `${earlier}${faCompact(tomanOf(need - account.balanceRial), 2)} کمه.`;
 }
 
 // ─────────────────────────── on home ───────────────────────────
@@ -156,7 +156,7 @@ export const chequeReminderTitle = (cheque: Goal, today: number): string =>
 
 /** «۵۰ میلیون تومان از بانک ملت» — the cheque in one line. */
 export const chequeLineFa = (cheque: Goal): string =>
-  `${faCompact(tomanOf(cheque.targetRial), 3)} ${moneyUnit()} از ${bankFa(cheque.categoryId ?? '')}`;
+  `${faCompact(tomanOf(cheque.targetRial), 2)} ${moneyUnit()} از ${bankFa(cheque.categoryId ?? '')}`;
 
 /** The warning when there is one; otherwise how much, from where, and when. */
 export const chequeReminderBody = (cheque: Goal, open: readonly Goal[], accounts: readonly ChequeAccount[], today: number, daysBefore: number): string =>

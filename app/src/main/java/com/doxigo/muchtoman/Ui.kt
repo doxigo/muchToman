@@ -1792,7 +1792,7 @@ internal fun HeroCard(
 @Composable
 private fun HeroTotal(total: Double, min: TextUnit, max: TextUnit, modifier: Modifier = Modifier) {
     AnimatedContent(
-        targetState = faCompact(total, 3, pad = true),
+        targetState = faCompact(total, 2, pad = true),
         modifier = modifier,
         transitionSpec = {
             (
@@ -2994,7 +2994,7 @@ private fun SectionHead(title: String, subtotal: Double?, modifier: Modifier = M
             Text(
                 // Three decimals, like the rows it sits above: a header reading ۱٫۴ over rows
                 // that add up to ۱٫۴۰۹ looks like one of the two is wrong.
-                "${faCompact(it, 3, pad = true)} $moneyUnit",
+                "${faCompact(it, 2, pad = true)} $moneyUnit",
                 fontSize = 13.sp,
                 fontFamily = ModamFigures,
                 fontWeight = FontWeight.SemiBold,
@@ -3052,7 +3052,7 @@ private fun RowAmount(
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     BasicText(
         text = buildAnnotatedString {
-            append(faCompact(toman, 3, pad = true))
+            append(faCompact(toman, 2, pad = true))
             // em, not sp: the whole line is shrink-to-fit, and the unit has to shrink with the
             // figure or it overtakes it on the row where the figure is smallest.
             unit?.let {
@@ -4546,7 +4546,7 @@ private fun EditSheet(
                             // not a separate finding.
                             previewRate?.let { rate ->
                                 BasicText(
-                                    text = "${faCompact(current * rate, 3, pad = true)} $moneyUnit",
+                                    text = "${faCompact(current * rate, 2, pad = true)} $moneyUnit",
                                     maxLines = 1,
                                     autoSize = TextAutoSize.StepBased(
                                         minFontSize = 13.sp,
@@ -4604,7 +4604,7 @@ private fun EditSheet(
                     // Same figure the row shows, so it carries the same three decimals — and
                     // shrinks rather than wrapping, since it is one sentence.
                     BasicText(
-                        text = "یعنی ${faCompact(amount * previewRate, 3, pad = true)} $moneyUnit",
+                        text = "یعنی ${faCompact(amount * previewRate, 2, pad = true)} $moneyUnit",
                         maxLines = 1,
                         autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
                         style = TextStyle(

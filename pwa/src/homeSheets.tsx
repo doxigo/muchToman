@@ -70,7 +70,7 @@ export function RowTitle({ text, max = 18, class: cls = '' }: { text: string; ma
  * not the asset's name — is what gives way on a narrow phone. The unit is set inline at .7em.
  */
 export function RowAmount({ toman, struck, unit, class: cls = '' }: { toman: number; struck?: boolean; unit?: string; class?: string }) {
-  const text = faCompact(toman, 3, true);
+  const text = faCompact(toman, 2, true);
   const ref = useAutoSize<HTMLSpanElement>(19, 13, text + (unit ?? ''));
   return (
     <span ref={ref} class={`row-amount figure${struck ? ' struck' : ''} ${cls}`} style={{ maxWidth: unit ? '140px' : '116px', fontSize: 'calc(19px * var(--text))' }}>
@@ -476,7 +476,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
 
         {/* Not when the balance card is up: it already carries the Toman line. */}
         {amount != null && previewRate != null && !valued && !balanceCardShown && (
-          <div class="edit-card"><FitLine text={`یعنی ${faCompact(amount * previewRate, 3, true)} ${moneyUnit()}`} max={18} min={14} weight={700} /></div>
+          <div class="edit-card"><FitLine text={`یعنی ${faCompact(amount * previewRate, 2, true)} ${moneyUnit()}`} max={18} min={14} weight={700} /></div>
         )}
 
         {!valued && (!editingRate ? (
@@ -538,7 +538,7 @@ function WalletBalanceCard({ held, toman, status, error }: { held: string; toman
       <p style={{ fontSize: 'calc(13px * var(--text))', fontWeight: 700 }}>موجودی فعلی</p>
       {/* faHeld, not full precision: the row outside says the same number the same length. */}
       <FitLine text={held} max={30} min={18} weight={800} />
-      {toman != null && <FitLine class="sub" text={`${faCompact(toman, 3, true)} ${moneyUnit()}`} max={17} min={13} weight={600} />}
+      {toman != null && <FitLine class="sub" text={`${faCompact(toman, 2, true)} ${moneyUnit()}`} max={17} min={13} weight={600} />}
       <p class={`status${error ? ' error' : ''}`} aria-live={error ? 'polite' : undefined}>{status}</p>
     </div>
   );

@@ -94,15 +94,19 @@ private fun faMagnitude(value: Double, dec: Int = 1, pad: Boolean = false): Stri
     //
     // Two forms, and the difference is deliberate. Prose (dec = 1, unpadded) drops a trailing
     // zero, because "۱۱ میلیون" is how the amount is actually said mid-sentence. The figures
-    // on the list and the hero use dec = 3 padded: a holding is usually a whole number times a
+    // on the list and the hero use dec = 2 padded: a holding is usually a whole number times a
     // round rate, so without padding they collapse to "۸۵۰٫۸" and the precision looks like it
     // comes and goes — except a figure that lands exactly on the unit, which drops its
-    // decimals entirely: "۱۸۰٫۰۰۰ میلیون" is three zeros carrying nothing, and reads worse
-    // than "۱۸۰ میلیون".
+    // decimals entirely: "۱۸۰٫۰۰ میلیون" is zeros carrying nothing, and reads worse than
+    // "۱۸۰ میلیون".
+    //
+    // Never three decimals. In Modam «٫» and «٬» are near the same mark, so three digits after
+    // it read as a thousands group: «۹٫۵۰۰ میلیون» is 9,500 million to the eye, a misreading
+    // by a thousand. Two digits can never be a group.
     //
     // The cut is made in decimal, not on the raw double — the same BigDecimal move [faHeld]
-    // makes. 1,007,000 over a million is 1.00699999… as a binary double, and truncating that
-    // directly rendered «۱٫۰۰۶ میلیون»: a thousand Toman she really has, eaten by
+    // makes. 1,150,000 over a million is 1.14999999… as a binary double, and truncating that
+    // directly renders «۱٫۱۴ میلیون»: ten thousand Toman she really has, eaten by
     // representation error. Settling at SETTLE_SCALE first erases the noise; DOWN then
     // enforces the one safe direction.
     val q = value / div

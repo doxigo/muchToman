@@ -491,7 +491,7 @@ private fun CompositionBar(
                 Text(kind.fa, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(
                     // Parentheses, not a middot: beside Persian digits «·» reads as a zero.
-                    (usd?.let { faUsd(value / it) } ?: "${faCompact(value, 3, pad = true)} $moneyUnit") +
+                    (usd?.let { faUsd(value / it) } ?: "${faCompact(value, 2, pad = true)} $moneyUnit") +
                         " (${faNumber(round(value / total * 100))}٪)",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -554,7 +554,7 @@ private fun ChangeFigure(change: Change, usd: Boolean) {
             text = when {
                 flat -> "بدون تغییر"
                 usd -> faUsd(abs(change.delta))
-                else -> "${faCompact(abs(change.delta), 3, pad = true)} $moneyUnit"
+                else -> "${faCompact(abs(change.delta), 2, pad = true)} $moneyUnit"
             },
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(minFontSize = 22.sp, maxFontSize = 44.sp),

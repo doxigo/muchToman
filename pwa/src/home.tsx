@@ -113,7 +113,7 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
           {familyAssets.map((shared) => (
             <div key={shared.memberId}>
               <Section title={`دارایی ${shared.name}`}
-                trailing={shared.items.length > 1 ? <span class="sub figure">{`${faCompact(shared.totalToman, 3, true)} ${moneyUnit()}`}</span> : undefined} />
+                trailing={shared.items.length > 1 ? <span class="sub figure">{`${faCompact(shared.totalToman, 2, true)} ${moneyUnit()}`}</span> : undefined} />
               <FamilyAssetBand shared={shared} />
             </div>
           ))}
@@ -152,7 +152,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
   // A month, against her own total only — the history never recorded the household's.
   const change = useMemo(() => changeOver(history, Math.trunc(Date.now() / DAY_MS), 30, totals.toman), [history, totals.toman]);
   const shownChange = familyMode ? null : change;
-  const figure = faCompact(total, 3, true);
+  const figure = faCompact(total, 2, true);
   const words = faWordsToman(total);
   const usdAside = usd != null && <span class="usd figure" aria-label={`${faRate(usd)} دلار`}>{faUsd(usd)}</span>;
 
@@ -545,7 +545,7 @@ function Holdings({ list, effective, coins, view, refreshing, errors }: {
         return (
           <div key={kind}>
             {sections.length > 1
-              ? <Section title={KIND_FA[kind]} trailing={counted > 1 ? <span class="sub figure">{`${faCompact(sum.toman, 3, true)} ${moneyUnit()}`}</span> : undefined} />
+              ? <Section title={KIND_FA[kind]} trailing={counted > 1 ? <span class="sub figure">{`${faCompact(sum.toman, 2, true)} ${moneyUnit()}`}</span> : undefined} />
               : <div class="band-gap" />}
             <div class="band holdings">
               {held.map((h) => {

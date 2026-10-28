@@ -356,7 +356,7 @@ function CompositionBar({ composition, usd }: { composition: Array<[Kind, number
           <span class="rp-legend-dot" style={{ background: BAR_TINT[kind] }} />
           <span class="grow">{KIND_FA[kind]}</span>
           {/* Parentheses, not a middot: beside Persian digits «·» reads as a zero. */}
-          <span class="muted">{`${usd != null ? faUsd(value / usd) : `${faCompact(value, 3, true)} ${moneyUnit()}`} (${faNumber(roundEven(value / total * 100))}٪)`}</span>
+          <span class="muted">{`${usd != null ? faUsd(value / usd) : `${faCompact(value, 2, true)} ${moneyUnit()}`} (${faNumber(roundEven(value / total * 100))}٪)`}</span>
         </div>
       ))}
     </div>
@@ -371,7 +371,7 @@ function ChangeFigure({ change, usd }: { change: Change; usd: boolean }) {
   const delta = Math.abs(change.delta);
   return (
     <div class="rp-fitbox rp-change">
-      <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 3, true)} ${moneyUnit()}`} min={22} max={44}
+      <Fit text={flat ? 'بدون تغییر' : usd ? faUsd(delta) : `${faCompact(delta, 2, true)} ${moneyUnit()}`} min={22} max={44}
         class="figure rp-w900" color={tone} spoken={usd && !flat ? `${faRate(delta)} دلار` : undefined} />
       {!flat && (
         <>

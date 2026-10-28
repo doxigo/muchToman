@@ -201,11 +201,11 @@ class MoneyTest {
 
     @Test
     fun `binary representation error does not eat a decimal the compact form owes her`() {
-        // 1,007,000 over a million is 1.00699999… as a raw double, and truncating that binary
-        // hair rendered «۱٫۰۰۶ میلیون» — a thousand Toman she really has. Settled in decimal
+        // 1,150,000 over a million is 1.14999999… as a raw double, and truncating that binary
+        // hair renders «۱٫۱۴ میلیون» — ten thousand Toman she really has. Settled in decimal
         // first, the same BigDecimal move faHeld makes, then cut in the one safe direction.
-        assertEquals("۱٫۰۰۷ میلیون", faCompact(1_007_000.0, 3, pad = true))
-        assertEquals("${faDecimal(1.007, 3)} میلیون", faCompact(1_007_000.0, 3))
+        assertEquals("۱٫۱۵ میلیون", faCompact(1_150_000.0, 2, pad = true))
+        assertEquals("${faDecimal(1.15, 2)} میلیون", faCompact(1_150_000.0, 2))
     }
 
     @Test
@@ -323,24 +323,26 @@ class MoneyTest {
     }
 
     @Test
-    fun `the hero total carries three decimals without ever rounding up`() {
-        assertEquals("${faDecimal(9.643, 3)} میلیارد", faCompact(9_643_999_999.0, 3))
-        assertEquals("${faNumber(3.0)} میلیارد", faCompact(3_000_000_000.0, 3))
-        assertEquals("${faDecimal(10.8, 3)} میلیون", faCompact(10_800_000.0, 3))
+    fun `the hero total carries two decimals without ever rounding up`() {
+        assertEquals("${faDecimal(9.64, 2)} میلیارد", faCompact(9_643_999_999.0, 2))
+        assertEquals("${faNumber(3.0)} میلیارد", faCompact(3_000_000_000.0, 2))
+        assertEquals("${faDecimal(10.8, 2)} میلیون", faCompact(10_800_000.0, 2))
     }
 
     @Test
-    fun `figures on the list hold three decimals unless they are all zeros`() {
+    fun `figures on the list hold two decimals unless they are all zeros`() {
         // A fractional figure keeps its full width, so precision does not appear and vanish
         // between one row and the next…
-        assertEquals("۵۵۹٫۵۰۰ میلیون", faCompact(559_500_000.0, 3, pad = true))
-        assertEquals("۹٫۷۰۰ میلیارد", faCompact(9_700_000_000.0, 3, pad = true))
-        // …but one that lands exactly on the unit drops the decimals entirely: the three
-        // zeros in "۱۸۰٫۰۰۰ میلیون" carry nothing and only slow the reading down.
-        assertEquals("۳ میلیارد", faCompact(3_000_000_000.0, 3, pad = true))
-        assertEquals("۱۸۰ میلیون", faCompact(180_000_000.0, 3, pad = true))
+        assertEquals("۵۵۹٫۵۰ میلیون", faCompact(559_500_000.0, 2, pad = true))
+        assertEquals("۹٫۷۰ میلیارد", faCompact(9_700_000_000.0, 2, pad = true))
+        // …never three: «۹٫۵۰۰ میلیون» reads as 9,500 million, «٫» and «٬» being near the same mark
+        assertEquals("۹٫۵۰ میلیون", faCompact(9_500_000.0, 2, pad = true))
+        // …and one that lands exactly on the unit drops the decimals entirely: the zeros in
+        // "۱۸۰٫۰۰ میلیون" carry nothing and only slow the reading down.
+        assertEquals("۳ میلیارد", faCompact(3_000_000_000.0, 2, pad = true))
+        assertEquals("۱۸۰ میلیون", faCompact(180_000_000.0, 2, pad = true))
         // padding adds zeros; it must never add value
-        assertEquals("۹٫۶۴۳ میلیارد", faCompact(9_643_999_999.0, 3, pad = true))
+        assertEquals("۹٫۶۴ میلیارد", faCompact(9_643_999_999.0, 2, pad = true))
     }
 
     @Test

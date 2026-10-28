@@ -193,9 +193,9 @@ test('a pasted bank message lands in دفتر and sets the account balance', asy
   await expect(page.getByRole('button', { name: /^بانک ملت/ })).toContainText(signed('−۴۹۶', 'هزار'));
   await page.getByRole('tab', { name: 'دارایی' }).click();
   const bank = page.getByRole('button').filter({ hasText: 'حساب‌های بانکی' });
-  await expect(bank).toContainText('۱۹۹٫۰۸۸ میلیون');
+  await expect(bank).toContainText('۱۹۹٫۰۸ میلیون');
   await bank.click();
-  await expect(page.getByRole('dialog', { name: 'حساب‌های بانکی' })).toContainText('۱۹۹٫۰۸۸ میلیون');
+  await expect(page.getByRole('dialog', { name: 'حساب‌های بانکی' })).toContainText('۱۹۹٫۰۸ میلیون');
 });
 
 test('a one-time code is refused on the paste sheet', async ({ page }) => {
