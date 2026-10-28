@@ -21,7 +21,7 @@ const mellat: ChequeAccount = { bank: 'MELLAT', balanceRial: 300_000_000, anchor
 describe('cheques', () => {
   it('a short account says how much it holds and how much is missing', () => {
     const c = cheque();
-    expect(chequeWarningFa(c, [c], [mellat], due - 1, 1)).toBe('تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.');
+    expect(chequeWarningFa(c, [c], [mellat], due - 1, 1)).toBe('تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.');
     // Further off than her window: nothing yet. Covered: nothing at all.
     expect(chequeWarningFa(c, [c], [mellat], due - 2, 1)).toBeNull();
     expect(chequeWarningFa(c, [c], [{ ...mellat, balanceRial: 500_000_000 }], due, 1)).toBeNull();
@@ -29,7 +29,7 @@ describe('cheques', () => {
 
   it('an unknown balance is said as unknown, never as nothing in the account', () => {
     const c = cheque();
-    const unknown = 'موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰ میلیون تومان توش هست.';
+    const unknown = 'موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰٬۰۰۰٬۰۰۰ تومان توش هست.';
     expect(chequeWarningFa(c, [c], [], due, 1)).toBe(unknown);
     // A running sum of the messages read is not a balance.
     expect(chequeWarningFa(c, [c], [{ ...mellat, anchored: false }], due, 1)).toBe(unknown);
@@ -43,7 +43,7 @@ describe('cheques', () => {
     expect(chequeWhenFa(due, due - 1)).toBe('فردا');
     expect(chequeWhenFa(due, due + 1)).toBe('۱ روز گذشته');
     expect(chequeWhenFa(due, due + 2)).toBe('۲ روز گذشته');
-    const short = 'تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.';
+    const short = 'تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.';
     expect(chequeWarningFa(c, [c], [mellat], due, -1)).toBe(short);
     expect(chequeWarningFa(c, [c], [mellat], due + 2, 1)).toBe(short);
   });
@@ -55,7 +55,7 @@ describe('cheques', () => {
     expect(open).toEqual([first, second]);
     expect(chequeWarningFa(first, open, [mellat], due, 1)).toBeNull();
     expect(chequeWarningFa(second, open, [mellat], due, 1))
-      .toBe('تو حساب بانک ملت ۳۰ میلیون تومان هست؛ با چک‌های زودتر همین حساب، ۱۰ میلیون کمه.');
+      .toBe('تو حساب بانک ملت ۳۰ میلیون تومان هست؛ با چک‌های زودتر همین حساب، ۱۰٬۰۰۰٬۰۰۰ تومان کمه.');
     // Home leads with the one that cannot be covered.
     expect(pressingCheque(open, [mellat], due, 1)).toEqual(second);
   });
@@ -64,7 +64,7 @@ describe('cheques', () => {
     const c = cheque();
     const story = buildStory([], 0, due - 1, { cheques: [c], accounts: [mellat] });
     expect(story.attentionCheque).toEqual(c);
-    expect(story.attention?.text).toBe('سررسید چک «اجاره» فرداست. تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.');
+    expect(story.attention?.text).toBe('سررسید چک «اجاره» فرداست. تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.');
     expect(buildStory([], 0, due - 3, { cheques: [c], accounts: [mellat] }).attentionCheque).toBeNull();
   });
 

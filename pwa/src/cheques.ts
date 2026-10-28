@@ -11,7 +11,7 @@
  * figure missing. ponytail: outgoing only, settled by her tap.
  */
 import type { BankAccountView } from './derived';
-import { faCompact, faDate, faNumber, tomanOf, moneyUnit } from './format';
+import { faCompact, faDate, faNumber, shownOf, tomanOf, moneyUnit } from './format';
 import { GoalKind, GoalPeriod } from './goals';
 import { installmentWhenFa, remindAwake } from './installments';
 import type { InstallmentProgress } from './installments';
@@ -57,7 +57,7 @@ export function chequeWhenFa(due: number, today: number): string {
  * The card's warning, or null while there is nothing to warn of: the date is further off than
  * [daysBefore] (never less than the day itself), or the account holds every open cheque on it up to
  * and including this one. Unknown — no account, or only a running sum — is said as unknown. What is
- * missing is cut at a thousand Toman: a shortfall read low is a cheque that still bounces.
+ * needed or missing is said to the Toman: a shortfall read low is a cheque that still bounces.
  */
 export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: readonly ChequeAccount[], today: number, daysBefore: number): string | null {
   if (cheque.startsOn - today > Math.max(daysBefore, 0)) return null;
@@ -67,11 +67,11 @@ export function chequeWarningFa(cheque: Goal, open: readonly Goal[], accounts: r
     .reduce((sum, c) => sum + c.targetRial, 0);
   // A cheque names its bank, not which of its accounts: read against the first, which keeps the bank's name.
   const account = accounts.find((a) => (a.key ?? a.bank) === cheque.categoryId && a.anchored);
-  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), 2)} ${moneyUnit()} توش هست.`;
+  if (!account) return `موجودی حساب ${bank} رو نمی‌دونیم؛ مطمئن شو ${faNumber(shownOf(tomanOf(need)))} ${moneyUnit()} توش هست.`;
   if (account.balanceRial >= need) return null;
   const earlier = need > cheque.targetRial ? 'با چک‌های زودتر همین حساب، ' : '';
   return `تو حساب ${bank} ${faCompact(tomanOf(account.balanceRial))} ${moneyUnit()} هست؛ ` +
-    `${earlier}${faCompact(tomanOf(need - account.balanceRial), 2)} کمه.`;
+    `${earlier}${faNumber(shownOf(tomanOf(need - account.balanceRial)))} ${moneyUnit()} کمه.`;
 }
 
 // ─────────────────────────── on home ───────────────────────────

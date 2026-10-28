@@ -170,7 +170,7 @@ describe('plans', () => {
       await plans.announce([], [], [cheque], now);
       // No account for ملت in this ledger: unknown, said as unknown.
       expect(shown.map((s) => [s.title, s.options.body])).toEqual([
-        ['سررسید چک «اجاره» فرداست', 'موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰ میلیون تومان توش هست.'],
+        ['سررسید چک «اجاره» فرداست', 'موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰٬۰۰۰٬۰۰۰ تومان توش هست.'],
       ]);
       expect(shown[0].options).toMatchObject({ tag: 'cheque:c1', data: { tab: 'BUDGET', due: first + 1 } });
       expect(state.pref('installmentMarks')).toEqual({ c1: first + 1 });

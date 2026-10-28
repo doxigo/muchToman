@@ -21,7 +21,7 @@ class ChequesTest {
     fun `a short account says how much it holds and how much is missing`() {
         val c = cheque()
         assertEquals(
-            "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.",
+            "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.",
             chequeWarningFa(c, listOf(c), listOf(mellat), due - 1, daysBefore = 1),
         )
         // Further off than her window: nothing yet. Covered: nothing at all.
@@ -32,7 +32,7 @@ class ChequesTest {
     @Test
     fun `an unknown balance is said as unknown, never as nothing in the account`() {
         val c = cheque()
-        val unknown = "موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰ میلیون تومان توش هست."
+        val unknown = "موجودی حساب بانک ملت رو نمی‌دونیم؛ مطمئن شو ۵۰٬۰۰۰٬۰۰۰ تومان توش هست."
         assertEquals(unknown, chequeWarningFa(c, listOf(c), emptyList(), due, daysBefore = 1))
         // A running sum of the messages read is not a balance.
         assertEquals(unknown, chequeWarningFa(c, listOf(c), listOf(mellat.copy(anchored = false)), due, daysBefore = 1))
@@ -47,7 +47,7 @@ class ChequesTest {
         assertEquals("فردا", chequeWhenFa(due, due - 1))
         assertEquals("۱ روز گذشته", chequeWhenFa(due, due + 1))
         assertEquals("۲ روز گذشته", chequeWhenFa(due, due + 2))
-        val short = "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه."
+        val short = "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه."
         assertEquals(short, chequeWarningFa(c, listOf(c), listOf(mellat), due, daysBefore = -1))
         assertEquals(short, chequeWarningFa(c, listOf(c), listOf(mellat), due + 2, daysBefore = 1))
     }
@@ -60,7 +60,7 @@ class ChequesTest {
         assertEquals(listOf(first, second), open)
         assertNull(chequeWarningFa(first, open, listOf(mellat), due, daysBefore = 1))
         assertEquals(
-            "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ با چک‌های زودتر همین حساب، ۱۰ میلیون کمه.",
+            "تو حساب بانک ملت ۳۰ میلیون تومان هست؛ با چک‌های زودتر همین حساب، ۱۰٬۰۰۰٬۰۰۰ تومان کمه.",
             chequeWarningFa(second, open, listOf(mellat), due, daysBefore = 1),
         )
         // Home leads with the one that cannot be covered.
@@ -73,7 +73,7 @@ class ChequesTest {
         val story = buildStory(emptyList(), 0L, due - 1, cheques = listOf(c), accounts = listOf(mellat))
         assertEquals(c, story.attentionCheque)
         assertEquals(
-            "سررسید چک «اجاره» فرداست. تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.",
+            "سررسید چک «اجاره» فرداست. تو حساب بانک ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.",
             story.attention?.text,
         )
         assertNull(buildStory(emptyList(), 0L, due - 3, cheques = listOf(c), accounts = listOf(mellat)).attentionCheque)

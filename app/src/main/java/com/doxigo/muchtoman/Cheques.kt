@@ -77,8 +77,8 @@ fun chequeWhenFa(due: Long, today: Long): String = when {
  * that bank, or one whose figure is only a running sum ([BankAccount.anchored]) — and never read as
  * nothing in it.
  *
- * The balance truncates as every figure does; what is missing is cut at a thousand Toman rather than
- * a hundred thousand, because a shortfall read low is a cheque that still bounces.
+ * The balance truncates as every figure does; what is needed or missing is said to the Toman, in
+ * grouped digits, because a shortfall read low is a cheque that still bounces.
  */
 fun chequeWarningFa(
     cheque: Goal,
@@ -99,12 +99,12 @@ fun chequeWarningFa(
     // one that keeps the bank's own name. ponytail: a cheque picks its account once someone writes
     // them on a second account at the same bank.
     val account = accounts.firstOrNull { it.key == cheque.categoryId && it.anchored }
-        ?: return "موجودی حساب $bank رو نمی‌دونیم؛ مطمئن شو ${faCompact(tomanOf(need), dec = 2)} $moneyUnit توش هست."
+        ?: return "موجودی حساب $bank رو نمی‌دونیم؛ مطمئن شو ${faNumber(shownOf(tomanOf(need)))} $moneyUnit توش هست."
     val balanceRial = Math.round(account.balance * 10.0)
     if (balanceRial >= need) return null
     val earlier = if (need > cheque.targetRial) "با چک‌های زودتر همین حساب، " else ""
     return "تو حساب $bank ${faCompact(tomanOf(balanceRial))} $moneyUnit هست؛ " +
-        "$earlier${faCompact(tomanOf(need - balanceRial), dec = 2)} کمه."
+        "$earlier${faNumber(shownOf(tomanOf(need - balanceRial)))} $moneyUnit کمه."
 }
 
 // ─────────────────────────── on home ───────────────────────────

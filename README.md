@@ -84,7 +84,7 @@ Sample data, live rates.
 - **Cheques you have written, checked against the account before the date.** A cheque is its amount,
   the date on it, and the bank account it draws on. As the date nears (the installment reminder's
   window), the card says in words when that account's balance, read from the bank's messages, will
-  not cover it — «تو حساب ملت ۳۰ میلیون تومان هست؛ ۲۰ میلیون کمه.» — counting the cheques due
+  not cover it — «تو حساب ملت ۳۰ میلیون تومان هست؛ ۲۰٬۰۰۰٬۰۰۰ تومان کمه.» — counting the cheques due
   earlier on the same account, and it says when it does not know the balance rather than assuming
   nothing is there. One tap on «پاس شد» clears it. The reminder comes with the installment ones.
 - **Notifications with a voice, witty by default.** Budget warnings and installment reminders keep
