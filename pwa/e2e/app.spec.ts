@@ -351,4 +351,20 @@ test('joins a household and reads Android payloads that omit their defaults', as
   const row = page.getByRole('button').filter({ hasText: 'نانوایی' });
   await expect(row).toContainText('از مریم');
   await expect(row).toContainText(signed('−۱۲۳٫۴', 'هزار'));
+
+  // Two members with rows here: the categories pill becomes the filter, and مریم's rows alone are a pick away.
+  await addManual(page, '50000', 'میوه‌فروشی', 'خواربار');
+  const mine = page.getByRole('button').filter({ hasText: 'میوه‌فروشی' });
+  await expect(mine).toBeVisible();
+  await page.getByRole('button', { name: 'فیلتر', exact: true }).click();
+  const filter = page.getByRole('dialog', { name: 'فیلتر دفتر' });
+  await filter.getByRole('radio', { name: 'مریم', exact: true }).click();
+  await filter.getByRole('button', { name: 'بستن' }).click();
+  await expect(page.getByText('فقط مال مریم')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'فیلتر (۱)' })).toBeVisible();
+  await expect(mine).toHaveCount(0);
+  await expect(row).toBeVisible();
+  await page.getByRole('button', { name: 'پاک کردن', exact: true }).click();
+  await expect(mine).toBeVisible();
+  await expect(row).toBeVisible();
 });

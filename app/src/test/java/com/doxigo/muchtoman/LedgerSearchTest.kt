@@ -25,13 +25,16 @@ class LedgerSearchTest {
         sourceKind: String = "sms",
         ownerName: String = "",
         refNo: String = "",
+        accountId: String = bank,
+        ownerMemberId: String = "",
+        ownerAvatar: String = "",
     ): LedgerEntry {
         n++
         val ref = "s:%04d:0".format(n)
         return LedgerEntry(
             txn = Txn(
                 ref = ref, srcHash = ref, seq = 0, at = 1_700_000_000_000L, day = 20_000L,
-                bank = bank, accountId = bank,
+                bank = bank, accountId = accountId,
                 direction = signed?.let { if (it > 0) "in" else "out" },
                 amountRial = signed?.let { kotlin.math.abs(it) }, signedRial = signed,
                 balanceRial = null, feeRial = null, mask = "", instrument = "unknown",
@@ -41,7 +44,9 @@ class LedgerSearchTest {
             ),
             categoryId = "cat_x", categoryFa = category, confidence = 95,
             needsReview = false, duplicate = false, transfer = transfer,
+            ownerMemberId = ownerMemberId,
             ownerName = ownerName,
+            ownerAvatar = ownerAvatar,
             note = note,
         )
     }
@@ -206,5 +211,81 @@ class LedgerSearchTest {
         assertEquals(listOf("cat_cafe"), ledgerRows(listOf(row), LedgerLens.EXPENSE, listOf("cat_cafe"), "").map { it.categoryId })
         assertEquals(listOf("cat_smokes"), ledgerRows(listOf(row), LedgerLens.ALL, emptyList(), "دخانیات").map { it.categoryId })
         assertTrue(ledgerRows(listOf(row), LedgerLens.INCOME, emptyList(), "").isEmpty())
+    }
+
+    // ---- whose, and which account ----
+
+    @Test
+    fun `a member and an account narrow together with the lens and the words`() {
+        val mine = entry(merchant = "نانوایی", ownerMemberId = "me", ownerName = "سهیل")
+        val second = entry(merchant = "کافه", accountId = "MELLAT:5915", bank = "MELLAT", ownerMemberId = "me", ownerName = "سهیل")
+        val salary = entry(merchant = "حقوق", signed = 900_000_000L, ownerMemberId = "me", ownerName = "سهیل")
+        val hers = entry(merchant = "نانوایی", accountId = "family:m2:SAMAN", ownerMemberId = "m2", ownerName = "مریم")
+        val rows = listOf(mine, second, salary, hers)
+        fun refs(lens: LedgerLens = LedgerLens.ALL, query: String = "", member: String = "", account: String = "") =
+            ledgerRows(rows, lens, emptyList(), query, member, account).map { it.txn.ref }
+
+        assertEquals(rows.map { it.txn.ref }, refs())
+        assertEquals(listOf(hers.txn.ref), refs(member = "m2"))
+        assertEquals(listOf(mine.txn.ref, salary.txn.ref), refs(account = "SAMAN"))
+        assertEquals(listOf(mine.txn.ref), refs(LedgerLens.EXPENSE, member = "me", account = "SAMAN"))
+        assertEquals(listOf(mine.txn.ref), refs(query = "نانوایی", member = "me"))
+        // Her account and his name: nobody's rows, which is what the empty answer is for.
+        assertTrue(refs(member = "m2", account = "SAMAN").isEmpty())
+    }
+
+    @Test
+    fun `members are offered only where there is more than one, hers first`() {
+        assertTrue(memberPicks(listOf(entry(), entry()), "").isEmpty())
+        // A household where only she has rows here is no choice either.
+        assertTrue(memberPicks(listOf(entry(ownerMemberId = "me", ownerName = "سهیل")), "me").isEmpty())
+        val picks = memberPicks(
+            listOf(
+                entry(ownerMemberId = "m2", ownerName = "مریم", ownerAvatar = "👩"),
+                entry(ownerMemberId = "me", ownerName = "سهیل"),
+                entry(ownerMemberId = "m2", ownerName = "مریم", ownerAvatar = "👩"),
+            ),
+            "me",
+        )
+        assertEquals(listOf("me" to "سهیل", "m2" to "مریم"), picks.map { it.id to it.label })
+        assertEquals("👩", picks[1].avatar)
+    }
+
+    @Test
+    fun `accounts are told apart the way the bank sheet tells them`() {
+        // One account is no choice; a hand-entered row on none is no account.
+        assertTrue(accountPicks(listOf(entry(), entry(bank = "MANUAL", sourceKind = "manual")), emptyMap()).isEmpty())
+
+        val picks = accountPicks(
+            listOf(
+                entry(bank = "MELLAT", accountId = "MELLAT"),
+                entry(bank = "MELLAT", accountId = "MELLAT:5915"),
+                entry(bank = "SAMAN", accountId = "SAMAN"),
+                entry(bank = "MANUAL", accountId = "SAMAN", sourceKind = "manual"),
+                entry(bank = "MELLAT", accountId = "family:m2:MELLAT", ownerMemberId = "m2", ownerName = "مریم"),
+            ),
+            // The first account keeps the bank's name as its key; its number lives on the sheet.
+            mapOf("MELLAT" to "4007", "SAMAN" to "1111"),
+        )
+        assertEquals(
+            listOf(
+                // Alone at its bank, it needs no number.
+                "SAMAN" to "بانک سامان",
+                "MELLAT" to "بانک ملت، حساب ۴۰۰۷",
+                "MELLAT:5915" to "بانک ملت، حساب ۵۹۱۵",
+                // Somebody else's, after hers and named for whose it is.
+                "family:m2:MELLAT" to "بانک ملت مریم",
+            ),
+            picks.map { it.id to it.label },
+        )
+        assertEquals(listOf("SAMAN", "MELLAT", "MELLAT", "MELLAT"), picks.map { it.bank })
+    }
+
+    @Test
+    fun `an empty narrowing names whose and which account`() {
+        assertEquals("از مریم چیزی اینجا نیست", filterEmptyFa("مریم", null))
+        assertEquals("از بانک ملت چیزی اینجا نیست", filterEmptyFa(null, "بانک ملت"))
+        assertEquals("از مریم توی بانک ملت چیزی اینجا نیست", filterEmptyFa("مریم", "بانک ملت"))
+        assertEquals("با این فیلتر چیزی اینجا نیست", filterEmptyFa(null, null))
     }
 }

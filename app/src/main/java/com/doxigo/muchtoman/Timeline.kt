@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -92,6 +94,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
+import java.text.Collator
+import java.util.Locale
 
 /**
  * The activity timeline — what happened, grouped by the day it happened in Tehran.
@@ -306,8 +310,83 @@ internal fun ledgerRows(
     lens: LedgerLens,
     catFilter: List<String>,
     query: String,
+    /** A [LedgerPick.id] from [memberPicks], blank for everyone. */
+    member: String = "",
+    /** A [LedgerPick.id] from [accountPicks] — a [Txn.accountId] — blank for every account. */
+    account: String = "",
 ): List<LedgerEntry> = entries.flatMap(::splitParts).filter {
-    lens.matches(it) && (catFilter.isEmpty() || it.categoryId in catFilter) && matchesLedgerSearch(it, query)
+    lens.matches(it) && (catFilter.isEmpty() || it.categoryId in catFilter) &&
+        (member.isEmpty() || it.ownerMemberId == member) &&
+        (account.isEmpty() || it.txn.accountId == account) &&
+        matchesLedgerSearch(it, query)
+}
+
+/**
+ * One way to narrow دفتر beside the categories: whose rows ([memberPicks]) or which account's
+ * ([accountPicks]). [id] is what the rows are matched on; [avatar] and [bank] are the chip's mark.
+ */
+internal data class LedgerPick(val id: String, val label: String, val avatar: String = "", val bank: String = "")
+
+/** Persian alphabetical, as the bank picker in تنظیمات sorts: «پ» before «ت», «ک» before «ل». */
+private val faOrder: Comparator<Any?> get() = Collator.getInstance(Locale("fa"))
+
+/**
+ * Whose rows دفتر can narrow to: every member who owns a row here, hers first. Empty on a ledger of
+ * one — and on a household where only one member has anything here, because a choice of one is no
+ * choice, and the filter can only ever narrow to things that exist.
+ */
+internal fun memberPicks(entries: List<LedgerEntry>, mineId: String): List<LedgerPick> =
+    entries.filter { it.ownerName.isNotBlank() }
+        .distinctBy { it.ownerMemberId }
+        .map { LedgerPick(it.ownerMemberId, it.ownerName, avatar = it.ownerAvatar) }
+        .sortedWith(compareBy<LedgerPick> { it.id != mineId }.thenBy(faOrder) { it.label })
+        .takeIf { it.size > 1 }.orEmpty()
+
+/**
+ * Which accounts دفتر can narrow to, as the bank sheet tells them apart: one bank's accounts
+ * ([Txn.accountId] is `BANK` for its first, `BANK:1234` after) carry their number only when the
+ * bank has more than one here, read off [numbers] (the sheet's own, by key) and then off the key.
+ * Another member's rows arrive keyed `family:<member>:<BANK>`, one per bank, and say whose they are
+ * — her «بانک ملت» and his are two accounts. A hand-entered row on no account is on none of these.
+ * Hers first; empty unless there are at least two.
+ */
+internal fun accountPicks(entries: List<LedgerEntry>, numbers: Map<String, String>): List<LedgerPick> {
+    val names = entries.associate { it.ownerMemberId to it.ownerName }
+    class Account(val key: String, val bank: String, val owner: String, val number: String)
+    val accounts = entries.map { it.txn.accountId }.distinct().mapNotNull { key ->
+        val parts = key.split(':')
+        val family = parts[0] == "family" && parts.size == 3
+        val bank = if (family) parts[2] else parts[0]
+        if (bank == "MANUAL") return@mapNotNull null
+        Account(
+            key, bank,
+            owner = if (family) names[parts[1]].orEmpty() else "",
+            number = if (family) "" else numbers[key].orEmpty().ifBlank { parts.getOrNull(1).orEmpty() },
+        )
+    }
+    return accounts.map { a ->
+        val siblings = accounts.count { it.bank == a.bank && it.owner == a.owner }
+        val label = buildString {
+            append(bankNameOf(a.bank))
+            if (siblings > 1 && a.number.isNotBlank()) append("، ${accountLabel(a.number)}")
+            if (a.owner.isNotBlank()) append(" ${a.owner}")
+        }
+        a.owner to LedgerPick(a.key, label, bank = a.bank)
+    }.sortedWith(compareBy<Pair<String, LedgerPick>> { it.first.isNotBlank() }.thenBy(faOrder) { it.second.label })
+        .map { it.second }
+        .takeIf { it.size > 1 }.orEmpty()
+}
+
+/**
+ * What a filtered ledger with nothing left says. Whose and which account are named in the row's
+ * own «از …», because «با این فیلتر» over a household's ledger reads as her money gone missing
+ * when it is only that مریم has nothing here; the categories alone keep the plain line.
+ */
+internal fun filterEmptyFa(member: String?, account: String?): String = when {
+    member != null && account != null -> "از $member توی $account چیزی اینجا نیست"
+    member != null -> "از $member چیزی اینجا نیست"
+    account != null -> "از $account چیزی اینجا نیست"
+    else -> "با این فیلتر چیزی اینجا نیست"
 }
 
 @Composable
@@ -325,12 +404,17 @@ fun TimelineScreen(
     syncing: Boolean = false,
     /** Pull-down asks the household what is new. Null on a phone that is not in one. */
     onSync: (() -> Unit)? = null,
+    /** The bank sheet's accounts, for the numbers that tell one bank's accounts apart. */
+    accounts: List<BankAccount> = emptyList(),
 ) {
     val today = rememberTehranDay()
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
     // Which categories she has narrowed the ledger to. Ids, empty for «all» — session state,
     // like the lens: a filter that survived a week would be a week of «where did my money go».
     var catFilter by rememberSaveable { mutableStateOf(listOf<String>()) }
+    // Whose rows and which account's, blank for all — picked in the same sheet, session state alike.
+    var memberPick by rememberSaveable { mutableStateOf("") }
+    var accountPick by rememberSaveable { mutableStateOf("") }
     var filtering by remember { mutableStateOf(false) }
     // The words she is looking for, and whether the field for typing them is open. Two states,
     // because closing the field must not silently drop the narrowing — like the category sheet,
@@ -342,7 +426,17 @@ fun TimelineScreen(
     // and get different answers, and telling her the ledger is empty when she has merely filtered
     // it to a side she has none of would be the screen lying about her money.
     val everything = remember(ledger.entries) { ledger.entries.filterNot { it.duplicate } }
-    val visible = remember(everything, lens, catFilter, query) { ledgerRows(everything, lens, catFilter, query) }
+    val members = remember(everything, ledger.mineId) { memberPicks(everything, ledger.mineId) }
+    val accountChoices = remember(everything, accounts) {
+        accountPicks(everything, accounts.associate { it.key to it.number })
+    }
+    // A pick no longer on offer — the household down to one, an account's rows gone — narrows
+    // nothing, rather than hiding rows behind a choice the sheet no longer shows.
+    val member = members.firstOrNull { it.id == memberPick }
+    val account = accountChoices.firstOrNull { it.id == accountPick }
+    val visible = remember(everything, lens, catFilter, query, member, account) {
+        ledgerRows(everything, lens, catFilter, query, member?.id.orEmpty(), account?.id.orEmpty())
+    }
     val grouped = remember(visible) { visible.groupBy { it.txn.day }.toSortedMap(compareByDescending { it }) }
     val waiting = ledger.review.size
 
@@ -367,7 +461,8 @@ fun TimelineScreen(
     // coming back from a transaction with its place restored, and scrolling then would throw
     // away the one thing that restore exists for.
     var narrowed by remember { mutableStateOf(false) }
-    LaunchedEffect(lens, catFilter, query) {
+    // By id: a renamed member or a new avatar is the same narrowing, and must not move the list.
+    LaunchedEffect(lens, catFilter, query, member?.id, account?.id) {
         if (!narrowed) narrowed = true
         else if (visible.isNotEmpty()) listState.scrollToItem(0)
     }
@@ -452,7 +547,12 @@ fun TimelineScreen(
                 Spacer(Modifier.width(Space.s))
                 SearchButton(active = searching || query.isNotBlank()) { searching = !searching }
                 Spacer(Modifier.width(Space.s))
-                FilterButton(count = catFilter.size) { filtering = true }
+                // «دسته‌ها» while categories are all its sheet holds; «فیلتر» once the sheet also
+                // asks whose and which account, so the word on the door never undersells the room.
+                FilterButton(
+                    word = if (members.isEmpty() && accountChoices.isEmpty()) "دسته‌ها" else "فیلتر",
+                    count = catFilter.size + listOfNotNull(member, account).size,
+                ) { filtering = true }
             }
             // The field the search disc opens. It narrows as she types — the sheet's own live
             // rule, no apply button — and closing it keeps the words at work, named below.
@@ -480,6 +580,8 @@ fun TimelineScreen(
             if (query.isNotBlank()) {
                 NarrowedLine("فقط نتیجه‌های «${bidi(query.trim())}»") { query = "" }
             }
+            if (member != null) NarrowedLine("فقط مال ${member.label}") { memberPick = "" }
+            if (account != null) NarrowedLine("فقط ${account.label}") { accountPick = "" }
             if (catFilter.isNotEmpty()) {
                 val names = filterOptions.filter { it.first in catFilter }.map { it.second }
                 NarrowedLine("فقط ${names.joinToString("، ")}") { catFilter = emptyList() }
@@ -490,7 +592,12 @@ fun TimelineScreen(
                     // The words go first: they are the narrowing she touched last, and clearing
                     // them may still leave the category filter standing to answer for itself.
                     query.isNotBlank() -> SearchEmpty(query) { query = "" }
-                    catFilter.isNotEmpty() -> FilterEmpty { catFilter = emptyList() }
+                    // Whose, which account and which categories are one sheet, so one answer that
+                    // clears the sheet — each line above still takes back its own part alone.
+                    catFilter.isNotEmpty() || member != null || account != null ->
+                        FilterEmpty(filterEmptyFa(member?.label, account?.label)) {
+                            catFilter = emptyList(); memberPick = ""; accountPick = ""
+                        }
                     else -> LensEmpty(lens) { lens = LedgerLens.ALL }
                 }
                 return@Column
@@ -538,10 +645,16 @@ fun TimelineScreen(
     }
 
     if (filtering) {
-        CategoryFilterSheet(
+        LedgerFilterSheet(
             options = filterOptions,
             selected = catFilter,
             onChange = { catFilter = it },
+            members = members,
+            member = member?.id.orEmpty(),
+            onMember = { memberPick = it },
+            accounts = accountChoices,
+            account = account?.id.orEmpty(),
+            onAccount = { accountPick = it },
             onDismiss = { filtering = false },
         )
     }
@@ -574,11 +687,12 @@ internal fun MinusMark(tint: Color, size: androidx.compose.ui.unit.Dp = 20.dp) {
 }
 
 /**
- * The door to narrowing by category, beside the lens it composes with. Active, it wears the
- * app's «this one» and carries the count, so a narrowed ledger names itself from across the room.
+ * The door to narrowing by category — and by whose and which account, where there is a choice —
+ * beside the lens it composes with. Active, it wears the app's «this one» and carries the count,
+ * so a narrowed ledger names itself from across the room.
  */
 @Composable
-private fun FilterButton(count: Int, onClick: () -> Unit) {
+private fun FilterButton(word: String, count: Int, onClick: () -> Unit) {
     val active = count > 0
     Box(
         Modifier
@@ -593,7 +707,9 @@ private fun FilterButton(count: Int, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (active) "دسته‌ها • ${faNumber(count.toDouble())}" else "دسته‌ها",
+            // «(۱)», as «اعضای خانواده (۲)» counts: a «•» at 14sp is the size of «۰», and «فیلتر • ۱»
+            // read as «۱۰».
+            if (active) "$word (${faNumber(count.toDouble())})" else word,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = if (active) {
@@ -749,15 +865,16 @@ private fun SearchEmpty(query: String, onClear: () -> Unit) {
 
 /** A narrowing that matched nothing. Not an empty ledger — the way back is the filter itself. */
 @Composable
-private fun FilterEmpty(onClear: () -> Unit) {
+private fun FilterEmpty(title: String, onClear: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "با این فیلتر چیزی اینجا نیست",
+            title,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(Modifier.height(Space.m))
@@ -766,18 +883,32 @@ private fun FilterEmpty(onClear: () -> Unit) {
 }
 
 /**
- * Which categories the ledger shows, chosen live: every tap lands on the list behind the scrim,
- * so the sheet never needs an apply button — «بستن» is the only verb left, and «هیچ‌کدوم انتخاب
- * نشده» simply means the whole ledger.
+ * What the ledger shows, chosen live: every tap lands on the list behind the scrim, so the sheet
+ * never needs an apply button — «بستن» is the only verb left, and «هیچ‌کدوم انتخاب نشده» simply
+ * means the whole ledger.
+ *
+ * Whose and which account ride in this sheet rather than on the screen: the line above the list is
+ * already full, and a row of chips pinned there for a choice made once a week would take the
+ * stream's height every day. They appear only where there is a choice — [memberPicks] and
+ * [accountPicks] are empty otherwise, and then the sheet is the category picker it always was.
+ * One of each, «همه» first, because «only مریم's, only her ملت» is the question; categories stay
+ * many.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun CategoryFilterSheet(
+private fun LedgerFilterSheet(
     options: List<Pair<String, String>>,
     selected: List<String>,
     onChange: (List<String>) -> Unit,
+    members: List<LedgerPick>,
+    member: String,
+    onMember: (String) -> Unit,
+    accounts: List<LedgerPick>,
+    account: String,
+    onAccount: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val sectioned = members.isNotEmpty() || accounts.isNotEmpty()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun close(then: () -> Unit) = scope.hideThen(sheetState, then)
@@ -796,12 +927,25 @@ private fun CategoryFilterSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("کدوم دسته‌ها؟")
+            if (sectioned) {
+                SheetTitle("فیلتر دفتر")
+                if (members.isNotEmpty()) {
+                    SheetLabel("مال کیه؟")
+                    PickRow(members, member, onMember)
+                }
+                if (accounts.isNotEmpty()) {
+                    SheetLabel("کدوم حساب؟")
+                    PickRow(accounts, account, onAccount)
+                }
+                SheetLabel("کدوم دسته‌ها؟")
+            } else {
+                SheetTitle("کدوم دسته‌ها؟")
+            }
             Text(
                 "هر چندتا که می‌خوای بزن؛ دفتر فقط همون‌ها رو نشون می‌ده.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Space.s),
+                modifier = Modifier.padding(top = if (sectioned) 0.dp else Space.s, start = if (sectioned) Space.xs else 0.dp),
             )
 
             Spacer(Modifier.height(Space.l))
@@ -829,16 +973,62 @@ private fun CategoryFilterSheet(
                 modifier = Modifier.fillMaxWidth(),
                 block = true,
             )
-            if (selected.isNotEmpty()) {
+            if (selected.isNotEmpty() || member.isNotEmpty() || account.isNotEmpty()) {
                 Spacer(Modifier.height(Space.s))
                 PillButton(
                     "پاک کردن فیلتر",
-                    { onChange(emptyList()); close(onDismiss) },
+                    { onChange(emptyList()); onMember(""); onAccount(""); close(onDismiss) },
                     modifier = Modifier.fillMaxWidth(),
                     block = true,
                 )
             }
         }
+    }
+}
+
+/** One of a few — a member or an account — «همه» first, in [FilterCategoryChip]'s make beside it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PickRow(picks: List<LedgerPick>, chosen: String, onPick: (String) -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+        verticalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        PickChip("همه", chosen.isEmpty(), lead = null) { onPick("") }
+        picks.forEach { p ->
+            PickChip(p.label, p.id == chosen, lead = {
+                // A chip that names a bank carries its logo; a member's carries the face on her rows.
+                if (p.bank.isNotEmpty()) BankLogo(p.bank, size = 24.dp) else MemberFace(p.label, p.avatar, size = 24.dp)
+            }) { onPick(p.id) }
+        }
+    }
+}
+
+@Composable
+private fun PickChip(label: String, chosen: Boolean, lead: (@Composable () -> Unit)?, onPick: () -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(
+                if (chosen) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .selectable(selected = chosen, role = Role.RadioButton, onClick = onPick)
+            .heightIn(min = 44.dp)
+            .padding(start = if (lead != null) Space.s else Space.m, end = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (lead != null) {
+            lead()
+            Spacer(Modifier.width(Space.s))
+        }
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -892,7 +1082,8 @@ internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> U
  * The figure is the sum of the rows actually under it, so under a [LedgerLens] it is that day's
  * income or that day's spending rather than its net — which is what the heading of a filtered
  * day should say, and why the picker stays on screen and the narrowings are named in words
- * above the list.
+ * above the list. Narrowed to one member or one account it is the same rule: that day's net for
+ * مریم, or for her ملت, never a figure the rows under it do not add up to.
  */
 @Composable
 private fun DayHeading(

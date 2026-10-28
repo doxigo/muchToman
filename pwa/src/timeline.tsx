@@ -17,6 +17,8 @@ import { autoFilePlan } from './filing';
 import { CAT_INSTALMENT, MAX_NOTE_CHARS, categoryChoices, noteSuggestions } from './rules';
 import type { NoteUse } from './rules';
 import { bankFa } from './sms';
+import { accountLabel } from './paste';
+import { BankLogo } from './logos';
 import { searchFold } from './catalog';
 import { CategoryIcon, customGlyphs, glyphOf, hueCss } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
@@ -35,7 +37,7 @@ import {
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
 import { CheckMark, SearchMark } from './icons';
-import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetTitle, SegmentedChoice, SignedFigure, Switch, TitleAddButton } from './ui';
+import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetLabel, SheetTitle, SegmentedChoice, SignedFigure, Switch, TitleAddButton } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
 
 // ---- words ------------------------------------------------------------------------------------
@@ -106,9 +108,75 @@ function lensMatches(lens: Lens, entry: LedgerEntry): boolean {
  * category, mark and figure, the way every total already counts it — so a payment that bought two
  * things is two rows, each narrowed on its own. A part still opens the one transaction behind it.
  */
-export function ledgerRows(entries: LedgerEntry[], lens: Lens, filter: readonly string[], query: string): LedgerEntry[] {
+export function ledgerRows(
+  entries: LedgerEntry[], lens: Lens, filter: readonly string[], query: string,
+  /** A [memberPicks] id, '' for everyone; an [accountPicks] id — a `txn.accountId` — '' for every account. */
+  member = '', account = '',
+): LedgerEntry[] {
   return entries.flatMap(splitParts).filter((e) => lensMatches(lens, e) &&
-    (!filter.length || filter.includes(e.categoryId)) && matchesLedgerSearch(e, query));
+    (!filter.length || filter.includes(e.categoryId)) &&
+    (!member || e.ownerMemberId === member) && (!account || e.txn.accountId === account) &&
+    matchesLedgerSearch(e, query));
+}
+
+/** One way to narrow دفتر beside the categories: whose rows or which account's (Timeline.kt `LedgerPick`). */
+export interface LedgerPick { id: string; label: string; avatar?: string; bank?: string }
+
+/** Persian alphabetical, as the bank picker in settings sorts: «پ» before «ت», «ک» before «ل». */
+const byUnits = (a: string, b: string): number => a.localeCompare(b, 'fa');
+
+/**
+ * Whose rows دفتر can narrow to (Timeline.kt `memberPicks`): every member who owns a row here, hers
+ * first. Empty on a ledger of one, and where only one member has anything here — a choice of one is
+ * no choice.
+ */
+export function memberPicks(entries: LedgerEntry[], mineId: string): LedgerPick[] {
+  const seen = new Map<string, LedgerPick>();
+  for (const e of entries) {
+    if (e.ownerName.trim() && !seen.has(e.ownerMemberId)) seen.set(e.ownerMemberId, { id: e.ownerMemberId, label: e.ownerName, avatar: e.ownerAvatar });
+  }
+  const picks = [...seen.values()].sort((a, b) => Number(a.id !== mineId) - Number(b.id !== mineId) || byUnits(a.label, b.label));
+  return picks.length > 1 ? picks : [];
+}
+
+/**
+ * Which accounts دفتر can narrow to, as the bank sheet tells them apart (Timeline.kt `accountPicks`):
+ * one bank's accounts carry their number only when the bank has more than one here, read off
+ * [numbers] (the sheet's own, by key) and then off the key. Another member's rows are keyed
+ * `family:<member>:<BANK>` and say whose they are; a hand-entered row on no account is on none.
+ * Hers first; empty unless there are at least two.
+ */
+export function accountPicks(entries: LedgerEntry[], numbers: ReadonlyMap<string, string>): LedgerPick[] {
+  const names = new Map(entries.map((e) => [e.ownerMemberId, e.ownerName]));
+  const accounts = [...new Set(entries.map((e) => e.txn.accountId))].flatMap((key) => {
+    const parts = key.split(':');
+    const family = parts[0] === 'family' && parts.length === 3;
+    const bank = family ? parts[2] : parts[0];
+    if (bank === 'MANUAL') return [];
+    return [{
+      key, bank,
+      owner: family ? names.get(parts[1]) ?? '' : '',
+      number: family ? '' : numbers.get(key) || (parts[1] ?? ''),
+    }];
+  });
+  const picks = accounts.map((a) => {
+    const siblings = accounts.filter((o) => o.bank === a.bank && o.owner === a.owner).length;
+    const label = bankFa(a.bank) + (siblings > 1 && a.number ? `، ${accountLabel(a.number)}` : '') + (a.owner ? ` ${a.owner}` : '');
+    return { owner: a.owner, pick: { id: a.key, label, bank: a.bank } };
+  }).sort((a, b) => Number(a.owner !== '') - Number(b.owner !== '') || byUnits(a.pick.label, b.pick.label))
+    .map((a) => a.pick);
+  return picks.length > 1 ? picks : [];
+}
+
+/**
+ * What a filtered ledger with nothing left says (Timeline.kt `filterEmptyFa`): whose and which
+ * account in the row's own «از …»; the categories alone keep the plain line.
+ */
+export function filterEmptyFa(member: string | null, account: string | null): string {
+  if (member && account) return `از ${member} توی ${account} چیزی اینجا نیست`;
+  if (member) return `از ${member} چیزی اینجا نیست`;
+  if (account) return `از ${account} چیزی اینجا نیست`;
+  return 'با این فیلتر چیزی اینجا نیست';
 }
 
 /** Everything the app knows about one transaction that is not its figure — one list for the page and the deck. */
@@ -205,24 +273,42 @@ export function glyphsOf(view: LedgerView): Record<string, CategoryGlyph> {
 }
 
 /**
- * Which categories she has narrowed the ledger to — session state, like the lens: a filter that
- * survived a week would be a week of «where did my money go». Held here rather than in the screen
- * because the sheet that edits it lives in the sheet slot, and every tap there lands live.
+ * Which categories she has narrowed the ledger to, and whose and which account's rows ('' for all)
+ * — session state, like the lens: a filter that survived a week would be a week of «where did my
+ * money go». Held here rather than in the screen because the sheet that edits it lives in the sheet
+ * slot, and every tap there lands live.
  */
-let catFilter: readonly string[] = [];
+interface LedgerFilter { cats: readonly string[]; member: string; account: string }
+let ledgerFilter: LedgerFilter = { cats: [], member: '', account: '' };
 const filterListeners = new Set<() => void>();
-function setCatFilter(next: readonly string[]): void {
-  catFilter = next;
+function setFilter(next: Partial<LedgerFilter>): void {
+  ledgerFilter = { ...ledgerFilter, ...next };
   for (const l of filterListeners) l();
 }
-function useCatFilter(): readonly string[] {
+const clearFilter = (): void => setFilter({ cats: [], member: '', account: '' });
+function useLedgerFilter(): LedgerFilter {
   const [, set] = useState(0);
   useEffect(() => {
     const l = (): void => set((n) => n + 1);
     filterListeners.add(l);
     return () => { filterListeners.delete(l); };
   }, []);
-  return catFilter;
+  return ledgerFilter;
+}
+
+/**
+ * The members and accounts on offer, and the picks that still are — a pick no longer on offer (the
+ * household down to one, an account's rows gone) narrows nothing rather than hiding rows behind a
+ * choice the sheet no longer shows. One function for the screen and its sheet.
+ */
+function picksOf(everything: LedgerEntry[], view: LedgerView, f: LedgerFilter) {
+  const members = memberPicks(everything, view.mineId);
+  const accounts = accountPicks(everything, new Map(view.bankAccounts.map((a) => [a.key, a.number])));
+  return {
+    members, accounts,
+    member: members.find((m) => m.id === f.member) ?? null,
+    account: accounts.find((a) => a.id === f.account) ?? null,
+  };
 }
 
 /** Every category the ledger actually holds rows under, in the picker's order — no dead options. */
@@ -242,14 +328,20 @@ function TimelineScreen() {
   const view = useLedger();
   const today = useTehranDay();
   const [lens, setLens] = useState<Lens>('ALL');
-  const filter = useCatFilter();
+  const f = useLedgerFilter();
+  const filter = f.cats;
   // Two states: closing the field must not silently drop the narrowing — the line under the
   // controls is what names it.
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   // «Nothing here at all» and «nothing on this side» are different facts with different answers.
   const everything = useMemo(() => view.entries.filter((e) => !e.duplicate), [view.entries]);
-  const visible = useMemo(() => ledgerRows(everything, lens, filter, query), [everything, lens, filter, query]);
+  const { members, accounts, member, account } = useMemo(() => picksOf(everything, view, f), [everything, view, f]);
+  // By id: the picks are rebuilt whenever the ledger is, and a sync landing must not scroll her to the top.
+  const memberId = member?.id ?? '';
+  const accountId = account?.id ?? '';
+  const visible = useMemo(() => ledgerRows(everything, lens, filter, query, memberId, accountId),
+    [everything, lens, filter, query, memberId, accountId]);
   const grouped = useMemo(() => {
     const days = new Map<number, LedgerEntry[]>();
     for (const e of visible) {
@@ -266,11 +358,13 @@ function TimelineScreen() {
   useEffect(() => {
     if (!narrowed.current) narrowed.current = true;
     else if (visible.length) scrollTo(0, 0);
-  }, [lens, filter, query]);
+  }, [lens, filter, query, memberId, accountId]);
 
   const filterNames = filter.length
     ? filterOptionsOf(everything, view).filter(([id]) => filter.includes(id)).map(([, name]) => name).join('، ')
     : '';
+  const filterWord = members.length || accounts.length ? 'فیلتر' : 'دسته‌ها';
+  const picked = filter.length + (member ? 1 : 0) + (account ? 1 : 0);
 
   return (
     <Screen>
@@ -293,13 +387,17 @@ function TimelineScreen() {
                 aria-pressed={searching} onClick={() => setSearching(!searching)}>
                 <SearchMark />
               </button>
-              <button type="button" class={`pill ledger-pill${filter.length ? ' active' : ''}`} onClick={() => openSheet('categoryFilter')}>
-                {filter.length ? `دسته‌ها • ${faNumber(filter.length)}` : 'دسته‌ها'}
+              {/* «دسته‌ها» while categories are all its sheet holds; «فیلتر» once it also asks whose and which account. */}
+              <button type="button" class={`pill ledger-pill${picked ? ' active' : ''}`} onClick={() => openSheet('categoryFilter')}>
+                {/* «(۱)», as «اعضای خانواده (۲)» counts: a «•» is the size of «۰», and «فیلتر • ۱» read as «۱۰». */}
+                {picked ? `${filterWord} (${faNumber(picked)})` : filterWord}
               </button>
             </div>
             {searching && <SearchField query={query} onQuery={setQuery} />}
             {query.trim() && <NarrowedLine words={`فقط نتیجه‌های «${bidi(query.trim())}»`} onClear={() => setQuery('')} />}
-            {filter.length > 0 && <NarrowedLine words={`فقط ${filterNames}`} onClear={() => setCatFilter([])} />}
+            {member && <NarrowedLine words={`فقط مال ${member.label}`} onClear={() => setFilter({ member: '' })} />}
+            {account && <NarrowedLine words={`فقط ${account.label}`} onClear={() => setFilter({ account: '' })} />}
+            {filter.length > 0 && <NarrowedLine words={`فقط ${filterNames}`} onClear={() => setFilter({ cats: [] })} />}
           </>
         )}
       </div>
@@ -308,7 +406,9 @@ function TimelineScreen() {
         : !visible.length ? (
           // The words first: they are the narrowing she touched last.
           query.trim() ? <Answer title={`برای «${bidi(query.trim())}» چیزی پیدا نشد`} action="پاک کردن جستجو" onAction={() => setQuery('')} />
-            : filter.length ? <Answer title="با این فیلتر چیزی اینجا نیست" action="پاک کردن فیلتر" onAction={() => setCatFilter([])} />
+            // Whose, which account and which categories are one sheet, so one answer that clears it.
+            : filter.length || member || account
+              ? <Answer title={filterEmptyFa(member?.label ?? null, account?.label ?? null)} action="پاک کردن فیلتر" onAction={clearFilter} />
               : <Answer title={LENS_EMPTY_FA[lens]} action="همه رو نشون بده" onAction={() => setLens('ALL')} />
         ) : (
           <div class="ledger-list">
@@ -498,26 +598,61 @@ export function FilterCategoryChip({ name, chosen, onToggle }: { name: string; c
   );
 }
 
-/** Which categories the ledger shows, chosen live: every tap lands behind the scrim, so «بستن» is the only verb. */
+/**
+ * What the ledger shows, chosen live: every tap lands behind the scrim, so «بستن» is the only verb.
+ * Whose and which account ride here rather than on the screen (Timeline.kt `LedgerFilterSheet`): the
+ * line above the list is full, and they appear only where there is a choice — otherwise this is the
+ * category picker it always was. One of each, «همه» first; categories stay many.
+ */
 function CategoryFilterSheet() {
   const view = useLedger();
-  const selected = useCatFilter();
+  const f = useLedgerFilter();
+  const selected = f.cats;
   const everything = view.entries.filter((e) => !e.duplicate);
+  const { members, accounts, member, account } = picksOf(everything, view, f);
+  const sectioned = members.length > 0 || accounts.length > 0;
+  const title = sectioned ? 'فیلتر دفتر' : 'کدوم دسته‌ها؟';
   return (
-    <Sheet label="کدوم دسته‌ها؟">
-      <SheetTitle>کدوم دسته‌ها؟</SheetTitle>
-      <p class="muted small" style={{ paddingTop: 'var(--s)' }}>هر چندتا که می‌خوای بزن؛ دفتر فقط همون‌ها رو نشون می‌ده.</p>
+    <Sheet label={title}>
+      <SheetTitle>{title}</SheetTitle>
+      {members.length > 0 && (
+        <PickRow label="مال کیه؟" picks={members} chosen={member?.id ?? ''} onPick={(id) => setFilter({ member: id })} />
+      )}
+      {accounts.length > 0 && (
+        <PickRow label="کدوم حساب؟" picks={accounts} chosen={account?.id ?? ''} onPick={(id) => setFilter({ account: id })} />
+      )}
+      {sectioned && <SheetLabel>کدوم دسته‌ها؟</SheetLabel>}
+      <p class="muted small" style={sectioned ? { paddingInlineStart: 'var(--xs)' } : { paddingTop: 'var(--s)' }}>هر چندتا که می‌خوای بزن؛ دفتر فقط همون‌ها رو نشون می‌ده.</p>
       <div class="filter-chips">
         {filterOptionsOf(everything, view).map(([id, name]) => (
           <FilterCategoryChip key={id} name={name} chosen={selected.includes(id)}
-            onToggle={() => setCatFilter(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])} />
+            onToggle={() => setFilter({ cats: selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id] })} />
         ))}
       </div>
       <div class="sheet-actions">
         <PillButton label="بستن" voice="primary" block onClick={closeSheet} />
-        {selected.length > 0 && <PillButton label="پاک کردن فیلتر" block onClick={() => { setCatFilter([]); closeSheet(); }} />}
+        {(selected.length > 0 || member || account) && <PillButton label="پاک کردن فیلتر" block onClick={() => { clearFilter(); closeSheet(); }} />}
       </div>
     </Sheet>
+  );
+}
+
+/** One of a few — a member or an account — «همه» first, in the category chip's make beside it. */
+function PickRow({ label, picks, chosen, onPick }: { label: string; picks: LedgerPick[]; chosen: string; onPick: (id: string) => void }) {
+  return (
+    <>
+      <SheetLabel>{label}</SheetLabel>
+      <div class="filter-chips" role="radiogroup" aria-label={label} style={{ marginTop: 0 }}>
+        <button type="button" class="filter-chip" role="radio" aria-checked={!chosen} onClick={() => onPick('')}>همه</button>
+        {picks.map((p) => (
+          <button key={p.id} type="button" class="filter-chip leads" role="radio" aria-checked={p.id === chosen} onClick={() => onPick(p.id)}>
+            {/* A chip that names a bank carries its logo; a member's carries the face on her rows. */}
+            {p.bank ? <BankLogo bank={p.bank} size={24} /> : <MemberFace name={p.label} avatar={p.avatar ?? ''} size={24} />}
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
 

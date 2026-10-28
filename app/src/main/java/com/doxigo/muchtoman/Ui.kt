@@ -989,6 +989,7 @@ private fun AppScreens(
               // nothing new, n new, or no connection — because an empty result and a dead network
               // would otherwise both look like the spinner going away.
               onSync = ({ vm.pullFamilySync() }).takeIf { state.family.paired },
+              accounts = state.bankAccounts,
             )
           }
         }

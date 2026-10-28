@@ -64,6 +64,8 @@
 .filter-chips { display: flex; flex-wrap: wrap; gap: var(--s); margin-top: var(--l); }
 .filter-chip { display: inline-flex; align-items: center; gap: var(--xs); min-height: 44px; padding: 0 var(--m); border: 0; border-radius: var(--r-pill); background: var(--surface-variant); color: var(--on-surface); font-size: calc(13px * var(--text)); font-weight: 600; white-space: nowrap; }
 .filter-chip[aria-checked="true"] { background: var(--primary); color: var(--on-primary); }
+/* A member's face or a bank's logo before the name: the round mark drawn in to the edge, as on .bank-chip. */
+.filter-chip.leads { gap: var(--s); padding-inline-start: var(--s); }
 
 /* ---- one transaction ---- */
 .txn-page, .deck { padding-top: calc(env(safe-area-inset-top) + var(--s)); }

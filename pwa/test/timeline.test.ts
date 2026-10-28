@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { searchFold } from '../src/catalog';
-import { ledgerRows, matchesLedgerSearch } from '../src/timeline';
+import { accountPicks, filterEmptyFa, ledgerRows, matchesLedgerSearch, memberPicks } from '../src/timeline';
 import { clockDigits, parseFaClock } from '../src/manualTxn';
 import { faClock } from '../src/format';
 import { tehranDayStart } from '../src/jalali';
@@ -11,20 +11,20 @@ import type { LedgerEntry } from '../src/model';
 let n = 0;
 function entry(o: {
   merchant?: string; signed?: number | null; category?: string; note?: string; bank?: string; transfer?: boolean;
-  sourceKind?: 'sms' | 'manual'; ownerName?: string; refNo?: string;
+  sourceKind?: 'sms' | 'manual'; ownerName?: string; refNo?: string; accountId?: string; ownerMemberId?: string; ownerAvatar?: string;
 } = {}): LedgerEntry {
   const ref = `s:${String(++n).padStart(4, '0')}:0`;
   const signed = o.signed === undefined ? -2_500_000 : o.signed;
   const bank = o.bank ?? 'SAMAN';
   return {
     txn: {
-      ref, srcHash: ref, seq: 0, at: 1_700_000_000_000, day: 20_000, bank, accountId: bank,
+      ref, srcHash: ref, seq: 0, at: 1_700_000_000_000, day: 20_000, bank, accountId: o.accountId ?? bank,
       direction: signed == null ? null : signed > 0 ? 'in' : 'out', amountRial: signed == null ? null : Math.abs(signed), signedRial: signed,
       balanceRial: null, feeRial: null, mask: '', instrument: 'unknown', merchant: o.merchant ?? '', merchantNorm: '', refNo: o.refNo ?? '',
       printedAt: '', channel: 'unknown', unitPrinted: 'none', inferred: false, familyRef: '', ownerMemberId: '', sourceKind: o.sourceKind ?? 'sms',
     },
     categoryId: 'cat_x', categoryFa: o.category ?? 'خوراکی', confidence: 95, needsReview: false, duplicate: false, transfer: o.transfer ?? false,
-    ownerMemberId: '', ownerName: o.ownerName ?? '', ownerAvatar: '', categoryEditorName: '', note: o.note ?? '', noteAuthorName: '', sharedWithFamily: false,
+    ownerMemberId: o.ownerMemberId ?? '', ownerName: o.ownerName ?? '', ownerAvatar: o.ownerAvatar ?? '', categoryEditorName: '', note: o.note ?? '', noteAuthorName: '', sharedWithFamily: false,
   };
 }
 
@@ -77,6 +77,65 @@ describe('what دفتر lists', () => {
     expect(ledgerRows([row], 'EXPENSE', ['cat_cafe'], '').map((e) => e.categoryId)).toEqual(['cat_cafe']);
     expect(ledgerRows([row], 'ALL', [], 'دخانیات').map((e) => e.categoryId)).toEqual(['cat_smokes']);
     expect(ledgerRows([row], 'INCOME', [], '')).toEqual([]);
+  });
+});
+
+describe('whose, and which account (LedgerSearchTest.kt)', () => {
+  it('narrows by a member and an account together with the lens and the words', () => {
+    const mine = entry({ merchant: 'نانوایی', ownerMemberId: 'me', ownerName: 'سهیل' });
+    const second = entry({ merchant: 'کافه', accountId: 'MELLAT:5915', bank: 'MELLAT', ownerMemberId: 'me', ownerName: 'سهیل' });
+    const salary = entry({ merchant: 'حقوق', signed: 900_000_000, ownerMemberId: 'me', ownerName: 'سهیل' });
+    const hers = entry({ merchant: 'نانوایی', accountId: 'family:m2:SAMAN', ownerMemberId: 'm2', ownerName: 'مریم' });
+    const all = [mine, second, salary, hers];
+    const refs = (lens: 'ALL' | 'INCOME' | 'EXPENSE' = 'ALL', query = '', member = '', account = ''): string[] =>
+      ledgerRows(all, lens, [], query, member, account).map((e) => e.txn.ref);
+    expect(refs()).toEqual(all.map((e) => e.txn.ref));
+    expect(refs('ALL', '', 'm2')).toEqual([hers.txn.ref]);
+    expect(refs('ALL', '', '', 'SAMAN')).toEqual([mine.txn.ref, salary.txn.ref]);
+    expect(refs('EXPENSE', '', 'me', 'SAMAN')).toEqual([mine.txn.ref]);
+    expect(refs('ALL', 'نانوایی', 'me')).toEqual([mine.txn.ref]);
+    // Her account and his name: nobody's rows, which is what the empty answer is for.
+    expect(refs('ALL', '', 'm2', 'SAMAN')).toEqual([]);
+  });
+
+  it('offers members only where there is more than one, hers first', () => {
+    expect(memberPicks([entry(), entry()], '')).toEqual([]);
+    expect(memberPicks([entry({ ownerMemberId: 'me', ownerName: 'سهیل' })], 'me')).toEqual([]);
+    const picks = memberPicks([
+      entry({ ownerMemberId: 'm2', ownerName: 'مریم', ownerAvatar: '👩' }),
+      entry({ ownerMemberId: 'me', ownerName: 'سهیل' }),
+      entry({ ownerMemberId: 'm2', ownerName: 'مریم', ownerAvatar: '👩' }),
+    ], 'me');
+    expect(picks.map((p) => [p.id, p.label])).toEqual([['me', 'سهیل'], ['m2', 'مریم']]);
+    expect(picks[1].avatar).toBe('👩');
+  });
+
+  it('tells accounts apart the way the bank sheet does', () => {
+    // One account is no choice; a hand-entered row on none is no account.
+    expect(accountPicks([entry(), entry({ bank: 'MANUAL', sourceKind: 'manual' })], new Map())).toEqual([]);
+    const picks = accountPicks([
+      entry({ bank: 'MELLAT', accountId: 'MELLAT' }),
+      entry({ bank: 'MELLAT', accountId: 'MELLAT:5915' }),
+      entry({ bank: 'SAMAN', accountId: 'SAMAN' }),
+      entry({ bank: 'MANUAL', accountId: 'SAMAN', sourceKind: 'manual' }),
+      entry({ bank: 'MELLAT', accountId: 'family:m2:MELLAT', ownerMemberId: 'm2', ownerName: 'مریم' }),
+    ], new Map([['MELLAT', '4007'], ['SAMAN', '1111']]));
+    expect(picks.map((p) => [p.id, p.label])).toEqual([
+      // Alone at its bank, it needs no number.
+      ['SAMAN', 'بانک سامان'],
+      ['MELLAT', 'بانک ملت، حساب ۴۰۰۷'],
+      ['MELLAT:5915', 'بانک ملت، حساب ۵۹۱۵'],
+      // Somebody else's, after hers and named for whose it is.
+      ['family:m2:MELLAT', 'بانک ملت مریم'],
+    ]);
+    expect(picks.map((p) => p.bank)).toEqual(['SAMAN', 'MELLAT', 'MELLAT', 'MELLAT']);
+  });
+
+  it('names whose and which account when a narrowing empties the ledger', () => {
+    expect(filterEmptyFa('مریم', null)).toBe('از مریم چیزی اینجا نیست');
+    expect(filterEmptyFa(null, 'بانک ملت')).toBe('از بانک ملت چیزی اینجا نیست');
+    expect(filterEmptyFa('مریم', 'بانک ملت')).toBe('از مریم توی بانک ملت چیزی اینجا نیست');
+    expect(filterEmptyFa(null, null)).toBe('با این فیلتر چیزی اینجا نیست');
   });
 });
 
