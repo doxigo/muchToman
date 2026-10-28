@@ -1,0 +1,3068 @@
+package com.doxigo.muchtoman
+
+import android.app.Application
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.widget.Toast
+import androidx.room.withTransaction
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import kotlin.io.encoding.Base64
+
+/**
+ * The app's one view-model, and the [UiState] it hands every screen.
+ *
+ * Every figure a screen shows arrives from here already worked out, and everything a screen does
+ * comes back in through one of its functions — the ledger, the message sweep, rates, wallets,
+ * backups and the family sync all meet in [AppVm]. [MainActivity] only creates it and passes on
+ * what the launching intent asked for.
+ */
+
+private const val WALLET_REFRESH_MS = 10 * 60_000L
+private const val STOCK_REFRESH_MS = 10 * 60_000L
+private const val MAX_PARALLEL_WALLET_FETCHES = 4
+
+class AppVm(app: Application) : AndroidViewModel(app) {
+    // Before the first Store read, deliberately: if a staged restore is waiting, the swap and the
+    // prefs rewrite happen now, so the state built two lines down — and the first frame after
+    // «ببند و باز کن» — is already the backup. Milliseconds when idle (one file stat); once, after
+    // a restore, two synced copies and one integrity pass — the bytes were written and checked at
+    // import time. ponytail: still on Main, a few hundred ms for a few-MB ledger on a slow phone;
+    // move it behind a loading frame before AppVm is built if a durable.db ever runs to tens of MB.
+    private val restoredAtLaunch = DurableDb.completePendingRestore(app)
+    private val store = Store(app)
+
+    // Belt over the derived.db wipe the completion already did: if anything had the derived file
+    // open at that instant, its marker would still match and needsDerive would wave the old rows
+    // through. One forced full derive costs under a second and closes that hole for good.
+    private var deriveAfterRestore = restoredAtLaunch
+
+    /**
+     * The scan in flight, if any. Only one runs at a time, and anything that wants the inbox
+     * read differently — from the start, or from further back — waits for this one to finish
+     * before changing what it would read. Without that, a scan can wake up holding balances
+     * computed against a store that has since been wiped and write them straight back over it.
+     */
+    private var scanJob: Job? = null
+    private var stockJob: Job? = null
+    private val walletSemaphore = Semaphore(MAX_PARALLEL_WALLET_FETCHES)
+
+    // Above init, not down with the rest of backup and restore: the ledger pipeline init launches
+    // raises [BackupUi.holdsCodes] from another thread, and may get there before the constructor
+    // has reached a field declared further down.
+    private val _backup = MutableStateFlow(BackupUi(
+        lastExportAt = store.lastBackupAt,
+        reminderEnabled = store.backupReminderEnabled,
+        holdsCodes = store.backupHoldsCodes,
+    ))
+
+    /** Its own flow, not [UiState]: only the settings rows and the home reminder read it. */
+    val backup: StateFlow<BackupUi> = _backup.asStateFlow()
+
+    private val _state = MutableStateFlow(
+        UiState(
+            holdings = store.holdings,
+            loans = store.loans,
+            rates = store.cachedRates,
+            tse = store.cachedStocks,
+            overrides = store.overrides,
+            lockEnabled = store.lockEnabled,
+            widgetLock = store.widgetLock,
+            locked = store.lockEnabled,
+            name = store.name,
+            themeMode = store.themeMode,
+            textSize = store.textSize,
+            installmentReminder = store.installmentReminder,
+            quipTone = store.quipTone,
+            history = store.history,
+            rateHistory = store.rateHistory,
+            onboarded = store.onboarded,
+            smsEnabled = store.smsEnabled,
+            notified = canReadNotifications(app),
+            bankAccounts = store.bankAccounts,
+            disabledBanks = store.disabledBanks,
+            dismissedUpdate = store.dismissedUpdate,
+            fromStore = installedByStore(app),
+            reportExcluded = store.reportExcluded,
+            familyTotal = store.familyTotal,
+            family = FamilyState(notes = store.familyNotes),
+            reportUsd = store.reportUsd,
+            crashReport = pendingCrash(app),
+        )
+    )
+    val state: StateFlow<UiState> = _state.asStateFlow()
+
+    private var ledgerJob: Job? = null
+    private var familySyncJob: Job? = null
+    private val familySyncLock = Any()
+    private var queuedFamilySyncSilent: Boolean? = null
+    private var familyTransitioning = false
+
+    /**
+     * Tap order for exclusion edits, and how far the meta stamping has caught up. While the two
+     * differ an edit of hers is still on its way into `durable_meta`, and [landReportExclusions]
+     * holds off — or a sync finishing in that window would read the old state and visibly un-tap
+     * the chip she just tapped. See [setReportExcluded].
+     */
+    private val reportExclusionEdits = java.util.concurrent.atomic.AtomicLong()
+    private val reportExclusionsStamped = java.util.concurrent.atomic.AtomicLong()
+
+    /**
+     * The household's excluded set as the last sync landed it in `durable_meta`, put onto
+     * [Store.reportExcluded] — the copy every figure is worked out against — and returned.
+     *
+     * Null twice over, and each is a decision. With no record the set is one nobody in the
+     * household has ever touched, and the local default stands. And while a tap of hers is still
+     * being stamped, the record on disk is from *before* that tap, so landing it would flip the
+     * chip back in front of her — the store already holds the newer answer.
+     */
+    private suspend fun landReportExclusions(durable: DurableDb): Set<String>? {
+        val synced = readReportExclusions(durable)
+            ?.takeIf { reportExclusionEdits.get() == reportExclusionsStamped.get() }
+            ?.ids?.toSet() ?: return null
+        if (synced != store.reportExcluded) store.reportExcluded = synced
+        return synced
+    }
+
+    /**
+     * Whether the sync now in flight owes her a sentence when it lands. Raised by the ledger's
+     * pull and read by whichever sync finishes next — a field rather than a parameter so a pull
+     * that arrives while a silent sync is already running still gets its answer, exactly as the
+     * pull indicator attaches itself to the in-flight job.
+     */
+    @Volatile private var announceSync = false
+
+    init {
+        refresh()
+        refreshStocksIfHeld()
+        refreshWallets()
+        scanSms()
+        runLedger()
+        viewModelScope.launch {
+            ledgerJob?.join()
+            requestFamilySync(silent = true)
+        }
+        scheduleDailySnapshot(app)
+    }
+
+    /**
+     * Every path that changes the ledger ends here, and this is the only place that publishes it.
+     *
+     * It exists for the second line. A budget is a figure over these entries, so *anything* that
+     * moves them can be the thing that crosses a cap — a message arriving, a receipt refiled, a
+     * transfer link rejected, a budget created against a month that is already spent. Eight callers
+     * each remembering to check would be eight chances to miss one, and the one it missed would be
+     * the alert that never came.
+     *
+     * [announceBudgets] is idempotent and says nothing when there is nothing new, so calling it on
+     * every publish costs a walk over a handful of budgets and buys the guarantee.
+     */
+    private suspend fun publishLedger(durable: DurableDb, derived: DerivedDb) {
+        val app = getApplication<Application>()
+        // One publisher at a time past this line. [LedgerWatchWorker] runs the same read →
+        // announce → mark sequence from its own coroutine, and the marks those helpers write are
+        // get-then-set on prefs — interleaved, an alert is said twice or a mark is lost.
+        // [ledgerGate] is not reentrant, and nothing called under it takes it: ledgerView,
+        // scheduleLedgerWatch, announceBudgets, announceInstallments and markFilingSeen have all
+        // been checked.
+        ledgerGate.withLock {
+            // Her exclusion set rides along: a total is a roof over what دخل و خرج counts, so
+            // the figure on the card, the sentence on home and the 3am notification all read the
+            // one set — see [budgetRows]. The household's synced word on that set lands *before*
+            // the read, so the publish a pull triggers is measured against what it just pulled —
+            // left to [refreshFamily], which runs after this, the roof stayed one sync behind
+            // the report it must agree with.
+            val synced = landReportExclusions(durable)
+            val view = ledgerView(
+                derived, durable,
+                excluded = synced ?: store.reportExcluded,
+                startsOn = store.ledgerStartsOn,
+                disabledBanks = store.disabledBanks,
+            )
+            // The mirror moves in the same update as the cards, so دخل و خرج and «کل خرج»
+            // change together rather than a frame apart. Untouched when nothing landed: a
+            // publish racing her own tap must not flip the set back under it.
+            _state.update {
+                if (synced != null) it.copy(ledger = view, reportExcluded = synced)
+                else it.copy(ledger = view)
+            }
+            // Watching is scheduled by whether there is anything left to watch, so deleting the last
+            // budget on a phone that does not read messages stops the worker rather than leaving it to
+            // wake up and find nothing four times a day.
+            scheduleLedgerWatch(app, watchWanted())
+            announceBudgets(app, store, view.budgets)
+            announceInstallments(app, store, view.installments, view.cheques)
+            // The other half is deliberately not announced here: this line runs with the app in front
+            // of her, and the backlog it would describe is on the tab badge two inches below. Seeing it
+            // is being told, so the note comes down and the mark moves past everything on screen —
+            // see [markFilingSeen].
+            markFilingSeen(app, store, view)
+        }
+    }
+
+    /**
+     * The ledger, deliberately **not** behind the SMS permission.
+     *
+     * Ingest needs `READ_SMS`; deriving does not, and wiring the two together broke the one
+     * promise the split was built for — a parser fix rebuilding her ledger offline, from the
+     * messages already stored, after she has revoked the permission. It ran inside the scan at
+     * first, and revoking the permission silently stopped every rebuild.
+     *
+     * It also runs beside the balance fold rather than instead of it, and writes nothing the
+     * fold reads, so a failure here costs a rebuild later and never a balance now.
+     */
+    fun runLedger() {
+        if (ledgerJob?.isActive == true) return
+        val app = getApplication<Application>()
+        ledgerJob = viewModelScope.launch(Dispatchers.Default) {
+            runCatching { runLedgerPipeline(app, extraLookup(store.extraBankNumbers)) }
+                .onFailure { android.util.Log.w("muchtoman", "ledger pipeline failed: $it") }
+        }
+    }
+
+    /**
+     * Called every time the app comes back to the foreground. The Worker's edge cache is
+     * 10 minutes, so anything younger than that cannot change; anything older gets refetched
+     * without her having to find the button.
+     */
+    fun refreshIfStale() {
+        if (System.currentTimeMillis() - _state.value.rates.updatedAt > 10 * 60_000L) refresh()
+        refreshStocksIfHeld()
+        refreshWallets()
+        // Coming back is also when messages that arrived while she was away get read.
+        scanSms()
+        runLedger()
+        requestFamilySync(silent = true)
+    }
+
+    fun refreshAll() {
+        refresh()
+        refreshStocksIfHeld(force = true)
+        refreshWallets(force = true)
+    }
+
+    fun refresh() {
+        if (_state.value.loading) return
+        _state.update { it.copy(loading = true, error = null) }
+        // The day's count rides on the first fetch she causes, never the background worker's: a
+        // phone left in a drawer is installed, not in use. Release builds only, so testing the
+        // app does not inflate its own numbers.
+        val today = utcDay()
+        val daily = if (!BuildConfig.DEBUG && store.countedDay != today) dailyPing(getApplication()) else null
+        viewModelScope.launch {
+            var failure: String? = null
+            fetchRates(BuildConfig.RATES_URL, daily, store.cachedRates).onSuccess { fetched ->
+                if (daily != null) store.countedDay = today
+                // The merge reads the cached blob and the store write encodes ~80KB of JSON —
+                // that ran on Main and cost a frame after every fetch. The state update stays
+                // on the calling context; only the decode/merge/encode moves.
+                val fresh = withContext(Dispatchers.Default) {
+                    mergeRates(fetched, store.cachedRates).also { store.cachedRates = it }
+                }
+                _state.update { it.copy(rates = fresh) }
+            }.onFailure { e ->
+                // Keep showing the cached rates; an old number beats a blank screen. The
+                // log line is the only place the real reason survives — the UI stays Persian
+                // and calm, but `adb logcat -s muchtoman` must be able to answer "why".
+                android.util.Log.w("muchtoman", "rates fetch failed: $e")
+                failure = "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن."
+            }
+
+            _state.update { it.copy(loading = false, error = failure) }
+            recordSnapshot()
+            fillRateGaps()
+        }
+    }
+
+    /**
+     * The dollar on the days this phone never wrote one down — every month before she installed
+     * the app, and the days it sat closed — from the rates Worker's history, so a month from
+     * before then can still be read in dollars. Asked at most once a day, and only while the
+     * history is short of a full [HISTORY_KEEP_DAYS]: once filled, the daily snapshot keeps it so.
+     * On [ledgerGate] for [recordSnapshot]'s reason — the same read-modify-write of the same map.
+     */
+    private fun fillRateGaps() {
+        val now = System.currentTimeMillis()
+        if (store.rateHistory.size >= HISTORY_KEEP_DAYS || now - store.usdHistoryAt < DAY_MS) return
+        store.usdHistoryAt = now
+        viewModelScope.launch(Dispatchers.Default) {
+            val fetched = fetchUsdHistory(BuildConfig.RATES_URL).getOrElse {
+                android.util.Log.w("muchtoman", "usd history fetch failed: $it")
+                return@launch
+            }
+            ledgerGate.withLock {
+                val next = backfillRates(store.rateHistory, fetched, now / DAY_MS)
+                if (next != store.rateHistory) {
+                    store.rateHistory = next
+                    _state.update { it.copy(rateHistory = next) }
+                }
+            }
+        }
+    }
+
+    fun refreshStocksForPicker() = refreshStocks(requireHolding = false)
+
+    private fun refreshStocksIfHeld(force: Boolean = false) =
+        refreshStocks(force = force, requireHolding = true)
+
+    private fun refreshStocks(force: Boolean = false, requireHolding: Boolean) {
+        val current = _state.value
+        if (requireHolding && current.holdings.none { isStockId(it.typeId) }) return
+        if (!force && System.currentTimeMillis() - current.tse.updatedAt <= STOCK_REFRESH_MS) return
+        if (stockJob?.isActive == true) return
+
+        _state.update { it.copy(stocksLoading = true) }
+        stockJob = viewModelScope.launch {
+            var changed = false
+            fetchTse().onSuccess { fresh ->
+                changed = true
+                // A couple of thousand نماد encode to a sizeable blob; written off Main for the
+                // same reason refresh() moved its merge there.
+                withContext(Dispatchers.Default) { store.cachedStocks = fresh }
+                _state.update { it.copy(tse = fresh) }
+                android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
+            }.onFailure { error ->
+                android.util.Log.w("muchtoman", "tse fetch failed: $error")
+            }
+            _state.update { it.copy(stocksLoading = false) }
+            if (changed && _state.value.holdings.any { isStockId(it.typeId) }) recordSnapshot()
+        }
+    }
+
+    /** Waves off one release by name, so the next one asks again. */
+    fun dismissUpdate(version: String) {
+        store.dismissedUpdate = version
+        _state.update { it.copy(dismissedUpdate = version) }
+    }
+
+    /**
+     * She said send. The file goes only once the Worker has it: a failed send leaves it, and the
+     * sheet asks again next launch rather than losing a report she agreed to.
+     */
+    fun sendCrashReport() {
+        val report = _state.value.crashReport ?: return
+        _state.update { it.copy(crashReport = null) }
+        viewModelScope.launch {
+            postCrashReport(BuildConfig.RATES_URL, report)
+                .onSuccess { crashFile(getApplication()).delete() }
+                .onFailure { android.util.Log.w("muchtoman", "crash report not sent: $it") }
+        }
+    }
+
+    fun dropCrashReport() {
+        crashFile(getApplication()).delete()
+        _state.update { it.copy(crashReport = null) }
+    }
+
+    fun setHolding(key: String, typeId: String, amount: Double) {
+        saveHolding(key, typeId, amount, wallet = null)
+        _state.update { it.copy(walletErrors = it.walletErrors - key) }
+    }
+
+    /** Her own name for a holding, or blank to go back to the asset's own. */
+    fun setLabel(key: String, label: String) = persist(
+        _state.value.holdings.map {
+            if (it.key == key) it.copy(label = label.trim().take(32)) else it
+        },
+    )
+
+    /**
+     * Writes the row [key] names, or adds one under that key if she has no such row yet — which
+     * is how a second Tether beside the first one gets made: the picker hands out a fresh key
+     * rather than the asset's own, so nothing here can find the holding she already had.
+     */
+    private fun saveHolding(key: String, typeId: String, amount: Double, wallet: WalletLink?) {
+        val list = _state.value.holdings
+        // Copied, not rebuilt: editing the amount must not quietly un-exclude a set-aside
+        // asset, nor drop the name she gave it.
+        val next = if (list.any { it.key == key }) {
+            list.map { if (it.key == key) it.copy(amount = amount, wallet = wallet) else it }
+        } else {
+            list + Holding(typeId = typeId, amount = amount, wallet = wallet, id = key)
+        }
+        persist(catalogOrdered(next))
+    }
+
+    /**
+     * Fixed assets keep their catalogue order; coins fall in after them in the order she
+     * added them (sortedBy is stable), since there is no meaningful order for 250 coins.
+     */
+    private fun catalogOrdered(list: List<Holding>): List<Holding> {
+        val order = STATIC_CATALOG.withIndex().associate { (i, t) -> t.id to i }
+        return list.sortedBy { order[it.typeId] ?: Int.MAX_VALUE }
+    }
+
+    /** A rainy-day asset: stays on the list, drops out of the total. */
+    fun setExcluded(key: String, excluded: Boolean) {
+        // Read before the write, and handed to the history: setting money aside is not losing
+        // it. Without this the chart stepped down by whatever she set aside and the report
+        // called it a loss — «۸۷٪ کمتر شده» for a decision that moved nothing. See [rebaseHistory].
+        val before = _state.value.totals
+        persist(
+            _state.value.holdings.map {
+                if (it.key == key) it.copy(excluded = excluded) else it
+            },
+            countedBefore = before,
+        )
+    }
+
+    fun removeHolding(key: String) {
+        persist(_state.value.holdings.filterNot { it.key == key })
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets - key,
+                walletErrors = it.walletErrors - key,
+            )
+        }
+    }
+
+    /**
+     * Puts back a holding [removeHolding] took off, exactly as it was — amount, label, wallet
+     * link and the set-aside flag all ride the same object, so undo restores all of it.
+     * Unreferenced for now: the UI wave wires the undo affordance to it.
+     */
+    fun reinstateHolding(h: Holding) {
+        val list = _state.value.holdings
+        if (list.any { it.key == h.key }) return // undo tapped twice; it is already back
+        persist(catalogOrdered(list + h))
+    }
+
+    fun clearWalletError(key: String) {
+        if (key !in _state.value.walletErrors) return
+        _state.update { it.copy(walletErrors = it.walletErrors - key) }
+    }
+
+    fun connectWallet(
+        key: String,
+        typeId: String,
+        option: WalletOption,
+        address: String,
+        onSuccess: () -> Unit,
+    ) {
+        if (key in _state.value.refreshingWallets) return
+        val wallet = WalletLink(
+            network = option.network,
+            networkFa = option.networkFa,
+            address = address.trim(),
+            contract = option.contract,
+        )
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets + key,
+                walletErrors = it.walletErrors - key,
+            )
+        }
+        viewModelScope.launch {
+            walletSemaphore.withPermit { fetchWalletBalance(BuildConfig.RATES_URL, wallet) }
+                .onSuccess { balance ->
+                    saveHolding(
+                        key,
+                        typeId,
+                        balance.amount,
+                        wallet.copy(updatedAt = balance.updatedAt),
+                    )
+                    _state.update {
+                        it.copy(
+                            refreshingWallets = it.refreshingWallets - key,
+                            walletErrors = it.walletErrors - key,
+                        )
+                    }
+                    onSuccess()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            refreshingWallets = it.refreshingWallets - key,
+                            walletErrors = it.walletErrors + (key to walletErrorMessage(error)),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun refreshWallets(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val busy = _state.value.refreshingWallets
+        val tracked = _state.value.holdings.filter { holding ->
+            val wallet = holding.wallet ?: return@filter false
+            holding.key !in busy && (force || now - wallet.updatedAt >= WALLET_REFRESH_MS)
+        }
+        if (tracked.isEmpty()) return
+
+        val ids = tracked.map { it.key }.toSet()
+        _state.update {
+            it.copy(
+                refreshingWallets = it.refreshingWallets + ids,
+                walletErrors = it.walletErrors - ids,
+            )
+        }
+        viewModelScope.launch {
+            val results = tracked.map { holding ->
+                async {
+                    holding to walletSemaphore.withPermit {
+                        fetchWalletBalance(BuildConfig.RATES_URL, holding.wallet!!)
+                    }
+                }
+            }.awaitAll().associateBy { it.first.key }
+
+            val current = _state.value
+            val errors = current.walletErrors.toMutableMap()
+            var changed = false
+            val next = current.holdings.map { holding ->
+                val (original, result) = results[holding.key] ?: return@map holding
+                val wallet = holding.wallet ?: return@map holding
+                if (wallet != original.wallet) return@map holding
+                result.fold(
+                    onSuccess = { balance ->
+                        changed = true
+                        errors -= holding.key
+                        holding.copy(
+                            amount = balance.amount,
+                            wallet = wallet.copy(updatedAt = balance.updatedAt),
+                        )
+                    },
+                    onFailure = { error ->
+                        errors[holding.key] = walletErrorMessage(error)
+                        holding
+                    },
+                )
+            }
+
+            if (changed) store.holdings = next
+            _state.update {
+                it.copy(
+                    holdings = next,
+                    refreshingWallets = it.refreshingWallets - ids,
+                    walletErrors = errors,
+                )
+            }
+            if (changed) recordSnapshot()
+        }
+    }
+
+    private fun walletErrorMessage(error: Throwable): String =
+        when ((error as? WalletFetchException)?.reason) {
+            "invalid_address", "invalid_contract" ->
+                "این آدرس با شبکه انتخاب‌شده جور نیست."
+            "unsupported_network" -> "هنوز نمی‌شه از این شبکه استفاده کرد."
+            else -> "موجودی نیومد. اینترنتت رو چک کن و دوباره امتحان کن."
+        }
+
+    fun setName(name: String) {
+        store.name = name
+        _state.update { it.copy(name = name.trim()) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        store.themeMode = mode
+        _state.update { it.copy(themeMode = mode) }
+    }
+
+    fun setTextSize(percent: Int) {
+        if (percent !in TEXT_SIZES) return
+        store.textSize = percent
+        _state.update { it.copy(textSize = percent) }
+    }
+
+    fun setInstallmentReminder(days: Int) {
+        if (days !in INSTALLMENT_REMINDER_DAYS) return
+        store.installmentReminder = days
+        _state.update { it.copy(installmentReminder = days) }
+        // It may be the only reason left to watch, or the first one.
+        scheduleLedgerWatch(getApplication(), watchWanted())
+    }
+
+    /** The voice notes speak in. Takes effect on the next note; nothing already posted is rewritten. */
+    fun setQuipTone(tone: QuipTone) {
+        store.quipTone = tone
+        _state.update { it.copy(quipTone = tone) }
+    }
+
+    /**
+     * Whether the watch has anything to do: messages to read, a cap to guard, a payment to remind
+     * her of, or a household whose transactions she asked to hear about — its sync is how this phone
+     * hears of them. Read off the published ledger, so call it after the state carries the latest view.
+     */
+    private fun watchWanted(): Boolean {
+        val ledger = _state.value.ledger
+        return store.smsEnabled || ledger.budgets.isNotEmpty() ||
+            (store.installmentReminder >= 0 && (ledger.installments.any { !it.done } || ledger.cheques.isNotEmpty())) ||
+            (store.familyNotes && _state.value.family.paired)
+    }
+
+    /** A note for each of the household's transactions — see [Store.familyNotes]. */
+    fun setFamilyNotes(on: Boolean) {
+        store.familyNotes = on
+        _state.update { it.copy(family = it.family.copy(notes = on)) }
+        if (on) ensureFamilyChannel(getApplication())
+        // It may be the only reason this phone has to wake and sync.
+        scheduleLedgerWatch(getApplication(), watchWanted())
+    }
+
+    /** Locked state is session-only; the *preference* is what persists. */
+    fun setLockEnabled(on: Boolean) {
+        store.lockEnabled = on
+        _state.update { it.copy(lockEnabled = on, locked = false) }
+    }
+
+    /** Toman or Rial on every figure — see [showRial]. The screens redraw on their own; the widget is told. */
+    fun setShowRial(on: Boolean) {
+        store.showRial = on
+        updateTotalWidget(getApplication())
+    }
+
+    /** The widget's own mask, independent of the app lock. Takes effect on the spot. */
+    fun setWidgetLock(on: Boolean) {
+        store.widgetLock = on
+        _state.update { it.copy(widgetLock = on) }
+        updateTotalWidget(getApplication())
+    }
+
+    /** Whether the hero counts the household or just her — see [Store.familyTotal]. */
+    fun setFamilyTotal(on: Boolean) {
+        store.familyTotal = on
+        _state.update { it.copy(familyTotal = on) }
+    }
+
+    /** Whether گزارش‌ها reads in dollars — see [Store.reportUsd]. */
+    fun setReportUsd(on: Boolean) {
+        store.reportUsd = on
+        _state.update { it.copy(reportUsd = on) }
+    }
+
+    /**
+     * A category of her own, with the mark she picked for it.
+     *
+     * Nothing is re-derived and nothing is re-classified: a new category is an answer that becomes
+     * available, not one that changes any answer already given. It appears in the picker on the
+     * next read of the ledger, which is the update below.
+     */
+    fun addCategory(nameFa: String, kind: String, glyph: CategoryGlyph) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(customCategory(nameFa, kind, glyph, System.currentTimeMillis()))
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addCategory failed: $it") }
+        }
+    }
+
+    /**
+     * Her name and mark for a category, shipped or hers.
+     *
+     * Nothing is re-derived: every row names its category by id and the name is read at display
+     * time, so the whole ledger, budgets included, says the new name on the next read. The mark
+     * is stored even when she kept it — on a shipped category that is what makes the rename
+     * survive [seedBuiltins], and a name no build knows would otherwise draw three dots.
+     */
+    fun editCategory(category: Category, nameFa: String, glyph: CategoryGlyph) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    listOf(
+                        category.copy(
+                            nameFa = nameFa.trim(),
+                            glyph = glyph.name,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "editCategory failed: $it") }
+        }
+    }
+
+    /**
+     * What «حذف» on a category does: archived, never deleted — every transaction she ever filed
+     * under it still names it, and the timeline reads that name off the row rather than off this
+     * table. The same call brings it back.
+     */
+    fun toggleCategoryArchived(category: Category) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                durable.categories().putAll(
+                    // No new stamp: it dates her name and mark, which the household compares, and
+                    // archiving is hers alone.
+                    listOf(category.copy(archived = !category.archived))
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "toggleCategoryArchived failed: $it") }
+        }
+    }
+
+    /** Called when the app leaves the foreground, so returning to it asks again. */
+    fun relock() {
+        if (store.lockEnabled) _state.update { it.copy(locked = true) }
+    }
+
+    fun unlock() = _state.update { it.copy(locked = false) }
+
+    /**
+     * Reads whatever has landed in the inbox since the last look and folds it into the
+     * balances. Cheap enough to run on every foreground: the query is bounded by the last scan
+     * and a message already counted is skipped by content key, never re-applied.
+     */
+    fun scanSms() {
+        val app = getApplication<Application>()
+        // Notification access is only ever changed on Android's own page, so it is asked again on
+        // every return. Blu's balance joins or leaves the total with it: a step, as the SMS switch
+        // is, never a spend.
+        val notified = canReadNotifications(app)
+        if (notified != _state.value.notified) {
+            val before = _state.value.totals
+            _state.update { it.copy(notified = notified) }
+            recordSnapshot(countedBefore = before)
+        }
+        // She can take the permission away in Android's own settings, and then these balances
+        // are frozen at whatever they last read while her real accounts move on. Switching the
+        // feature off is what keeps them out of the total — they stay listed, and turning it
+        // back on re-reads everything since.
+        if (store.smsEnabled && !canReadSms(app)) setSmsEnabled(false)
+        if (!store.smsEnabled && !notified) return
+        // One at a time. Two used to start on every cold open — init{} launches one and the
+        // lifecycle observer replays ON_START into refreshIfStale() a moment later — and both
+        // walked the whole inbox for one of them to be thrown away at the end.
+        if (scanJob?.isActive == true) return
+        // Dispatchers.Default: only the cursor read was ever off the UI thread. Everything
+        // after it — the JSON decode of every balance and of every message already counted,
+        // the parse of each message, and the encode on the way back — ran on the main thread,
+        // and 1.0.2's schema bump makes the first scan after an upgrade the WHOLE inbox. On a
+        // phone with years of messages that is the app frozen on first open.
+        scanJob = viewModelScope.launch(Dispatchers.Default) { runScan(app) }
+    }
+
+    /**
+     * [sweepSources], and the warning it leaves when a backup file she has holds what it took.
+     * Called by the launch and by an export alike, so whichever sweeps first raises it.
+     */
+    private suspend fun sweep(durable: DurableDb) {
+        if (backupHoldsSweptCodes(sweepSources(durable), store.lastBackupAt, restoredAtLaunch)) {
+            store.backupHoldsCodes = true
+            _backup.update { it.copy(holdsCodes = true) }
+        }
+    }
+
+    /**
+     * ingest → derive, and then a check that the two ways of reaching a balance agree.
+     *
+     * Ingest starts at the first of the current Jalali month and grows forward from there. It
+     * used to reach thirteen months back on the first run, which handed a new user a ledger with
+     * a year of unfiled transactions in it — history she never asked for, priced as a review deck
+     * she would never finish.
+     *
+     * The fold and the derivation both run for now, and disagreeing is a log line rather than a
+     * visible change. The fold is what she sees until they have agreed on a real phone for a
+     * release; then the fold goes and this becomes the only answer.
+     */
+    private suspend fun runLedgerPipeline(app: Application, extra: Map<String, Bank>) {
+        val durable = DurableDb.get(app)
+        val derived = DerivedDb.get(app)
+
+        migrateAnchorsFromPrefs(store.bankAccounts, durable, System.currentTimeMillis())
+        // Here rather than inside ingest, so it runs without READ_SMS too: the codes an older
+        // build stored are in the table whether or not she still grants the permission.
+        sweep(durable)
+        seedBuiltins(durable)
+        loadSession(durable)?.let { refreshFamily(it) }
+        val added = ingestBankSms(app, durable, extra)
+        // Derive when anything new arrived, or when this build reads messages differently from
+        // whatever produced the rows already there. The second case needs no inbox, no
+        // permission and no network — it is why a parser fix is now a Tuesday job.
+        if (added > 0 || deriveAfterRestore || needsDerive(derived, durable)) {
+            deriveAfterRestore = false
+            val rows = derive(durable, derived, extra)
+            android.util.Log.i("muchtoman", "ledger: +$added messages, $rows transactions")
+        }
+
+        publishLedger(durable, derived)
+
+        // Only a disagreement about the *same* evidence is worth a line, and anchored balances
+        // are the only ones that qualify: a stated مانده is an absolute figure both sides must
+        // land on. The two read from different start points on purpose — the fold walks the whole
+        // inbox, ingest starts at this month — so an unanchored balance is a sum of deltas over a
+        // different span on each side, and comparing those two numbers only ever prints noise.
+        for (balance in allBalances(derived, durable)) {
+            if (!balance.anchored) continue
+            val folded = store.bankAccounts.firstOrNull { it.key == balance.accountId } ?: continue
+            if (!folded.anchored) continue
+            if (balance.at > folded.updatedAt) continue
+            val foldedRial = Math.round(folded.balance * 10.0)
+            if (foldedRial != balance.rial) {
+                android.util.Log.w(
+                    "muchtoman",
+                    "ledger disagrees on ${balance.accountId} over the same messages: " +
+                        "fold=$foldedRial derived=${balance.rial} Rial (fold at ${folded.updatedAt}, " +
+                        "ledger at ${balance.at})",
+                )
+            }
+        }
+    }
+
+    /** One [categorise] at a time. Not [ledgerGate]: [publishLedger] takes that one inside. */
+    private val filing = Mutex()
+
+    /**
+     * File one transaction, and — if she says «همیشه» — teach the app to file everything like
+     * it by itself, past and future both.
+     *
+     * There is no backfill job behind that promise. Classification is total, so one new rule
+     * plus one re-derive is the whole mechanism, and it applies to every transaction she has
+     * ever had rather than only the ones that arrive next.
+     */
+    fun categorise(entry: LedgerEntry, categoryId: String, always: Boolean) {
+        val app = getApplication<Application>()
+        // Queued on Main, in the order she tapped, before the hop off it: two quick picks each
+        // ran on their own thread, and the first one's write could land after the second's.
+        viewModelScope.launch {
+            filing.withLock {
+                withContext(Dispatchers.Default) {
+                    val durable = DurableDb.get(app)
+                    val derived = DerivedDb.get(app)
+                    runCatching {
+                        val session = loadSession(durable)
+                        val previous = durable.decisions().forRef(entry.txn.ref)
+                            .firstOrNull { it.kind == DecisionKind.CATEGORY }
+                        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                        // Filing a leg under a real category is her saying the detector was
+                        // wrong, so the pair dies. Filing it under انتقال is her saying it was
+                        // right — rejecting then would throw the other leg back into income,
+                        // which is the bug this guards.
+                        val rejecting = entry.transfer && categoryId != CAT_TRANSFER
+                        if (rejecting) {
+                            derived.links().touching(entry.txn.ref)
+                                .filter { it.kind == LinkKind.TRANSFER && it.auto }
+                                .forEach { link ->
+                                    durable.linkDecisions().put(
+                                        linkDecision(
+                                            link.aRef,
+                                            link.bRef,
+                                            LinkKind.TRANSFER,
+                                            Verdict.REJECTED,
+                                            now,
+                                        )
+                                    )
+                                }
+                        }
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now),
+                                ref = entry.txn.ref,
+                                kind = DecisionKind.CATEGORY,
+                                value = categoryId,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                                familyRef = entry.txn.familyRef.ifBlank {
+                                    session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                                },
+                            )
+                        )
+                        // One category is the row whole again.
+                        putAnswer(durable, entry.txn, DecisionKind.SPLIT, null, session?.member.orEmpty())
+                        if (always) {
+                            val addrKey = durable.smsSource().addrKeyOf(entry.txn.srcHash).orEmpty()
+                            durable.rules().put(ruleFrom(entry.txn, categoryId, addrKey, now))
+                        }
+                        // A rule or a rejected pair moves other rows; a plain pick moves its own
+                        // row alone, and the card waited on a rebuild of every message to say so.
+                        val pinned = !always && !rejecting && !needsDerive(derived, durable) &&
+                            pinClass(derived, entry.txn, categoryId)
+                        if (!pinned) derive(durable, derived, extraLookup(store.extraBankNumbers))
+                        publishLedger(durable, derived)
+                        requestFamilySync(silent = true)
+                    }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
+                }
+            }
+        }
+    }
+
+    /**
+     * File the whole backlog at once — see [autoFilePlan].
+     *
+     * Every row gets an ordinary pinned decision, so any one of them can be refiled by hand
+     * later exactly as if she had answered its card herself. One derive at the end applies them
+     * together: fifty-three decisions and one rebuild, not fifty-three rebuilds.
+     */
+    fun categoriseAll(assignments: List<Pair<LedgerEntry, String>>) {
+        if (assignments.isEmpty()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val session = loadSession(durable)
+                durable.withTransaction {
+                    val existing = durable.decisions().ofKind(DecisionKind.CATEGORY)
+                        .associateBy { it.ref }
+                    var stamp = System.currentTimeMillis()
+                    val rows = assignments.map { (entry, categoryId) ->
+                        val previous = existing[entry.txn.ref]
+                        stamp = maxOf(stamp + 1, (previous?.updatedAt ?: 0L) + 1)
+                        TxnDecision(
+                            id = previous?.id ?: uuid7(stamp),
+                            ref = entry.txn.ref,
+                            kind = DecisionKind.CATEGORY,
+                            value = categoryId,
+                            createdAt = previous?.createdAt ?: stamp,
+                            updatedAt = stamp,
+                            memberId = session?.member.orEmpty(),
+                            familyRef = entry.txn.familyRef.ifBlank {
+                                session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                            },
+                        )
+                    }
+                    durable.decisions().putAll(rows)
+                }
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "categoriseAll failed: $it") }
+        }
+    }
+
+    /**
+     * Her note on one transaction — the one field that is words rather than an answer. Blank
+     * takes it back. A [DecisionKind.NOTE] decision like any other, so it survives a re-derive
+     * and replays onto a rebuilt ledger the way a category does.
+     *
+     * And it goes to the household the way a category does too: a note is written by whoever is
+     * looking at the row, so it carries the family reference of the transaction it is about —
+     * her own row's, or the one her husband's row already came with — and the sync is asked for
+     * straight away rather than left to the next hourly one, because a note she just typed and
+     * cannot see on the other phone reads as a note that was not saved.
+     */
+    fun setNote(entry: LedgerEntry, text: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                val clean = text.trim().take(MAX_NOTE_CHARS)
+                // The retracted row too: `ref` and `kind` are unique together, so re-noting a
+                // row she had cleared has to land on that same row rather than race it.
+                val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.NOTE)
+                if (previous == null && clean.isEmpty()) return@runCatching
+                if (previous != null && previous.value.orEmpty() == clean) return@runCatching
+                val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+                val session = loadSession(durable)
+                durable.decisions().put(
+                    TxnDecision(
+                        id = previous?.id ?: uuid7(now),
+                        ref = entry.txn.ref,
+                        kind = DecisionKind.NOTE,
+                        value = clean,
+                        createdAt = previous?.createdAt ?: now,
+                        updatedAt = now,
+                        deleted = clean.isEmpty(),
+                        memberId = session?.member.orEmpty(),
+                        familyRef = entry.txn.familyRef.ifBlank {
+                            session?.let { familyTxnId(it.member, entry.txn.ref) }.orEmpty()
+                        },
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "setNote failed: $it") }
+        }
+    }
+
+    /**
+     * A transaction she typed in herself, in the same shape the iPhone writes one.
+     *
+     * The row and its answers land together: the category is an ordinary pinned decision on
+     * `m:<id>` — the same mechanism a filed message uses, which is what lets her refile it later
+     * — and the note rides the same rail as a note on any other row.
+     */
+    fun addManualTxn(signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long) {
+        if (signedRial == 0L) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                val id = uuid7(now)
+                val session = loadSession(durable)
+                durable.withTransaction {
+                    durable.manual().put(
+                        ManualTxn(
+                            id = id,
+                            at = at,
+                            day = tehranDay(at),
+                            amountRial = signedRial,
+                            categoryId = categoryId,
+                            merchant = merchant.trim().take(60),
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    )
+                    if (categoryId != null) {
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now + 1),
+                                ref = manualRef(id),
+                                kind = DecisionKind.CATEGORY,
+                                value = categoryId,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                                familyRef = session?.let { familyTxnId(it.member, manualRef(id)) }.orEmpty(),
+                            )
+                        )
+                    }
+                    val cleanNote = note.trim().take(MAX_NOTE_CHARS)
+                    if (cleanNote.isNotEmpty()) {
+                        durable.decisions().put(
+                            TxnDecision(
+                                id = uuid7(now + 2),
+                                ref = manualRef(id),
+                                kind = DecisionKind.NOTE,
+                                value = cleanNote,
+                                createdAt = now,
+                                updatedAt = now,
+                                memberId = session?.member.orEmpty(),
+                                familyRef = session?.let { familyTxnId(it.member, manualRef(id)) }.orEmpty(),
+                            )
+                        )
+                    }
+                }
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "addManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Takes back any row of this phone's own — hers to delete because it is hers.
+     *
+     * A hand-entered row is tombstoned in place. A message-derived one cannot be: the message is
+     * evidence and stays in sms_source untouched — instead a [DecisionKind.HIDE] decision is
+     * written against it, and the derive gate drops the row it would have made. Either way the
+     * family's copy dies through the ordinary unshare sweep on the next sync. Rows that came
+     * from another member (`f:`) are not hers and are never offered.
+     */
+    fun deleteTxn(entry: LedgerEntry) {
+        val ref = entry.txn.ref
+        if (ref.startsWith("m:")) return deleteManualTxn(entry)
+        if (!ref.startsWith("s:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                val session = loadSession(durable)
+                // REPLACE lands on the (ref, kind) unique index, so this also revives a decision
+                // an earlier undo tombstoned — no read needed first.
+                durable.decisions().put(
+                    TxnDecision(
+                        id = uuid7(now),
+                        ref = ref,
+                        kind = DecisionKind.HIDE,
+                        value = "1",
+                        createdAt = now,
+                        updatedAt = now,
+                        memberId = session?.member.orEmpty(),
+                        familyRef = entry.txn.familyRef,
+                    )
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "deleteTxn failed: $it") }
+        }
+    }
+
+    /** The undo: the hide decision is buried, and the next derive brings the row back. */
+    fun restoreTxn(ref: String) {
+        if (ref.startsWith("m:")) return restoreManualTxn(ref)
+        if (!ref.startsWith("s:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val now = System.currentTimeMillis()
+                durable.decisions().put(
+                    TxnDecision(
+                        id = uuid7(now),
+                        ref = ref,
+                        kind = DecisionKind.HIDE,
+                        value = null,
+                        createdAt = now,
+                        updatedAt = now,
+                        deleted = true,
+                    )
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "restoreTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Takes back a row she typed in — tombstoned, never erased, so the other phones in the
+     * household learn it is gone. Only ever offered on manual rows: a message is evidence, and
+     * evidence is not deletable.
+     */
+    fun deleteManualTxn(entry: LedgerEntry) {
+        if (entry.txn.sourceKind != "manual" || !entry.txn.ref.startsWith("m:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                val id = entry.txn.ref.removePrefix("m:")
+                val row = durable.manual().all().firstOrNull { it.id == id } ?: return@runCatching
+                durable.manual().put(
+                    row.copy(deleted = true, updatedAt = maxOf(System.currentTimeMillis(), row.updatedAt + 1))
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Her figure, day, member and direction for one of this phone's own rows — see [editRow]. A
+     * direction is laid on in derive, so only that one costs a derive.
+     */
+    fun editTxn(entry: LedgerEntry, rial: Long?, day: Long?, memberId: String?, direction: String?) =
+        ledgerEdit("editTxn", rederive = direction != null) { durable ->
+            editRow(durable, entry, rial, day, memberId, loadSession(durable)?.member.orEmpty(), direction = direction)
+        }
+
+    fun revertTxnEdits(entry: LedgerEntry) =
+        ledgerEdit("revertTxnEdits", rederive = true) { durable -> revertRow(durable, entry, loadSession(durable)?.member.orEmpty()) }
+
+    /** The row in parts, or whole again — see [splitRow]. Refiling is a derive; an edit is not. */
+    fun splitTxn(entry: LedgerEntry, parts: List<Pair<String, Long>>) =
+        ledgerEdit("splitTxn", rederive = true) { durable ->
+            splitRow(durable, entry, parts, loadSession(durable)?.member.orEmpty())
+        }
+
+    /**
+     * «برای موارد مشابه» switched on a row already filed: its category is taught as a rule now,
+     * exactly as a pick with the switch on would. Off takes back every rule taught from this row.
+     */
+    fun learnSimilar(entry: LedgerEntry, on: Boolean) {
+        if (on) return categorise(entry, entry.categoryId, always = true)
+        ledgerEdit("learnSimilar", rederive = true) { durable ->
+            val now = System.currentTimeMillis()
+            durable.rules().madeFrom(entry.txn.ref).forEach { durable.rules().delete(it.id, now) }
+        }
+    }
+
+    /**
+     * An answer written, the ledger published, the household told. Only a filing needs [derive] —
+     * the corrections in `Edits.kt` are laid over the rows where they are read.
+     */
+    private fun ledgerEdit(what: String, rederive: Boolean = false, write: suspend (DurableDb) -> Unit) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                write(durable)
+                if (rederive) derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "$what failed: $it") }
+        }
+    }
+
+    /**
+     * The tombstone [deleteManualTxn] writes, written the other way: the row comes back with a
+     * newer stamp, so the other phones learn it is back the same way they learnt it was gone.
+     * Unreferenced for now: the UI wave wires the undo affordance to it.
+     */
+    fun restoreManualTxn(ref: String) {
+        if (!ref.startsWith("m:")) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                // The DAO deliberately hides tombstones — manual().all() filters deleted rows,
+                // and its file is owned elsewhere this wave — so the flip goes through the
+                // openHelper. Safe to bypass Room's invalidation tracker: nothing observes this
+                // table (every reader is a one-shot suspend query), and the derive below is the
+                // re-read. MAX keeps the stamp monotonic, exactly as the delete's maxOf does.
+                durable.openHelper.writableDatabase.execSQL(
+                    "UPDATE manual_txn SET deleted = 0, updated_at = MAX(?, updated_at + 1) " +
+                        "WHERE id = ? AND deleted = 1",
+                    arrayOf<Any>(System.currentTimeMillis(), ref.removePrefix("m:")),
+                )
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
+        }
+    }
+
+    /**
+     * Where the ledger starts — see [Store.ledgerStartsOn]. Nothing is deleted or read again, so
+     * this is a republish and nothing more: the view leaves the months before it out, and
+     * «از اول» brings every row back exactly as it was. Hers alone, unlike the exclusions below —
+     * a start chosen on her phone is not the household's.
+     */
+    fun setLedgerStartsOn(day: Long) {
+        store.ledgerStartsOn = day
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            publishLedger(DurableDb.get(app), DerivedDb.get(app))
+        }
+    }
+
+    /**
+     * Which categories دخل و خرج leaves out. A way of reading the report, never a fact about
+     * money — but a way the household reads it *together*: the set is one shared record, so the
+     * edit lands here first and is then stamped into `durable_meta` for the sync to carry, the
+     * same last-write-wins walk a shared budget takes. See [ReportExclusionsState].
+     *
+     * And it governs one figure off the report too: «کل خرج». A total budget is a roof over
+     * exactly what the report counts (see [budgetRows]), so a set she has just changed moves that
+     * figure — worked out in [ledgerView] for the card and by the watch worker for the note — and
+     * this republishes so the card and her lock screen read the new set rather than the old one.
+     * The republish rides the same edit counter as the write above, so only the newest tap's
+     * publish runs, and it is [NonCancellable] because [announceBudgets] writes its marks before
+     * it posts and a cancellation between the two is an alert marked as said and never made.
+     */
+    fun setReportExcluded(ids: Set<String>) {
+        store.reportExcluded = ids
+        _state.update { it.copy(reportExcluded = ids) }
+        val app = getApplication<Application>()
+        // The counter keeps a burst of taps honest: launched writers can reach the lock out of
+        // order, and only the newest may write, or an early tap landing late would put a set she
+        // has already moved past onto every phone in the family.
+        val edit = reportExclusionEdits.incrementAndGet()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            withFamilySync {
+                if (reportExclusionEdits.get() != edit) return@withFamilySync
+                try {
+                    val previous = readReportExclusions(durable)
+                    writeReportExclusions(
+                        durable,
+                        ReportExclusionsState(
+                            ids = safeExcludedCategoryIds(ids),
+                            updatedAt = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L),
+                            editedByMemberId = loadSession(durable)?.member.orEmpty(),
+                        ),
+                    )
+                } finally {
+                    // Only when this is still the newest tap: an older writer must not declare a
+                    // newer tap stamped — the newer tap's own writer is behind it on this lock.
+                    if (reportExclusionEdits.get() == edit) reportExclusionsStamped.set(edit)
+                }
+            }
+            if (_state.value.family.paired) requestFamilySync(silent = true)
+            // «کل خرج» reads this set too, so the newest edit republishes the ledger to move the
+            // card and the lock-screen note onto it. Stale taps bail at the counter, so a burst
+            // is one ledger walk, not one per tap.
+            if (reportExclusionEdits.get() == edit) {
+                withContext(NonCancellable) {
+                    runCatching { publishLedger(durable, DerivedDb.get(app)) }
+                        .onFailure { android.util.Log.w("muchtoman", "exclusions republish failed: $it") }
+                }
+            }
+        }
+    }
+
+    /**
+     * Everything rebuildable, dropped and rebuilt: the cached rate and بورس snapshots, the coin
+     * -icon cache, and `derived.db` — which is a cache by design, so «clear» for it simply means
+     * the same total re-derive a parser fix runs. Nothing of hers is touched: messages,
+     * decisions, holdings, history and every setting stay exactly put, and fresh fetches start
+     * on the spot so the screens refill rather than sit empty.
+     */
+    fun clearCaches() {
+        val app = getApplication<Application>()
+        store.cachedRates = Rates()
+        store.cachedStocks = TseSnapshot()
+        _state.update { it.copy(rates = Rates(), tse = TseSnapshot()) }
+        viewModelScope.launch(Dispatchers.Default) {
+            runCatching {
+                coil3.SingletonImageLoader.get(app).apply {
+                    diskCache?.clear()
+                    memoryCache?.clear()
+                }
+                val durable = DurableDb.get(app)
+                val derived = DerivedDb.get(app)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onFailure { android.util.Log.w("muchtoman", "clearCaches failed: $it") }
+        }
+        refreshAll()
+    }
+
+    // ——— Backup and restore: the recovery path for a phone that no longer exists ———
+
+    /** The decrypted backup between «رمز درسته» and the armed confirm. Never touches disk. */
+    private var pendingRestore: BackupPayload? = null
+
+    /**
+     * Everything into the file she just picked. The payload is gathered under [ledgerGate] so the
+     * prefs slice and the database bytes describe one moment; the slow parts — 600k rounds of the
+     * KDF and the stream write — run outside it, where they block nobody.
+     */
+    fun exportBackup(uri: Uri, passphrase: String) {
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true, notice = null, failed = false) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val durable = DurableDb.get(app)
+                val payload = ledgerGate.withLock {
+                    // Before the copy, and through the same door as the launch: an export made
+                    // before the launch got as far as sweeping must still leave her warned.
+                    sweep(durable)
+                    BackupPayload(
+                        prefs = exportablePrefs(app),
+                        durableDbB64 = Base64.encode(backupDurableDbBytes(app, durable)),
+                    )
+                }
+                val sealed = sealBackup(
+                    payload,
+                    passphrase,
+                    createdAt = System.currentTimeMillis(),
+                    appVersionCode = BuildConfig.VERSION_CODE,
+                )
+                // "wt" truncates a file she chose to overwrite; a provider that cannot do that
+                // gets a plain write, and the runCatching owns whatever it thinks of it.
+                val stream = runCatching { app.contentResolver.openOutputStream(uri, "wt") }
+                    .getOrNull() ?: app.contentResolver.openOutputStream(uri)
+                (stream ?: error("no stream for $uri")).use { it.write(sealed) }
+                val exportedAt = System.currentTimeMillis()
+                store.lastBackupAt = exportedAt
+                store.backupHoldsCodes = false
+                exportedAt
+            }.onSuccess { exportedAt ->
+                _backup.update {
+                    it.copy(working = false, lastExportAt = exportedAt, holdsCodes = false,
+                        // The warning goes as this file lands, so the one step of it this file
+                        // cannot take for her is said now, while she is here to take it.
+                        notice = if (it.holdsCodes) "پشتیبان ساخته شد. اگه فایل پشتیبان قبلی هنوز هست، پاکش کن."
+                        else "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
+                }
+            }.onFailure { e ->
+                android.util.Log.w("muchtoman", "backup export failed: $e")
+                _backup.update {
+                    it.copy(working = false, failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.")
+                }
+            }
+        }
+    }
+
+    /**
+     * The picker answered after the process died in it: the passphrase, kept out of saved state on
+     * purpose, went with the process, so the file the picker made is empty. Deleted rather than left
+     * as a 0-byte «backup» she may trust; a provider that will not delete still gets the words.
+     */
+    fun dropEmptyBackup(uri: Uri) {
+        _backup.update { it.copy(failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.") }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { DocumentsContract.deleteDocument(app.contentResolver, uri) }
+                .onFailure { android.util.Log.w("muchtoman", "empty backup not deleted: $it") }
+        }
+    }
+
+    /**
+     * Decrypt and judge the picked file — nothing on the phone changes here. A payload that
+     * passes waits in [pendingRestore] for the armed confirm; every refusal is words, and the
+     * wrong-passphrase words deliberately cannot tell a bad passphrase from a damaged file,
+     * because GCM cannot either.
+     */
+    fun readBackupFile(uri: Uri, passphrase: String) {
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true, notice = null, failed = false, ready = false) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val bytes = app.contentResolver.openInputStream(uri)?.use { it.readBytesLimited() }
+                    ?: error("no stream for $uri")
+                openBackup(bytes, passphrase)
+            }.onSuccess { opened ->
+                pendingRestore = opened.payload
+                val day = opened.header.createdAt.takeIf { it > 0 }?.let { faDate(tehranDay(it)) }
+                _backup.update {
+                    it.copy(
+                        working = false,
+                        ready = true,
+                        readyWords = if (day == null) "فایل پشتیبان" else "پشتیبانِ $day",
+                    )
+                }
+            }.onFailure { e ->
+                pendingRestore = null
+                android.util.Log.w("muchtoman", "backup open failed: ${(e as? BackupException)?.fault ?: e}")
+                _backup.update { it.copy(working = false, failed = true, notice = backupFaultFa(e)) }
+            }
+        }
+    }
+
+    /**
+     * The destructive step, behind the sheet's armed two-tap. Nothing is swapped here either:
+     * the payload is staged beside the database and [DurableDb.completePendingRestore] applies
+     * it at the next launch, before Room opens — see [stageRestore] for why in-place was refused.
+     * Room then runs its migrations over the restored file if the backup is from an older build.
+     */
+    fun confirmRestore() {
+        val payload = pendingRestore ?: return
+        if (_backup.value.working) return
+        _backup.update { it.copy(working = true) }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                stageRestore(app, Base64.decode(payload.durableDbB64), encodeBackupPrefs(payload.prefs))
+            }.onSuccess {
+                pendingRestore = null
+                _backup.update { it.copy(working = false, ready = false, restartNeeded = true) }
+            }.onFailure { e ->
+                android.util.Log.w("muchtoman", "backup staging failed: $e")
+                _backup.update {
+                    it.copy(working = false, failed = true, notice =
+                        if ((e as? BackupException)?.fault == BackupFault.NEWER_FORMAT) backupFaultFa(e)
+                        else "بازگردانی نشد. فایل رو بررسی کن و دوباره امتحان کن.")
+                }
+            }
+        }
+    }
+
+    fun setBackupReminder(on: Boolean) {
+        store.backupReminderEnabled = on
+        _backup.update { it.copy(reminderEnabled = on) }
+    }
+
+    /** She closed the sheet. The decrypted payload goes with it; the file stays hers to re-pick. */
+    fun dismissRestore() {
+        pendingRestore = null
+        _backup.update { it.copy(ready = false, readyWords = "", notice = null, failed = false) }
+    }
+
+    /** Where the household's ledger syncs. Same host as the PWA it serves, so one origin. */
+    private val syncBase = BuildConfig.SYNC_URL
+
+    private suspend fun refreshFamily(session: SyncSession?, note: String? = null, error: String? = null) {
+        val durable = DurableDb.get(getApplication())
+        // The household's word on which categories the report counts, landed on this phone's own
+        // setting. This runs at the end of every sync — the failed ones included — so a set the
+        // background worker pulled overnight reaches the screen on the next refresh even when
+        // this one could not reach the server. Why null lands nothing: see [landReportExclusions].
+        val excluded = landReportExclusions(durable)
+        val own = session?.let { active ->
+            durable.familyMembers().get(active.member) ?: FamilyMember(
+                id = active.member,
+                name = store.name.trim().take(32).ifBlank { "من" },
+                sharesSms = durable.meta().get(META_SYNC_SHARE_SMS).toBoolean(),
+                updatedAt = System.currentTimeMillis(),
+            ).also { durable.familyMembers().put(it) }
+        }
+        val members = if (session == null) emptyList() else durable.familyMembers().all()
+        val memberById = members.associateBy { it.id }
+        // دارایی rows ride the member list: one whose member is gone — removed, left, buried —
+        // simply stops being shown.
+        val familyAssets = if (session == null) emptyList() else durable.familyAssets().all()
+            .mapNotNull { row ->
+                val member = memberById[row.memberId] ?: return@mapNotNull null
+                FamilyAssetView(row.memberId, member.name, decodeAssetItems(row.itemsJson), row.totalToman)
+            }
+            .sortedBy { it.name }
+        _state.update {
+            it.copy(
+                reportExcluded = excluded ?: it.reportExcluded,
+                familyAssets = familyAssets,
+                family = it.family.copy(
+                    paired = session != null,
+                    pendingPairing = if (session != null) null else it.family.pendingPairing,
+                    householdId = session?.token?.substringBefore('.').orEmpty(),
+                    memberId = session?.member.orEmpty(),
+                    memberName = own?.name.orEmpty(),
+                    members = members,
+                    sharesSms = own?.sharesSms ?: false,
+                    sharesAssets = session != null &&
+                        durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean(),
+                    excludedBanks = if (session == null) emptySet()
+                    else parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+                    primaryMemberId = if (session == null) ""
+                    else durable.meta().get(META_SYNC_PRIMARY).orEmpty(),
+                    lastSync = note ?: it.family.lastSync,
+                    error = error,
+                    working = false,
+                ),
+            )
+        }
+    }
+
+    /** Create a family with this phone's owner as its first member. */
+    fun startFamily(name: String) {
+        if (name.isBlank()) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching { loadSession(durable) ?: claimHousehold(syncBase, durable, name) }
+                .onSuccess {
+                    refreshFamily(it, note = "خانواده ساخته شد.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "claim failed: $it")
+                    refreshFamily(null, error = "متصل نشد. بعداً دوباره امتحان کن.")
+                }
+        }
+    }
+
+    /** Called with a family invitation: the deep link a scanned QR opens, or one scanned on خانواده. */
+    fun acceptPairing(link: String?) {
+        if (link.isNullOrBlank()) return
+        val pairing = parsePairingLink(link)
+        if (pairing == null) {
+            _state.update { it.copy(family = it.family.copy(error = "کد خانواده معتبر نیست.")) }
+            return
+        }
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            // The stored session, not the state's paired flag: at a cold start through the
+            // link the flag has not been read yet, and the answer decides which question she
+            // is asked — join, nothing (her own family's QR), or replace.
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable)
+            var case = pairingCase(session?.token, pairing.hid)
+            // Her own family's QR on a phone the household no longer answers to is the way back
+            // in, through the same confirmed replace a different household's would take.
+            val rejected = case == PairingCase.SAME_HOUSEHOLD && session != null && sessionRejected(session, durable)
+            if (rejected) case = PairingCase.REJOIN
+            _state.update {
+                it.copy(
+                    family = when (case) {
+                        PairingCase.JOIN ->
+                            it.family.copy(pendingPairing = link, error = null, pairingUrl = null)
+                        PairingCase.SAME_HOUSEHOLD ->
+                            it.family.copy(error = "این گوشی از قبل عضو یک خانواده است.")
+                        PairingCase.REJOIN -> it.family.copy(
+                            pendingRejoin = link, rejoinSameHousehold = rejected, error = null, pairingUrl = null,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    fun joinFamily(name: String) {
+        val link = _state.value.family.pendingPairing ?: return
+        if (name.isBlank()) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            loadSession(durable)?.let { existing ->
+                refreshFamily(existing, error = "این گوشی از قبل عضو یک خانواده است.")
+                return@launch
+            }
+            runCatching { joinHousehold(link, durable, name) }
+                .onSuccess { session ->
+                    _state.update { it.copy(family = it.family.copy(pendingPairing = null)) }
+                    refreshFamily(session, note = "به خانواده پیوستی.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "pair failed: $it")
+                    _state.update {
+                        it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
+                    }
+                }
+        }
+    }
+
+    /**
+     * The confirmed replace, behind the family screen's armed two-tap: the network pair runs
+     * first — a dead code leaves the old household untouched — then the old family's local
+     * state is buried the way «نو کردن خانواده» buries it, and the join lands under the
+     * display name she already had. See [rejoinHousehold].
+     */
+    fun confirmRejoin() {
+        val link = _state.value.family.pendingRejoin ?: return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            // Her name walks with her: the old household's row, not a fresh ask.
+            val name = loadSession(durable)?.let { durable.familyMembers().get(it.member)?.name }
+                .orEmpty().ifBlank { store.name }
+            runCatching {
+                val session = rejoinHousehold(link, durable, name)
+                // The join buried the old household's rows; re-derive here, because the sync
+                // below only derives when something arrives — and a fresh household sends nothing.
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+                session
+            }
+                .onSuccess { session ->
+                    _state.update { it.copy(family = it.family.copy(pendingRejoin = null)) }
+                    refreshFamily(session, note = "به خانواده جدید پیوستی.")
+                    requestFamilySync(silent = true)
+                }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "rejoin failed: $it")
+                    _state.update {
+                        it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
+                    }
+                }
+        }
+    }
+
+    /** She thought better of it: the old household stands, the scanned link is dropped. */
+    fun dismissRejoin() =
+        _state.update { it.copy(family = it.family.copy(pendingRejoin = null, error = null)) }
+
+    fun setFamilyName(name: String) {
+        val clean = name.filterNot(Char::isISOControl).trim().take(32)
+        if (clean.isBlank()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+            val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+            durable.familyMembers().put(
+                (previous ?: FamilyMember(session.member, clean, updatedAt = now))
+                    .copy(name = clean, updatedAt = now)
+            )
+            publishLedger(durable, DerivedDb.get(app))
+            refreshFamily(session)
+            requestFamilySync(silent = true)
+        }
+    }
+
+    /**
+     * The face she picked for her own row. Unlike [setFamilyName], blank is a valid answer —
+     * it is how a photo or emoji goes back to being the initial.
+     */
+    fun setFamilyAvatar(avatar: String) {
+        if (avatar.length > AVATAR_B64_MAX) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+            val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+            durable.familyMembers().put(
+                (previous ?: FamilyMember(session.member, store.name.trim().take(32).ifBlank { "من" }, updatedAt = now))
+                    .copy(avatar = avatar, updatedAt = now)
+            )
+            publishLedger(durable, DerivedDb.get(app))
+            refreshFamily(session)
+            requestFamilySync(silent = true)
+        }
+    }
+
+    fun setFamilySmsSharing(enabled: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            val previous = durable.familyMembers().get(session.member)
+                ?: FamilyMember(session.member, "من", updatedAt = 0L)
+            val now = maxOf(System.currentTimeMillis(), previous.updatedAt + 1L)
+            durable.withTransaction {
+                durable.meta().put(DurableMeta(META_SYNC_SHARE_SMS, enabled.toString()))
+                durable.familyMembers().put(previous.copy(sharesSms = enabled, updatedAt = now))
+            }
+            publishLedger(durable, DerivedDb.get(app))
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /** Whether this member's دارایی list rides along on the next sync. Off is a tombstone. */
+    fun setFamilyAssetSharing(enabled: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            durable.meta().put(DurableMeta(META_SYNC_SHARE_ASSETS, enabled.toString()))
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /** Banks kept out of sharing entirely: their transactions and their balances both. */
+    fun toggleFamilyExcludedBank(bank: String) {
+        if (bank.isBlank()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch
+            durable.withTransaction {
+                val current = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS))
+                val next = if (bank in current) current - bank else current + bank
+                durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, next.sorted().joinToString(",")))
+            }
+            publishLedger(durable, DerivedDb.get(app))
+            refreshFamily(session)
+            requestFamilySync(silent = false)
+        }
+    }
+
+    /**
+     * The walk-out itself lives in Sync.kt; this wrapper owns what the screen cannot: the
+     * re-derive that takes the buried family rows off every screen right now rather than at the
+     * next message, and the state flip back to unpaired.
+     */
+    fun leaveFamily() {
+        if (_state.value.family.working) return
+        val app = getApplication<Application>()
+        val activeSync = synchronized(familySyncLock) {
+            if (familyTransitioning) return
+            familyTransitioning = true
+            // If leave fails, the sync being cancelled still has to be retried.
+            queueFamilySync(silent = true)
+            familySyncJob
+        }
+        announceSync = false
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            activeSync?.cancelAndJoin()
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            val session = loadSession(durable) ?: run {
+                refreshFamily(null)
+                finishFamilyTransition(resumeQueued = false)
+                return@launch
+            }
+            runCatching {
+                leaveFamily(session, durable)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onSuccess {
+                refreshFamily(null, note = "از خانواده خارج شدی.")
+                finishFamilyTransition(resumeQueued = false)
+            }.onFailure {
+                android.util.Log.w("muchtoman", "leave failed: $it")
+                refreshFamily(session, error = "خروج نشد. اینترنتت رو چک کن.")
+                finishFamilyTransition(resumeQueued = true)
+            }
+        }
+    }
+
+    /**
+     * The re-key itself lives in Sync.kt; this wrapper owns the same cleanup [leaveFamily]
+     * owns — the re-derive that takes the buried household's rows off every screen right now
+     * rather than at the next message — then finishes the way the button promises: the fresh
+     * QR first, and the sync re-pushes this phone's records under the new key.
+     */
+    fun renewFamily() {
+        if (_state.value.family.working) return
+        val app = getApplication<Application>()
+        _state.update { it.copy(family = it.family.copy(working = true, error = null)) }
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            runCatching {
+                renewHousehold(durable)
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+                publishLedger(durable, derived)
+            }.onSuccess {
+                inviteDevice()
+                requestFamilySync(silent = false)
+            }.onFailure {
+                android.util.Log.w("muchtoman", "renew failed: $it")
+                refreshFamily(loadSession(durable), error = "نو نشد. اینترنتت رو چک کن.")
+            }
+        }
+    }
+
+    /** A one-time code, shown as a QR. Ten minutes, one use. */
+    fun inviteDevice() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val session = loadSession(durable) ?: return@launch refreshFamily(null)
+            runCatching { pairingUrl(session, invite(session, durable)) }
+                .onSuccess { url -> _state.update { it.copy(family = it.family.copy(paired = true, pairingUrl = url, error = null)) } }
+                .onFailure {
+                    android.util.Log.w("muchtoman", "invite failed: $it")
+                    refreshFamily(session, error = "کد ساخته نشد. اینترنتت رو چک کن.")
+                }
+        }
+    }
+
+    fun syncFamily(silent: Boolean = false) = requestFamilySync(silent)
+
+    /** The ledger's pull: a silent sync that answers out loud, once, when it lands. */
+    fun pullFamilySync() {
+        announceSync = true
+        requestFamilySync(silent = true)
+    }
+
+    /** One quiet line for a pull she made herself. Says nothing unless a pull is waiting on it. */
+    private suspend fun announcePull(message: String) {
+        if (!announceSync) return
+        announceSync = false
+        withContext(Dispatchers.Main) {
+            Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestFamilySync(silent: Boolean) {
+        synchronized(familySyncLock) {
+            if (familyTransitioning) {
+                queueFamilySync(silent)
+                return
+            }
+            if (familySyncJob?.isActive == true) {
+                queueFamilySync(silent)
+                markFamilySync(silent)
+                return
+            }
+            markFamilySync(silent)
+            val job = viewModelScope.launch(Dispatchers.Default, start = CoroutineStart.LAZY) {
+                runFamilySyncLoop(silent)
+            }
+            familySyncJob = job
+            job.start()
+        }
+    }
+
+    private fun queueFamilySync(silent: Boolean) {
+        queuedFamilySyncSilent = queuedFamilySyncSilent?.let { it && silent } ?: silent
+    }
+
+    private fun markFamilySync(silent: Boolean) {
+        // `syncing` moves with every sync, silent or not, before the launch so the pull
+        // indicator that just asked for one sees it in the same frame. `working` stays what it
+        // was: the labelled receipt of the family screen's own buttons.
+        _state.update {
+            it.copy(
+                family = if (silent) it.family.copy(syncing = true)
+                else it.family.copy(syncing = true, working = true, error = null)
+            )
+        }
+    }
+
+    private suspend fun runFamilySyncLoop(initiallySilent: Boolean) {
+        val ownJob = kotlin.coroutines.coroutineContext[Job]
+        var silent = initiallySilent
+        try {
+            while (true) {
+                runFamilySyncOnce(silent)
+                val next = synchronized(familySyncLock) {
+                    if (!familyTransitioning && queuedFamilySyncSilent != null) {
+                        queuedFamilySyncSilent.also { queuedFamilySyncSilent = null }
+                    } else {
+                        if (familySyncJob === ownJob) familySyncJob = null
+                        null
+                    }
+                } ?: break
+                silent = next
+                markFamilySync(silent)
+            }
+        } finally {
+            val anotherSyncIsActive = synchronized(familySyncLock) {
+                if (familySyncJob === ownJob) familySyncJob = null
+                familySyncJob?.isActive == true
+            }
+            if (!anotherSyncIsActive) {
+                _state.update { s -> s.copy(family = s.family.copy(syncing = false)) }
+            }
+        }
+    }
+
+    private suspend fun runFamilySyncOnce(silent: Boolean) {
+        val app = getApplication<Application>()
+        ledgerJob?.join()
+        val durable = DurableDb.get(app)
+        val derived = DerivedDb.get(app)
+        val session = loadSession(durable) ?: run {
+            // No household, nothing to say: a pull raced a leave, and the toast would be
+            // about a family this phone is no longer in.
+            announceSync = false
+            if (!silent) refreshFamily(null)
+            return
+        }
+        // Priced here, where the rates live, so the sync layer stays a courier: what goes out
+        // is exactly the hero's own arithmetic, minus the banks she keeps out of the family.
+        val snapshot = _state.value
+        val assets = if (durable.meta().get(META_SYNC_SHARE_ASSETS).toBoolean()) {
+            assetShareItems(
+                holdings = store.holdings.filterNot { it.id.startsWith(DEMO_PREFIX) },
+                rates = snapshot.effective,
+                coins = snapshot.coins,
+                stocks = snapshot.stocks,
+                smsEnabled = store.smsEnabled,
+                bankAccounts = store.bankAccounts,
+                disabledBanks = store.disabledBanks,
+                familyExcluded = parseExcludedBanks(durable.meta().get(META_SYNC_EXCLUDED_BANKS)),
+                notified = snapshot.notified,
+            )
+        } else null
+        try {
+            val result = syncNow(durable, derived, session, assets = assets)
+            if (result.received > 0 || needsDerive(derived, durable)) {
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+            }
+            publishLedger(durable, derived)
+            val compatibilityError = if (result.unsupportedKinds.isNotEmpty())
+                syncErrorFa(SyncHttpException(400, "{\"code\":\"invalid_kind\"}")) else null
+            refreshFamily(
+                session,
+                error = compatibilityError,
+                note = "${faNumber(result.sent.toDouble())} مورد فرستادیم، " +
+                    "${faNumber(result.received.toDouble())} مورد گرفتیم.",
+            )
+            announcePull(
+                compatibilityError ?: if (result.received == 0) "مورد تازه‌ای از خانواده نبود."
+                else "${faNumber(result.received.toDouble())} مورد تازه از خانواده گرفتیم."
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            android.util.Log.w("muchtoman", "sync failed: $error")
+            val message = syncErrorFa(error)
+            refreshFamily(session, error = message)
+            announcePull(message)
+        }
+    }
+
+    private fun finishFamilyTransition(resumeQueued: Boolean) {
+        val next = synchronized(familySyncLock) {
+            familyTransitioning = false
+            if (resumeQueued && queuedFamilySyncSilent != null) {
+                queuedFamilySyncSilent.also { queuedFamilySyncSilent = null }
+            } else {
+                queuedFamilySyncSilent = null
+                null
+            }
+        }
+        if (next != null) requestFamilySync(next)
+    }
+
+    fun keepBudget(id: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                val conflicts = durable.goals().byId(id)?.let { budgetConflicts(durable.goals().active(), it) }.orEmpty()
+                keepBudget(durable, id, System.currentTimeMillis())
+                conflicts.forEach { clearBudgetNote(app, it.id) }
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "keepBudget failed: $it") }
+        }
+    }
+
+    /**
+     * A cap on one category, per week, month or فصل — see `Budget.kt`.
+     *
+     * `startsOn` is the day she set it and is not what the figure is measured from: the window is
+     * the whole week, month or فصل, because a budget that ignored the days before she decided would
+     * disagree with «دسته‌ها» in دخل و خرج about what «رستوران و کافه» cost this month. What
+     * `startsOn` buys is [BudgetProgress.partWindow] — the card's own sentence saying exactly that.
+     *
+     * `nameFa` is the category's name at this moment, snapshotted for the same reason a filed
+     * transaction keeps the name it was filed under: the row must still be readable when the
+     * category behind it is archived. On a total there is no category to snapshot, so it keeps
+     * [BUDGET_TOTAL_FA] — the one name that cannot go stale.
+     *
+     * [category] is null for a cap on everything — «سقف کل خرج». See [Goal.total].
+     */
+    fun addBudget(category: Category?, period: BudgetPeriod, capRial: Long, shared: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                durable.goals().put(
+                    Goal(
+                        id = uuid7(now),
+                        nameFa = category?.nameFa?.take(40) ?: BUDGET_TOTAL_FA,
+                        targetRial = capRial,
+                        kind = GoalKind.CAP,
+                        categoryId = category?.id,
+                        period = period.id,
+                        startsOn = tehranDay(now),
+                        createdAt = now,
+                        updatedAt = now,
+                        // Only ever shared on a phone that has somebody to share with. The sheet
+                        // does not offer the choice without a household, and a row that claimed to
+                        // be shared with nobody would start publishing the day she paired.
+                        shared = shared && mineId.isNotBlank(),
+                        ownerMemberId = mineId,
+                        editedByMemberId = mineId,
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "addBudget failed: $it") }
+        }
+    }
+
+    /**
+     * A savings goal, with a deadline that makes it something she can pace.
+     *
+     * `startsOn` is the first of the current Jalali month rather than today, which is deliberate and
+     * is the one thing about a goal that could look invented: what she has already kept this month
+     * counts towards it. The card states the date it counts from, so the figure can be checked
+     * rather than taken on faith.
+     */
+    fun addGoal(name: String, targetRial: Long, horizon: GoalHorizon, shared: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            val today = tehranDay(now)
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                durable.goals().put(
+                    Goal(
+                        id = uuid7(now),
+                        nameFa = name.take(40),
+                        targetRial = targetRial,
+                        kind = GoalKind.SAVE,
+                        period = GoalPeriod.ONCE,
+                        startsOn = jalaliMonthStart(today),
+                        endsOn = horizon.endsOn(today),
+                        createdAt = now,
+                        updatedAt = now,
+                        shared = shared && mineId.isNotBlank(),
+                        ownerMemberId = mineId,
+                        editedByMemberId = mineId,
+                    )
+                )
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
+        }
+    }
+
+    /**
+     * Changes the ceiling or the rhythm of a cap she already keeps. The category stays: a cap on
+     * a different category is a different budget, made by deleting this one.
+     *
+     * What was already said about the old cap is forgotten on purpose. Crossing 80% of a figure
+     * she chose five minutes ago is news about that figure, and the high-water mark for the old
+     * one would silence it — so the marks are dropped and [publishLedger]'s own announce treats
+     * the edited budget exactly as it would one created at this spend: each threshold speaks
+     * once, against the cap she actually keeps now.
+     */
+    fun editBudget(id: String, period: BudgetPeriod, capRial: Long, shared: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val goal = durable.goals().byId(id) ?: return@runCatching
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val next = shared && mineId.isNotBlank()
+                // Saved untouched is not an edit: a re-put would only churn updatedAt, and the
+                // dropped marks would say the same warning a second time about nothing new.
+                if (goal.targetRial == capRial && goal.period == period.id && goal.shared == next) {
+                    return@runCatching
+                }
+                durable.goals().put(
+                    goal.copy(
+                        targetRial = capRial,
+                        period = period.id,
+                        updatedAt = now,
+                        shared = next,
+                        // Who moved it, which is the tie-break two phones converge on — and on a
+                        // budget her partner set, the name that stops being the one on the card.
+                        editedByMemberId = mineId,
+                    )
+                )
+                // The marks list is get-then-set on prefs and [announceBudgets] does the same
+                // under [ledgerGate] — so this write takes the gate too, and releases it before
+                // publishLedger takes it again: the Mutex is not reentrant.
+                ledgerGate.withLock {
+                    store.budgetMarks = store.budgetMarks.filterNot { it.goalId == id }
+                }
+                clearBudgetNote(app, id)
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "editBudget failed: $it") }
+        }
+    }
+
+    /**
+     * Renames, resizes or re-deadlines a savings goal, without moving the day it counts from —
+     * what she has kept since she set it stays counted, which is the whole reason to edit
+     * rather than start over.
+     *
+     * [horizon] is null when she left «تا کِی؟» alone and the deadline she already has stands.
+     * When she picks one it is measured from today, exactly as on a new goal: the pill says
+     * «۶ ماه», and six months from some day she cannot see would be the sheet lying.
+     */
+    fun editGoal(id: String, name: String, targetRial: Long, horizon: GoalHorizon?, shared: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val goal = durable.goals().byId(id) ?: return@runCatching
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val next = goal.copy(
+                    nameFa = name.take(40),
+                    targetRial = targetRial,
+                    endsOn = if (horizon != null) horizon.endsOn(tehranDay(now)) else goal.endsOn,
+                    shared = shared && mineId.isNotBlank(),
+                )
+                if (next == goal) return@runCatching
+                durable.goals().put(next.copy(updatedAt = now, editedByMemberId = mineId))
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "editGoal failed: $it") }
+        }
+    }
+
+    /** Deletes either shape — a budget and a goal are one table, and this is one tombstone. */
+    fun deleteGoal(id: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                // Stamped with who did it, like every other edit: on a shared row this is what
+                // the next sync reads to build the tombstone that takes it off the other phones.
+                durable.goals().delete(
+                    id,
+                    System.currentTimeMillis(),
+                    durable.meta().get(META_SYNC_MEMBER).orEmpty(),
+                )
+                // Before the publish, not after: [announceBudgets] can only retract a note for a
+                // budget it can still see, and this one is about to stop existing. A warning about
+                // a budget she has deleted is the app talking about nothing.
+                clearBudgetNote(app, id)
+                publishLedger(durable, DerivedDb.get(app))
+                requestFamilySync(silent = true)
+            }.onFailure { android.util.Log.w("muchtoman", "deleteGoal failed: $it") }
+        }
+    }
+
+    /**
+     * A plan she pays monthly. [count] is what is left to pay, from the next [dayOfMonth] — see
+     * [newInstallment]. Private, so there is no sync to ask for.
+     */
+    fun addInstallment(name: String, paymentRial: Long, count: Int, dayOfMonth: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val plan = newInstallment(uuid7(now), name, paymentRial, count, dayOfMonth, now, mineId)
+                    ?: return@runCatching
+                durable.goals().put(plan)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addInstallment failed: $it") }
+        }
+    }
+
+    /**
+     * A cheque she has written, or with [id] one she is correcting. Private like a plan, so there is
+     * no sync to ask for. A moved date is a new date to remind her of: the mark is the date.
+     */
+    fun saveCheque(id: String?, name: String, amountRial: Long, due: Long, bank: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val made = newCheque(id ?: uuid7(now), name, amountRial, due, bank, now, mineId) ?: return@runCatching
+                val old = id?.let { durable.goals().byId(it) }
+                durable.goals().put(old?.let { made.copy(createdAt = it.createdAt) } ?: made)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "saveCheque failed: $it") }
+        }
+    }
+
+    /** «پاس شد», or with [passed] false the undo of it: the day she said so goes on the row. */
+    fun setChequePassed(id: String, passed: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val cheque = durable.goals().byId(id) ?: return@runCatching
+                durable.goals().put(cheque.copy(endsOn = if (passed) tehranDay(now) else null, updatedAt = now))
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setChequePassed failed: $it") }
+        }
+    }
+
+    /**
+     * Says this transaction paid plan [planId], or with null that it paid none. Called from both
+     * ends of the link: a plan's own sheet, and the page of the transaction.
+     */
+    fun setInstallmentPayment(entry: LedgerEntry, planId: String?) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                if (writeInstallmentLink(durable, entry, planId)) publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setInstallmentPayment failed: $it") }
+        }
+    }
+
+    /**
+     * A plan made from the payment she has just filed, and that payment linked to it as the first
+     * installment: the plan starts on the payment's own day and [count] includes it. One write, so
+     * there is never a plan on the screen that the payment which prompted it is missing from.
+     */
+    fun addInstallmentFrom(entry: LedgerEntry, name: String, paymentRial: Long, count: Int) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                val mineId = durable.meta().get(META_SYNC_MEMBER).orEmpty()
+                val plan = newInstallment(
+                    uuid7(now), name, paymentRial, count, jalaliOf(entry.txn.day).day, now, mineId,
+                    firstDue = entry.txn.day,
+                ) ?: return@runCatching
+                durable.goals().put(plan)
+                writeInstallmentLink(durable, entry, plan.id)
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "addInstallmentFrom failed: $it") }
+        }
+    }
+
+    /**
+     * The link itself, false when there was nothing to change.
+     *
+     * One decision per transaction, the way a category is: `ref` and `kind` are unique together, so
+     * linking a row to a second plan moves it rather than counting it twice, and unlinking retracts
+     * the same row instead of racing it. The amount goes onto the link — see [InstallmentLink].
+     */
+    private suspend fun writeInstallmentLink(durable: DurableDb, entry: LedgerEntry, planId: String?): Boolean {
+        val value = planId?.let { id -> entry.txn.amountRial?.let { InstallmentLink(id, it).encode() } }
+        val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.INSTALLMENT)
+        if (value == null && (previous == null || previous.deleted)) return false
+        if (previous != null && !previous.deleted && previous.value == value) return false
+        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+        durable.decisions().put(
+            TxnDecision(
+                id = previous?.id ?: uuid7(now),
+                ref = entry.txn.ref,
+                kind = DecisionKind.INSTALLMENT,
+                value = value,
+                createdAt = previous?.createdAt ?: now,
+                updatedAt = now,
+                deleted = value == null,
+            )
+        )
+        return true
+    }
+
+    // ─────────────────────────── طلب و بدهی ───────────────────────────
+
+    private fun saveLoans(book: LoanBook) {
+        store.loans = book
+        _state.update { it.copy(loans = book) }
+    }
+
+    /**
+     * A person, with the balance she carried in with them — [opening] is a move whose id, person
+     * and day are filled in here. Returns the new id so the screen can open the person it made.
+     */
+    fun addLoanPerson(name: String, promise: Long?, opening: LoanMove?): String? {
+        val now = System.currentTimeMillis()
+        val person = newLoanPerson(uuid7(now), name, promise, now) ?: return null
+        val book = _state.value.loans
+        val carried = opening?.copy(id = uuid7(now), personId = person.id, day = tehranDay(now), opening = true, holdingKey = "")
+        saveLoans(book.copy(people = book.people + person, moves = book.moves + listOfNotNull(carried)))
+        return person.id
+    }
+
+    fun editLoanPerson(id: String, name: String, promise: Long?) {
+        val clean = name.trim().take(MAX_LOAN_NAME).ifEmpty { return }
+        val book = _state.value.loans
+        saveLoans(book.copy(people = book.people.map { if (it.id == id) it.copy(name = clean, promise = promise) else it }))
+    }
+
+    /**
+     * The person and everything she wrote down about them. The bank rows she linked keep their
+     * decisions, orphaned — [loanViews] skips them, and bringing the person back brings them back.
+     * Holdings are not touched: coins lent to someone she deletes stay wherever they are.
+     */
+    fun deleteLoanPerson(id: String): Pair<LoanPerson, List<LoanMove>>? {
+        val book = _state.value.loans
+        val person = book.people.firstOrNull { it.id == id } ?: return null
+        val moves = book.moves.filter { it.personId == id }
+        saveLoans(LoanBook(book.people - person, book.moves - moves.toSet()))
+        return person to moves
+    }
+
+    fun restoreLoanPerson(person: LoanPerson, moves: List<LoanMove>) {
+        val book = _state.value.loans
+        if (book.people.any { it.id == person.id }) return // undo tapped twice
+        saveLoans(LoanBook(book.people + person, book.moves + moves))
+    }
+
+    /**
+     * Something handed over or taken back that no bank reported: [giving] is money to them.
+     * [rial] for cash (blank [typeId]), [amount] for anything else. With [moveHolding] the same
+     * amount leaves or joins her دارایی — false when she is lending more than the holding has,
+     * which the sheet has already refused, so nothing is written.
+     */
+    fun addLoanMove(personId: String, typeId: String, rial: Long, amount: Double, giving: Boolean, moveHolding: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+        val sign = if (giving) 1 else -1
+        var key = ""
+        if (moveHolding) {
+            val asset = typeId.ifBlank { TOMAN_ID }
+            val units = if (typeId.isBlank()) tomanOf(rial) else amount
+            val (next, moved) = loanHoldings(_state.value.holdings, asset, units * sign) { newHoldingId() }
+                ?: return false
+            key = moved
+            persist(catalogOrdered(next))
+        }
+        val move = LoanMove(
+            id = uuid7(now), personId = personId, typeId = typeId,
+            rial = if (typeId.isBlank()) rial * sign else 0L,
+            amount = if (typeId.isBlank()) 0.0 else amount * sign,
+            day = tehranDay(now), holdingKey = key,
+        )
+        val book = _state.value.loans
+        saveLoans(book.copy(moves = book.moves + move))
+        return true
+    }
+
+    /** Takes a move back, and its coins back into the holding they left. See [loanHoldingsUndo]. */
+    fun deleteLoanMove(id: String): LoanMove? {
+        val book = _state.value.loans
+        val move = book.moves.firstOrNull { it.id == id } ?: return null
+        if (move.holdingKey.isNotBlank()) persist(loanHoldingsUndo(_state.value.holdings, move))
+        saveLoans(book.copy(moves = book.moves - move))
+        return move
+    }
+
+    /**
+     * A line she wrote, at a new size — [rial] for cash, [amount] otherwise, both as typed; the
+     * direction is the line's own. A line that moved a holding moves it again by the difference.
+     * False when that would take out more than the holding has, which the sheet already refused.
+     */
+    fun editLoanMove(id: String, rial: Long, amount: Double): Boolean {
+        val book = _state.value.loans
+        val move = book.moves.firstOrNull { it.id == id } ?: return false
+        val edited = loanMoveResized(move, rial, amount)
+        if (move.holdingKey.isNotBlank()) {
+            persist(loanHoldingsEdit(_state.value.holdings, move, edited) ?: return false)
+        }
+        saveLoans(book.copy(moves = book.moves.map { if (it.id == id) edited else it }))
+        return true
+    }
+
+    fun restoreLoanMove(move: LoanMove) {
+        val book = _state.value.loans
+        if (book.moves.any { it.id == move.id }) return
+        if (move.holdingKey.isNotBlank()) persist(loanHoldingsRedo(_state.value.holdings, move))
+        saveLoans(book.copy(moves = book.moves + move))
+    }
+
+    /** Says whose money this row was, or with null that it was nobody's. */
+    fun setLoanLink(entry: LedgerEntry, personId: String?) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            runCatching {
+                if (writeLoanLink(durable, entry, personId)) publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "setLoanLink failed: $it") }
+        }
+    }
+
+    /** A person made from the row she is filing, and the row linked to them, in one go. */
+    fun addLoanPersonFrom(entry: LedgerEntry, name: String) {
+        val id = addLoanPerson(name, null, null) ?: return
+        setLoanLink(entry, id)
+    }
+
+    /** [writeInstallmentLink]'s shape, one decision per row, with the signed amount on it. */
+    private suspend fun writeLoanLink(durable: DurableDb, entry: LedgerEntry, personId: String?): Boolean {
+        val value = personId?.let { id -> loanLinkRial(entry)?.let { LoanLink(id, it).encode() } }
+        val previous = durable.decisions().answerFor(entry.txn.ref, DecisionKind.LOAN)
+        if (value == null && (previous == null || previous.deleted)) return false
+        if (previous != null && !previous.deleted && previous.value == value) return false
+        val now = maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
+        durable.decisions().put(
+            TxnDecision(
+                id = previous?.id ?: uuid7(now),
+                ref = entry.txn.ref,
+                kind = DecisionKind.LOAN,
+                value = value,
+                createdAt = previous?.createdAt ?: now,
+                updatedAt = now,
+                deleted = value == null,
+            )
+        )
+        return true
+    }
+
+    /**
+     * Which screen a tapped notification was about, held until the UI has moved there.
+     *
+     * The same one-shot shape [FamilyState.pendingPairing] uses: the intent's extra becomes a piece
+     * of state, the composition acts on it and then clears it — so a rotation does not send her back
+     * to the budget tab, and neither does the activity being recreated at sunset when the theme
+     * follows the system, nor (onCreate reads the intent only on a fresh launch) a reopen from
+     * recents after the process died.
+     */
+    fun openTab(name: String?) {
+        val tab = name?.let { value -> tabs.firstOrNull { it.name == value } } ?: return
+        _state.update { it.copy(openTab = tab) }
+    }
+
+    fun consumeOpenTab() = _state.update { it.copy(openTab = null, openAddTxn = false) }
+
+    /**
+     * The same one-shot, for the note that asks rather than reports — see [EXTRA_OPEN_DECK].
+     *
+     * Guarded on the edition as [openTab] is guarded by [tabs]: the lite build has no دفتر and no
+     * deck, and while nothing there can post the note, an intent can be sent to any exported
+     * activity by anyone.
+     */
+    fun openDeck(wanted: Boolean) {
+        if (!wanted || Tab.LEDGER !in tabs) return
+        _state.update { it.copy(openDeck = true) }
+    }
+
+    fun consumeOpenDeck() = _state.update { it.copy(openDeck = false) }
+
+    /**
+     * The «تراکنش» shortcut: دفتر, with the hand-entry sheet over it — see [EXTRA_ADD_TXN]. Rides
+     * [openTab]'s one-shot rather than a third of its own, so the same effect that closes every
+     * overlay on the way to a tab opens the sheet. Guarded as [openDeck] is: lite has no ledger.
+     */
+    fun openAddTxn(wanted: Boolean) {
+        if (!wanted || Tab.LEDGER !in tabs) return
+        _state.update { it.copy(openTab = Tab.LEDGER, openAddTxn = true) }
+    }
+
+    /**
+     * Fill the dev build with a household's year, or take it back out again.
+     *
+     * Guarded here as well as in تنظیمات, because this is the method that writes the rows and a
+     * guard on the button that calls it is a guard on one caller. `BuildConfig.DEMO` is a compile
+     * -time constant, so in every other build this is `if (false)` and R8 removes the body along
+     * with [demoLedger] itself.
+     *
+     * Deliberately not wired to family sync: nothing invented here should reach another phone,
+     * and the sync that would carry it is only ever started by something she did.
+     */
+    fun setDemoData(on: Boolean) {
+        if (!BuildConfig.DEMO) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val derived = DerivedDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                // Cleared first either way, so «ساختن» twice is one demo ledger rather than two
+                // laid on top of each other.
+                durable.manual().deleteWithIdPrefix(DEMO_PREFIX)
+                durable.decisions().deleteForRefPrefix(manualRef(DEMO_PREFIX))
+                if (on) {
+                    val ledger = demoLedger(tehranDay(now), now)
+                    durable.manual().putAll(ledger.transactions)
+                    durable.decisions().putAll(ledger.filings)
+                }
+                // The same total rebuild a parser fix runs, which is the point: the invented rows
+                // go through the reading, the linking and the filing that every other row does.
+                derive(durable, derived, extraLookup(store.extraBankNumbers))
+
+                // Balances and holdings are the store's, not the ledger's, and each is marked so
+                // that clearing takes back exactly what was put in. Anything she added by hand on
+                // this build stays where it is.
+                val banks = store.bankAccounts.filterNot { it.sender == DEMO_PREFIX } +
+                    if (on) demoBankAccounts(now) else emptyList()
+                val holdings = store.holdings.filterNot { it.id.startsWith(DEMO_PREFIX) } +
+                    if (on) demoHoldings() else emptyList()
+                store.bankAccounts = banks
+                store.holdings = holdings
+                _state.update { it.copy(bankAccounts = store.bankAccounts, holdings = holdings) }
+                publishLedger(durable, derived)
+                // A year of daily totals, ending at what the holdings just written are actually
+                // worth — so گزارش دارایی has its «۶ ماه» and «۱ سال» too, and its newest point is
+                // the one the app would have recorded on its own. Cleared outright when the demo
+                // is: the chart is a record of days, and days it invented are not worth keeping.
+                val history = if (on) demoHistory(now, _state.value.totals.toman) else emptyMap()
+                store.history = history
+                _state.update { it.copy(history = history) }
+                recordSnapshot()
+            }.onFailure { android.util.Log.w("muchtoman", "demo data failed: $it") }
+        }
+    }
+
+    /** Her verdict on one purchase. No rule follows from it — it is an opinion, not a pattern. */
+    fun answerWorthIt(entry: LedgerEntry, answer: String) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            val durable = DurableDb.get(app)
+            val now = System.currentTimeMillis()
+            runCatching {
+                durable.decisions().put(
+                    TxnDecision(uuid7(now), entry.txn.ref, DecisionKind.WORTH_IT, answer, now, now)
+                )
+                publishLedger(durable, DerivedDb.get(app))
+            }.onFailure { android.util.Log.w("muchtoman", "worthIt failed: $it") }
+        }
+    }
+
+    /** The message a transaction was read from, so every figure can be traced back to its source. */
+    suspend fun sourceOf(entry: LedgerEntry): String =
+        runCatching {
+            DurableDb.get(getApplication()).smsSource().bodyOf(entry.txn.srcHash).orEmpty()
+        }.getOrDefault("")
+
+    /** The scan itself. Separate so [restartScan] can run it in the coroutine it already owns. */
+    private suspend fun runScan(app: Application) {
+        val extra = extraLookup(store.extraBankNumbers)
+
+        val rebuilding = store.smsFoldNeedsRefresh
+        val sms = store.smsEnabled && canReadSms(app)
+        val inbox = if (sms) readSmsInbox(app, if (rebuilding) 0L else store.smsScannedTo) else emptyList()
+        // Blu's notifications are messages too: [BankNotificationListener] keeps them in the
+        // ledger's table, and this is the one place they are read back as an inbox. Their own
+        // watermark, so SMS switched off while they go on being read does not come back to find
+        // its watermark moved past every message that arrived in between.
+        // ponytail: a notification the listener only takes on reconnect, stamped before one already
+        // folded, is behind the watermark and skipped. Every Blu alert states its موجودی, so the
+        // next one sets the balance right.
+        val notes = runCatching {
+            DurableDb.get(app).smsSource()
+                .fromSince(BLU_APP, if (rebuilding) 0L else store.notifyScannedTo)
+                .map { RawSms(it.sender, it.body, it.at) }
+        }.getOrDefault(emptyList())
+        val messages = (inbox + notes).sortedBy { it.at }
+        if (messages.isEmpty()) return
+
+        var accounts = store.bankAccounts
+        val seen = if (rebuilding) emptySet() else store.seenSms
+        val reparsed = mutableListOf<BankSms>()
+        val fresh = LinkedHashSet<String>()
+        for (m in messages) {
+            // parseBankSms refuses a sender that is no bank first thing; asked here, the rest of
+            // her inbox is skipped before it is hashed rather than after.
+            if (bankOf(m.from, extra) == null) continue
+            val key = smsKey(m.from, m.body, m.at)
+            if (key in seen || legacySmsKey(m.body, m.at) in seen || key in fresh) continue
+            val parsed = parseBankSms(m.from, m.body, m.at, extra) ?: continue
+            // Through the plausibility gate, not applyBankSms directly: a garbled twenty-one
+            // -digit figure from a matched sender must contribute nothing — see [foldBankSms].
+            if (rebuilding) reparsed += parsed else accounts = foldBankSms(accounts, parsed)
+            fresh += key
+        }
+
+        if (!(store.smsEnabled && canReadSms(app)) && !canReadNotifications(app)) return
+
+        if (rebuilding) accounts = rebuildBankAccounts(accounts, reparsed)
+        store.bankAccounts = accounts
+        store.seenSms = rememberSeen(seen, fresh)
+        // Advanced past everything we looked at, parsed or not — an advert from a bank is
+        // not worth re-reading on every launch. Never past now, though: one inbox row
+        // stamped in 2030 by a restored backup or a skewed carrier clock would otherwise
+        // put the watermark there and silently freeze every balance for ever after.
+        val now = System.currentTimeMillis()
+        if (inbox.isNotEmpty()) store.smsScannedTo = minOf(inbox.maxOf { it.at }, now)
+        if (notes.isNotEmpty()) store.notifyScannedTo = minOf(notes.maxOf { it.at }, now)
+        // Only once the inbox itself has been read again: a rebuild of Blu's notifications alone
+        // leaves every other bank still to be rebuilt the day SMS is switched back on.
+        if (sms) store.smsFoldNeedsRefresh = false
+        _state.update { it.copy(bankAccounts = accounts) }
+        recordSnapshot()
+    }
+
+    /**
+     * Forget every balance and read the inbox again from the beginning.
+     *
+     * Messages are read once and then skipped for ever, by a watermark and a seen-list — which
+     * is right until the reading itself changes, and then every balance is frozen at what an
+     * older parser made of it with no way back. An upgrade clears it automatically; this is the
+     * same thing on demand, so a figure that has gone wrong is never a dead end.
+     */
+    fun rescanSms() = restartScan {
+        // The banks she keeps by hand were never read from a message, so no re-read rebuilds them.
+        val kept = store.bankAccounts.filter { it.manual }
+        store.bankAccounts = kept
+        store.seenSms = emptySet()
+        store.smsScannedTo = 0L
+        store.notifyScannedTo = 0L
+        _state.update { it.copy(bankAccounts = kept) }
+    }
+
+    /**
+     * «بازخوانی همهٔ پیامک‌ها»: both pipelines read the whole inbox again with the parser as it
+     * stands — the ledger by winding its ingest watermark back to the horizon (stored messages
+     * dedupe by content, her filings replay), the fold by walking from the start again.
+     *
+     * Deliberately NOT [rescanSms]: only the watermark is rewound, so a balance she anchored by
+     * hand — the one figure no rescan can rebuild — stays anchored, and seenSms keeps every
+     * counted message counted once. Unreferenced for now: the UI wave adds the settings row.
+     */
+    fun rescanInbox() {
+        viewModelScope.launch {
+            rewindLedger()
+            restartScan {
+                store.smsScannedTo = 0L
+                store.notifyScannedTo = 0L
+            }
+        }
+    }
+
+    /** The ledger's half of a re-read: [rewindIngest], then the pipeline that reads from there. */
+    private suspend fun rewindLedger() {
+        val app = getApplication<Application>()
+        // Joined first, and rewound under the gate, so neither a pipeline mid-ingest nor the
+        // watch worker can write its watermark over the rewind.
+        ledgerJob?.join()
+        runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
+            .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
+        runLedger()
+    }
+
+    /**
+     * Change what the next scan would read, then read it — with the scan already in flight
+     * stopped and waited for first.
+     *
+     * cancelAndJoin, not cancel: cancellation is cooperative and the parse loop never suspends,
+     * so only joining actually guarantees that [prepare] is not overwritten by a scan that was
+     * already most of the way through.
+     *
+     * The restart takes over [scanJob] straight away, before it suspends into that join. A job
+     * reads as not-active the whole time it is cancelling, so leaving the old one there meant
+     * any scanSms() arriving during the join — one foreground is enough — walked past the
+     * one-at-a-time guard, started a scan with the old watermark and claimed the slot. Then
+     * [prepare] ran, and our own scanSms() was the one turned away: the wipe landed with no
+     * rescan behind it, and every balance she had anchored by hand was gone for good.
+     *
+     * NonCancellable around the join for the same reason one step up: the next restart cancels
+     * this coroutine, and a join that gives up early lets the old scan wake and write over the
+     * wipe — exactly what the join is here to prevent.
+     */
+    private fun restartScan(prepare: suspend () -> Unit) {
+        val previous = scanJob
+        val app = getApplication<Application>()
+        scanJob = viewModelScope.launch(Dispatchers.Default) {
+            withContext(NonCancellable) { previous?.cancelAndJoin() }
+            prepare()
+            // Straight into the scan rather than back through scanSms(), which would only
+            // find this very coroutine holding the slot and decline.
+            if (store.smsEnabled && canReadSms(app) || canReadNotifications(app)) runScan(app)
+        }
+    }
+
+    /**
+     * She named a sender's bank: this number is one of hers. It joins that bank's list on
+     * this phone only, and the inbox is read again from the start so the messages it already
+     * sent finally count.
+     *
+     * Winding the watermark back, not [rescanSms]. Adding a sender is one tap in the
+     * bank sheet, and it used to forget every balance in the app — including the ones she
+     * typed in herself. Those cannot be rebuilt: a bank whose messages never state a مانده
+     * comes back as the sum of its transactions, unanchored, which is exactly the figure that
+     * does not count towards the total. Her net worth would drop by whatever she had anchored,
+     * silently, with nothing storing the number she had entered.
+     *
+     * Nothing needs forgetting here anyway. A message from an unknown sender is skipped before
+     * it is ever recorded as seen, so the only thing hiding these particular messages is how
+     * far the inbox has been read; everything already counted is still in seenSms and stays
+     * skipped.
+     *
+     * The ledger is wound back too, which is the case [rewindIngest] exists for: its ingest gate
+     * skipped this sender's messages just as the fold did, and without the rewind her balance
+     * came back while none of the transactions behind it ever reached the ledger.
+     */
+    fun addBankNumber(bank: String, sender: String) {
+        if (runCatching { Bank.valueOf(bank) }.getOrNull() == null || sender.isBlank()) return
+        val cur = store.extraBankNumbers
+        store.extraBankNumbers = cur + (bank to ((cur[bank] ?: emptyList()) + sender).distinct())
+        restartScan { store.smsScannedTo = 0L }
+        viewModelScope.launch { rewindLedger() }
+    }
+
+    /**
+     * What the bank sheet's picker offers — see [senderCandidates]. Null without permission to
+     * read messages, so the sheet can say so rather than claim it found nothing.
+     */
+    suspend fun loadSenderCandidates(): List<SenderCandidate>? {
+        val app = getApplication<Application>()
+        if (!canReadSms(app)) return null
+        // ponytail: the newest 2,000 messages. A bank quiet for longer than that on a busy phone
+        // is not offered; read deeper if one ever goes missing.
+        val recent = readRecentSms(app, limit = 2_000)
+        return withContext(Dispatchers.Default) {
+            senderCandidates(recent, extraLookup(store.extraBankNumbers))
+        }
+    }
+
+    /** Turning it off leaves the balances where they are; it stops them moving on their own. */
+    /**
+     * The first-run sheet has had its turn — answered or skipped, which are the same thing to it.
+     *
+     * Also the moment the watch is first scheduled: she may have just granted the messages, and
+     * without this the schedule would wait for the next thing that happens to call [publishLedger].
+     */
+    fun finishOnboarding() {
+        store.onboarded = true
+        _state.update { it.copy(onboarded = true) }
+        scheduleLedgerWatch(getApplication(), store.smsEnabled)
+        // Whatever she granted takes effect against the inbox now rather than at the next open.
+        scanSms()
+        runLedger()
+    }
+
+    fun setSmsEnabled(on: Boolean) {
+        val before = _state.value.totals
+        store.smsEnabled = on
+        _state.update { it.copy(smsEnabled = on) }
+        // The bank row is in the total only while messages are read, so switching them off
+        // takes every tracked balance out of it at once — a step, not a withdrawal.
+        recordSnapshot(countedBefore = before)
+        // The switch is one of the two things the watch is scheduled by, and turning it off is the
+        // only path that can take the last reason to watch away without touching a budget.
+        scheduleLedgerWatch(getApplication<Application>(), watchWanted())
+        if (on) scanSms()
+    }
+
+    /**
+     * A bank she switched off stays tracked and stays listed in تنظیمات, so switching it back on
+     * finds its balance where the bank left it. It leaves the total, and its rows leave the ledger
+     * and its notes — see [ledgerView] — which is the republish.
+     */
+    fun setBankEnabled(bank: String, on: Boolean) {
+        val before = _state.value.totals
+        val next = if (on) store.disabledBanks - bank else store.disabledBanks + bank
+        store.disabledBanks = next
+        _state.update { it.copy(disabledBanks = next) }
+        recordSnapshot(countedBefore = before)
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.Default) {
+            publishLedger(DurableDb.get(app), DerivedDb.get(app))
+        }
+    }
+
+    /** She tells us what an account really holds; everything read after it builds on that. */
+    fun setBankBalance(key: String, balance: Double) {
+        val app = getApplication<Application>()
+        restartScan {
+            val at = System.currentTimeMillis()
+            val next = anchorAccount(store.bankAccounts, key, balance, at)
+            store.bankAccounts = next
+            _state.update { it.copy(bankAccounts = next) }
+            recordSnapshot()
+            runCatching { anchorTyped(DurableDb.get(app), key, balance, at) }
+                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
+        }
+    }
+
+    /**
+     * A bank she keeps by hand, for someone who will not let the app read her messages: its
+     * balance is whatever she types, and it counts with SMS off — see [BankAccount.manual].
+     *
+     * It replaces whatever this phone held for that bank, which can only be a figure nothing
+     * reads any more (the settings page offers only banks not already counted), and it comes back
+     * switched on: she added it to see it in her total. A rebase, not a step — the money was in
+     * the bank before she told the app about it.
+     */
+    fun addManualBank(bank: String, balance: Double) {
+        if (runCatching { Bank.valueOf(bank) }.getOrNull() == null) return
+        val app = getApplication<Application>()
+        val before = _state.value.totals
+        restartScan {
+            val at = System.currentTimeMillis()
+            val next = store.bankAccounts.filterNot { it.bank == bank } +
+                BankAccount(bank, balance = balance, updatedAt = at, anchored = true, manual = true)
+            store.bankAccounts = next
+            store.disabledBanks = store.disabledBanks - bank
+            _state.update { it.copy(bankAccounts = next, disabledBanks = store.disabledBanks) }
+            recordSnapshot(countedBefore = before)
+            runCatching { anchorTyped(DurableDb.get(app), bank, balance, at) }
+                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
+        }
+    }
+
+    /**
+     * Drops an account that was read wrong. The messages behind it stay marked as seen on
+     * purpose: re-reading them would rebuild the same wrong figure. It starts again, from
+     * zero and unanchored, at the next message that bank sends.
+     */
+    fun forgetBankAccount(key: String) {
+        restartScan {
+            val next = store.bankAccounts.filterNot { it.key == key }
+            store.bankAccounts = next
+            _state.update { it.copy(bankAccounts = next) }
+            recordSnapshot()
+        }
+    }
+
+    fun setOverride(typeId: String, rate: Double?) {
+        val next = _state.value.overrides.toMutableMap()
+        if (rate == null) next -= typeId else next[typeId] = rate
+        store.overrides = next
+        _state.update { it.copy(overrides = next) }
+        recordSnapshot()
+    }
+
+    private fun persist(list: List<Holding>, countedBefore: Totals? = null) {
+        store.holdings = list
+        _state.update { it.copy(holdings = list) }
+        recordSnapshot(countedBefore)
+    }
+
+    /**
+     * Remembers today's total for the report chart, via the same [snapshotDay] the daily
+     * worker uses — and since this runs on every path that touches money, it is also the
+     * moment the home-screen widget learns the new total.
+     *
+     * Launched rather than run inline, for two reasons that arrive together: half its callers
+     * are plain UI handlers on Main, and the history write is a read-modify-write that must
+     * hold [ledgerGate] — the same gate [DailySnapshotWorker] holds — or the worker landing
+     * between this read and this write silently drops whatever day it had just written. The
+     * read is [Store.history] inside the lock, not the state's copy, because the worker writes
+     * the store without ever seeing this ViewModel.
+     */
+    private fun recordSnapshot(countedBefore: Totals? = null) {
+        // Paired here rather than inside the lock, and only when a rebase was asked for: this is
+        // the one moment the two bases are exactly one toggle apart, and a rate refresh landing
+        // before the lock would otherwise be rescaled away as part of the step.
+        val rebase = countedBefore?.to(_state.value.totals)
+        viewModelScope.launch(Dispatchers.Default) {
+            ledgerGate.withLock {
+                val s = _state.value
+                val base = rebase
+                    ?.let { (before, after) -> rebaseHistory(store.history, before, after) }
+                    ?: store.history
+                // listHoldings, not holdings: someone whose only money is bank balances read from her
+                // messages has an empty holdings list and a perfectly good total, and guarding on the
+                // raw list left her report saying "هنوز نموداری نیست" for ever.
+                val day = snapshotDay(
+                    base, store.rateHistory, s.listHoldings, s.effective, s.rates.updatedAt,
+                    System.currentTimeMillis(),
+                    // The bourse snapshot's own clock — see [snapshotHistory] for why the rates'
+                    // clock alone let shares ride week-old prices into the chart.
+                    s.tse.updatedAt,
+                    // Stale rates refuse today's point, but the rebase still stands: what the
+                    // total counts changed whether or not the day could be recorded.
+                )
+                val next = day?.history ?: base
+                if (next != store.history) {
+                    store.history = next
+                    _state.update { it.copy(history = next) }
+                }
+                // Beside the total and on its gate, so a month can keep the dollar figure it
+                // ended on — see [Store.rateHistory].
+                day?.rates?.takeIf { it != store.rateHistory }?.let {
+                    store.rateHistory = it
+                    _state.update { s2 -> s2.copy(rateHistory = it) }
+                }
+            }
+            updateTotalWidget(getApplication())
+        }
+        if (_state.value.family.sharesAssets) requestFamilySync(silent = true)
+    }
+}
+
+data class UiState(
+    val holdings: List<Holding> = emptyList(),
+    /** طلب و بدهی, as she wrote it down. The bank's half is [LedgerView.loanLinks]. */
+    val loans: LoanBook = LoanBook(),
+    val rates: Rates = Rates(),
+    val overrides: Map<String, Double> = emptyMap(),
+    val loading: Boolean = false,
+    val stocksLoading: Boolean = false,
+    val error: String? = null,
+    val lockEnabled: Boolean = false,
+    val widgetLock: Boolean = false,
+    val locked: Boolean = false,
+    val name: String = "",
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    /** Percent of the phone's text size — see [Store.textSize]. */
+    val textSize: Int = 100,
+    /** Days ahead an installment is reminded of, -1 for never. See [Store.installmentReminder]. */
+    val installmentReminder: Int = INSTALLMENT_REMINDER_DEFAULT,
+    /** How notes talk — see [Store.quipTone]. */
+    val quipTone: QuipTone = QUIP_TONE_DEFAULT,
+    val history: Map<Long, Double> = emptyMap(),
+    /** One dollar rate per day — what a closed month's «$» is frozen at. See [Store.rateHistory]. */
+    val rateHistory: Map<Long, Double> = emptyMap(),
+    /** False only on a phone that has never been past the first-run sheet. See [Store.onboarded]. */
+    val onboarded: Boolean = true,
+    val smsEnabled: Boolean = false,
+    /** Whether Blu's app notifications are read — Android's switch, asked again on every foreground. */
+    val notified: Boolean = false,
+    val bankAccounts: List<BankAccount> = emptyList(),
+    val disabledBanks: Set<String> = emptySet(),
+    val refreshingWallets: Set<String> = emptySet(),
+    val walletErrors: Map<String, String> = emptyMap(),
+    val dismissedUpdate: String = "",
+    /** Bazaar or Myket installed this copy ([installedByStore]), so the store announces updates. */
+    val fromStore: Boolean = false,
+    /** What the last crash left behind ([pendingCrash]), until she answers [CrashSheet]. */
+    val crashReport: String? = null,
+    /** Category ids دخل و خرج leaves out — her reading preference, mirrored from [Store]. */
+    val reportExcluded: Set<String> = emptySet(),
+    val tse: TseSnapshot = TseSnapshot(),
+    val ledger: LedgerView = LedgerView(),
+    val family: FamilyState = FamilyState(),
+    /** دارایی the other members chose to share, ready for the asset tab's family band. */
+    val familyAssets: List<FamilyAssetView> = emptyList(),
+    /** Whether the hero total folds those in. Mirrored from [Store.familyTotal]. */
+    val familyTotal: Boolean = false,
+    /** Whether گزارش‌ها reads in dollars. Mirrored from [Store.reportUsd]. */
+    val reportUsd: Boolean = false,
+    /** Where a tapped notification wants her, until the composition has taken her there. */
+    val openTab: Tab? = null,
+    /** Whether that notification wanted the review deck in particular. Same one-shot life. */
+    val openDeck: Boolean = false,
+    /** Whether the «تراکنش» shortcut wants the hand-entry sheet over [openTab]. Cleared with it. */
+    val openAddTxn: Boolean = false,
+) {
+    val coins: List<Coin> get() = rates.coins
+
+    /**
+     * What the home screen says, worked out once per state rather than once per card.
+     *
+     * `by lazy` for the same reason `effective` is: the month walk and the ninety-day median
+     * behind the runway are not free, and the summary reads them several times over.
+     */
+    val story: HomeStory by lazy {
+        buildStory(
+            ledger.entries,
+            Math.round(bankToman * 10.0),
+            tehranDay(System.currentTimeMillis()),
+            ledger.budgets,
+            // The same single gate دخل و خرج reads: the exclusion set governs, and قرض و همسر
+            // are its shipped default rather than a mechanism of their own.
+            countPassThrough = true,
+            excluded = reportExcluded,
+            mineId = ledger.mineId,
+            installments = ledger.installments,
+            installmentDays = installmentReminder,
+            cheques = ledger.cheques,
+            accounts = bankAccounts,
+        )
+    }
+    val stocks: List<Stock> get() = tse.stocks
+
+    /**
+     * The release worth a line on the list: newer than this build, and not one she has already
+     * waved off. Debug builds are left out because they carry a placeholder version name, so
+     * every locally-built install would claim to be out of date. Store installs are left to the
+     * store ([installedByStore]).
+     */
+    val update: Release?
+        get() = rates.latest?.takeIf {
+            !BuildConfig.DEBUG &&
+                !fromStore &&
+                it.url.isNotBlank() &&
+                it.name != dismissedUpdate &&
+                isNewerVersion(it.name, BuildConfig.VERSION_NAME)
+        }
+    /**
+     * by lazy, not get(): building this copies the whole rate map three times over, and with
+     * بورس loaded that map is the Worker's several hundred plus a couple of thousand نماد.
+     * The screen reads it — directly, and through [totals] — the better part of ten times in
+     * one composition pass, so as a get() a scrolling list rebuilt it on every frame and the
+     * رمزارز rows stuttered. A UiState is immutable and copy() makes a new one, so lazy is
+     * still exactly one build per state, and the value can never be stale.
+     */
+    val effective: Map<String, Double> by lazy { effectiveRates(rates, overrides, tse) }
+    val refreshing: Boolean get() = loading || stocksLoading || refreshingWallets.isNotEmpty()
+
+    /** The tracked balances as one figure, minus the banks she switched off. */
+    val bankToman: Double get() = bankTotal(bankAccounts, disabledBanks)
+
+    /** True while any tracked balance is a guess rather than something a bank stated. */
+    val bankUnsure: Boolean
+        get() = bankAccounts.any { it.bank !in disabledBanks && !it.trusted }
+
+    /** See [com.doxigo.muchtoman.listHoldings] — shared with the widget and the daily worker. */
+    val listHoldings: List<Holding> by lazy {
+        listHoldings(holdings, smsEnabled, bankAccounts, disabledBanks, notified)
+    }
+
+    /** Anything reads her banks — their SMS, or Blu's notifications. */
+    val readsBanks: Boolean get() = smsEnabled || notified
+
+    /** Reads both of the above, so as a get() it paid for both of them again every time. */
+    val totals: Totals by lazy { computeTotals(listHoldings, effective) }
+
+    /** Every person and where they stand, valued at the same rates the total is. See `Loans.kt`. */
+    val loanViews: List<LoanView> by lazy { loanViews(loans, ledger.loanLinks, ledger.entries, effective) }
+    val loanTotals: LoanTotals by lazy { loanTotals(loanViews) }
+
+    /**
+     * Where a person would stand with [add] written or [drop] taken back — the sentence a sheet says
+     * before she commits, worked out the one way every balance is.
+     */
+    fun loanViewIf(personId: String, add: LoanMove? = null, drop: LoanMove? = null): LoanView? =
+        loans.people.firstOrNull { it.id == personId }?.let { person ->
+            loanView(person, loans.copy(moves = loans.moves.filter { it != drop } + listOfNotNull(add)), ledger.loanLinks, ledger.entries, effective)
+        }
+}
+
+/** What the backup rows in تنظیمات have to say. Everything user-visible in it is words. */
+data class BackupUi(
+    val lastExportAt: Long = 0L,
+    val reminderEnabled: Boolean = false,
+    val working: Boolean = false,
+    /** The one line under the rows — success and failure alike are said, never just implied. */
+    val notice: String? = null,
+    val failed: Boolean = false,
+    /** A decrypted backup is in hand, waiting behind the armed confirm. */
+    val ready: Boolean = false,
+    /** Which backup, in words she can check against the file — «پشتیبانِ ۳ مرداد ۱۴۰۵». */
+    val readyWords: String = "",
+    /** Staged. Nothing changes until the app is closed and opened, and the line says so. */
+    val restartNeeded: Boolean = false,
+    /** A file she already has holds one-time codes — see [backupHoldsSweptCodes]. */
+    val holdsCodes: Boolean = false,
+)
+
+/** A backup is a few MB; a "backup" that will not fit in memory is an attack or a mistake. */
+private const val MAX_BACKUP_FILE_BYTES = 256 * 1024 * 1024
+
+private fun InputStream.readBytesLimited(maxBytes: Int = MAX_BACKUP_FILE_BYTES): ByteArray {
+    val out = ByteArrayOutputStream(DEFAULT_BUFFER_SIZE)
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > maxBytes) error("file too large")
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
+}

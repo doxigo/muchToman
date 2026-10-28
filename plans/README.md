@@ -22,7 +22,7 @@ precondition.
 | 006 | Cache npm in CI and stop building the PWA twice | P2 | S | none | DONE — reviewed 2026-09-10; action SHAs verified against upstream tags; final confirmation is the next CI run |
 | 007 | Write AGENTS.md — the operating contract for coding agents | P2 | S | none | DONE — reviewed 2026-09-10; 73 lines, spot-checked commands ran (worker typecheck, MoneyTest) |
 | 008 | A small instrumented UI slice for the flows JVM tests cannot see | P3 | L | none | DONE — reviewed 2026-09-10; compiles for both editions, all 22 semantic anchors verified against production code; suite has NOT yet run on a device — first execution is the `ui-check` workflow (trigger it once after pushing) |
-| 009 | Split Ui.kt and MainActivity.kt along their existing seams | P3 | L | none (hard clean-tree precondition) | BLOCKED — Ui.kt/MainActivity.kt (and six more files) carry uncommitted local changes; commit or stash them, then dispatch |
+| 009 | Split Ui.kt and MainActivity.kt along their existing seams | P3 | L | none (hard clean-tree precondition) | DONE — 2026-10-28 on `7c4d895`: Ui.kt 4,851→1,871 and MainActivity.kt 3,151→94 lines into HomeUi/UpdateUi/BanksUi/AssetsUi/AppVm.kt; whole-declaration moves plus 19 private→internal bumps; `UiState`/`BackupUi` went with `AppVm`; full gate green (734 tests per flavour) |
 
 Status values: TODO, IN PROGRESS, DONE, BLOCKED with a one-line reason, or REJECTED with a one-line
 rationale.
