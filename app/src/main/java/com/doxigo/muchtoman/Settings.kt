@@ -1234,10 +1234,10 @@ private fun SmsPage(
 /**
  * A bank she keeps by hand: which one, then what is in it.
  *
- * Two steps in one sheet rather than a list with the field under it: twenty-five banks put the
+ * Two steps in one sheet rather than a list with the field under it: thirty banks put the
  * field a long scroll below the one she had just tapped. The list leaves out the banks already on
  * the page — a bank kept by hand is one account — and runs in alphabetical order without
- * the «بانک» nearly all of them start with, which is how she looks for one.
+ * the «بانک» or «مؤسسه اعتباری» each starts with, which is how she looks for one.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1245,7 +1245,7 @@ private fun AddBankSheet(taken: Set<String>, onAdd: (String, Double) -> Unit, on
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val banks = remember(taken) {
         val order = Collator.getInstance(Locale("fa"))
-        PICKABLE_BANKS.filter { it.name !in taken }.sortedWith(compareBy(order) { it.fa.removePrefix("بانک ") })
+        PICKABLE_BANKS.filter { it.name !in taken }.sortedWith(compareBy(order) { it.fa.removePrefix("بانک ").removePrefix("مؤسسه اعتباری ") })
     }
     var picked by rememberSaveable { mutableStateOf<String?>(null) }
 

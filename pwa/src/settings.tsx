@@ -400,13 +400,13 @@ function SmsPage() {
  * A bank she keeps by hand (Settings.kt AddBankSheet): which one, then what is in it. Two steps in
  * one sheet, so the field is not a long scroll below the bank she tapped. The banks already on the
  * page are left out — a bank kept by hand is one account — and the rest run alphabetically without the «بانک»
- * nearly all of them start with, which is how she looks for one.
+ * or «مؤسسه اعتباری» each starts with, which is how she looks for one.
  */
 function AddBankSheet() {
   const view = useLedger();
   const [picked, setPicked] = useState<string | null>(null);
   const taken = new Set(view.bankAccounts.map((a) => a.bank));
-  const bare = (b: Bank) => b.fa.replace(/^بانک /, '');
+  const bare = (b: Bank) => b.fa.replace(/^(بانک|مؤسسه اعتباری) /, '');
   const banks = PICKABLE_BANKS.filter((b) => !taken.has(b.name)).sort((a, b) => bare(a).localeCompare(bare(b), 'fa'));
   const bank = banks.find((b) => b.name === picked);
   return (

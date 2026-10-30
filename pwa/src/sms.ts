@@ -48,6 +48,12 @@ export const BANKS: readonly Bank[] = [
   { name: 'TOSEE_TAAVON', fa: 'بانک توسعه تعاون', numbers: [] },
   { name: 'IRAN_ZAMIN', fa: 'بانک ایران زمین', numbers: [] },
   { name: 'SANAT_MADAN', fa: 'بانک صنعت و معدن', numbers: [] },
+  { name: 'TOSEE_SADERAT', fa: 'بانک توسعه صادرات', numbers: [] },
+  { name: 'IRAN_VENEZUELA', fa: 'بانک ایران و ونزوئلا', numbers: [] },
+  { name: 'MELAL', fa: 'مؤسسه اعتباری ملل', numbers: [] },
+  { name: 'NOOR', fa: 'مؤسسه اعتباری نور', numbers: [] },
+  { name: 'CASPIAN', fa: 'مؤسسه اعتباری کاسپین', numbers: [] },
+  { name: 'TOSEE', fa: 'مؤسسه اعتباری توسعه', numbers: [] },
   // Never read off a message: what a row with no bank, or a name that has left this list, falls back to.
   { name: 'OTHER', fa: 'بانک', numbers: [] },
 ];

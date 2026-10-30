@@ -92,6 +92,13 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     TOSEE_TAAVON("بانک توسعه تعاون", emptyList()),
     IRAN_ZAMIN("بانک ایران زمین", emptyList()),
     SANAT_MADAN("بانک صنعت و معدن", emptyList()),
+    TOSEE_SADERAT("بانک توسعه صادرات", emptyList()),
+    IRAN_VENEZUELA("بانک ایران و ونزوئلا", emptyList()),
+    // Credit institutions rather than banks by charter; to her an account there is a bank account.
+    MELAL("مؤسسه اعتباری ملل", emptyList()),
+    NOOR("مؤسسه اعتباری نور", emptyList()),
+    CASPIAN("مؤسسه اعتباری کاسپین", emptyList()),
+    TOSEE("مؤسسه اعتباری توسعه", emptyList()),
 
     /**
      * Never produced by reading a message. It is only what a balance saved by an older build
