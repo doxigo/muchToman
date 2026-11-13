@@ -31,11 +31,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -61,7 +59,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
@@ -144,26 +141,18 @@ fun EditTxnSheet(
             )
 
             SheetLabel("چقدر، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                singleLine = true,
-                isError = rial == null,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                supportingText = {
-                    Text(
-                        rial?.let { faWordsToman(tomanOf(it)) }
-                            // The row the message named no figure for: the field is empty because
-                            // the bank left it out, not because she typed something wrong.
-                            ?: if (amount.isBlank() && txn.amountRial == null) "پیامک مبلغ رو نگفته؛ خودت بنویسش."
-                            else "مبلغ رو فقط با عدد بنویس."
-                    )
+                description = "مبلغ به $moneyUnit",
+                error = when {
+                    rial != null -> null
+                    // The row the message named no figure for: the field is empty because the bank
+                    // left it out, not because she typed something wrong.
+                    amount.isBlank() && txn.amountRial == null -> "پیامک مبلغ رو نگفته؛ خودت بنویسش."
+                    else -> "مبلغ رو فقط با عدد بنویس."
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ به $moneyUnit" },
+                support = rial?.let { faWordsToman(tomanOf(it)) },
             )
 
             SheetLabel("کِی؟")
@@ -355,28 +344,18 @@ fun SplitSheet(
                 if (i > 0) {
                     val parsed = rest[i - 1]
                     val blank = amounts[i].isBlank()
-                    OutlinedTextField(
+                    AmountField(
                         value = amounts[i],
                         onValueChange = { amounts[i] = it },
-                        singleLine = true,
-                        isError = parsed == null && (!blank || missing),
-                        visualTransformation = GroupedNumber,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        label = { Text("چقدر، به $moneyUnit") },
-                        supportingText = when {
-                            blank && missing -> ({
-                                Text(
-                                    "مبلغش رو بنویس.",
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                )
-                            })
+                        label = "چقدر، به $moneyUnit",
+                        error = when {
+                            blank && missing -> "مبلغش رو بنویس."
                             // A figure it cannot read holds the save back, so it has to say so.
-                            parsed == null && !blank -> ({ Text("مبلغ رو فقط با عدد بنویس.") })
-                            parsed != null -> ({ Text(faWordsToman(tomanOf(parsed)).orEmpty()) })
+                            parsed == null && !blank -> "مبلغ رو فقط با عدد بنویس."
                             else -> null
                         },
-                        shape = RoundedCornerShape(Radius.field),
-                        modifier = Modifier.fillMaxWidth().padding(start = PartInset),
+                        support = parsed?.let { faWordsToman(tomanOf(it)).orEmpty() },
+                        modifier = Modifier.padding(start = PartInset),
                     )
                 }
             }

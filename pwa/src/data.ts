@@ -708,7 +708,6 @@ export function setOverride(typeId: string, rate: number | null): void {
   setPref('overrides', Object.fromEntries(entries));
   recordSnapshot();
 }
-export const clearOverride = (typeId: string): void => setOverride(typeId, null);
 
 // Kotlin's Semaphore(4): the permit is handed straight to the next waiter.
 let permits = MAX_PARALLEL_WALLET_FETCHES;

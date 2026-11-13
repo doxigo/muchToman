@@ -149,6 +149,7 @@ class ClassifyTest {
         for ((channel, category) in listOf("bill" to "cat_bills", "atm" to CAT_CASH, "fee" to CAT_FEES)) {
             val c = classify(txn(signed = -50_000, channel = channel), BUILTIN_RULES)
             assertEquals(category, c.categoryId)
+            assertEquals(channel, Confidence.BUILTIN_EXACT, c.confidence)
             assertTrue(channel, !c.needsReview)
         }
     }

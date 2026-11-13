@@ -96,7 +96,7 @@ const fail = (fault: BackupFault, message: string): never => { throw new BackupE
 const utf8 = new TextEncoder();
 
 async function deriveKey(passphrase: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<CryptoKey> {
-  // PBKDF2 over the passphrase's UTF-8, exactly as the JCA factory encodes it (Export.kt:196).
+  // PBKDF2 over the passphrase's UTF-8, exactly as the JCA factory encodes it (Export.kt deriveBackupKey).
   const base = await crypto.subtle.importKey('raw', utf8.encode(passphrase), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, base, 256);
   return crypto.subtle.importKey('raw', bits, 'AES-GCM', false, ['encrypt', 'decrypt']);

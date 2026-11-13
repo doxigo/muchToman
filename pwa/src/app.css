@@ -290,7 +290,7 @@ h1, h2, h3 { margin: 0; }
 .tabbar .badge { position: absolute; top: -4px; inset-inline-end: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--cta-fill); color: var(--cta-ink); font-size: calc(10px * var(--text)); font-weight: 800; line-height: calc(16px * var(--text)); text-align: center; }
 
 /* ---- the undo band ------------------------------------------------------------------------------ */
-/* Notices (Ui.kt NoticeBand): a band on the raised surface with a hairline, its one act the CTA pill. */
+/* Notices (Ui.kt TransientNoticeBand): a band on the raised surface with a hairline, its one act the CTA pill. */
 .notice { position: fixed; inset-inline: var(--edge); bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 50; max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: var(--m); padding: var(--m) var(--l); border: 1px solid var(--outline-variant); border-radius: var(--r-group); background: var(--surface-high); color: var(--on-surface); font-size: calc(14px * var(--text)); font-weight: 600; line-height: calc(22px * var(--text)); animation: rise var(--medium) var(--enter); }
 .notice.over-page { bottom: calc(var(--l) + env(safe-area-inset-bottom)); }
 

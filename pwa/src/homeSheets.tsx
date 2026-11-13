@@ -1,6 +1,6 @@
 /**
- * The holding's pieces and the three sheets behind the asset list — Ui.kt's AssetIcon, RowTitle,
- * RowAmount, PickTypeSheet, EditSheet and BankSheet, one to one. The list itself is home.tsx;
+ * The holding's pieces and the three sheets behind the asset list — AssetsUi.kt's AssetIcon,
+ * RowTitle, RowAmount, PickTypeSheet and EditSheet, and BanksUi.kt's BankSheet, one to one. The list itself is home.tsx;
  * these live apart so the list can import the row pieces without the two files importing each other.
  *
  * What a browser cannot do is left out rather than faked: there is no inbox to open from a bank
@@ -128,7 +128,6 @@ export function AssetIcon({ type, size = 44, network }: { type: AssetType; size?
       </>
     );
   } else if (glyph) inner = <AssetGlyph glyph={glyph} size={size * 0.55} color={ink} />;
-  else if (type.emoji) inner = <span style={{ fontSize: `calc(${size * 0.52}px * var(--text))`, lineHeight: 1 }}>{type.emoji}</span>;
   else inner = letters;
   return (
     <span class="asset-icon" aria-hidden="true">
@@ -669,7 +668,7 @@ function BankFigure({ toman, struck }: { toman: number; struck: boolean }) {
 }
 
 /**
- * One account's own page (Ui.kt BankPage): the figure, how fresh it is, and everything that acts on it —
+ * One account's own page (BanksUi.kt BankPage): the figure, how fresh it is, and everything that acts on it —
  * the reading on top, the acts as bands at the foot, the delete last in a band of its own, two taps, its
  * armed line naming what goes, as a transaction's page and a person's end. The switch is the settings
  * page's bank row, so the one switch reads the same in both places it lives. No «دیدن پیامک‌ها»: the

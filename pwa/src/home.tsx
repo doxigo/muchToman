@@ -1,5 +1,5 @@
 /**
- * خانه and دارایی: one list, switched by `portfolio` (Ui.kt 906-1190), with Home.kt's story under
+ * خانه and دارایی: one list, switched by `portfolio` (Ui.kt AppScreens), with Home.kt's story under
  * the total on خانه and the holdings banded by kind on دارایی.
  *
  * On خانه: her, above the money; the answer as the one deep-green object on the page; the verbs
@@ -157,7 +157,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
   const words = faWordsToman(total);
   const usdAside = usd != null && <span class="usd figure" aria-label={`${faRate(usd)} دلار`}>{faUsd(usd)}</span>;
 
-  // دارایی's header, not خانه's answer (Ui.kt HeroCard `compact`): whose, how much, how fresh, in a
+  // دارایی's header, not خانه's answer (HomeUi.kt HeroCard `compact`): whose, how much, how fresh, in a
   // third of the height, so the list the tab exists for starts above the fold. The words, the exact
   // digits, the loans and the change pill stay on خانه's card; no «جمع دارایی‌هات» either — under
   // the دارایی tab, above its own breakdown, the figure names itself.
@@ -204,7 +204,7 @@ function HeroCard({ totals, usdRate, portfolio, familyAssets }: {
 }
 
 /**
- * How old the rates under the total are, and the way to make them younger (Ui.kt FreshnessLine):
+ * How old the rates under the total are, and the way to make them younger (HomeUi.kt FreshnessLine):
  * the sentence that tells her whether she needs a refresh is the thing she presses, instead of a
  * third circle in the action row. Same reach as Android's: rates and wallet balances.
  */

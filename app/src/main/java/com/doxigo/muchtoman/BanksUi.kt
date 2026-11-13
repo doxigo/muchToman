@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,7 +36,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -70,7 +68,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -512,31 +509,18 @@ internal fun BankPage(
                     color = muted,
                     modifier = Modifier.padding(top = Space.xl),
                 )
-                OutlinedTextField(
+                AmountField(
                     value = draft,
                     onValueChange = { draft = it },
-                    singleLine = true,
-                    visualTransformation = GroupedNumber,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    supportingText = when {
-                        draft.isBlank() && missingDraft -> ({
-                            Text(
-                                "مبلغش رو بنویس.",
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                            )
-                        })
-                        draft.isNotBlank() && parseAmount(draft) == null -> ({
-                            Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                        })
+                    description = "موجودی به $moneyUnit",
+                    error = when {
+                        draft.isBlank() && missingDraft -> "مبلغش رو بنویس."
+                        draft.isNotBlank() && parseAmount(draft) == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                         else -> null
                     },
-                    shape = RoundedCornerShape(Radius.field),
                     modifier = Modifier
-                        .fillMaxWidth()
                         .padding(top = Space.xs)
-                        .focusRequester(field)
-                        .semantics { contentDescription = "موجودی به $moneyUnit" },
+                        .focusRequester(field),
                 )
                 // «ذخیره» first, under the thumb that asked for it; «بستن» is the way back out.
                 Row(Modifier.padding(top = Space.m), horizontalArrangement = Arrangement.spacedBy(Space.s)) {

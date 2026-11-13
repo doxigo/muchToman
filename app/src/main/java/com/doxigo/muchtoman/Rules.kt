@@ -529,8 +529,6 @@ data class Rule(
 }
 
 object Priority {
-    /** She pinned this exact transaction. Not a rule at all — it short-circuits. */
-    const val PINNED = 1000
     const val USER_EXACT_MERCHANT = 900
     const val USER_OTHER = 800
     const val SHIPPED = 500
@@ -548,8 +546,6 @@ object Confidence {
     const val RULE_NARROW = 85
     const val RULE_LIKE = 75
     const val BUILTIN_EXACT = 70
-    const val BUILTIN_LIKE = 55
-    const val CHANNEL_ONLY = 40
     const val NONE = 0
 }
 
@@ -558,10 +554,14 @@ const val REVIEW_BELOW = 70
 
 /**
  * What the app ships knowing, and it only ships what the message says outright: a channel whose
- * name is its category ([NAMED_CHANNELS]). Anything less is a guess, and a guess on a row reads
- * as if the bank had said it — every خاورمیانه «خرید با کارت» showed «خرید روزانه», and every
- * deposit «درآمد», when the app knew neither. Those go to the deck uncategorised instead, and her
- * answer is what files the next one.
+ * name is its category — a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee. Filed under one
+ * of these, the row showed the category and the amber «در انتظار دسته‌بندی» dot beside it at once,
+ * and the deck asked her to agree with something the message had already said; so a builtin is
+ * filed as exact ([confidenceOf]). A purchase is not one — «خرید روزانه» is where it usually goes,
+ * not what it is. Anything less is a guess, and a guess on a row reads as if the bank had said
+ * it — every خاورمیانه «خرید با کارت» showed «خرید روزانه», and every deposit «درآمد», when the app
+ * knew neither. Those go to the deck uncategorised instead, and her answer is what files the next
+ * one.
  *
  * The two retired guesses stay as deleted rows: [seedBuiltins] REPLACEs by id, and dropping them
  * from this list would leave every installed phone's copy live.
@@ -573,14 +573,6 @@ val BUILTIN_RULES: List<Rule> = listOf(
     Rule("rule_pos", Priority.SHIPPED, CAT_SHOPPING_ID, pChannel = "pos", pDirection = "out", builtin = true, deleted = true),
     Rule("rule_income", Priority.SHIPPED, CAT_INCOME, pDirection = "in", builtin = true, deleted = true),
 )
-
-/**
- * Channels whose name is their category: a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee.
- * Filed under any of these, the row showed the category and the amber «در انتظار دسته‌بندی» dot
- * beside it at once, and the deck asked her to agree with something the message had already said.
- * A purchase is not one — «خرید روزانه» is where it usually goes, not what it is.
- */
-private val NAMED_CHANNELS = setOf("atm", "fee", "bill")
 
 private const val CAT_BILLS_ID = "cat_bills"
 const val CAT_SHOPPING_ID = "cat_shopping"
@@ -596,11 +588,10 @@ data class TxnClass(
     @ColumnInfo(name = "needs_review") val needsReview: Boolean,
 )
 
+// Every live builtin is a named channel ([BUILTIN_RULES]) and the retired guesses are deleted, so
+// never match: a builtin is exact. A shipped guess would need its own arm back, under REVIEW_BELOW.
 private fun confidenceOf(rule: Rule): Int = when {
-    rule.builtin && rule.pMerchantNorm != null -> Confidence.BUILTIN_EXACT
-    rule.builtin && rule.pMerchantLike != null -> Confidence.BUILTIN_LIKE
-    rule.builtin && rule.pChannel in NAMED_CHANNELS -> Confidence.BUILTIN_EXACT
-    rule.builtin -> Confidence.CHANNEL_ONLY
+    rule.builtin -> Confidence.BUILTIN_EXACT
     rule.pMerchantNorm != null -> Confidence.RULE_EXACT
     rule.pMerchantLike != null -> Confidence.RULE_LIKE
     rule.specificity >= 2 -> Confidence.RULE_NARROW
@@ -705,7 +696,6 @@ object DecisionKind {
     const val HIDE = "hide"
     const val WORTH_IT = "worth_it"
     const val ACCOUNT = "account"
-    const val EXCLUDE = "exclude"
 
     /** Which installment this payment paid, and how much of it — see [InstallmentLink]. */
     const val INSTALLMENT = "installment"

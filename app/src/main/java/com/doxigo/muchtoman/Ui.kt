@@ -49,12 +49,16 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -90,12 +94,16 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -1752,12 +1760,108 @@ internal fun ArmedButton(
 }
 
 /**
+ * A band's name — type and air do the separating, no rule and no colour, with the 4dp optical
+ * inset that keeps the label from hanging outside a 28dp corner, and more air above than below.
+ * A real heading, so TalkBack can jump between the bands. One size and weight on every page that
+ * has bands, so each reads as one document.
+ */
+@Composable
+internal fun SectionLabel(text: String, top: Dp = Space.xxl) {
+    Text(
+        text,
+        fontSize = 15.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier
+            .padding(top = top, bottom = Space.m, start = Space.xs)
+            .semantics { heading() },
+    )
+}
+
+/**
+ * A band's last row, the way to grow it: a quiet well with the pen's «+» ([PlusMark]), not a filled
+ * button. A filled `primary` slab is how this app says «press this», and two of them on one screen
+ * would each be claiming it; the loud shape is kept for the ذخیره inside the sheet this opens.
+ *
+ * The shape is the band's: last row when the band has rows, the whole band when it does not. A
+ * band and the way to grow it are one object either way.
+ */
+@Composable
+internal fun AddRow(label: String, shape: Shape, onClick: () -> Unit, enabled: Boolean = true) {
+    val ink = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        PlusMark(ink, size = 18.dp)
+        Spacer(Modifier.size(Space.s))
+        Text(label, fontWeight = FontWeight.Bold, color = ink)
+    }
+}
+
+/**
  * A field's own error line, announced. A commit never greys out (DESIGN.md § Buttons): its tap
  * raises this while the keyboard is going away, so it has to be heard as well as seen.
  */
 @Composable
 internal fun FieldError(text: String) {
     Text(text, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+}
+
+/**
+ * A figure she types: grouped as she types ([GroupedNumber]), on a decimal keypad, and under it
+ * what is wrong with it, announced ([FieldError]) — or else [support], almost always the amount
+ * spelled out, the guard against an extra zero. pwa/src/ui.tsx's AmountField is the same field.
+ *
+ * [isError] follows [error] unless a site keeps its words somewhere else and passes it alone.
+ * [description] names the field to TalkBack where its question is a label outside it.
+ */
+@Composable
+internal fun AmountField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    description: String? = null,
+    error: String? = null,
+    isError: Boolean = error != null,
+    support: String? = null,
+    textStyle: TextStyle = LocalTextStyle.current,
+    keyboardType: KeyboardType = KeyboardType.Decimal,
+    onDone: (() -> Unit)? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = if (label != null) ({ Text(label) }) else null,
+        singleLine = true,
+        isError = isError,
+        visualTransformation = GroupedNumber,
+        textStyle = textStyle,
+        keyboardOptions = if (onDone != null) KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done)
+        else KeyboardOptions(keyboardType = keyboardType),
+        keyboardActions = if (onDone != null) KeyboardActions(onDone = { onDone() }) else KeyboardActions.Default,
+        supportingText = when {
+            error != null -> ({ FieldError(error) })
+            support != null -> ({ Text(support) })
+            else -> null
+        },
+        shape = RoundedCornerShape(Radius.field),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+    )
 }
 
 /** What a commit tap raises under a choice that cannot flag itself — a grid, a list of names. */

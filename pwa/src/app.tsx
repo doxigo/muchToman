@@ -1,5 +1,5 @@
 /**
- * AppRoot and AppScreens (Ui.kt:268-760): gates first (the lock, then onboarding), then the top
+ * AppRoot and AppScreens (Ui.kt): gates first (the lock, then onboarding), then the top
  * page of the stack if one is open, else the tab she is on with the bar under it; the one sheet
  * and the one notice float over whichever that is.
  *

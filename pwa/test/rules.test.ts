@@ -107,7 +107,7 @@ describe('rules', () => {
 
   it('files a channel that names its category without asking', () => {
     for (const [channel, category] of [['bill', 'cat_bills'], ['atm', CAT_CASH], ['fee', CAT_FEES]]) {
-      expect(classify(txn({ signed: -50_000, channel }), BUILTIN_RULES)).toMatchObject({ categoryId: category, needsReview: false });
+      expect(classify(txn({ signed: -50_000, channel }), BUILTIN_RULES)).toMatchObject({ categoryId: category, confidence: Confidence.BUILTIN_EXACT, needsReview: false });
     }
   });
 

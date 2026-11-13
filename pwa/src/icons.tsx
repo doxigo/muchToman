@@ -1,6 +1,6 @@
 /**
  * The app's drawn marks — TabBar.kt's five tab glyphs, Timeline.kt's plus/search/check, Family.kt's
- * person, Ui.kt's bars and caret — in the same one pen: round caps, round joins, 2 at 24.
+ * person, HomeUi.kt's caret — in the same one pen: round caps, round joins, 2 at 24.
  * Coordinates are the Kotlin fractions of the drawing box, so a reader can hold the two side by side.
  */
 import type { ComponentChildren } from 'preact';
@@ -126,20 +126,6 @@ export function PersonMark({ size = 24, color = 'currentColor' }: Mark) {
   );
 }
 
-/** Ui.kt BarsIcon: filled, for the گزارش circle beside filled marks. */
-export function BarsIcon({ size = 24, color = 'currentColor', label }: Mark) {
-  const b = size - 4; const w = b * .2;
-  return (
-    <Svg size={size} label={label}>
-      <g transform="translate(2 2)" fill={color}>
-        <rect x={0} y={b * .45} width={w} height={b * .55} rx={w / 2} />
-        <rect x={(b - w) / 2} y={b * .2} width={w} height={b * .8} rx={w / 2} />
-        <rect x={b - w} y={0} width={w} height={b} rx={w / 2} />
-      </g>
-    </Svg>
-  );
-}
-
 export function TrendCaret({ up, color = 'currentColor', size = 9 }: { up: boolean; color?: string; size?: number }) {
   const d = up ? `M${size / 2} 0 L${size} ${size} L0 ${size} Z` : `M0 0 L${size} 0 L${size / 2} ${size} Z`;
   return <Svg size={size}><path d={d} fill={color} /></Svg>;
@@ -161,7 +147,3 @@ export function Chevron({ size = 18, color = 'currentColor', back = false }: Mar
   return <Svg size={size}><path {...s} d={d} /></Svg>;
 }
 
-export function CloseMark({ size = 20, color = 'currentColor' }: Mark) {
-  const s = { ...PEN, stroke: color, 'stroke-width': 2.2 };
-  return <Svg size={size}><path {...s} d={`M${size * .22} ${size * .22} L${size * .78} ${size * .78} M${size * .78} ${size * .22} L${size * .22} ${size * .78}`} /></Svg>;
-}

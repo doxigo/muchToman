@@ -1,5 +1,5 @@
 /**
- * خانواده as the phone's AppVm runs it (MainActivity.kt refreshFamily → renewFamily, Family.kt
+ * خانواده as the phone's AppVm runs it (AppVm.kt refreshFamily → renewFamily, Family.kt
  * FamilyState): the household actions the family screen calls, the state it reads, and the one
  * sync queue every edit asks through. The wire and the household operations themselves are
  * sync.ts's; this file is the part the phone keeps in its view model.
@@ -19,7 +19,6 @@ import { ledger, setMineId } from './derived';
 import { faNumber } from './format';
 import { tehranDay } from './jalali';
 import type { FamilyMember, LedgerEntry, ManualTxn, Publication } from './model';
-import { showNotice } from './nav';
 import { batch, pref, put, putAll, row, rows, setPref, settled, subscribe, useData } from './state';
 import {
   AVATAR_B64_MAX, AVATAR_PHOTO_PREFIX, AVATAR_PX, NoInviteKeyError, SyncHttpError, claimHousehold, invite, joinHousehold,
@@ -465,7 +464,6 @@ export async function leaveFamily(): Promise<void> {
   // If leave fails, the sync it waited out still has to be retried.
   queueFamilySync(true);
   const active = job;
-  announce = false;
   set({ working: true, error: null });
   // A fetch cannot be cancelled mid-flight here the way the phone cancels its job; it is waited out.
   await active;
@@ -504,16 +502,8 @@ export async function renewFamily(): Promise<void> {
 let job: Promise<void> | null = null;
 let queued: boolean | null = null;
 let transitioning = false;
-/** Whether the sync now in flight owes her a sentence when it lands — raised by the ledger's pull. */
-let announce = false;
 
 export const syncFamily = (silent = false): void => requestFamilySync(silent);
-
-/** The ledger's pull: a silent sync that answers out loud, once, when it lands. */
-export function pullFamilySync(): void {
-  announce = true;
-  requestFamilySync(true);
-}
 
 /**
  * Ask for a sync. Every edit that changes what the household sees asks — silent — as the phone's
@@ -581,8 +571,6 @@ export function csvBalances(): CsvBalances[] {
 async function runFamilySyncOnce(silent: boolean): Promise<void> {
   const current = await loadSession();
   if (!current) {
-    // No household, nothing to say: a pull raced a leave.
-    announce = false;
     if (!silent) refreshFamily(null);
     return;
   }
@@ -592,19 +580,11 @@ async function runFamilySyncOnce(silent: boolean): Promise<void> {
     const result = await syncNow(current, Date.now(), assets);
     const compatibility = result.unsupportedKinds.length ? syncErrorFa(new SyncHttpError(400, '{"code":"invalid_kind"}')) : null;
     refreshFamily(current, `${faNumber(result.sent)} مورد فرستادیم، ${faNumber(result.received)} مورد گرفتیم.`, compatibility);
-    announcePull(compatibility ?? (result.received === 0 ? 'مورد تازه‌ای از خانواده نبود.' : `${faNumber(result.received)} مورد تازه از خانواده گرفتیم.`));
   } catch (error) {
     console.warn('sync failed', error);
     const message = syncErrorFa(error);
     refreshFamily(current, undefined, message);
-    announcePull(message);
   }
-}
-
-function announcePull(message: string): void {
-  if (!announce) return;
-  announce = false;
-  showNotice(message);
 }
 
 function finishFamilyTransition(resumeQueued: boolean): void {

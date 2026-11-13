@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -363,7 +362,7 @@ fun CompanionScreen(
                 // everyone else, then the way to add one — a list and the way to grow it are
                 // one object, as on بودجه.
                 val rows = others.size + unnamed.size + 2
-                SectionHeading("اعضای خانواده", others.size + unnamed.size + 1)
+                SectionLabel("اعضای خانواده (${faNumber((others.size + unnamed.size + 1).toDouble())})")
                 MemberRow(
                     name = myName,
                     avatar = me?.avatar.orEmpty(),
@@ -410,7 +409,7 @@ fun CompanionScreen(
                         onClick = if (founder) null else ({ openMember = device.memberId }),
                     )
                 }
-                SettingsAddRow(
+                AddRow(
                     label = if (state.pairingUrl == null) "دعوت عضو جدید" else "ساختن کد تازه",
                     enabled = !state.working,
                     shape = bandShape(rows - 1, rows),
@@ -451,7 +450,7 @@ fun CompanionScreen(
             // switch's state in words, one vocabulary for this band and the banks under it —
             // «فرستاده می‌شه» or «فقط روی همین گوشی» — short enough to stay one line, so no
             // verb is left hanging alone on a second.
-            SectionHeading("اشتراک‌گذاری")
+            SectionLabel("اشتراک‌گذاری")
             SettingCard(
                 mark = { TabMark { drawLedger(it) } },
                 title = "تراکنش‌های پیامکی",
@@ -476,7 +475,7 @@ fun CompanionScreen(
             // «goes to the family» — so the rows read the way پیامک‌های بانک's already do, and
             // the bank's own logo replaces the category mark the chips could only guess at.
             if (banks.isNotEmpty() && (state.sharesSms || state.sharesAssets)) {
-                SectionHeading("بانک‌ها")
+                SectionLabel("بانک‌ها")
                 banks.forEachIndexed { index, bank ->
                     val shared = bank !in state.excludedBanks
                     SettingCard(
@@ -494,7 +493,7 @@ fun CompanionScreen(
 
             // What this phone hears, after what it sends. The line under it stands whichever way
             // the switch sits: the lag is the thing to know before turning it on.
-            SectionHeading("اعلان‌ها")
+            SectionLabel("اعلان‌ها")
             SettingCard(
                 mark = { TabMark { drawLedger(it) } },
                 title = "تراکنش‌های بقیه",
@@ -506,7 +505,7 @@ fun CompanionScreen(
             Helper("ممکنه چند ساعت دیر برسن: این گوشی فقط هر از گاهی از خانواده خبر می‌گیره.")
         }
 
-        SectionHeading("حریم خصوصی")
+        SectionLabel("حریم خصوصی")
         Text(
             "متن خام پیامک هیچ‌وقت از گوشی صاحبش خارج نمی‌شه. فقط مبلغ، زمان، بانک، فروشنده و دسته‌بندیِ استخراج‌شده، رمز‌شده جابه‌جا می‌شن. " +
                 "از دارایی‌ها هم فقط اسم و ارزش تومنی می‌ره؛ مقدار، آدرس کیف پول و شماره حساب هیچ‌وقت نه. " +
@@ -781,7 +780,7 @@ private fun RejoinBlock(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    SectionHeading("پیوستن به خانواده جدید")
+    SectionLabel("پیوستن به خانواده جدید")
     Text(
         rejoinLead(sameHousehold),
         fontSize = 13.sp,
@@ -822,25 +821,6 @@ internal fun rejoinLead(sameHousehold: Boolean): String {
             "موارد مشترک اعضای قبلی دیگه به‌روز نمی‌شن و دفتر مشترک از نو شروع می‌شه."
     }
     return "$opening تراکنش‌های خود این گوشی سر جاشون می‌مونن و با همون اسم قبلی وارد می‌شی."
-}
-
-/**
- * A band's name, in the voice the settings rooms give theirs — more air above than below, and
- * announced as a heading so TalkBack can jump between them. A copy of تنظیمات's `SectionLabel`
- * rather than that one shared: بودجه keeps a private `SectionLabel(text, top)`, and a shared
- * one-argument overload would quietly win every call there.
- */
-@Composable
-private fun SectionHeading(title: String, count: Int? = null) {
-    Text(
-        if (count == null) title else "$title (${faNumber(count.toDouble())})",
-        fontSize = 15.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier
-            .padding(top = Space.xxl, bottom = Space.m, start = Space.xs)
-            .semantics { heading() },
-    )
 }
 
 /** A tab's own mark in a settings disc — the دفتر slip, the دارایی coins — in the pen's ink. */
@@ -1157,36 +1137,6 @@ private fun MemberRow(
                     .padding(start = Space.l + 44.dp + Space.m),
             )
         }
-    }
-}
-
-/**
- * A settings band's last row: the way to add one — a member here, a bank kept by hand on
- * «پیامک‌های بانک». A quiet well with the pen's «+», the shape بودجه ends its bands with — the loud
- * green is kept for the answer inside a sheet, and a filled slab under the list read as the page's
- * main event on a household that is already whole.
- */
-@Composable
-internal fun SettingsAddRow(label: String, shape: Shape, onClick: () -> Unit, enabled: Boolean = true) {
-    val ink = if (enabled) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        PlusMark(ink, size = 18.dp)
-        Spacer(Modifier.size(Space.s))
-        Text(label, fontWeight = FontWeight.Bold, color = ink)
     }
 }
 

@@ -74,7 +74,7 @@ export interface Rule {
 }
 
 export type DecisionKind =
-  | 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'exclude' | 'installment' | 'loan'
+  | 'category' | 'note' | 'hide' | 'worth_it' | 'account' | 'installment' | 'loan'
   | 'amount' | 'day' | 'member' | 'split' | 'direction';
 
 /** `txn_decision`: one per (ref, kind). `id` is `${kind}:${ref}` here, which is that key. */
@@ -134,7 +134,7 @@ export interface BalanceAnchor {
   deleted: boolean;
 }
 
-// ---- the household, as sync has folded it (Ledger.kt:383-441) -------------------------------
+// ---- the household, as sync has folded it (Ledger.kt FamilyMember … FamilyAsset) -----------
 
 export interface FamilyMember {
   id: string;
@@ -247,7 +247,7 @@ export interface Prefs {
   /** When /usd-history was last asked (data.ts fillRateGaps) — this browser's, kept out of backups. */
   usdHistoryAt: number;
   reportExcluded: string[];
-  /** The household's copy of the same choice, last-write-wins across members (Sync.kt:471). */
+  /** The household's copy of the same choice, last-write-wins across members (Sync.kt ReportExclusionsState). */
   reportExclusions: { ids: string[]; updatedAt: number; editedByMemberId: string } | null;
   ledgerStartsOn: number;
   installmentReminder: number;

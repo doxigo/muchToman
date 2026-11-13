@@ -1,5 +1,5 @@
 /**
- * Loans.kt, one to one, plus MainActivity.kt's loan actions — «طلب و بدهی»: who she lent money to,
+ * Loans.kt, one to one, plus AppVm.kt's loan actions — «طلب و بدهی»: who she lent money to,
  * and who she owes.
  *
  * Three stores, each already the right one for its part:
@@ -505,7 +505,7 @@ export function loanEventSubFa(event: LoanEvent): string | null {
   return 'دستی';
 }
 
-// ─────────────────────────── her writes (MainActivity.kt) ───────────────────────────
+// ─────────────────────────── her writes (AppVm.kt) ───────────────────────────
 //
 // The book is one pref; a holding a move touches goes through data.ts's own persistence, so the
 // hero total moves with it. Every write is synchronous and lands in one re-render.

@@ -1,5 +1,5 @@
 /**
- * What she does to the ledger — MainActivity.kt's AppVm, minus the view model. Every action writes
+ * What she does to the ledger — AppVm.kt's AppVm, minus the view model. Every action writes
  * through state.ts and the ledger re-derives on the next read; there is no derive to call.
  *
  * Every answer the household can see carries this browser's member id, and every stamp is

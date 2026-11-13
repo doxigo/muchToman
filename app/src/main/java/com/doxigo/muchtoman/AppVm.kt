@@ -2521,8 +2521,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     /**
      * Fill the dev build with a household's year, or take it back out again.
      *
-     * Guarded here as well as in تنظیمات, because this is the method that writes the rows and a
-     * guard on the button that calls it is a guard on one caller. `BuildConfig.DEMO` is a compile
+     * Guarded here as well as in MainActivity's launch extra, because this is the method that
+     * writes the rows and a guard on the one caller is a guard on one caller. `BuildConfig.DEMO` is a compile
      * -time constant, so in every other build this is `if (false)` and R8 removes the body along
      * with [demoLedger] itself.
      *
@@ -2537,7 +2537,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val derived = DerivedDb.get(app)
             val now = System.currentTimeMillis()
             runCatching {
-                // Cleared first either way, so «ساختن» twice is one demo ledger rather than two
+                // Cleared first either way, so asking twice is one demo ledger rather than two
                 // laid on top of each other.
                 durable.manual().deleteWithIdPrefix(DEMO_PREFIX)
                 durable.decisions().deleteForRefPrefix(manualRef(DEMO_PREFIX))
@@ -3051,10 +3051,6 @@ data class UiState(
 
     /** The tracked balances as one figure, minus the banks she switched off. */
     val bankToman: Double get() = bankTotal(bankAccounts, disabledBanks)
-
-    /** True while any tracked balance is a guess rather than something a bank stated. */
-    val bankUnsure: Boolean
-        get() = bankAccounts.any { it.bank !in disabledBanks && !it.trusted }
 
     /** See [com.doxigo.muchtoman.listHoldings] — shared with the widget and the daily worker. */
     val listHoldings: List<Holding> by lazy {

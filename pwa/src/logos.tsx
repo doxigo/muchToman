@@ -1,7 +1,7 @@
 /**
- * The bank and wallet-network logos (Ui.kt BankLogo, WalletNetworkLogo), converted path for path
+ * The bank and wallet-network logos (BanksUi.kt BankLogo, WalletNetworkLogo), converted path for path
  * from the app's `res/drawable/ic_bank_*.xml` and `ic_network_*.xml` VectorDrawables — only the
- * ones Ui.kt maps. Keyed by `Bank` enum name and by network id. The markup is this file's own
+ * ones BanksUi.kt maps. Keyed by `Bank` enum name and by network id. The markup is this file's own
  * constant, never data, so it goes in as innerHTML.
  */
 import { CategoryIcon } from './categoryIcon';

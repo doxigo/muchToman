@@ -733,21 +733,6 @@ internal fun SettingsPage(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        fontSize = 15.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onBackground,
-        // more air above a heading than below it
-        modifier = Modifier
-            .padding(top = Space.xxl, bottom = Space.m, start = Space.xs)
-            // Real headings, so TalkBack can jump between the bands.
-            .semantics { heading() },
-    )
-}
-
 /**
  * The name, in the smallest room that fits it.
  *
@@ -1205,7 +1190,7 @@ private fun SmsPage(
             )
         }
         if (addable) {
-            SettingsAddRow("اضافه کردن بانک", bandShape(banks.size, rows), { addingBank = true })
+            AddRow("اضافه کردن بانک", bandShape(banks.size, rows), { addingBank = true })
             // Only until she has kept one: after that the row above says «دستی» and the
             // accounts sheet on خانه says where its figure is corrected.
             if (shown.none { it.manual }) {
@@ -1421,32 +1406,24 @@ private fun BankBalanceStep(bank: Bank, onOther: () -> Unit, onSave: (Double) ->
             )
         }
         val invalid = amount == null && (text.isNotBlank() || submitted)
-        OutlinedTextField(
+        AmountField(
             value = text,
             onValueChange = { text = it; submitted = false },
-            singleLine = true,
-            isError = invalid,
-            visualTransformation = GroupedNumber,
+            description = prompt,
+            // A red outline is colour alone; the words say what to fix, and why ذخیره did not save.
+            error = when {
+                !invalid -> null
+                text.isBlank() -> "مبلغش رو بنویس."
+                else -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
+            },
             textStyle = TextStyle(
                 fontFamily = ModamFigures,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { save() }),
-            // A red outline is colour alone; the words say what to fix, and why ذخیره did not save.
-            supportingText = if (invalid) ({
-                Text(
-                    if (text.isBlank()) "مبلغش رو بنویس." else "این عدد قابل خوندن نیست. فقط عدد وارد کن.",
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }) else null,
-            shape = RoundedCornerShape(Radius.field),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(field)
-                .semantics { contentDescription = prompt },
+            onDone = { save() },
+            modifier = Modifier.focusRequester(field),
         )
         // The figure she just typed, in words.
         if (amount != null && amount % 1.0 == 0.0 && amount >= 1000) {

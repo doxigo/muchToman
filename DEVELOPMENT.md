@@ -807,6 +807,13 @@ cd pwa && pnpm run dev            # http://localhost:5173 — /rates, /wallet-ba
 open http://localhost:5173/?demo=1   # Demo.kt's household, row for row (dev builds only)
 ```
 
+The phone's way into the same household is a launch extra only the `dev` build reads (`false`
+takes it back out; anything added by hand stays):
+
+```bash
+adb shell am start -n com.doxigo.muchtoman.dev/com.doxigo.muchtoman.MainActivity --ez com.doxigo.muchtoman.DEMO true
+```
+
 In the dev build `window.mt` holds the app's own module instances for the console — after an HMR
 update a hand-typed `import('/src/state.ts')` can be a second, empty copy. The same build against
 a real household (`/v1` proxied to production; the page's CSP is `connect-src 'self'`):

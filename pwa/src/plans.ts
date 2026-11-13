@@ -1,5 +1,5 @@
 /**
- * The «آینده» tab's actions — MainActivity.kt's addBudget … answerWorthIt and setReportExcluded —
+ * The «آینده» tab's actions — AppVm.kt's addBudget … answerWorthIt and setReportExcluded —
  * written through state.ts, plus [plansOf] (the goals/budgets/installments part of ledgerView)
  * and the browser notifier ([announce], Notify.kt's announceBudgets/announceInstallments/announceQuiet).
  *
@@ -236,7 +236,7 @@ export function setInstallmentPayment(entry: LedgerEntry, planId: string | null)
 // ─────────────────────────── cheques ───────────────────────────
 
 /**
- * A cheque she has written, or with [id] one she is correcting (MainActivity.kt saveCheque).
+ * A cheque she has written, or with [id] one she is correcting (AppVm.kt saveCheque).
  * Private like a plan. A moved date is a new date to remind her of: the mark is the date.
  */
 export function saveCheque(id: string | null, name: string, amountRial: number, due: number, bank: string): void {

@@ -207,33 +207,19 @@ fun ManualTxnSheet(
             )
 
             SheetLabel("چقدر، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("مثلاً ۴۵۰ هزار") },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                supportingText = when {
-                    amount.isBlank() && missingAmount -> ({
-                        Text(
-                            "مبلغش رو بنویس.",
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        )
-                    })
-                    amount.isNotBlank() && rial == null -> ({
-                        Text("این عدد قابل خوندن نیست. فقط عدد وارد کن.")
-                    })
-                    // Spelled out, like every other amount field: digits are quick to scan and
-                    // easy to misread by a factor of ten.
-                    rial != null -> ({ Text(faWordsToman(tomanOf(rial)).orEmpty()) })
+                label = "مثلاً ۴۵۰ هزار",
+                description = "مبلغ به $moneyUnit",
+                error = when {
+                    amount.isBlank() && missingAmount -> "مبلغش رو بنویس."
+                    amount.isNotBlank() && rial == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                     else -> null
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ به $moneyUnit" },
+                // Spelled out, like every other amount field: digits are quick to scan and
+                // easy to misread by a factor of ten.
+                support = rial?.let { faWordsToman(tomanOf(it)).orEmpty() },
             )
 
             if (accounts.isNotEmpty()) {

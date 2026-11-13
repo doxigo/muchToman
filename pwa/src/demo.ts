@@ -1,6 +1,8 @@
 /**
- * Demo.kt: fourteen months of a plausible household, for development only — the dev build's
- * `setDemoData` on the phone, reached here with `?demo=1` on the Vite dev server. Same seeded dice
+ * Demo.kt: fourteen months of a plausible household, for development only — reached here with
+ * `?demo=1` on the Vite dev server, and on the phone through the dev build's launch extra:
+ * `adb shell am start -n com.doxigo.muchtoman.dev/com.doxigo.muchtoman.MainActivity
+ * --ez com.doxigo.muchtoman.DEMO true` (AppVm.setDemoData). Same seeded dice
  * (a 64-bit LCG, done in BigInt so it wraps exactly like Kotlin's Long), same lines, same drift,
  * so the browser's demo ledger is the phone's demo ledger row for row.
  *

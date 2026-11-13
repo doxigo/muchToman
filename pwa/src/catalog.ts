@@ -29,8 +29,8 @@ export const BANK_ID = 'bank_accounts';
 
 /**
  * `id` keys the Worker's rates; `unitFa` is what one of it is called; `dec` how many decimals
- * are meaningful in the held amount; `en` a latin name it is searched by, never shown; `emoji`
- * for where there is no real logo; `iconUrl` a real logo (same-origin `/coin-icon?…`).
+ * are meaningful in the held amount; `en` a latin name it is searched by, never shown; `iconUrl`
+ * a real logo (same-origin `/coin-icon?…`).
  */
 export interface AssetType {
   id: string;
@@ -39,7 +39,6 @@ export interface AssetType {
   unitFa: string;
   dec: number;
   en: string;
-  emoji?: string;
   iconUrl?: string;
   wallets: WalletOption[];
 }
@@ -59,46 +58,45 @@ const LEGACY_PARSIAN: AssetType[] = Array.from({ length: 15 }, (_, i) => {
   return type(`parsian_${soot}`, `سکه پارسیان ${faDigits(String(soot))} سوت`, 'COIN', 'عدد', {
     // Also written by its weight everywhere they are sold, so "0.400" has to find it.
     en: `Parsian Gold Coin ${Math.trunc(soot / 1000)}.${String(soot % 1000).padStart(3, '0')}g`,
-    emoji: '🪙',
   });
 });
 
 // The fixed half of the catalogue: things bonbast/tgju price. Crypto comes from the Worker.
 export const STATIC_CATALOG: AssetType[] = [
   // The Toman she counts herself — bank balances are their own row.
-  type(TOMAN_ID, 'پول نقد', 'CASH', 'تومان', { en: 'Toman Cash', emoji: '💰' }),
+  type(TOMAN_ID, 'پول نقد', 'CASH', 'تومان', { en: 'Toman Cash' }),
 
   // dec 2: a held 100.50 must round-trip through the edit field without becoming 100.
-  type('usd', 'دلار آمریکا', 'FIAT', 'دلار', { dec: 2, en: 'US Dollar', emoji: '💵' }),
-  type('eur', 'یورو', 'FIAT', 'یورو', { dec: 2, en: 'Euro', emoji: '💶' }),
-  type('gbp', 'پوند انگلیس', 'FIAT', 'پوند', { dec: 2, en: 'British Pound', emoji: '💷' }),
-  type('nok', 'کرون نروژ', 'FIAT', 'کرون', { dec: 2, en: 'Norwegian Krone', emoji: '🇳🇴' }),
-  type('try', 'لیر ترکیه', 'FIAT', 'لیر', { dec: 2, en: 'Turkish Lira', emoji: '🇹🇷' }),
-  type('aed', 'درهم امارات', 'FIAT', 'درهم', { dec: 2, en: 'UAE Dirham', emoji: '🇦🇪' }),
-  type('cad', 'دلار کانادا', 'FIAT', 'دلار', { dec: 2, en: 'Canadian Dollar', emoji: '🇨🇦' }),
+  type('usd', 'دلار آمریکا', 'FIAT', 'دلار', { dec: 2, en: 'US Dollar' }),
+  type('eur', 'یورو', 'FIAT', 'یورو', { dec: 2, en: 'Euro' }),
+  type('gbp', 'پوند انگلیس', 'FIAT', 'پوند', { dec: 2, en: 'British Pound' }),
+  type('nok', 'کرون نروژ', 'FIAT', 'کرون', { dec: 2, en: 'Norwegian Krone' }),
+  type('try', 'لیر ترکیه', 'FIAT', 'لیر', { dec: 2, en: 'Turkish Lira' }),
+  type('aed', 'درهم امارات', 'FIAT', 'درهم', { dec: 2, en: 'UAE Dirham' }),
+  type('cad', 'دلار کانادا', 'FIAT', 'دلار', { dec: 2, en: 'Canadian Dollar' }),
 
-  type('gold18', 'طلای ۱۸ عیار', 'GOLD', 'گرم', { dec: 3, en: '18k Gold', emoji: '🟡' }),
+  type('gold18', 'طلای ۱۸ عیار', 'GOLD', 'گرم', { dec: 3, en: '18k Gold' }),
   // Her generation prices gold in مثقال, not grams; bonbast quotes it directly.
-  type('gold_mesghal', 'مثقال طلا', 'GOLD', 'مثقال', { dec: 2, en: 'Mesghal Gold', emoji: '🟡' }),
+  type('gold_mesghal', 'مثقال طلا', 'GOLD', 'مثقال', { dec: 2, en: 'Mesghal Gold' }),
 
   // Only tgju prices silver: no rate means left out of the total and named, never zero.
-  type('silver_999', 'نقره ۹۹۹', 'SILVER', 'گرم', { dec: 3, en: '999 Silver', emoji: '⚪' }),
-  type('silver_925', 'نقره ۹۲۵', 'SILVER', 'گرم', { dec: 3, en: '925 Sterling Silver', emoji: '⚪' }),
+  type('silver_999', 'نقره ۹۹۹', 'SILVER', 'گرم', { dec: 3, en: '999 Silver' }),
+  type('silver_925', 'نقره ۹۲۵', 'SILVER', 'گرم', { dec: 3, en: '925 Sterling Silver' }),
 
-  type('coin_emami', 'سکه امامی', 'COIN', 'عدد', { en: 'Emami Gold Coin', emoji: '🪙' }),
-  type('coin_bahar', 'سکه بهار آزادی', 'COIN', 'عدد', { en: 'Bahar Azadi Gold Coin', emoji: '🪙' }),
-  type('coin_nim', 'نیم‌سکه', 'COIN', 'عدد', { en: 'Nim Half Gold Coin', emoji: '🪙' }),
-  type('coin_rob', 'ربع‌سکه', 'COIN', 'عدد', { en: 'Rob Quarter Gold Coin', emoji: '🪙' }),
-  type('coin_gerami', 'سکه گرمی', 'COIN', 'عدد', { en: 'Gerami Gram Gold Coin', emoji: '🪙' }),
+  type('coin_emami', 'سکه امامی', 'COIN', 'عدد', { en: 'Emami Gold Coin' }),
+  type('coin_bahar', 'سکه بهار آزادی', 'COIN', 'عدد', { en: 'Bahar Azadi Gold Coin' }),
+  type('coin_nim', 'نیم‌سکه', 'COIN', 'عدد', { en: 'Nim Half Gold Coin' }),
+  type('coin_rob', 'ربع‌سکه', 'COIN', 'عدد', { en: 'Rob Quarter Gold Coin' }),
+  type('coin_gerami', 'سکه گرمی', 'COIN', 'عدد', { en: 'Gerami Gram Gold Coin' }),
 
   // Counted in سوت (a thousand to the gram), whatever mix of sizes she holds, at the ۱ گرم
   // coin's rate; the small sizes' اجرت makes them worth more, and the override says so.
-  type('parsian', 'سکه پارسیان', 'COIN', 'سوت', { en: 'Parsian Gold Coin', emoji: '🪙' }),
+  type('parsian', 'سکه پارسیان', 'COIN', 'سوت', { en: 'Parsian Gold Coin' }),
 
   // Nobody quotes her car or her land: the figure she types is the value, in Toman.
-  type('car', 'خودرو', 'PROPERTY', 'تومان', { en: 'Car Vehicle', emoji: '🚗' }),
-  type('house', 'خانه و ویلا', 'PROPERTY', 'تومان', { en: 'House Villa Home', emoji: '🏡' }),
-  type('land', 'زمین', 'PROPERTY', 'تومان', { en: 'Land Plot', emoji: '🏞️' }),
+  type('car', 'خودرو', 'PROPERTY', 'تومان', { en: 'Car Vehicle' }),
+  type('house', 'خانه و ویلا', 'PROPERTY', 'تومان', { en: 'House Villa Home' }),
+  type('land', 'زمین', 'PROPERTY', 'تومان', { en: 'Land Plot' }),
 ];
 
 /** Rate 1 by definition and not correctable: Toman, the bank balances, what she values herself. */
@@ -110,7 +108,7 @@ export const TOMAN_BY_DEFINITION: Record<string, number> = Object.fromEntries(
 export const valuedInToman = (t: AssetType): boolean => t.kind === 'CASH' || t.kind === 'PROPERTY';
 
 /** The one asset never added by hand, kept off STATIC_CATALOG so the picker never offers it. */
-export const BANK_TYPE: AssetType = type(BANK_ID, 'حساب‌های بانکی', 'CASH', 'تومان', { en: 'Bank Accounts', emoji: '💳' });
+export const BANK_TYPE: AssetType = type(BANK_ID, 'حساب‌های بانکی', 'CASH', 'تومان', { en: 'Bank Accounts' });
 
 const STATIC_BY_ID = new Map([...STATIC_CATALOG, BANK_TYPE, ...LEGACY_PARSIAN].map((t) => [t.id, t]));
 
@@ -120,7 +118,7 @@ export const coinType = (c: Coin): AssetType =>
 
 /** Stock.toAssetType: the نماد is the name shown; the company goes in `en` to be searched. */
 export const stockType = (s: Stock): AssetType =>
-  type(s.id, s.symbol, 'STOCK', 'سهم', { dec: 0, en: s.name, emoji: '📈' });
+  type(s.id, s.symbol, 'STOCK', 'سهم', { dec: 0, en: s.name });
 
 /**
  * The full picker list: fixed assets, then everything the network knows how to price. One row an

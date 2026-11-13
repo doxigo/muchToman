@@ -494,24 +494,6 @@ fun BudgetScreen(
 }
 
 /**
- * The band title, in the same voice the asset sections use — type and air do the separating, no
- * rule and no colour, with the 4dp optical inset that keeps the label from hanging outside a
- * 28dp corner. One size and weight for all three sections, so the page reads as one document.
- */
-@Composable
-private fun SectionLabel(text: String, top: Dp = Space.xxl) {
-    Text(
-        text,
-        fontSize = 15.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier
-            .padding(top = top, bottom = Space.m, start = Space.xs)
-            .semantics { heading() },
-    )
-}
-
-/**
  * One row of a section's band: the group shape on the outer rows, square in between, a hairline
  * under everything but the last — the assets list's own construction, so «a band is one object»
  * means the same thing on every tab.
@@ -554,44 +536,6 @@ private fun BandCard(
                     .padding(start = Space.l),
             )
         }
-    }
-}
-
-/**
- * The way into each sheet: a quiet well with a «+» in it, not a filled button.
- *
- * There are two of these on one screen and neither is the answer to anything — a filled `primary`
- * slab is how this app says «press this», and two of them stacked would each be claiming it. A well
- * in the surface colour with the mark and the label in `primary` reads as a place to add one, which
- * is exactly what it is, and leaves the loud shape to the ذخیره inside each sheet.
- *
- * The shape is the band's: last row when the section has cards, the whole band when it does not.
- * A section and the way to grow it are one object either way.
- */
-@Composable
-private fun AddRow(label: String, shape: Shape, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            "+",
-            style = figureStyle(MaterialTheme.colorScheme.primary, FontWeight.ExtraBold),
-            fontSize = 20.sp,
-        )
-        Spacer(Modifier.width(Space.s))
-        Text(
-            label,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
     }
 }
 
@@ -1368,28 +1312,19 @@ private fun BudgetSheet(
             )
 
             SheetLabel("سقف خرج، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("مثلاً ۵ میلیون") },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                isError = capRial == null && (tried || amount.isNotBlank()),
-                supportingText = when {
-                    amount.isBlank() && tried -> ({ FieldError("سقفش رو بنویس.") })
-                    amount.isNotBlank() && capRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
-                    // Spelled out, for the same reason every other amount field in the app spells
-                    // it out: digits are quick to scan and easy to misread by a factor of ten.
-                    capRial != null -> ({
-                        Text(faWordsToman(tomanOf(capRial)).orEmpty())
-                    })
+                label = "مثلاً ۵ میلیون",
+                description = "سقف خرج به $moneyUnit",
+                error = when {
+                    amount.isBlank() && tried -> "سقفش رو بنویس."
+                    amount.isNotBlank() && capRial == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                     else -> null
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "سقف خرج به $moneyUnit" },
+                // Spelled out, for the same reason every other amount field in the app spells
+                // it out: digits are quick to scan and easy to misread by a factor of ten.
+                support = capRial?.let { faWordsToman(tomanOf(it)).orEmpty() },
             )
 
             if (hasHousehold) {
@@ -1531,26 +1466,17 @@ private fun GoalSheet(
             )
 
             SheetLabel("چقدر، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("مبلغ هدف") },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                isError = targetRial == null && (tried || amount.isNotBlank()),
-                supportingText = when {
-                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
-                    amount.isNotBlank() && targetRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
-                    targetRial != null -> ({
-                        Text(faWordsToman(tomanOf(targetRial)).orEmpty())
-                    })
+                label = "مبلغ هدف",
+                description = "مبلغ هدف به $moneyUnit",
+                error = when {
+                    amount.isBlank() && tried -> "مبلغش رو بنویس."
+                    amount.isNotBlank() && targetRial == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                     else -> null
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ هدف به $moneyUnit" },
+                support = targetRial?.let { faWordsToman(tomanOf(it)).orEmpty() },
             )
 
             SheetLabel("تا کِی؟")
@@ -1687,64 +1613,41 @@ private fun InstallmentSheet(
             if (bill) SuggestionStrip(billNameSuggestions(name), "نوشتن همین اسم") { name = it }
 
             SheetLabel(if (bill) "هر ماه چقدره، به $moneyUnit" else "هر قسط چقدره، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text(if (bill) "مبلغ هر ماه" else "مبلغ هر قسط") },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                isError = paymentRial == null && (tried || amount.isNotBlank()),
-                supportingText = when {
-                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
-                    amount.isNotBlank() && paymentRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
-                    paymentRial != null -> ({ Text(faWordsToman(tomanOf(paymentRial)).orEmpty()) })
+                label = if (bill) "مبلغ هر ماه" else "مبلغ هر قسط",
+                description = "${if (bill) "مبلغ هر ماه" else "مبلغ هر قسط"} به $moneyUnit",
+                error = when {
+                    amount.isBlank() && tried -> "مبلغش رو بنویس."
+                    amount.isNotBlank() && paymentRial == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                     else -> null
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "${if (bill) "مبلغ هر ماه" else "مبلغ هر قسط"} به $moneyUnit" },
+                support = paymentRial?.let { faWordsToman(tomanOf(it)).orEmpty() },
             )
 
             if (!bill) {
                 SheetLabel(if (firstDue != null) "چند قسط، با همین یکی؟" else "چند قسط مونده؟")
-                OutlinedTextField(
+                AmountField(
                     value = countText,
                     onValueChange = { countText = it.take(4) },
-                    singleLine = true,
-                    visualTransformation = GroupedNumber,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    supportingText = {
-                        // The range names the fix for a blank count as well as a wrong one.
-                        if (countBad) {
-                            FieldError("یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس.")
-                        } else {
-                            Text(
-                                if (firstDue != null) "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
-                                else "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.",
-                            )
-                        }
-                    },
-                    isError = countBad,
-                    shape = RoundedCornerShape(Radius.field),
-                    modifier = Modifier.fillMaxWidth(),
+                    keyboardType = KeyboardType.Number,
+                    // The range names the fix for a blank count as well as a wrong one.
+                    error = if (countBad) "یه عدد بین ۱ و ${faNumber(MAX_INSTALLMENTS.toDouble())} بنویس." else null,
+                    support = if (firstDue != null) "همین پرداخت می‌شه قسط اول؛ قسط‌های قبلش رو نشمار."
+                    else "اگه چندتاش رو قبلاً دادی، فقط باقی‌مونده‌ها رو بشمار.",
                 )
             }
 
             if (firstDue == null) {
                 SheetLabel("چندمِ هر ماه سررسیده؟")
-                OutlinedTextField(
+                AmountField(
                     value = dayText,
                     onValueChange = { dayText = it.take(2) },
-                    singleLine = true,
-                    visualTransformation = GroupedNumber,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardType = KeyboardType.Number,
                     // Its words are the line under it, «یه روز بین ۱ و ۳۱.», whenever the day is
                     // not one.
                     isError = dayOfMonth == null && (tried || dayText.isNotBlank()),
-                    shape = RoundedCornerShape(Radius.field),
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             // The two dates the answers imply, so a wrong count or day is caught before it is saved.
@@ -1868,24 +1771,17 @@ private fun ChequeSheet(
             }
 
             SheetLabel("چقدر، به $moneyUnit")
-            OutlinedTextField(
+            AmountField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("مبلغ چک") },
-                singleLine = true,
-                visualTransformation = GroupedNumber,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                isError = amountRial == null && (tried || amount.isNotBlank()),
-                supportingText = when {
-                    amount.isBlank() && tried -> ({ FieldError("مبلغش رو بنویس.") })
-                    amount.isNotBlank() && amountRial == null -> ({ FieldError("این عدد قابل خوندن نیست. فقط عدد وارد کن.") })
-                    amountRial != null -> ({ Text(faWordsToman(tomanOf(amountRial)).orEmpty()) })
+                label = "مبلغ چک",
+                description = "مبلغ چک به $moneyUnit",
+                error = when {
+                    amount.isBlank() && tried -> "مبلغش رو بنویس."
+                    amount.isNotBlank() && amountRial == null -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
                     else -> null
                 },
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "مبلغ چک به $moneyUnit" },
+                support = amountRial?.let { faWordsToman(tomanOf(it)).orEmpty() },
             )
 
             SheetLabel("سررسیدش کِیه؟")

@@ -487,11 +487,15 @@ const OTP = 'one-time codes an older inbox reader kept and a sweep removed; a pa
 // Not one of AGENTS.md's exceptions but a platform one: Compose's onClickLabel is what TalkBack
 // says after «double-tap to», and a web button has no such slot — it is announced by its text.
 const TALKBACK = "TalkBack's action label (onClickLabel); a web button is announced by its own text";
+// DESIGN.md: «The PWA has no pull, so the line is its only control» — and so nothing answers one.
+const PULL = "the toast after a pull to refresh; the PWA has no pull, its sync reports on the family screen";
 
 /** Copy the app shows that the PWA has no place for, by AGENTS.md's exceptions, with why. */
 const ANDROID_ONLY: Record<string, string> = {
   // AppVm.kt
   'پشتیبان ساخته شد. اگه فایل پشتیبان قبلی هنوز هست، پاکش کن.': OTP,
+  'مورد تازه‌ای از خانواده نبود.': PULL,
+  'مورد تازه از خانواده گرفتیم.': PULL,
   // AssetsUi.kt
   'از دکمه پایین پول نقد، دلار، طلا، سکه یا رمزارز اضافه کن تا جمعشون رو ببینی.': LITE,
   // BanksUi.kt: finding a bank's sender among the messages already in the inbox

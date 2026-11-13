@@ -1,5 +1,5 @@
 /**
- * CategoryGrid (Timeline.kt:1849) — the one picker for «which category», on a transaction, in the
+ * CategoryGrid (Timeline.kt) — the one picker for «which category», on a transaction, in the
  * deck and on a new budget. A fixed four columns, so the mark and its colour do the finding rather
  * than the words; equal cells and equal rows (a two-line label lifts its whole row), and the short
  * last row keeps the column width.

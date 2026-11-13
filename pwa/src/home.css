@@ -1,4 +1,4 @@
-/* خانه and دارایی (Ui.kt 906-1190, Home.kt) and their sheets. Tokens only; sizes are Compose's dp/sp. */
+/* خانه and دارایی (Ui.kt AppScreens, HomeUi.kt, Home.kt) and their sheets. Tokens only; sizes are Compose's dp/sp. */
 
 /* ---- the top bar: her, and the door to تنظیمات ---------------------------------------------- */
 .home-top-line { display: flex; align-items: center; justify-content: space-between; gap: var(--s); }
@@ -22,7 +22,7 @@
 @keyframes figure-in { from { transform: translateY(33%); opacity: 0; } }
 .home-hero .words { margin-top: var(--s); font-size: calc(15px * var(--text)); line-height: calc(25px * var(--text)); color: color-mix(in srgb, var(--hero-strong) 93%, transparent); }
 .home-hero .full { margin-top: var(--xs); font-size: calc(13px * var(--text)); color: var(--hero-muted); }
-/* The freshness line is the refresh control (Ui.kt FreshnessLine): the whole line, 48 tall at least. */
+/* The freshness line is the refresh control (HomeUi.kt FreshnessLine): the whole line, 48 tall at least. */
 .freshness { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 48px; padding: 0; background: none; border: 0; color: var(--hero-muted); text-align: start; }
 /* Dimmed in flight only, and its words say so: «در حال تازه کردن…». The words, not the hairline above them. */
 .freshness:disabled { cursor: default; }
@@ -34,7 +34,7 @@
 /* دارایی's header: the figure on a line of its own, the dollars under it, and the freshness line
    following with no hairline. */
 /* The freshness line closes the card with a 48px target around a 13px line, air of its own: the
-   full padding under it read bottom-heavy (Ui.kt HeroPanel `bottom`). */
+   full padding under it read bottom-heavy (HomeUi.kt HeroPanel `bottom`). */
 .home-hero .hero { padding-bottom: var(--m); }
 .home-hero.compact .hero { padding-block: var(--l) var(--s); }
 .home-hero.compact .pill-toggle { margin-bottom: var(--xs); }
@@ -225,12 +225,12 @@
 .toggle-row .grow > span + span { font-size: calc(12px * var(--text)); color: var(--on-surface-variant); }
 .toggle-row .switch { display: inline-block; }
 
-/* The accounts sheet: one band of rows, the asset rows' make (Ui.kt BankRow); each opens its page. */
+/* The accounts sheet: one band of rows, the asset rows' make (BanksUi.kt BankRow); each opens its page. */
 .bank-band { margin: var(--l) 0 var(--xxl); }
 .bank-caption { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 2px; font-size: calc(13px * var(--text)); line-height: calc(19px * var(--text)); color: var(--on-surface-variant); white-space: normal; }
 .bank-caption .quiet { font-weight: 600; color: var(--secondary); }
 .bank-caption .part { white-space: nowrap; }
-/* A bank's page (Ui.kt BankPage): the figure at a person's page size, its words, its caption. */
+/* A bank's page (BanksUi.kt BankPage): the figure at a person's page size, its words, its caption. */
 .bank-figure { margin-top: var(--xs); font-size: calc(46px * var(--text)); font-weight: 900; line-height: 1.2; color: var(--on-bg); white-space: nowrap; overflow: hidden; }
 .bank-figure .magnitude { font-size: .58em; font-weight: 800; }
 .bank-figure.struck { text-decoration: line-through; }

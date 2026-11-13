@@ -996,13 +996,6 @@ fun deriveBalance(
     return DerivedBalance(accountId, anchor.rial + since, newestAt, anchored = true)
 }
 
-suspend fun balanceOf(derived: DerivedDb, durable: DurableDb, accountId: String): DerivedBalance? =
-    deriveBalance(
-        accountId,
-        derived.txn().forAccount(accountId),
-        durable.anchors().newest(accountId),
-    )
-
 /** Every account the ledger knows about, with what it holds. */
 suspend fun allBalances(derived: DerivedDb, durable: DurableDb): List<DerivedBalance> {
     val fromTransactions = derived.txn().accountIds()

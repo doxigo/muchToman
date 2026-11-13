@@ -588,14 +588,21 @@ fun TimelineScreen(
                 when {
                     // The words go first: they are the narrowing she touched last, and clearing
                     // them may still leave the category filter standing to answer for itself.
-                    query.isNotBlank() -> SearchEmpty(query) { query = "" }
+                    // Names the words, like the asset picker's own empty answer: a bare «nothing
+                    // here» over a query she may have mistyped is an accusation aimed at the
+                    // ledger. bidi(): a mixed query like «cafe ۲» would otherwise reorder inside
+                    // the guillemets.
+                    query.isNotBlank() ->
+                        NothingMatched("برای «${bidi(query.trim())}» چیزی پیدا نشد", "پاک کردن جستجو") { query = "" }
                     // Whose, which account and which categories are one sheet, so one answer that
                     // clears the sheet — each line above still takes back its own part alone.
                     catFilter.isNotEmpty() || member != null || account != null ->
-                        FilterEmpty(filterEmptyFa(member?.label, account?.label)) {
+                        NothingMatched(filterEmptyFa(member?.label, account?.label), "پاک کردن فیلتر") {
                             catFilter = emptyList(); memberPick = ""; accountPick = ""
                         }
-                    else -> LensEmpty(lens) { lens = LedgerLens.ALL }
+                    // A side of the ledger she has nothing on. Not [EmptyLedger]: that one says
+                    // the ledger is empty and tells her how to fill it, and either would be false.
+                    else -> NothingMatched(lens.emptyFa, "همه رو نشون بده") { lens = LedgerLens.ALL }
                 }
                 return@Column
             }
@@ -788,31 +795,12 @@ private fun NarrowedLine(words: String, onClear: () -> Unit) {
 }
 
 /**
- * A search that matched nothing. Names the words, like the asset picker's own empty answer —
- * a bare «nothing here» over a query she may have mistyped is an accusation aimed at the ledger.
+ * A search, filter or side of the ledger that matched nothing. Not an empty ledger: it names the
+ * absence and hands back the one thing that undoes it — a narrowing with no way out is a dead end
+ * she has to guess her way off.
  */
 @Composable
-private fun SearchEmpty(query: String, onClear: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(Space.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            // bidi(): a mixed query like «cafe ۲» would otherwise reorder inside the guillemets.
-            "برای «${bidi(query.trim())}» چیزی پیدا نشد",
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(Space.m))
-        PillButton("پاک کردن جستجو", onClear)
-    }
-}
-
-/** A narrowing that matched nothing. Not an empty ledger — the way back is the filter itself. */
-@Composable
-private fun FilterEmpty(title: String, onClear: () -> Unit) {
+private fun NothingMatched(title: String, clearLabel: String, onClear: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -825,7 +813,7 @@ private fun FilterEmpty(title: String, onClear: () -> Unit) {
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(Modifier.height(Space.m))
-        PillButton("پاک کردن فیلتر", onClear)
+        PillButton(clearLabel, onClear)
     }
 }
 
@@ -1073,30 +1061,6 @@ private fun LensPicker(lens: LedgerLens, onSelect: (LedgerLens) -> Unit) {
         role = Role.Tab,
         fontSize = 14.sp,
     )
-}
-
-/**
- * A side of the ledger she has nothing on.
- *
- * Not [EmptyLedger]: that one says the ledger is empty and tells her how to fill it, and saying
- * either here would be false. This one names the absence and hands back the only thing that
- * undoes it — a filter with no way out is a dead end she has to guess her way off.
- */
-@Composable
-private fun LensEmpty(lens: LedgerLens, onClear: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(Space.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            lens.emptyFa,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(Space.m))
-        PillButton("همه رو نشون بده", onClear)
-    }
 }
 
 @Composable

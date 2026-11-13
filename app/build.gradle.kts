@@ -41,10 +41,11 @@ android {
         // stock runner; no custom runner exists and none is needed.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "LITE", "false")
-        // Whether تنظیمات offers to invent a household's year of transactions. False everywhere
-        // but the `dev` build type below — including in `debug`, which is the released app with a
-        // debugger on it and shares its data. A constant, so R8 drops [demoLedger] and everything
-        // that calls it out of the release APK entirely rather than shipping it switched off.
+        // Whether a launch extra may invent a household's year of transactions (MainActivity's
+        // readDemo). False everywhere but the `dev` build type below — including in `debug`, which
+        // is the released app with a debugger on it and shares its data. A constant, so R8 drops
+        // [demoLedger] and everything that calls it out of the release APK entirely rather than
+        // shipping it switched off.
         buildConfigField("boolean", "DEMO", "false")
     }
 
@@ -198,7 +199,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.biometric)
     implementation(libs.androidx.work.runtime.ktx)
@@ -214,7 +214,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
-    implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)

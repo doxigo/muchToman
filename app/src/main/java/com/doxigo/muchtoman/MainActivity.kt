@@ -37,6 +37,7 @@ class MainActivity : FragmentActivity() {
             // every static shortcut with NEW_TASK | CLEAR_TASK, so the running task is cleared and
             // this activity opened fresh — a new AppVm, and with it the lock, if she has one on.
             appVm.openAddTxn(intent?.getBooleanExtra(EXTRA_ADD_TXN, false) == true)
+            readDemo(intent)
         }
         // A phone that granted READ_SMS before RECEIVE_SMS existed: she already said yes to the
         // messages conversation, this completes it so [SmsReceiver] can hear them land. Both
@@ -90,5 +91,18 @@ class MainActivity : FragmentActivity() {
         appVm.openTab(intent.getStringExtra(EXTRA_OPEN_TAB))
         appVm.openDeck(intent.getBooleanExtra(EXTRA_OPEN_DECK, false))
         appVm.openAddTxn(intent.getBooleanExtra(EXTRA_ADD_TXN, false))
+        readDemo(intent)
+    }
+
+    // The dev build's only way into Demo.kt, for README screenshots and trying a screen on a full
+    // year: `adb shell am start -n com.doxigo.muchtoman.dev/com.doxigo.muchtoman.MainActivity
+    // --ez com.doxigo.muchtoman.DEMO true` (false takes it back out). Only a launch that names the
+    // extra acts — reading a missing one as false would wipe the demo on every ordinary launch.
+    private fun readDemo(intent: Intent?) {
+        if (BuildConfig.DEMO && intent?.hasExtra(EXTRA_DEMO) == true) {
+            appVm.setDemoData(intent.getBooleanExtra(EXTRA_DEMO, false))
+        }
     }
 }
+
+private const val EXTRA_DEMO = "com.doxigo.muchtoman.DEMO"

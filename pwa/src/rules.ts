@@ -242,12 +242,12 @@ function promotionOf(category: Category, use: ReadonlyMap<string, number>): numb
 
 // ---- rules -----------------------------------------------------------------------------------
 
-export const Priority = { PINNED: 1000, USER_EXACT_MERCHANT: 900, USER_OTHER: 800, SHIPPED: 500 } as const;
+export const Priority = { USER_EXACT_MERCHANT: 900, USER_OTHER: 800, SHIPPED: 500 } as const;
 
 /** A label for which kind of evidence matched, not a probability. */
 export const Confidence = {
   USER_PINNED: 100, RULE_EXACT: 95, RULE_NARROW: 85, RULE_LIKE: 75,
-  BUILTIN_EXACT: 70, BUILTIN_LIKE: 55, CHANNEL_ONLY: 40, NONE: 0,
+  BUILTIN_EXACT: 70, NONE: 0,
 } as const;
 
 /** Below this a transaction goes to the deck and is asked about exactly once. */
@@ -261,7 +261,8 @@ const rule = (id: string, priority: number, categoryId: string, p: Partial<Rule>
 
 /**
  * What the app ships knowing, and only what the message says outright: a channel whose name is its
- * category (NAMED_CHANNELS). A purchase as «خرید روزانه» and money in as «درآمد» were guesses that
+ * category — a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee — so there is nothing for the
+ * deck to confirm and a builtin is filed as exact (confidenceOf). A purchase as «خرید روزانه» and money in as «درآمد» were guesses that
  * read as if the bank had said them; both are retired, kept as deleted rows because seedBuiltins
  * replaces by id and a dropped one would stay live in every stored copy.
  */
@@ -306,17 +307,10 @@ export interface TxnClass {
   needsReview: boolean;
 }
 
-/**
- * Channels whose name is their category: a «قبض» is a bill, a خودپرداز is cash, a کارمزد is a fee.
- * There is nothing for the deck to confirm. A purchase is not one — «خرید روزانه» is a guess.
- */
-const NAMED_CHANNELS = new Set(['atm', 'fee', 'bill']);
-
+// Every live builtin is a named channel (BUILTIN_RULES) and the retired guesses are deleted, so
+// never match: a builtin is exact. A shipped guess would need its own arm back, under REVIEW_BELOW.
 function confidenceOf(r: Rule): number {
-  if (r.builtin && r.pMerchantNorm != null) return Confidence.BUILTIN_EXACT;
-  if (r.builtin && r.pMerchantLike != null) return Confidence.BUILTIN_LIKE;
-  if (r.builtin && r.pChannel != null && NAMED_CHANNELS.has(r.pChannel)) return Confidence.BUILTIN_EXACT;
-  if (r.builtin) return Confidence.CHANNEL_ONLY;
+  if (r.builtin) return Confidence.BUILTIN_EXACT;
   if (r.pMerchantNorm != null) return Confidence.RULE_EXACT;
   if (r.pMerchantLike != null) return Confidence.RULE_LIKE;
   if (specificity(r) >= 2) return Confidence.RULE_NARROW;
@@ -391,7 +385,7 @@ export const MAX_NOTE_CHARS = 200;
 
 export const DecisionKind = {
   CATEGORY: 'category', NOTE: 'note', HIDE: 'hide', WORTH_IT: 'worth_it', ACCOUNT: 'account',
-  EXCLUDE: 'exclude', INSTALLMENT: 'installment',
+  INSTALLMENT: 'installment',
   /** Whose money this was, and how much, signed — see loans.ts. Private, like the one above. */
   LOAN: 'loan',
   /** Her figure for one of her own rows, Rial magnitude — see edits.ts. */

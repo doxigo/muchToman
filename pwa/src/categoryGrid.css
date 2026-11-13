@@ -1,4 +1,4 @@
-/* CategoryGrid (Timeline.kt:1849): four equal columns, rows as tall as their tallest label. */
+/* CategoryGrid (Timeline.kt): four equal columns, rows as tall as their tallest label. */
 .cat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s); }
 .cat-tile {
   --mark: var(--hue);

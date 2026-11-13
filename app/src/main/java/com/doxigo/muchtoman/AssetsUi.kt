@@ -199,10 +199,6 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
                     }
                 }
                 glyph != null -> AssetGlyphIcon(glyph, ink, size = size * 0.55f)
-                // Still reachable: an asset synced from a build that knows a kind this one
-                // does not draw yet gets the three dots — «not one this build knows» — in the
-                // pen, rather than an emoji or bare letters.
-                type.emoji != null -> GlyphIcon(CategoryGlyph.DOTS, ink, size = size * 0.55f)
                 else -> letters()
             }
         }
@@ -1144,34 +1140,25 @@ internal fun EditSheet(
                     else "چقدر ${bidi(unitFa)} داری؟"
                 SheetLabel(prompt)
                 val amountInvalid = manualAmount == null && (text.isNotBlank() || manualSubmitted)
-                OutlinedTextField(
-                value = text,
-                onValueChange = { text = it; manualSubmitted = false },
-                singleLine = true,
-                isError = amountInvalid,
-                visualTransformation = GroupedNumber,
-                textStyle = TextStyle(
-                    fontFamily = ModamFigures,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                // A red outline is colour alone; the words say what to fix, and why ذخیره
-                // did not save. Announced, since a save tap is what usually raises them.
-                supportingText = if (amountInvalid) ({
-                    Text(
-                        if (text.isBlank()) "مقدار دارایی رو وارد کن."
-                        else "این عدد قابل خوندن نیست. فقط عدد وارد کن.",
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }) else null,
-                shape = RoundedCornerShape(Radius.field),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(amountFocus)
+                AmountField(
+                    value = text,
+                    onValueChange = { text = it; manualSubmitted = false },
                     // The visible prompt above is not programmatically attached; this is.
-                    .semantics { contentDescription = prompt },
+                    description = prompt,
+                    // A red outline is colour alone; the words say what to fix, and why ذخیره
+                    // did not save. Announced, since a save tap is what usually raises them.
+                    error = when {
+                        !amountInvalid -> null
+                        text.isBlank() -> "مقدار دارایی رو وارد کن."
+                        else -> "این عدد قابل خوندن نیست. فقط عدد وارد کن."
+                    },
+                    textStyle = TextStyle(
+                        fontFamily = ModamFigures,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier.focusRequester(amountFocus),
                 )
 
             // The figure she just typed, in words — the guard against an extra zero.
@@ -1207,35 +1194,17 @@ internal fun EditSheet(
                     // one is money invented — the one direction this app must never err in.
                     val typedDelta = parseAmount(deltaText)?.takeIf { it > 0 }
                     val delta = typedDelta?.takeIf { parseAmount(trimNumber(it, type.dec)) == it }
-                    OutlinedTextField(
+                    AmountField(
                         value = deltaText,
                         onValueChange = { deltaText = it; deltaRefusal = null },
-                        singleLine = true,
-                        visualTransformation = GroupedNumber,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        supportingText = when {
-                            typedDelta != null && delta == null -> ({
-                                Text(
-                                    if (type.dec == 0) "فقط عدد کامل وارد کن."
-                                    else "حداکثر ${faNumber(type.dec.toDouble())} رقم اعشار وارد کن.",
-                                )
-                            })
-                            deltaRefusal != null -> ({
-                                Text(
-                                    deltaRefusal.orEmpty(),
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                )
-                            })
-                            else -> null
+                        description = "مقدار تغییر $unitFa",
+                        error = when {
+                            typedDelta != null && delta == null ->
+                                if (type.dec == 0) "فقط عدد کامل وارد کن."
+                                else "حداکثر ${faNumber(type.dec.toDouble())} رقم اعشار وارد کن."
+                            else -> deltaRefusal
                         },
-                        shape = RoundedCornerShape(Radius.field),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(deltaFocus)
-                            .semantics {
-                                contentDescription = "مقدار تغییر $unitFa"
-                            },
+                        modifier = Modifier.focusRequester(deltaFocus),
                     )
                     val base = amount ?: current
                     fun apply(next: Double) {
@@ -1469,26 +1438,12 @@ internal fun EditSheet(
                     LaunchedEffect(Unit) { rateFocus.requestFocus() }
                     Text("هر ${bidi(type.unitFa)} چند $moneyUnit؟", fontSize = 14.sp, color = muted)
                     Spacer(Modifier.height(Space.xs))
-                    OutlinedTextField(
+                    AmountField(
                         value = rateText,
                         onValueChange = { rateText = it; rateRefusal = null },
-                        singleLine = true,
-                        visualTransformation = GroupedNumber,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        supportingText = rateRefusal?.let { refusal ->
-                            {
-                                Text(
-                                    refusal,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                )
-                            }
-                        },
-                        shape = RoundedCornerShape(Radius.field),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(rateFocus)
-                            .semantics { contentDescription = "هر ${type.unitFa} چند $moneyUnit؟" },
+                        description = "هر ${type.unitFa} چند $moneyUnit؟",
+                        error = rateRefusal,
+                        modifier = Modifier.focusRequester(rateFocus),
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(Space.s),

@@ -74,13 +74,6 @@ export function jalaliMonthsAheadEnd(day: number, months: number): number {
   return jalaliDay(div(total, 12), (total % 12) + 1, 1) - 1;
 }
 
-/** The first day of the month `months` before the one `day` is in. */
-export function jalaliMonthsBack(day: number, months: number): number {
-  const here = jalaliOf(day);
-  const total = here.year * 12 + (here.month - 1) - months;
-  return jalaliDay(div(total, 12), (total % 12) + 1, 1);
-}
-
 /** The same day of the month, `months` later, clamped to that month's length. */
 export function jalaliMonthsAfter(day: number, months: number): number {
   const here = jalaliOf(day);

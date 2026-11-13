@@ -1,6 +1,6 @@
 /**
  * Where she is: the tab, the pages stacked over it, the one sheet open, the one notice showing —
- * AppScreens (Ui.kt:398) as data. Screens register themselves by id, so a screen file owns its
+ * AppScreens (Ui.kt) as data. Screens register themselves by id, so a screen file owns its
  * route and nothing central has to import every screen to know it exists.
  *
  * The browser's back gesture is the phone's back button: every page or sheet opened pushes one
@@ -120,12 +120,6 @@ export function openPage(id: string, props: Record<string, unknown> = {}): void 
   state.sheet = null;
   state.pages = [...state.pages, { id, props }];
   if (!fromSheet) push();
-  changed();
-}
-/** Swap the top page for another without growing the stack (a sheet leading to a page). */
-export function replacePage(id: string, props: Record<string, unknown> = {}): void {
-  if (!state.pages.length) return openPage(id, props);
-  state.pages = [...state.pages.slice(0, -1), { id, props }];
   changed();
 }
 /** The top page, and a sheet open over it if there is one. */

@@ -272,7 +272,7 @@ function EditHint({ label = 'ویرایش' }: { label?: string }) {
 /**
  * «۳۲ از ۵۰ میلیون» on one line, stepping down from 20px to 14px rather than wrapping: broken over
  * two lines it reads as two amounts instead of one out of the other. The step is an estimate from
- * its length against the row's width, the same one TomanFigure makes.
+ * its length against the row's width, the same kind the transaction page's figure makes (`--fit`).
  */
 function FitFigure({ text }: { text: string }) {
   const chars = [...text.replace(/[⁦-⁩]/g, '')].length;

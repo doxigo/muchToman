@@ -15,7 +15,7 @@ class AssetGlyphTest {
         // Toman excepted: it has the real currency mark, which outranks anything drawn here.
         for (type in STATIC_CATALOG + BANK_TYPE) {
             if (type.id == TOMAN_ID) continue
-            assertNotNull("«${type.fa}» (${type.id}) fell back to emoji", assetGlyph(type))
+            assertNotNull("«${type.fa}» (${type.id}) fell back to letters", assetGlyph(type))
         }
     }
 

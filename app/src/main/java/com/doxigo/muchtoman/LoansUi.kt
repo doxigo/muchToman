@@ -23,7 +23,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -52,16 +51,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
@@ -174,7 +170,7 @@ internal fun HeroLoans(totals: LoanTotals, onOpen: () -> Unit) {
 @Composable
 internal fun LoansDoor(totals: LoanTotals, people: Int, onOpen: () -> Unit, onAdd: () -> Unit) {
     if (people == 0) {
-        BandAddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
+        AddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
         return
     }
     Row(
@@ -209,26 +205,6 @@ internal fun LoansDoor(totals: LoanTotals, people: Int, onOpen: () -> Unit, onAd
     }
 }
 
-/** [AddRow]'s look, for the bands on these pages. */
-@Composable
-private fun BandAddRow(label: String, shape: Shape, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 56.dp)
-            .padding(horizontal = Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text("+", style = figureStyle(MaterialTheme.colorScheme.primary, FontWeight.ExtraBold), fontSize = 20.sp)
-        Spacer(Modifier.width(Space.s))
-        Text(label, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-    }
-}
-
 // ─────────────────────────── the people ───────────────────────────
 
 /** A pushed page's head: its name, and «برگشت» in a pill. A bank's page wears it too. */
@@ -242,19 +218,6 @@ internal fun PageHead(title: String, onBack: () -> Unit) {
         ScreenTitle(title, modifier = Modifier.weight(1f))
         PillButton("برگشت", onBack)
     }
-}
-
-@Composable
-private fun LoanHeading(text: String) {
-    Text(
-        text,
-        fontSize = 15.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier
-            .padding(top = Space.xxl, bottom = Space.m, start = Space.xs)
-            .semantics { heading() },
-    )
 }
 
 /** Her initial for him, in a door's disc — a person is somewhere to go, not a category. */
@@ -347,13 +310,13 @@ internal fun LoansScreen(
             ).forEach { (side, heading) ->
                 val rows = views.filter { it.side == side }
                 if (rows.isEmpty()) return@forEach
-                LoanHeading(heading)
+                SectionLabel(heading)
                 rows.forEachIndexed { i, view ->
                     PersonRow(view, today, type, bandShape(i, rows.size), divided = i < rows.size - 1) { onOpen(view.person.id) }
                 }
             }
             Spacer(Modifier.height(Space.m))
-            BandAddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
+            AddRow("یه نفر تازه", RoundedCornerShape(Radius.group), onAdd)
         }
     }
 }
@@ -512,7 +475,7 @@ internal fun LoanPersonScreen(
                 }
             }
 
-            if (view.events.isNotEmpty() || view.olderRial != 0L) LoanHeading("ریز حساب")
+            if (view.events.isNotEmpty() || view.olderRial != 0L) SectionLabel("ریز حساب")
             view.events.groupBy { it.day }.forEach { (day, events) ->
                 Text(
                     faDay(day, today),
@@ -732,7 +695,7 @@ private fun MoveLineSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(Space.l))
-            AmountField(move.typeId, amountText, { amountText = it }, type, error ?: missingAmountFa(move.typeId).takeIf { tried && amountText.isBlank() })
+            UnitAmountField(move.typeId, amountText, { amountText = it }, type, error ?: missingAmountFa(move.typeId).takeIf { tried && amountText.isBlank() })
             if (changed && !short) {
                 listOfNotNull(after(edited!!)?.let { loanStandsFa(view, it, type) }, loanEditHoldingFa(move, edited, type)).forEach {
                     Text(
@@ -819,7 +782,7 @@ private fun missingAmountFa(unit: String): String = if (unit.isBlank()) "مبل�
 
 /** The amount field for a unit: Toman for cash, the asset's own unit otherwise. */
 @Composable
-private fun AmountField(unit: String, text: String, onText: (String) -> Unit, type: (String) -> AssetType, error: String?) {
+private fun UnitAmountField(unit: String, text: String, onText: (String) -> Unit, type: (String) -> AssetType, error: String?) {
     val cash = unit.isBlank()
     val rial = if (cash) tomanFieldToRial(text) else null
     // A figure that does not read says so itself: the commit no longer dims over it.
@@ -828,21 +791,12 @@ private fun AmountField(unit: String, text: String, onText: (String) -> Unit, ty
     } else {
         null
     }
-    OutlinedTextField(
+    AmountField(
         value = text,
         onValueChange = onText,
-        label = { Text(if (cash) "چقدر، به $moneyUnit" else "چقدر، به ${type(unit).unitFa}") },
-        singleLine = true,
-        visualTransformation = GroupedNumber,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        isError = shown != null,
-        supportingText = when {
-            shown != null -> ({ FieldError(shown) })
-            rial != null -> ({ Text(faWordsToman(tomanOf(rial)).orEmpty()) })
-            else -> null
-        },
-        shape = RoundedCornerShape(Radius.field),
-        modifier = Modifier.fillMaxWidth(),
+        label = if (cash) "چقدر، به $moneyUnit" else "چقدر، به ${type(unit).unitFa}",
+        error = shown,
+        support = rial?.let { faWordsToman(tomanOf(it)).orEmpty() },
     )
 }
 
@@ -922,7 +876,7 @@ internal fun LoanPersonSheet(
                 Spacer(Modifier.height(Space.m))
                 UnitChips(units, unit, type) { unit = it; amountText = "" }
                 Spacer(Modifier.height(Space.m))
-                AmountField(unit, amountText, { amountText = it }, type, missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
+                UnitAmountField(unit, amountText, { amountText = it }, type, missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
             }
 
             SheetLabel("قرار پس دادن")
@@ -1096,7 +1050,7 @@ internal fun LoanMoveSheet(
                 }
             }
             Spacer(Modifier.height(Space.m))
-            AmountField(unit, amountText, { amountText = it }, type, error ?: missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
+            UnitAmountField(unit, amountText, { amountText = it }, type, error ?: missingAmountFa(unit).takeIf { tried && amountText.isBlank() })
             preview?.let {
                 Text(
                     it,

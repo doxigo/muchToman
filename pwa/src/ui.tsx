@@ -1,13 +1,14 @@
 /**
- * The shared kit — Ui.kt's ScreenTitle, SheetTitle, SheetLabel, Panel, HeroPanel, PillButton,
- * ArmedButton, ChipChoice, SegmentedChoice, SheetDelete, ActionCircle, the band, the switch row and the text
- * fields — so every screen speaks in the same shapes the app does. Styles live in app.css under
- * the same names; a screen that needs a one-off reaches for the tokens there, not a new colour.
+ * The shared kit — Ui.kt's ScreenTitle, SheetTitle, SheetLabel, Panel, PillButton, ArmedButton,
+ * ChipChoice, SegmentedChoice, AmountField, HomeUi.kt's HeroPanel and ActionCircle, BudgetUi.kt's
+ * SheetDelete, the band, the switch row and the text fields — so every screen speaks in the same
+ * shapes the app does. Styles live in app.css under the same names; a screen that needs a one-off
+ * reaches for the tokens there, not a new colour.
  */
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { closePage, closeSheet } from './nav';
-import { faWordsToman, groupDigits, moneyUnit, parseAmount, tomanOfShown } from './format';
+import { faWordsToman, groupDigits, parseAmount, tomanOfShown } from './format';
 import { PlusMark } from './icons';
 
 export function ScreenTitle({ children }: { children: ComponentChildren }) {
@@ -294,7 +295,7 @@ export function TextField({ label, value, onInput, placeholder, maxLength, ltr, 
 }
 
 /**
- * A number she types with the thousands grouped as she types (GroupedNumber, Ui.kt:177): the raw
+ * A number she types with the thousands grouped as she types (Ui.kt AmountField, GroupedNumber): the raw
  * state stays ASCII digits so it always round-trips through `parseAmount`; the field shows Persian
  * digits and ٬, and the caret keeps its place among the digits across the separators.
  */
@@ -348,21 +349,7 @@ export function AmountField({ label, raw, onRaw, decimals = 0, error, words = tr
   );
 }
 
-/** Esc and the scrim close a page opened as a modal-looking room, same as the sheet. */
-export function useBackKey(action: () => void = closePage): void {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') action(); };
-    addEventListener('keydown', key);
-    return () => removeEventListener('keydown', key);
-  }, [action]);
-}
-
-/** Section heading over a band: `SectionHead` (Ui.kt:2661) without the subtotal, which callers add. */
+/** Section heading over a band: `SectionHead` (AssetsUi.kt) without the subtotal, which callers add. */
 export function Section({ title, trailing }: { title: ComponentChildren; trailing?: ComponentChildren }) {
   return <div class="section"><h2>{title}</h2>{trailing}</div>;
-}
-
-/** The hero figure: `heroFigure` — digits, then «تومان» at 0.42em and 75%. `fit` is its length in ems. */
-export function TomanFigure({ text, class: cls = '', unit = moneyUnit() }: { text: string; class?: string; unit?: string | null }) {
-  return <span class={`figure ${cls}`} style={{ '--fit': Math.max(6, [...text].length * .62 + (unit ? 2.4 : 0)) }}>{text}{unit && <span class="unit">{unit}</span>}</span>;
 }

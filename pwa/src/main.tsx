@@ -27,7 +27,7 @@ async function takePairing(): Promise<void> {
   if (!/[#&]pair=/.test(hash)) return;
   history.replaceState(null, '', '/');
   await acceptPairing(hash);
-  // The phone opens خانواده on a deep link (Ui.kt:511), where the join card is waiting.
+  // The phone opens خانواده on a deep link (AppRoot's pendingPairing effect, Ui.kt), where the join card is waiting.
   openPage('family');
 }
 
