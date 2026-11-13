@@ -120,9 +120,11 @@ private val ClockMask = digitsMask(':', 2)
  * zero extra taps. The grid is the picker every other filing surface uses, in her own most-used
  * order, so the suggestion she wants is under her thumb here for the same reason it is there.
  *
- * [accounts] are the banks she keeps by hand: with any, she says which one the money left or
- * reached, or «نقد» — a row on one moves its figure (see [typedOnto]), and guessing one would move
- * the wrong bank. A bank whose messages are read is not offered; its own message reports the money.
+ * [accounts] are every bank account, and «نقد» beside them: the row says which one the money left or
+ * reached, so دفتر narrowed to that bank shows it. Only a bank kept by hand has its figure moved by
+ * the row (see [typedOnto]); a bank whose messages are read keeps the figure its own message reports,
+ * so the row is never counted twice. The answer is required only while a bank kept by hand is on
+ * offer, because only there does a guess move the wrong figure.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -239,7 +241,7 @@ fun ManualTxnSheet(
                     missingAccount && account == null -> MissingText("حسابش رو انتخاب کن.")
                     // Her figure is the truth at the moment she typed it, so a row from before
                     // it is already inside it — said, because the figure not moving looks broken.
-                    picked != null && sinceMidnight != null &&
+                    picked != null && picked.manual && sinceMidnight != null &&
                         stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt -> Text(
                         "مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.",
                         fontSize = 12.sp,
@@ -339,7 +341,7 @@ fun ManualTxnSheet(
                     focus.clearFocus()
                     missingCategory = categoryId == null
                     missingAmount = amount.isBlank()
-                    missingAccount = accounts.isNotEmpty() && account == null
+                    missingAccount = accounts.any { it.manual } && account == null
                     val cleanRial = rial ?: return@PillButton
                     val minute = sinceMidnight ?: return@PillButton
                     val category = categoryId ?: return@PillButton

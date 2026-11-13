@@ -334,6 +334,16 @@ describe('the accounts sheet', () => {
     expect(bankAccountsOf([stated(10, 5_000_000)], [anchor(50, 90_000_000)], [])).toMatchObject([{ manual: false }]);
   });
 
+  it('moves a bank kept by hand by a typed row, and leaves one whose messages are read alone', () => {
+    // A typed row on a bank read from messages only says which account it was: the bank's own
+    // message reports the money, so its figure stays the message's (ManualTxnTest's SAMAN).
+    const read = [stated(10, 5_000_000), txn({ at: 20, signed: -1_000_000, ref: 'm:u1' })];
+    expect(bankAccountsOf(read, [], [])).toMatchObject([{ bank: 'SAMAN', balanceRial: 5_000_000, manual: false }]);
+    // One kept by hand moves by the row typed after its figure.
+    const kept = [txn({ at: 20, signed: -1_000_000, ref: 'm:u2', account: 'SINA' })];
+    expect(bankAccountsOf(kept, [anchor(5, 7_000_000, 'SINA')], [])).toMatchObject([{ bank: 'SINA', balanceRial: 6_000_000, manual: true }]);
+  });
+
   it('never counts the echo of a message pasted twice, and never names OTHER', () => {
     const once = txn({ at: 1, signed: -1_000_000, ref: 's:a:0' });
     const echo = { ...once, ref: 's:b:0', at: 2 };

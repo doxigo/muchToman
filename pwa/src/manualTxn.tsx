@@ -130,7 +130,8 @@ export function DayStepper({ day, today, onDay }: { day: number; today: number; 
  * minute the bank would normally stamp — already filled with now, so the common case is no taps.
  * With a bank she keeps by hand, she also says which one the money left or reached, or «نقد»: a row
  * on one moves its figure, and guessing one would move the wrong bank. A bank whose messages are
- * read is not offered; its own message reports the money.
+ * read is offered too, so the row says which account it was, but its figure stays the one its own
+ * message reports; the answer is required only while a bank kept by hand is on offer.
  */
 function ManualTxnSheet() {
   const view = useLedger();
@@ -149,7 +150,9 @@ function ManualTxnSheet() {
   const [missingCategory, setMissingCategory] = useState(false);
   const [missingAmount, setMissingAmount] = useState(false);
   const [missingAccount, setMissingAccount] = useState(false);
-  const accounts = view.bankAccounts.filter((a) => a.manual);
+  const accounts = view.bankAccounts;
+  // Only a bank kept by hand has its figure moved by the row, so only then does a guess do harm.
+  const mustPick = accounts.some((a) => a.manual);
   const picked = accounts.find((a) => a.key === account);
 
   const rial = tomanFieldToRial(amount);
@@ -167,8 +170,8 @@ function ManualTxnSheet() {
     (document.activeElement as HTMLElement | null)?.blur();
     setMissingCategory(categoryId == null);
     setMissingAmount(!amount.trim());
-    setMissingAccount(accounts.length > 0 && account == null);
-    if (rial == null || sinceMidnight == null || categoryId == null || (accounts.length > 0 && account == null)) return;
+    setMissingAccount(mustPick && account == null);
+    if (rial == null || sinceMidnight == null || categoryId == null || (mustPick && account == null)) return;
     addManualTxn(outgoing ? -rial : rial, categoryId, merchant, note, stampedAt(day, sinceMidnight, openedAt), account || null);
     closeSheet();
   };
@@ -207,7 +210,7 @@ function ManualTxnSheet() {
         <p role="status" class={missingAccount && account == null ? 'grid-error' : undefined}>{missingAccount && account == null && 'حسابش رو انتخاب کن.'}</p>
         {/* Her figure is the truth at the moment she typed it, so a row from before it is already
             inside it — said, because the figure not moving looks broken. */}
-        {!(missingAccount && account == null) && picked && sinceMidnight != null && stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt
+        {!(missingAccount && account == null) && picked?.manual && sinceMidnight != null && stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt
           && <p class="field-support">مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.</p>}
       </>}
 
