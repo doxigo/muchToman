@@ -12,7 +12,8 @@ ledger, budgets, savings goals, installments, and two reports (دخل و خرج,
 
 ## Who it is for
 
-Built for a Persian-speaking parent. **Legibility beats density everywhere.** Figures are
+Persian speakers keeping track of their own money or a household's, on Android or, through the
+PWA, on an iPhone. **Legibility beats density everywhere.** Figures are
 truncated, never rounded up; every number can be traced back to a transaction; large amounts
 are spelled out in words as a guard against misreading by a factor of ten.
 

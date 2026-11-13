@@ -13,8 +13,7 @@ Get it from [Cafe Bazaar](https://cafebazaar.ir/app/com.doxigo.muchtoman) or as 
 add it to the Home Screen. [Install](#install) has the details.
 
 Persian UI, RTL, Persian digits, big type, and large amounts spoken the way people actually
-say them ("4.7 billion Toman", not "4,666,251,136"). Built for a Persian-speaking parent, so
-legibility beats density everywhere.
+say them ("4.7 billion Toman", not "4,666,251,136"). Legibility beats density everywhere.
 
 Holds plain Toman, fiat (USD, EUR, GBP, NOK, TRY, AED, CAD), **any of the top 250
 cryptocurrencies**, 18k gold by the gram or the mesghal, silver by the gram at 999 and 925,
@@ -135,8 +134,6 @@ Sample data, live rates.
   marked, duplicates left out), with exact Rial and Toman columns. Unlike the backup, this file is
   not encrypted, and the page says so.
 - **Ledger health.** Settings show retained history, record counts and the last ingestion.
-- **Browser companion.** Correct your own transactions, see unsent changes and switch saved
-  households without mixing their records. After the first complete load, the shell works offline.
 - **Search the ledger.** By merchant, note, category, or amount — in Persian, Arabic, or Latin
   digits, it does not matter.
 - **Offline-tolerant.** The last good rates are cached on the phone.
@@ -218,8 +215,8 @@ without opening it, add `https://github.com/doxigo/muchToman` to
 Home Screen (Share → Add to Home Screen). It is the same app, installed from the browser — every
 screen and figure above —
 except that iOS lets no app read your SMS, so the bank messages come in through an iOS Shortcut.
-Added to the Home Screen, its data is kept; in a plain browser tab iOS may clear it after weeks
-unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
+Added to the Home Screen, its data is kept and, after the first full load, it opens offline; in a
+plain browser tab iOS may clear it after weeks unused. Budget and instalment notes appear while it is open. Back it up from Settings, as on
 Android.
 
 To have them arrive on their own, build one Shortcut and one automation (the paste sheet links to
@@ -262,11 +259,13 @@ opaque household/member ids, record types, timestamps, and ciphertext, but not t
 contents or member names. Turning SMS sharing off sends deletion markers for that person's
 previously shared SMS items. It cannot erase anything another member already saw or copied.
 
-Notifications are computed and posted entirely on the phone. There are two: a budget of yours has
-crossed a line you asked to be told about, and a transaction has landed that nothing has filed yet.
-Neither leaves the device or reaches the family sync — not the category, not the cap, not the
-merchant, not the fact that either happened. They sit on separate channels, so you can silence the
-filing reminders and keep the budget alerts, or the other way round, in Android's own settings.
+Notifications are computed and posted entirely on the phone. There are five kinds: a budget of yours
+has crossed a line you asked to be told about; a transaction has landed that nothing has filed yet;
+an installment or a cheque falls due; five days have passed without a spend of your own; and, only if
+you switch it on, another family member has shared a transaction. None of them leaves the device or
+reaches the family sync — not the category, not the cap, not the merchant, not the fact that one was
+posted. Each sits on its own channel, so you can silence any of them and keep the rest in Android's
+own settings.
 
 The first time the app opens, one screen says what each permission is for and asks for them
 together: reading bank SMS and, on Android 13 and later, notifications. Refuse or skip it and it

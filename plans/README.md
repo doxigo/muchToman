@@ -54,21 +54,34 @@ From the 2026-09-10 audit (vetted against the code; do not re-report):
 - "PWA pairing is broken — `/v1/pair` requires a device token": wrong; the all-zero placeholder
   secret passes `splitToken`'s syntactic gate deliberately, and the Durable Object's `pair`
   authorises by one-time code (`sync/src/index.ts:394`), covered by `sync/test/sync.test.ts`.
-- "Scope key persists in browser history": already mitigated — `pwa/src/main.ts:513-516` strips
-  the fragment via `history.replaceState`; the residual (screenshot of the QR itself) is a
+- "Scope key persists in browser history": already mitigated — `takePairing` in `pwa/src/main.tsx`
+  strips the fragment via `history.replaceState`; the residual (screenshot of the QR itself) is a
   documented ceiling in `pwa/src/crypto.ts`.
-- `!!` clusters at money/persistence boundaries (`Derived.kt:763`, `Links.kt:280`,
-  `Ledger.kt:783`, `MainActivity.kt:412`, `Daily.kt:59`): every cited site is locally guarded
+- `!!` clusters at money/persistence boundaries (in `Derived.kt`, `Links.kt`,
+  `Ledger.kt`, `AppVm.kt` — formerly `MainActivity.kt` — and `Daily.kt`): every cited site is locally guarded
   (groupBy non-empty, emptiness `continue`, `clockRunsAhead` null-checks, wallet-filtered lists);
   13 occurrences in 29k lines is discipline, not debt.
-- `allBalances` N+1 (`Derived.kt:759`): real shape, but N is a household's handful of accounts on
+- `allBalances` N+1 (`Derived.kt`): real shape, but N is a household's handful of accounts on
   local SQLite — measured impact too small to justify fix risk.
-- PWA `decisionsFor` per-target reads (`pwa/src/db.ts:224`): all `getAll`s share one IndexedDB
+- PWA `decisionsFor` per-target reads (`pwa/src/db.ts`): all `getAll`s share one IndexedDB
   transaction on an indexed key; not worth restructuring.
-- `buildCashFlow` multi-pass over entries (`Reports.kt:825`): sits behind `remember(...)` keyed on
-  its inputs (`Ui.kt:803`), recomputes only on state change; in-memory passes over a year's
+- `buildCashFlow` multi-pass over entries (`Reports.kt`): sits behind `remember(...)` keyed on
+  its inputs (the report screen's caller in `Ui.kt`), recomputes only on state change; in-memory passes over a year's
   entries are single-digit ms — not worth the risk on money-display code. Revisit only with a
   measured jank trace.
 - Dependency lag: none found — catalogs current, Dependabot queue is routine bumps gated by CI.
 - TS formatter/linter adoption: optional churn; the three packages are hand-formatted
   consistently. AGENTS.md (plan 007) records the convention instead.
+
+From the 2026-11-13 UI/UX and cleanup audit (fixed directly rather than planned; do not re-report):
+
+- Off-scale 2dp/6dp/10dp spacing nudges (both platforms): optical adjustments, not drift.
+- `barTint`'s hard-coded colours in `Report.kt`: DESIGN.md names it the report's own palette.
+- PWA twins for Android's TalkBack `onClickLabel`s: VoiceOver has no dependable counterpart and
+  the PWA's buttons already carry accessible names.
+- Splitting the body of the `AppVm` class: its domain blocks reach into private state, so it is
+  not a whole-declaration move; only `UiState` is cleanly movable.
+- Web Push for the PWA's closed-app notifications: needs a push service and a subscription
+  endpoint per device, which is an identifier — against PRODUCT.md's non-negotiables.
+- `apple-mobile-web-app-status-bar-style` `black-translucent` possibly drawing white status-bar
+  text on the light theme: unverified without an iPhone; left as is until checked on a device.

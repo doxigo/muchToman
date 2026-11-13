@@ -20,6 +20,9 @@
 - **Category**: dx
 - **Planned at**: commit `26270fd`, 2026-09-10
 
+> Historical: written in the npm era. The Node packages moved to pnpm in `8a10300`; read every
+> `npm ci` / `npm run` below as its pnpm equivalent and never copy these commands as they stand.
+
 ## Why this matters
 
 `check.yml` runs on every push and PR. Today every Node job cold-installs (`npm ci` with no

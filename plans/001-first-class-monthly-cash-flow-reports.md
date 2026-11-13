@@ -12,6 +12,7 @@
 
 ## Status
 
+- **Status**: DONE (see plans/README.md)
 - **Priority**: P1
 - **Effort**: L, about 3 focused engineering days including device QA
 - **Risk**: MED, because report routing and financial claims both change

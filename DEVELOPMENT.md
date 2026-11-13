@@ -4,7 +4,7 @@
 app/      Android app (Kotlin + Compose)
 worker/   Cloudflare Worker that serves prices and public-wallet balances
 sync/     Cloudflare Worker + Durable Object for encrypted family sync
-pwa/      browser companion served by sync/
+pwa/      the same app for iPhone users, served by sync/
 ```
 
 The Worker normalises fiat, metal, coin, and crypto prices so the app only ever multiplies
@@ -362,7 +362,7 @@ default to Regular at normal width, keeping both axis ranges:
 python3 tools/make-font.py "/path/to/Modam Pro/04 - Modam Variable/ModamVF.ttf"
 ```
 
-The companion PWA is set in the same face, from the same file, in the container browsers want.
+The PWA is set in the same face, from the same file, in the container browsers want.
 It is generated out of the app's copy rather than from the foundry's, so the two can never drift
 apart:
 
@@ -441,7 +441,7 @@ Money in the ledger is **`Long` Rial**, never Toman and never a `Double`. Rial i
 messages actually print; Toman is a display transform, and rounding one leg of a transfer down
 while the other rounds up is how exact-amount matching stops working silently.
 
-### Budgets and filing — the two things the app says while it is closed
+### Budgets and filing — two of the things the app says while it is closed
 
 A budget is a `goal` row with `kind = 'cap'`, a `category_id`, and a `period` of `week`, `jmonth` or
 `jquarter`. There is no budget table and no migration: `Goals.kt` declared both shapes from the
@@ -705,7 +705,7 @@ one figure no rescan can rebuild.
 ### Tests
 
 ```bash
-./gradlew test                    # 327 JVM tests, no device
+./gradlew test                    # every JVM test, no device
 cd sync && pnpm run check         # real Durable Objects under workerd
 cd pwa  && pnpm run check         # incl. the shared-corpus agreement check
 ```
@@ -791,7 +791,7 @@ It is a port, file for file, so the Kotlin is the spec and the two read side by 
 | `Sync.kt` · AppVm's family actions | `sync.ts` · `family.ts` (+ `crypto.ts`, `db.ts`) |
 | `Export.kt` | `backup.ts` |
 | `Theme.kt`, `Ui.kt` kit, `TabBar.kt`, `CategoryIcon.kt`, `AssetGlyph.kt`, logos | `app.css`, `ui.tsx`, `icons.tsx`, `categoryIcon.tsx`, `assetGlyph.tsx`, `logos.tsx` |
-| `Ui.kt` home/assets · `Timeline.kt` · `ManualTxnUi.kt` · `CategoriesUi.kt` · `BudgetUi.kt` · `Report.kt` · `Settings.kt` · `Family.kt` · `Lock.kt` · `Onboarding.kt` | `home.tsx` · `timeline.tsx` · `manualTxn.tsx` · `categoriesUi.tsx` · `budgetUi.tsx` · `report.tsx` · `settings.tsx` · `familyUi.tsx` · `lock.tsx` · `onboarding.tsx` |
+| `HomeUi.kt`/`Home.kt` home · `AssetsUi.kt` · `BanksUi.kt` · `LoansUi.kt` · `Timeline.kt` · `ManualTxnUi.kt` · `CategoriesUi.kt` · `BudgetUi.kt` · `Report.kt` · `Settings.kt` · `Family.kt` · `Lock.kt` · `Onboarding.kt` | `home.tsx` · `homeSheets.tsx` (asset sheets) · `homeSheets.tsx` (bank page), `logos.tsx` · `loansUi.tsx` · `timeline.tsx` · `manualTxn.tsx` · `categoriesUi.tsx` · `budgetUi.tsx` · `report.tsx` · `settings.tsx` · `familyUi.tsx` · `lock.tsx` · `onboarding.tsx` |
 
 Preact renders it (`app.tsx` is AppScreens; `nav.ts` holds the tab, the page stack, the one sheet
 and the undo band, with the browser's back as the phone's back). Every table lives in memory and
