@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { GoalKind, GoalPeriod } from '../src/goals';
 import {
-  MAX_INSTALLMENTS, NO_END, billsLeftFa, billsLeftThisMonth, encodeInstallmentLink, firstInstallmentDue, installmentCount,
+  MAX_INSTALLMENTS, NO_END, billNameSuggestions, billsLeftFa, billsLeftThisMonth, encodeInstallmentLink, firstInstallmentDue, installmentCount,
   installmentDueOn, installmentInsight, installmentLeftFa, installmentLineFa, installmentLinks, installmentNews,
   installmentNoteFa, installmentPaidBy, installmentPayable, installmentProgress, installmentPublicTitle,
   installmentReminderBody, installmentReminderFa, installmentReminderTitle, installmentSummary, installmentUpcoming,
@@ -337,13 +337,13 @@ describe('installments', () => {
     expect(installmentNews([paidUp], 1, {}, tehranDayStart(far - 1) + 10 * 3_600_000).due).toEqual([[paidUp, far]]);
     expect(installmentReminderTitle(rent, far, far - 1)).toBe('اجاره: سررسیدش فرداست');
     expect(installmentReminderBody(rent, far)).toBe(`۸ میلیون تومان • ${faDate(far)}`);
-    expect(installmentPublicTitle(rent)).toBe('یادآوری قبض');
+    expect(installmentPublicTitle(rent)).toBe('یادآوری خرج ثابت');
     expect(installmentPublicTitle(plan())).toBe('یادآوری قسط');
 
     const tomorrow = pressingInstallment([installmentProgress(rent, new Map(), [], first - 1)], first - 1, 1)!;
     const insight = installmentInsight(tomorrow[0], tomorrow[1], first - 1);
     expect(insight.text).toBe('سررسید «اجاره» فرداست.');
-    expect(insight.why).toBe('قبضی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.');
+    expect(insight.why).toBe('خرج ثابتی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.');
     const late = pressingInstallment([installmentProgress(rent, new Map(), [], first + 40)], first + 40, 1)!;
     expect(late[1]).toBe(0);
     expect(installmentInsight(late[0], late[1], first + 40).text).toBe('سررسید «اجاره» گذشته.');
@@ -359,12 +359,20 @@ describe('installments', () => {
     expect(summary.dueThisMonth).toBe(2);
     expect(installmentSummary(all.filter((p) => p.plan.id !== 'tv'), today)).toBeNull();
     expect(billsLeftThisMonth(all, today)).toBe(80_000_000 + 2_000_000);
-    expect(billsLeftFa(82_000_000)).toBe('این ماه هنوز ۸٫۲ میلیون تومان قبض مونده.');
+    expect(billsLeftFa(82_000_000)).toBe('این ماه هنوز ۸٫۲ میلیون تومان از خرج‌های ثابت مونده.');
     expect(billsLeftThisMonth(all.filter((p) => p.plan.id !== 'net'), today)).toBeNull();
     const settled = new Map([...links(rent, ['c', 80_000_000]), ...links(net, ['d', 3_000_000])]);
     expect(billsLeftThisMonth([rent, net].map((g) => installmentProgress(g, settled, [], today)), today)).toBeNull();
     const later = jalaliMonthsAfter(first, 1);
     expect(billsLeftThisMonth([rent, net].map((g) => installmentProgress(g, new Map(), [], later)), later)).toBe(83_000_000);
+  });
+
+  it("a fixed cost's name is offered while what she typed could still become it", () => {
+    expect(billNameSuggestions(' ')).toEqual(['اجاره', 'اینترنت', 'موبایل', 'شارژ ساختمان']);
+    expect(billNameSuggestions('ا')).toEqual(['اجاره', 'اینترنت']);
+    // Picked, or typed past: nothing left to offer.
+    expect(billNameSuggestions('اجاره')).toEqual([]);
+    expect(billNameSuggestions('اجاره خونه')).toEqual([]);
   });
 
   it('a Toman field is whole Rial, or nothing this app would store', () => {

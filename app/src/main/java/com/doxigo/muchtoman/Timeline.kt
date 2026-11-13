@@ -1600,7 +1600,7 @@ fun TransactionScreen(
                 item(key = "installment") {
                     Column(gutter) {
                         Spacer(Modifier.height(Space.xxl))
-                        SectionHeading("قسط")
+                        SectionHeading(if (paidPlan?.plan?.isBill == true) "خرج ثابت" else "قسط")
                         Spacer(Modifier.height(Space.m))
                         InstallmentLinkRow(paidPlan, onOpen = { linking = true })
                     }
@@ -1856,6 +1856,12 @@ private fun NoteField(
 @Composable
 internal fun NoteSuggestions(notes: List<NoteUse>, draft: String, categoryId: String?, onPick: (String) -> Unit) {
     val offered = remember(notes, draft, categoryId) { noteSuggestions(notes, draft, categoryId) }
+    SuggestionStrip(offered, "نوشتن همین یادداشت", onPick)
+}
+
+/** Words offered to a field, [NoteSuggestions]' make; [pickLabel] is what TalkBack says a tap does. */
+@Composable
+internal fun SuggestionStrip(offered: List<String>, pickLabel: String, onPick: (String) -> Unit) {
     if (offered.isEmpty()) return
     val shape = RoundedCornerShape(Radius.pill)
     Row(
@@ -1870,7 +1876,7 @@ internal fun NoteSuggestions(notes: List<NoteUse>, draft: String, categoryId: St
                 Modifier
                     .clip(shape)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-                    .clickable(role = Role.Button, onClickLabel = "نوشتن همین یادداشت") { onPick(text) }
+                    .clickable(role = Role.Button, onClickLabel = pickLabel) { onPick(text) }
                     .heightIn(min = 32.dp)
                     .widthIn(max = 240.dp)
                     .padding(horizontal = Space.m),

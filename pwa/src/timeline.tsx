@@ -24,7 +24,7 @@ import { CategoryIcon, customGlyphs, glyphOf, hueCss } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
 import { CategoryGrid } from './categoryGrid';
 import { InstallmentLinkRow, WorthItCard, openInstallmentLink } from './budgetUi';
-import { installmentPaidBy, installmentPayable } from './installments';
+import { installmentPaidBy, installmentPayable, isBill } from './installments';
 import { isLoanCategory, loanLinkable } from './loans';
 import { LoanLinkRow, openLoanLink } from './loansUi';
 import { largeSpendThreshold, worthItAnswers, worthItCandidates } from './goals';
@@ -37,7 +37,7 @@ import {
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
 import { row, rows } from './state';
 import { CheckMark, SearchMark } from './icons';
-import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetLabel, SheetTitle, SegmentedChoice, SignedFigure, Switch, TitleAddButton } from './ui';
+import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetLabel, SheetTitle, SegmentedChoice, SignedFigure, SuggestionStrip, Switch, TitleAddButton } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
 
 // ---- words ------------------------------------------------------------------------------------
@@ -772,16 +772,7 @@ export function NoteSuggestions({ notes, draft, categoryId, onPick }: {
   notes: NoteUse[]; draft: string; categoryId: string | null; onPick: (text: string) => void;
 }) {
   const offered = useMemo(() => noteSuggestions(notes, draft, categoryId), [notes, draft, categoryId]);
-  if (!offered.length) return null;
-  return (
-    <div class="note-suggestions">
-      {offered.map((text) => (
-        <button type="button" key={text} class="note-suggestion" onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(text)}>
-          <span>{text}</span>
-        </button>
-      ))}
-    </div>
-  );
+  return <SuggestionStrip offered={offered} onPick={onPick} />;
 }
 
 function DetailsPanel({ details }: { details: Array<[string, string]> }) {
@@ -890,7 +881,7 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
 
       {payable && (chosen === CAT_INSTALMENT || paidPlan) && (
         <>
-          <SectionHeading>قسط</SectionHeading>
+          <SectionHeading>{paidPlan && isBill(paidPlan.plan) ? 'خرج ثابت' : 'قسط'}</SectionHeading>
           <div style={{ marginTop: 'var(--m)' }}><InstallmentLinkRow current={paidPlan} onOpen={() => openInstallmentLink(txn.ref)} /></div>
         </>
       )}

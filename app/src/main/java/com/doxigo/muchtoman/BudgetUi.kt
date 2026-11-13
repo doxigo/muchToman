@@ -286,7 +286,7 @@ fun BudgetScreen(
                 onClick = { addingGoal = true },
             )
 
-            SectionLabel("قسط‌ها و قبض‌ها")
+            SectionLabel("قسط‌ها و خرج‌های ثابت")
             if (installments.isEmpty()) {
                 // Says where the payments come from, because that is the one thing about this
                 // section nobody would guess: nothing here is typed twice.
@@ -324,7 +324,7 @@ fun BudgetScreen(
                 )
             }
             AddRow(
-                label = if (installments.isEmpty()) "اولین قسط یا قبض" else "قسط یا قبض تازه",
+                label = if (installments.isEmpty()) "اولین قسط یا خرج ثابت" else "قسط یا خرج ثابت تازه",
                 shape = bandShape(installments.size, installmentRows),
                 onClick = { addingInstallment = true },
             )
@@ -1660,26 +1660,28 @@ private fun InstallmentSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle(if (bill) "قبض تازه" else "قسط تازه")
+            SheetTitle(if (bill) "خرج ثابت تازه" else "قسط تازه")
             SegmentedChoice(
                 options = listOf(false, true),
                 selected = bill,
-                label = { if (it) "قبض و اجاره" else "قسط" },
+                label = { if (it) "خرج ثابت" else "قسط" },
                 onSelect = { bill = it },
                 modifier = Modifier.padding(top = Space.m),
             )
 
-            SheetLabel(if (bill) "برای چی؟" else "قسطِ چی؟")
+            SheetLabel(if (bill) "خرجِ چی؟" else "قسطِ چی؟")
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(40) },
-                label = { Text(if (bill) "مثلاً اجاره، اینترنت یا موبایل" else "مثلاً گوشی، یا وام خونه") },
+                // A fixed cost's examples are the words under the field, one tap each.
+                label = if (bill) null else ({ Text("مثلاً گوشی، یا وام خونه") }),
                 singleLine = true,
                 isError = tried && name.isBlank(),
                 supportingText = if (tried && name.isBlank()) ({ FieldError("اسمش رو بنویس.") }) else null,
                 shape = RoundedCornerShape(Radius.field),
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (bill) SuggestionStrip(billNameSuggestions(name), "نوشتن همین اسم") { name = it }
 
             SheetLabel(if (bill) "هر ماه چقدره، به $moneyUnit" else "هر قسط چقدره، به $moneyUnit")
             OutlinedTextField(
@@ -1762,7 +1764,7 @@ private fun InstallmentSheet(
 
             Spacer(Modifier.height(Space.xl))
             PillButton(
-                if (bill) "ذخیره قبض" else "ذخیره قسط",
+                if (bill) "ذخیره خرج ثابت" else "ذخیره قسط",
                 {
                     // Never dimmed: a tap that cannot save says why, as [BudgetSheet]'s does.
                     focus.clearFocus()
@@ -2016,7 +2018,7 @@ private fun InstallmentPaymentsSheet(
             }
 
             Spacer(Modifier.height(Space.l))
-            SheetDelete(if (progress.plan.isBill) "حذف این قبض" else "حذف این قسط") { close(onDelete) }
+            SheetDelete(if (progress.plan.isBill) "حذف این خرج ثابت" else "حذف این قسط") { close(onDelete) }
         }
     }
 }
@@ -2185,7 +2187,7 @@ internal fun InstallmentLinkSheet(
                 .padding(horizontal = Space.xl)
                 .padding(bottom = Space.l),
         ) {
-            SheetTitle("پرداخت کدوم قسط یا قبضه؟")
+            SheetTitle("پرداخت کدوم قسط یا خرج ثابته؟")
             Text(
                 txnTitleFa(entry.txn) + "، " +
                     (amount?.let { bidi(faCompact(tomanOf(it)) + " $moneyUnit") + "، " } ?: "") +
@@ -2197,13 +2199,13 @@ internal fun InstallmentLinkSheet(
             if (offered.isEmpty()) {
                 Spacer(Modifier.height(Space.l))
                 Text(
-                    "هنوز قسط یا قبضی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.",
+                    "هنوز قسط یا خرج ثابتی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.",
                     lineHeight = 26.sp,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(Space.xl))
                 PillButton(
-                    "ساختن قسط یا قبض",
+                    "ساختن قسط یا خرج ثابت",
                     { creating = true },
                     Modifier.fillMaxWidth(),
                     voice = ButtonVoice.PRIMARY,
@@ -2244,14 +2246,14 @@ internal fun InstallmentLinkSheet(
                 }
             }
             PillButton(
-                "+ قسط یا قبض تازه با همین پرداخت",
+                "+ قسط یا خرج ثابت تازه با همین پرداخت",
                 { creating = true },
                 Modifier.fillMaxWidth().padding(top = Space.xl),
                 block = true,
             )
             if (current != null) {
                 PillButton(
-                    "از قسط جداش کن",
+                    "از «${current.plan.nameFa}» جداش کن",
                     { close { onLink(null); onDismiss() } },
                     Modifier.fillMaxWidth().padding(top = Space.s),
                     block = true,
@@ -2281,7 +2283,15 @@ internal fun InstallmentLinkRow(current: InstallmentProgress?, onOpen: () -> Uni
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.card))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(role = Role.Button, onClickLabel = if (current != null) "تغییر قسط" else "وصل کردن به قسط", onClick = onOpen)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = when {
+                    current == null -> "وصل کردن به قسط"
+                    current.plan.isBill -> "تغییر خرج ثابت"
+                    else -> "تغییر قسط"
+                },
+                onClick = onOpen,
+            )
             .padding(Space.l),
         verticalAlignment = Alignment.CenterVertically,
     ) {

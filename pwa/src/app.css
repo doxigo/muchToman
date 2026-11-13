@@ -207,6 +207,16 @@ h1, h2, h3 { margin: 0; }
 .segmented > button[aria-checked="true"] { background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .segmented > button:disabled { color: color-mix(in srgb, var(--on-surface) 50%, transparent); }
 
+/* Suggestions under a field (a note, a fixed cost's name): words offered to it, not acts — outlined, a
+   size under a chip, one line that scrolls. 32px drawn, 48 touched: the strip's padding holds the reach
+   so it is not clipped. */
+.suggestions { display: flex; gap: var(--s); overflow-x: auto; scrollbar-width: none; padding-block: var(--s); }
+.suggestions::-webkit-scrollbar { display: none; }
+.suggestion { position: relative; flex: none; max-width: 240px; min-height: 32px; padding: 0 var(--m); border: 1px solid var(--outline-variant); border-radius: var(--r-pill); background: transparent; color: var(--on-surface); font-size: calc(13px * var(--text)); font-weight: 500; transition: background var(--fast); }
+.suggestion::after { content: ""; position: absolute; inset: -8px 0; }
+.suggestion:active { background: var(--wash); }
+.suggestion > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 .chips { display: flex; flex-wrap: wrap; gap: var(--s); }
 .chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--edge)); padding-inline: var(--edge); }
 .chip { min-height: 40px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--surface-container); color: var(--on-surface); font-size: calc(13px * var(--text)); font-weight: 500; white-space: nowrap; }

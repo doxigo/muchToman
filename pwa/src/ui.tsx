@@ -206,6 +206,23 @@ export function Sheet({ children, onClose = closeSheet, label }: { children: Com
   );
 }
 
+/**
+ * Words offered to a field, on one line that scrolls (DESIGN.md «Suggestions are not pills»). Pressing
+ * one keeps the field focused (no blur keeping half a word first); the pick decides.
+ */
+export function SuggestionStrip({ offered, onPick }: { offered: string[]; onPick: (text: string) => void }) {
+  if (!offered.length) return null;
+  return (
+    <div class="suggestions">
+      {offered.map((text) => (
+        <button type="button" key={text} class="suggestion" onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(text)}>
+          <span>{text}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---- fields -------------------------------------------------------------------------------------
 
 type FieldProps = {

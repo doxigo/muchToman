@@ -164,7 +164,7 @@ internal fun landedPublicTitle(): String = "تراکنش تازه"
 internal fun filingPublicTitle(count: Int): String =
     if (count > 1) "${faNumber(count.toDouble())} تراکنش تازه" else landedPublicTitle()
 
-internal fun installmentPublicTitle(plan: Goal): String = if (plan.isBill) "یادآوری قبض" else "یادآوری قسط"
+internal fun installmentPublicTitle(plan: Goal): String = if (plan.isBill) "یادآوری خرج ثابت" else "یادآوری قسط"
 
 internal fun chequePublicTitle(): String = "یادآوری چک"
 

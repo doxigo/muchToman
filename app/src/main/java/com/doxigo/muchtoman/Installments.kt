@@ -21,9 +21,10 @@ package com.doxigo.muchtoman
  * Editing a plan is delete-and-add for the same reason budgets keep their category — a plan with a
  * different amount or length is a different plan — until somebody's loan actually changes terms.
  *
- * ## Bills — «قبض»
+ * ## Bills — «خرج ثابت»
  *
- * Rent, the internet, the phone: a plan with no last payment, [Goal.endsOn] null ([isBill]). Due on
+ * Rent, the internet, the phone: a plan with no last payment, [Goal.endsOn] null ([isBill]). Said
+ * «خرج ثابت» on screen, never «قبض»: a rent is not a قبض, and the sheet called it one. Due on
  * [Goal.startsOn]'s day every month until she deletes it, with no count, no total and nothing «left
  * of the whole» — its card says whether this month's is paid, when the next falls due, and that it
  * is behind once a date has gone by unpaid. Payments link exactly as an installment's do.
@@ -52,6 +53,15 @@ const val NO_END = -1
 
 /** A plan with no last payment — rent, the internet, the phone. See the file comment. */
 val Goal.isBill: Boolean get() = kind == GoalKind.INSTALLMENT && endsOn == null
+
+/**
+ * What most fixed costs are called, one tap each under the sheet's name field, less any that what
+ * she has typed rules out. An installment gets none: «وام» alone names nobody's loan.
+ */
+fun billNameSuggestions(typed: String): List<String> {
+    val t = typed.trim()
+    return listOf("اجاره", "اینترنت", "موبایل", "شارژ ساختمان").filter { it != t && it.startsWith(t) }
+}
 
 /**
  * What a [DecisionKind.INSTALLMENT] decision's value holds: the plan it paid, and how much.
@@ -341,8 +351,8 @@ fun billsLeftThisMonth(installments: List<InstallmentProgress>, today: Long): Lo
     return left.takeIf { it > 0L }
 }
 
-/** «این ماه هنوز ۱۲ میلیون تومان قبض مونده.» — [billsLeftThisMonth], said. */
-fun billsLeftFa(rial: Long): String = "این ماه هنوز ${faCompact(tomanOf(rial))} $moneyUnit قبض مونده."
+/** «این ماه هنوز ۱۲ میلیون تومان از خرج‌های ثابت مونده.» — [billsLeftThisMonth], said. */
+fun billsLeftFa(rial: Long): String = "این ماه هنوز ${faCompact(tomanOf(rial))} $moneyUnit از خرج‌های ثابت مونده."
 
 /**
  * The card's one line, and whether it is said out loud. Behind is said as a figure and a fact —
@@ -411,7 +421,7 @@ fun installmentInsight(progress: InstallmentProgress, index: Int, today: Long): 
         // A bill is named on its own, «سررسید «اجاره» فرداست.», and never as a قسط.
         text = if (count == null) "سررسید «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}."
         else "سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.",
-        why = if (count == null) "قبضی که خودت ساختی: $monthly، ${faDate(due)}."
+        why = if (count == null) "خرج ثابتی که خودت ساختی: $monthly، ${faDate(due)}."
         else "قسطی که خودت ساختی: $monthly، قسط ${faOrdinal(index + 1)} از ${faNumber(count.toDouble())}، ${faDate(due)}.",
         refs = progress.payments.map { it.txn.ref },
         tone = Insight.Tone.ATTENTION,

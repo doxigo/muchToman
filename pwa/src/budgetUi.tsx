@@ -33,7 +33,7 @@ import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekda
 import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
-  MAX_INSTALLMENTS, NO_END, billsLeftFa, billsLeftThisMonth, firstInstallmentDue, installmentDueOn, installmentLeftFa,
+  MAX_INSTALLMENTS, NO_END, billNameSuggestions, billsLeftFa, billsLeftThisMonth, firstInstallmentDue, installmentDueOn, installmentLeftFa,
   installmentLineFa, installmentNoteFa, installmentPaidBy, installmentSummary, installmentUpcomingIndex, isBill, rialToField,
   tomanFieldToRial,
 } from './installments';
@@ -53,7 +53,8 @@ import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
 import { pref } from './state';
 import {
-  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, TextField,
+  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, SuggestionStrip,
+  TextField,
 } from './ui';
 import './budgetUi.css';
 
@@ -205,7 +206,7 @@ function BudgetScreen() {
       <AddRow label={goals.length === 0 ? 'اولین هدف' : 'هدف تازه'} radius={bandShape(goals.length, goals.length + 1)}
         onClick={() => openSheet('goal')} />
 
-      <SectionLabel>قسط‌ها و قبض‌ها</SectionLabel>
+      <SectionLabel>قسط‌ها و خرج‌های ثابت</SectionLabel>
       {installments.length === 0 && (
         // Says where the payments come from — the one thing nobody would guess: nothing here is typed twice.
         <p class="plan-empty">قسط گوشی و وام، اجاره، قبض اینترنت یا هر چیزی که ماه‌به‌ماه می‌دی. پرداختش که توی دفتر اومد، همین‌جا تیکش رو می‌زنی و می‌بینی چقدر مونده.</p>
@@ -216,7 +217,7 @@ function BudgetScreen() {
         <InstallmentCard key={progress.plan.id} progress={progress} radius={bandShape(i, installments.length + 1)}
           onOpen={() => openSheet('installmentPayments', { id: progress.plan.id })} />
       ))}
-      <AddRow label={installments.length === 0 ? 'اولین قسط یا قبض' : 'قسط یا قبض تازه'}
+      <AddRow label={installments.length === 0 ? 'اولین قسط یا خرج ثابت' : 'قسط یا خرج ثابت تازه'}
         radius={bandShape(installments.length, installments.length + 1)} onClick={() => openSheet('installment')} />
 
       <SectionLabel>چک‌ها</SectionLabel>
@@ -804,15 +805,17 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
   };
 
   return (
-    <Sheet onClose={onDismiss} label={bill ? 'قبض تازه' : 'قسط تازه'}>
-      <SheetTitle>{bill ? 'قبض تازه' : 'قسط تازه'}</SheetTitle>
+    <Sheet onClose={onDismiss} label={bill ? 'خرج ثابت تازه' : 'قسط تازه'}>
+      <SheetTitle>{bill ? 'خرج ثابت تازه' : 'قسط تازه'}</SheetTitle>
       <div class="mt-m">
-        <SegmentedChoice options={[false, true]} selected={bill} label={(b) => (b ? 'قبض و اجاره' : 'قسط')} onSelect={setBill} />
+        <SegmentedChoice options={[false, true]} selected={bill} label={(b) => (b ? 'خرج ثابت' : 'قسط')} onSelect={setBill} />
       </div>
-      <SheetLabel>{bill ? 'برای چی؟' : 'قسطِ چی؟'}</SheetLabel>
-      <TextField label={bill ? 'مثلاً اجاره، اینترنت یا موبایل' : 'مثلاً گوشی، یا وام خونه'} value={name}
+      <SheetLabel>{bill ? 'خرجِ چی؟' : 'قسطِ چی؟'}</SheetLabel>
+      {/* A fixed cost's examples are the words under the field, one tap each. */}
+      <TextField label={bill ? undefined : 'مثلاً گوشی، یا وام خونه'} ariaLabel={bill ? 'خرجِ چی؟' : undefined} value={name}
         onInput={(v) => setName(v.slice(0, 40))} maxLength={40}
         error={tried && name.trim() === '' ? 'اسمش رو بنویس.' : null} />
+      {bill && <SuggestionStrip offered={billNameSuggestions(name)} onPick={setName} />}
       <SheetLabel>{bill ? 'هر ماه چقدره' : 'هر قسط چقدره'}، به {moneyUnit()}</SheetLabel>
       <AmountField label={bill ? 'مبلغ هر ماه' : 'مبلغ هر قسط'} ariaLabel={`${bill ? 'مبلغ هر ماه' : 'مبلغ هر قسط'} به ${moneyUnit()}`}
         raw={amount} onRaw={setAmount} decimals={1}
@@ -845,7 +848,7 @@ function InstallmentSheet({ fromPayment, onSave, onDismiss }: {
           : `اولین سررسید ${faDate(first)}، آخری ${faDate(jalaliMonthsAfter(first, count - 1))}.`}
       </SheetNote>
       <div class="sheet-actions">
-        <PillButton voice="primary" block label={bill ? 'ذخیره قبض' : 'ذخیره قسط'} onClick={save} />
+        <PillButton voice="primary" block label={bill ? 'ذخیره خرج ثابت' : 'ذخیره قسط'} onClick={save} />
       </div>
     </Sheet>
   );
@@ -905,7 +908,7 @@ function InstallmentPaymentsSheet({ id }: { id: string }) {
         </>
       )}
       <div class="mt-l">
-        <SheetDelete label={isBill(plan) ? 'حذف این قبض' : 'حذف این قسط'} onConfirmed={() => close(synced(paired, () => deleteGoal(plan.id)))} />
+        <SheetDelete label={isBill(plan) ? 'حذف این خرج ثابت' : 'حذف این قسط'} onConfirmed={() => close(synced(paired, () => deleteGoal(plan.id)))} />
       </div>
     </Sheet>
   );
@@ -1020,16 +1023,16 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
   const link = (planId: string | null) => close(() => setInstallmentPayment(entry, planId));
 
   return (
-    <Sheet onClose={() => close()} label="پرداخت کدوم قسط یا قبضه؟">
-      <SheetTitle>پرداخت کدوم قسط یا قبضه؟</SheetTitle>
+    <Sheet onClose={() => close()} label="پرداخت کدوم قسط یا خرج ثابته؟">
+      <SheetTitle>پرداخت کدوم قسط یا خرج ثابته؟</SheetTitle>
       <p class="plan-lede">
         {txnTitleFa(entry.txn) + '، ' + (amount != null ? bidi(`${faCompact(tomanOf(amount))} ${moneyUnit()}`) + '، ' : '') + faDay(entry.txn.day)}
       </p>
       {offered.length === 0 ? (
         <>
-          <p class="plan-first-plan">هنوز قسط یا قبضی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.</p>
+          <p class="plan-first-plan">هنوز قسط یا خرج ثابتی نساختی. اگه این پرداخت هر ماه تکرار می‌شه، با همین بسازش.</p>
           <div class="sheet-actions">
-            <PillButton voice="primary" block label="ساختن قسط یا قبض" onClick={() => setCreating(true)} />
+            <PillButton voice="primary" block label="ساختن قسط یا خرج ثابت" onClick={() => setCreating(true)} />
             <PillButton block label="فعلاً نه" onClick={() => close()} />
           </div>
         </>
@@ -1051,8 +1054,8 @@ function InstallmentLinkSheet({ txnRef }: { txnRef: string }) {
             })}
           </div>
           <div class="sheet-actions">
-            <PillButton block label="+ قسط یا قبض تازه با همین پرداخت" onClick={() => setCreating(true)} />
-            {current && <PillButton block label="از قسط جداش کن" onClick={() => link(null)} />}
+            <PillButton block label="+ قسط یا خرج ثابت تازه با همین پرداخت" onClick={() => setCreating(true)} />
+            {current && <PillButton block label={`از «${current.plan.nameFa}» جداش کن`} onClick={() => link(null)} />}
           </div>
         </>
       )}

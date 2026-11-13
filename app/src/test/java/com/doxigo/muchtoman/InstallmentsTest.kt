@@ -404,14 +404,14 @@ class InstallmentsTest {
         assertEquals(listOf(paidUp to far), news.due)
         assertEquals("اجاره: سررسیدش فرداست", installmentReminderTitle(rent, far, far - 1))
         assertEquals("۸ میلیون تومان • ${faDate(far)}", installmentReminderBody(rent, far))
-        assertEquals("یادآوری قبض", installmentPublicTitle(rent))
+        assertEquals("یادآوری خرج ثابت", installmentPublicTitle(rent))
         assertEquals("یادآوری قسط", installmentPublicTitle(plan()))
 
         // Home: the bill by its own name, with no «قسط سوم از ۲۴».
         val tomorrow = pressingInstallment(listOf(installmentProgress(rent, emptyMap(), emptyList(), first - 1)), first - 1, 1)!!
         val insight = installmentInsight(tomorrow.first, tomorrow.second, first - 1)
         assertEquals("سررسید «اجاره» فرداست.", insight.text)
-        assertEquals("قبضی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.", insight.why)
+        assertEquals("خرج ثابتی که خودت ساختی: ماهی ۸ میلیون تومان، ۳۱ شهریور ۱۴۰۵.", insight.why)
         // Behind, it leads home's slot and is said as gone by.
         val late = pressingInstallment(listOf(installmentProgress(rent, emptyMap(), emptyList(), first + 40)), first + 40, 1)!!
         assertEquals(0, late.second)
@@ -435,7 +435,7 @@ class InstallmentsTest {
         assertNull(installmentSummary(all.filter { it.plan.id != "tv" }, today))
         // The rent whole, and what the internet's partial payment leaves of its month.
         assertEquals(80_000_000L + 2_000_000L, billsLeftThisMonth(all, today))
-        assertEquals("این ماه هنوز ۸٫۲ میلیون تومان قبض مونده.", billsLeftFa(82_000_000))
+        assertEquals("این ماه هنوز ۸٫۲ میلیون تومان از خرج‌های ثابت مونده.", billsLeftFa(82_000_000))
         // One bill: its card says it. All paid: nothing to say.
         assertNull(billsLeftThisMonth(all.filter { it.plan.id != "net" }, today))
         val settled = links(rent, "c" to 80_000_000) + links(net, "d" to 3_000_000)
@@ -443,6 +443,15 @@ class InstallmentsTest {
         // Last month gone by unpaid is the card's to say, not this line's.
         val later = jalaliMonthsAfter(first, 1)
         assertEquals(83_000_000L, billsLeftThisMonth(listOf(rent, net).map { installmentProgress(it, emptyMap(), emptyList(), later) }, later))
+    }
+
+    @Test
+    fun `a fixed cost's name is offered while what she typed could still become it`() {
+        assertEquals(listOf("اجاره", "اینترنت", "موبایل", "شارژ ساختمان"), billNameSuggestions(" "))
+        assertEquals(listOf("اجاره", "اینترنت"), billNameSuggestions("ا"))
+        // Picked, or typed past: nothing left to offer.
+        assertEquals(emptyList<String>(), billNameSuggestions("اجاره"))
+        assertEquals(emptyList<String>(), billNameSuggestions("اجاره خونه"))
     }
 
     @Test

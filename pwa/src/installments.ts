@@ -52,8 +52,20 @@ const INSTALLMENT_CANDIDATES = 20;
  */
 export const NO_END = -1;
 
-/** A plan with no last payment — rent, the internet, the phone. */
+/**
+ * A plan with no last payment — rent, the internet, the phone. Said «خرج ثابت» on screen, never «قبض»:
+ * a rent is not a قبض, and the sheet called it one.
+ */
 export const isBill = (plan: Goal): boolean => plan.kind === GoalKind.INSTALLMENT && plan.endsOn == null;
+
+/**
+ * What most fixed costs are called, one tap each under the sheet's name field, less any that what she
+ * has typed rules out. An installment gets none: «وام» alone names nobody's loan.
+ */
+export function billNameSuggestions(typed: string): string[] {
+  const t = typed.trim();
+  return ['اجاره', 'اینترنت', 'موبایل', 'شارژ ساختمان'].filter((n) => n !== t && n.startsWith(t));
+}
 
 /**
  * What an `installment` decision's value holds: the plan it paid, and how much. The amount is
@@ -319,9 +331,9 @@ export function billsLeftThisMonth(installments: InstallmentProgress[], today: n
   return left > 0 ? left : null;
 }
 
-/** «این ماه هنوز ۱۲ میلیون تومان قبض مونده.» — [billsLeftThisMonth], said. */
+/** «این ماه هنوز ۱۲ میلیون تومان از خرج‌های ثابت مونده.» — [billsLeftThisMonth], said. */
 export function billsLeftFa(rial: number): string {
-  return `این ماه هنوز ${faCompact(tomanOf(rial))} ${moneyUnit()} قبض مونده.`;
+  return `این ماه هنوز ${faCompact(tomanOf(rial))} ${moneyUnit()} از خرج‌های ثابت مونده.`;
 }
 
 // ─────────────────────────── on home ───────────────────────────
@@ -358,7 +370,7 @@ export function installmentInsight(progress: InstallmentProgress, index: number,
     // A bill is named on its own, «سررسید «اجاره» فرداست.», and never as a قسط.
     text: count == null ? `سررسید «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`
       : `سررسید قسط «${progress.plan.nameFa}» ${installmentWhenFa(due - today)}.`,
-    why: count == null ? `قبضی که خودت ساختی: ${monthly}، ${faDate(due)}.`
+    why: count == null ? `خرج ثابتی که خودت ساختی: ${monthly}، ${faDate(due)}.`
       : `قسطی که خودت ساختی: ${monthly}، قسط ${faOrdinal(index + 1)} از ${faNumber(count)}، ${faDate(due)}.`,
     refs: progress.payments.map((e) => e.txn.ref),
     tone: 'ATTENTION',
@@ -494,5 +506,5 @@ export function installmentLineFa(plan: InstallmentProgress): string {
 
 /** The lock screen's word for one plan's reminder (Notify.kt installmentPublicTitle). */
 export function installmentPublicTitle(plan: Goal): string {
-  return isBill(plan) ? 'یادآوری قبض' : 'یادآوری قسط';
+  return isBill(plan) ? 'یادآوری خرج ثابت' : 'یادآوری قسط';
 }
