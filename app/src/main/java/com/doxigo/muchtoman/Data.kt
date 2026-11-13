@@ -667,6 +667,23 @@ fun foldBankSms(accounts: List<BankAccount>, sms: BankSms, now: Long = System.cu
 }
 
 /**
+ * The banks she keeps by hand ([BankAccount.manual]), each at her last figure moved by every row
+ * she typed against it since — the way a message stating no balance moves a bank the app reads. A
+ * row dated before her figure is already in it. An account whose messages are read is left alone:
+ * the bank reports that money itself. [typed] is her newest figure per account, and one that is
+ * not the figure the account holds (an anchor write that failed) leaves the account alone too.
+ */
+fun typedOnto(accounts: List<BankAccount>, typed: Map<String, BalanceAnchor>, rows: List<Txn>): List<BankAccount> =
+    accounts.map { account ->
+        val figure = typed[account.key]?.takeIf { account.manual && it.at == account.updatedAt }
+            ?: return@map account
+        val rial = figure.balanceRial + rows
+            .filter { it.ref.startsWith("m:") && it.accountId == account.key && it.at > figure.at }
+            .sumOf { it.signedRial ?: 0L }
+        if (Math.round(account.balance * 10.0) == rial) account else account.copy(balance = rial / 10.0)
+    }
+
+/**
  * [foldBankSms] over the messages the app's scan has not counted yet, skipped by the same keys it
  * skips them by — the balances her next app open will land on. Pure and written nowhere: the
  * background share reads it while the scan stays the only writer of the balances.

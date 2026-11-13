@@ -239,6 +239,16 @@ function foldBankSms(existing: Account | undefined, t: Txn): Account | undefined
   };
 }
 
+/**
+ * A row she typed against a bank she keeps by hand moves its figure, as a message stating no balance
+ * would (Data.kt `typedOnto`); one dated before her figure is already in it. On an account whose
+ * messages are read it moves nothing: the bank reports that money itself.
+ */
+function typedOnto(existing: Account | undefined, t: Txn): Account | undefined {
+  if (!existing?.manual || t.at <= existing.updatedAt || t.signedRial == null) return existing;
+  return { ...existing, balanceRial: existing.balanceRial + t.signedRial };
+}
+
 /** The id of the tombstone [forgetAccount] leaves: nothing at or before its `at` counts for that account. */
 export const forgetMarkId = (key: string): string => `forget:${key}`;
 
@@ -259,7 +269,8 @@ export const bankOfKey = (key: string): string => key.split(':')[0];
  * fold guards by reference number. One that states a balance is folded as the phone folds it —
  * stating it again changes nothing, and skipping it left this sheet on an older figure than the
  * phone's whenever a pair was wrongly settled.
- * A bank she never named (OTHER) is not an account — it cannot be named on the sheet.
+ * A bank she never named (OTHER) is not an account — it cannot be named on the sheet. Her typed rows
+ * (`m:`) ride along as they stand after her edits, for the banks she keeps by hand — see [typedOnto].
  */
 export function bankAccountsOf(
   txns: readonly Txn[],
@@ -275,6 +286,9 @@ export function bankAccountsOf(
       .map((a): Event => ({ at: a.at, order: 0, pasted: 0, anchor: a, key: a.accountId, bank: bankOfKey(a.accountId) })),
     ...txns.filter((t) => t.sourceKind === 'sms' && t.ref.startsWith('s:') && !(hidden.has(t.ref) && t.balanceRial == null))
       .map((t): Event => ({ at: t.at, order: 1, pasted: pastedAt.get(t.srcHash) ?? 0, txn: t, key: t.accountId, bank: t.bank })),
+    // One on no account is cash: its bank is the MANUAL placeholder, which the bank gate below drops.
+    ...txns.filter((t) => t.ref.startsWith('m:'))
+      .map((t): Event => ({ at: t.at, order: 1, pasted: 0, txn: t, key: t.accountId, bank: bankOfKey(t.accountId) })),
   ].filter((e) => isBank(e.bank) && e.bank !== 'OTHER' && e.at > (floors.get(e.key) ?? -Infinity))
     .sort((a, b) => a.at - b.at || a.order - b.order || a.pasted - b.pasted ||
       ((a.txn?.ref ?? '') < (b.txn?.ref ?? '') ? -1 : 1));
@@ -284,7 +298,7 @@ export function bankAccountsOf(
     // Her figure makes an account even where no message has yet: the ledger's allBalances reads it so.
     const next = e.anchor
       ? { key: e.key, bank: e.bank, number: existing?.number ?? '', mask: existing?.mask ?? '', balanceRial: e.anchor.balanceRial, updatedAt: e.anchor.at, inferred: false, anchored: true, manual: existing?.manual ?? true }
-      : foldBankSms(existing, e.txn!);
+      : e.txn!.ref.startsWith('m:') ? typedOnto(existing, e.txn!) : foldBankSms(existing, e.txn!);
     if (next) accounts.set(e.key, next);
   }
   const disabled = new Set(disabledBanks);
@@ -494,8 +508,10 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
   const own = entries.filter((e) => !disabled.has(e.txn.bank) || e.txn.ref.startsWith('f:'));
   const kept = startingFrom(own, startsOn);
   // The messages as read, not as settled: the phone's balances are its prefs fold over each message
-  // as the parser read it, and a direction she set never moves a balance the bank stated.
-  const bankAccounts = bankAccountsOf(read.filter((t) => !dropped.has(t.ref)), input.anchors, input.disabledBanks, hidden,
+  // as the parser read it, and a direction she set never moves a balance the bank stated. Her typed
+  // rows as she left them, though: a figure she corrects moves the bank she keeps by hand with it.
+  const typed = entries.map((e) => e.txn).filter((t) => t.ref.startsWith('m:'));
+  const bankAccounts = bankAccountsOf([...read.filter((t) => !dropped.has(t.ref)), ...typed], input.anchors, input.disabledBanks, hidden,
     new Map(input.sources.map((s) => [s.id, s.ingestedAt])));
   const marks: Record<string, string> = {};
   for (const c of everyCategory) if (c.glyph.trim()) marks[c.nameFa] = c.glyph;

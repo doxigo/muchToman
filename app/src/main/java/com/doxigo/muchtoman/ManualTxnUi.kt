@@ -1,5 +1,6 @@
 package com.doxigo.muchtoman
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Column
@@ -97,6 +98,14 @@ internal fun digitsMask(sep: Char, vararg at: Int) = VisualTransformation { text
     )
 }
 
+/**
+ * The row's moment: the day and minute she answered — and, left at the minute the sheet opened
+ * with, that very millisecond. A bank she added a moment ago holds a figure typed within this same
+ * minute, and a row stamped at the minute's start would land before it, already counted in it.
+ */
+fun stampedAt(day: Long, sinceMidnight: Long, openedAt: Long): Long =
+    (tehranDayStart(day) + sinceMidnight).let { if (it == openedAt - openedAt % 60_000L) openedAt else it }
+
 /** «۱۴۰۳» drawn as «۱۴:۰۳», the colon once the minute has begun. */
 private val ClockMask = digitsMask(':', 2)
 
@@ -108,6 +117,10 @@ private val ClockMask = digitsMask(':', 2)
  * bank normally stamps — the day and the minute — already filled with now so the common case is
  * zero extra taps. The grid is the picker every other filing surface uses, in her own most-used
  * order, so the suggestion she wants is under her thumb here for the same reason it is there.
+ *
+ * [accounts] are the banks she keeps by hand: with any, she says which one the money left or
+ * reached, or «نقد» — a row on one moves its figure (see [typedOnto]), and guessing one would move
+ * the wrong bank. A bank whose messages are read is not offered; its own message reports the money.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,7 +128,8 @@ fun ManualTxnSheet(
     categories: List<Category>,
     categoryUse: Map<String, Double>,
     notes: List<NoteUse>,
-    onSave: (signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long) -> Unit,
+    accounts: List<BankAccount>,
+    onSave: (signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long, accountId: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -128,6 +142,8 @@ fun ManualTxnSheet(
     var merchant by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var categoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Null until she answers; blank is «نقد».
+    var account by rememberSaveable { mutableStateOf<String?>(null) }
 
     // The day and the minute, seeded from now: entered at the till, nothing here is touched.
     val openedAt = remember { System.currentTimeMillis() }
@@ -161,6 +177,7 @@ fun ManualTxnSheet(
     // And by one with no amount at all: the field's own error only speaks over a malformed
     // figure, so an untouched field refused in silence.
     var missingAmount by remember { mutableStateOf(false) }
+    var missingAccount by remember { mutableStateOf(false) }
 
     AppSheet(
         onDismissRequest = onDismiss,
@@ -216,6 +233,30 @@ fun ManualTxnSheet(
                     .fillMaxWidth()
                     .semantics { contentDescription = "مبلغ به $moneyUnit" },
             )
+
+            if (accounts.isNotEmpty()) {
+                SheetLabel(if (outgoing) "از کدوم حساب؟" else "به کدوم حساب؟")
+                ChipChoice(
+                    options = accounts.map { it.key } + "",
+                    selected = account,
+                    label = { key -> accounts.firstOrNull { it.key == key }?.bankFa ?: "نقد" },
+                    onSelect = { account = it },
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                )
+                val picked = accounts.firstOrNull { it.key == account }
+                when {
+                    missingAccount && account == null -> MissingText("حسابش رو انتخاب کن.")
+                    // Her figure is the truth at the moment she typed it, so a row from before
+                    // it is already inside it — said, because the figure not moving looks broken.
+                    picked != null && sinceMidnight != null &&
+                        stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt -> Text(
+                        "مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Space.s),
+                    )
+                }
+            }
 
             SheetLabel("بابت چی؟")
             OutlinedTextField(
@@ -307,12 +348,14 @@ fun ManualTxnSheet(
                     focus.clearFocus()
                     missingCategory = categoryId == null
                     missingAmount = amount.isBlank()
+                    missingAccount = accounts.isNotEmpty() && account == null
                     val cleanRial = rial ?: return@PillButton
                     val minute = sinceMidnight ?: return@PillButton
                     val category = categoryId ?: return@PillButton
-                    val at = tehranDayStart(day) + minute
+                    if (missingAccount) return@PillButton
+                    val at = stampedAt(day, minute, openedAt)
                     val signed = if (outgoing) -cleanRial else cleanRial
-                    close { onSave(signed, category, merchant, note, at) }
+                    close { onSave(signed, category, merchant, note, at, account?.ifEmpty { null }) }
                 },
                 voice = ButtonVoice.PRIMARY,
                 modifier = Modifier.fillMaxWidth(),

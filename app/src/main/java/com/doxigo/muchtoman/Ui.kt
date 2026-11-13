@@ -1431,8 +1431,9 @@ private fun AppScreens(
             categories = state.ledger.categories,
             categoryUse = state.ledger.categoryUse,
             notes = state.ledger.notes,
-            onSave = { rial, categoryId, merchant, note, at ->
-                vm.addManualTxn(rial, categoryId, merchant, note, at)
+            accounts = state.bankAccounts.filter { it.manual },
+            onSave = { rial, categoryId, merchant, note, at, accountId ->
+                vm.addManualTxn(rial, categoryId, merchant, note, at, accountId)
                 addingTxn = false
             },
             onDismiss = { addingTxn = false },

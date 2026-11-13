@@ -13,7 +13,7 @@ import { tomanFieldToRial } from './installments';
 import { tehranDay, tehranDayStart } from './jalali';
 import { faClock, faDay, faWeekdayDate, moneyUnit } from './format';
 import { closeSheet, openSheet, registerSheet } from './nav';
-import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { AmountField, ChipChoice, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 import './timeline.css';
 import './manualTxn.css';
 
@@ -86,6 +86,16 @@ export function DigitsField({ digits, onDigits, length, sep, at, label, ariaLabe
   );
 }
 
+/**
+ * The row's moment (ManualTxnUi.kt `stampedAt`): the day and minute she answered — and, left at the
+ * minute the sheet opened with, that very millisecond. A bank she added a moment ago holds a figure
+ * typed within this same minute, and a row stamped at the minute's start would land before it.
+ */
+export function stampedAt(day: number, sinceMidnight: number, openedAt: number): number {
+  const at = tehranDayStart(day) + sinceMidnight;
+  return at === openedAt - (openedAt % 60_000) ? openedAt : at;
+}
+
 /** The clock as four digits, the colon drawn for her. */
 function ClockField({ digits, onDigits }: { digits: string; onDigits: (digits: string) => void }) {
   return (
@@ -116,6 +126,9 @@ export function DayStepper({ day, today, onDay }: { day: number; today: number; 
 /**
  * The answers in the order she knows them: which way, how much, what for, then the day and the
  * minute the bank would normally stamp — already filled with now, so the common case is no taps.
+ * With a bank she keeps by hand, she also says which one the money left or reached, or «نقد»: a row
+ * on one moves its figure, and guessing one would move the wrong bank. A bank whose messages are
+ * read is not offered; its own message reports the money.
  */
 function ManualTxnSheet() {
   const view = useLedger();
@@ -124,6 +137,8 @@ function ManualTxnSheet() {
   const [merchant, setMerchant] = useState('');
   const [note, setNote] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Null until she answers; blank is «نقد».
+  const [account, setAccount] = useState<string | null>(null);
   const [openedAt] = useState(Date.now);
   const today = tehranDay(openedAt);
   const [day, setDay] = useState(today);
@@ -131,6 +146,9 @@ function ManualTxnSheet() {
   // Raised by a save tap: the grid cannot flag itself, and an untouched amount refused in silence.
   const [missingCategory, setMissingCategory] = useState(false);
   const [missingAmount, setMissingAmount] = useState(false);
+  const [missingAccount, setMissingAccount] = useState(false);
+  const accounts = view.bankAccounts.filter((a) => a.manual);
+  const picked = accounts.find((a) => a.key === account);
 
   const rial = tomanFieldToRial(amount);
   const sinceMidnight = parseFaClock(clock);
@@ -147,8 +165,9 @@ function ManualTxnSheet() {
     (document.activeElement as HTMLElement | null)?.blur();
     setMissingCategory(categoryId == null);
     setMissingAmount(!amount.trim());
-    if (rial == null || sinceMidnight == null || categoryId == null) return;
-    addManualTxn(outgoing ? -rial : rial, categoryId, merchant, note, tehranDayStart(day) + sinceMidnight);
+    setMissingAccount(accounts.length > 0 && account == null);
+    if (rial == null || sinceMidnight == null || categoryId == null || (accounts.length > 0 && account == null)) return;
+    addManualTxn(outgoing ? -rial : rial, categoryId, merchant, note, stampedAt(day, sinceMidnight, openedAt), account || null);
     closeSheet();
   };
 
@@ -166,6 +185,17 @@ function ManualTxnSheet() {
       <AmountField label="مثلاً ۴۵۰ هزار" ariaLabel={`مبلغ به ${moneyUnit()}`} raw={amount} onRaw={setAmount} decimals={1}
         error={!amount.trim() ? (missingAmount ? 'مبلغش رو بنویس.' : null)
           : rial == null ? 'این عدد قابل خوندن نیست. فقط عدد وارد کن.' : null} />
+
+      {accounts.length > 0 && <>
+        <SheetLabel>{outgoing ? 'از کدوم حساب؟' : 'به کدوم حساب؟'}</SheetLabel>
+        <ChipChoice scroll options={[...accounts.map((a) => a.key), '']} selected={account}
+          label={(key) => accounts.find((a) => a.key === key)?.bankFa ?? 'نقد'} onSelect={setAccount} />
+        {missingAccount && account == null ? <p class="grid-error" role="status">حسابش رو انتخاب کن.</p>
+          // Her figure is the truth at the moment she typed it, so a row from before it is already
+          // inside it — said, because the figure not moving looks broken.
+          : picked && sinceMidnight != null && stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt
+            ? <p class="field-support">مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.</p> : null}
+      </>}
 
       <SheetLabel>بابت چی؟</SheetLabel>
       <TextField label="مثلاً میوه‌فروشی — خالی هم می‌شه" ariaLabel="بابت چی؟" value={merchant} maxLength={60} onInput={(v) => setMerchant(v.slice(0, 60))} />

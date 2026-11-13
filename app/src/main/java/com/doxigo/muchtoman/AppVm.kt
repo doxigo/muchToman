@@ -999,7 +999,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * `m:<id>` — the same mechanism a filed message uses, which is what lets her refile it later
      * — and the note rides the same rail as a note on any other row.
      */
-    fun addManualTxn(signedRial: Long, categoryId: String?, merchant: String, note: String, at: Long) {
+    fun addManualTxn(
+        signedRial: Long,
+        categoryId: String?,
+        merchant: String,
+        note: String,
+        at: Long,
+        /** A bank she keeps by hand, whose figure the row moves — see [typedOnto]. Null for cash. */
+        accountId: String? = null,
+    ) {
         if (signedRial == 0L) return
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
@@ -1016,6 +1024,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                             at = at,
                             day = tehranDay(at),
                             amountRial = signedRial,
+                            accountId = accountId,
                             categoryId = categoryId,
                             merchant = merchant.trim().take(60),
                             createdAt = now,
@@ -1054,8 +1063,37 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
+                if (accountId != null) settleTypedBanks()
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "addManualTxn failed: $it") }
+        }
+    }
+
+    /** A row she typed against a bank — the rows whose every change moves that bank's figure. */
+    private val LedgerEntry.movesBank get() = txn.ref.startsWith("m:") && txn.accountId != "MANUAL"
+
+    /**
+     * Her hand-kept banks' figures, laid again over the rows she typed against them — see
+     * [typedOnto]. Worked out from her last figure every time, never stepped, so a row deleted,
+     * restored or corrected lands the same way a new one does. In the scan's slot, like every
+     * other write to the balances: written beside a running scan, it could put back the accounts
+     * the scan had just folded a message into.
+     */
+    private fun settleTypedBanks() {
+        val app = getApplication<Application>()
+        restartScan {
+            runCatching {
+                val durable = DurableDb.get(app)
+                val accounts = store.bankAccounts
+                val typed = accounts.filter { it.manual }
+                    .mapNotNull { a -> durable.anchors().newest(a.key)?.let { a.key to it } }.toMap()
+                if (typed.isEmpty()) return@runCatching
+                val next = typedOnto(accounts, typed, ledgerEntries(DerivedDb.get(app), durable).entries.map { it.txn })
+                if (next == accounts) return@runCatching
+                store.bankAccounts = next
+                _state.update { it.copy(bankAccounts = next) }
+                recordSnapshot()
+            }.onFailure { android.util.Log.w("muchtoman", "settleTypedBanks failed: $it") }
         }
     }
 
@@ -1147,6 +1185,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 )
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
+                if (entry.movesBank) settleTypedBanks()
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
         }
@@ -1157,12 +1196,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * direction is laid on in derive, so only that one costs a derive.
      */
     fun editTxn(entry: LedgerEntry, rial: Long?, day: Long?, memberId: String?, direction: String?) =
-        ledgerEdit("editTxn", rederive = direction != null) { durable ->
+        ledgerEdit("editTxn", rederive = direction != null, banks = entry.movesBank) { durable ->
             editRow(durable, entry, rial, day, memberId, loadSession(durable)?.member.orEmpty(), direction = direction)
         }
 
     fun revertTxnEdits(entry: LedgerEntry) =
-        ledgerEdit("revertTxnEdits", rederive = true) { durable -> revertRow(durable, entry, loadSession(durable)?.member.orEmpty()) }
+        ledgerEdit("revertTxnEdits", rederive = true, banks = entry.movesBank) { durable ->
+            revertRow(durable, entry, loadSession(durable)?.member.orEmpty())
+        }
 
     /** The row in parts, or whole again — see [splitRow]. Refiling is a derive; an edit is not. */
     fun splitTxn(entry: LedgerEntry, parts: List<Pair<String, Long>>) =
@@ -1186,7 +1227,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * An answer written, the ledger published, the household told. Only a filing needs [derive] —
      * the corrections in `Edits.kt` are laid over the rows where they are read.
      */
-    private fun ledgerEdit(what: String, rederive: Boolean = false, write: suspend (DurableDb) -> Unit) {
+    private fun ledgerEdit(
+        what: String,
+        rederive: Boolean = false,
+        /** The row moves a hand-kept bank's figure — see [settleTypedBanks]. */
+        banks: Boolean = false,
+        write: suspend (DurableDb) -> Unit,
+    ) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.Default) {
             val durable = DurableDb.get(app)
@@ -1195,6 +1242,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 write(durable)
                 if (rederive) derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
+                if (banks) settleTypedBanks()
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "$what failed: $it") }
         }
@@ -1224,6 +1272,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 )
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
+                if (durable.manual().all().any { it.id == ref.removePrefix("m:") && it.accountId != null }) settleTypedBanks()
                 requestFamilySync(silent = true)
             }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
         }

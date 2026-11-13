@@ -8,7 +8,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import './timeline.css';
-import { useLedger, ledger } from './derived';
+import { bankOfKey, useLedger, ledger } from './derived';
 import type { LedgerView } from './derived';
 import { categoriseAll, categorise, deleteTxn, learnSimilarNow, restoreTxn, setNote } from './ledger';
 import { editable, splitParts, splittable } from './edits';
@@ -190,6 +190,8 @@ function transactionDetails(entry: LedgerEntry): Array<[string, string]> {
   // different fact: the stamp the bank printed, often a bare date.
   out.push(['تاریخ', faMoment(txn.at, txn.day)]);
   out.push(['ثبت شده از', txn.sourceKind === 'manual' ? 'ورود دستی' : bankFa(txn.bank)]);
+  // A typed row on a bank she keeps by hand moved that bank's figure; which one is stated.
+  if (txn.ref.startsWith('m:') && txn.accountId !== 'MANUAL') out.push(['حساب', bankFa(bankOfKey(txn.accountId))]);
   if (txn.printedAt.trim()) out.push(['زمان ثبت', bidi(txn.printedAt)]);
   if (txn.mask.trim()) out.push(['کارت یا حساب', bidi(txn.mask)]);
   if (txn.refNo.trim()) out.push(['شماره پیگیری', bidi(txn.refNo)]);

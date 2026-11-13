@@ -1913,6 +1913,8 @@ private fun transactionDetails(entry: LedgerEntry): List<Pair<String, String>> {
         // which is often the date alone and can lag the minute the message actually arrived.
         add("تاریخ" to faMoment(txn.at, txn.day))
         add("ثبت شده از" to if (txn.sourceKind == "manual") "ورود دستی" else bankNameOf(txn.bank))
+        // A typed row on a bank she keeps by hand moved that bank's figure; which one is stated.
+        if (txn.ref.startsWith("m:") && txn.accountId != "MANUAL") add("حساب" to bankNameOf(txn.accountId.substringBefore(':')))
         txn.printedAt.takeIf { it.isNotBlank() }?.let { add("زمان ثبت" to bidi(it)) }
         txn.mask.takeIf { it.isNotBlank() }?.let { add("کارت یا حساب" to bidi(it)) }
         txn.refNo.takeIf { it.isNotBlank() }?.let { add("شماره پیگیری" to bidi(it)) }

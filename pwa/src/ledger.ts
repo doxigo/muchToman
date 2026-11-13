@@ -105,9 +105,12 @@ export function setNote(entry: LedgerEntry, text: string): void {
 
 /**
  * A transaction she typed in herself. The row and its answers land together: the category an
- * ordinary pinned decision on `m:<id>`, the note on the same rail as any other row's.
+ * ordinary pinned decision on `m:<id>`, the note on the same rail as any other row's. [accountId]
+ * is a bank she keeps by hand, whose figure the row moves (derived.ts `typedOnto`); null for cash.
  */
-export function addManualTxn(signedRial: number, categoryId: string | null, merchant: string, note: string, at: number): void {
+export function addManualTxn(
+  signedRial: number, categoryId: string | null, merchant: string, note: string, at: number, accountId: string | null = null,
+): void {
   if (signedRial === 0) return;
   const now = Date.now();
   const id = uuid7(now);
@@ -116,7 +119,7 @@ export function addManualTxn(signedRial: number, categoryId: string | null, merc
   const familyRef = mine ? familyTxnId(mine, ref) : '';
   batch(() => {
     put('manual', {
-      id, at, day: tehranDay(at), amountRial: signedRial, accountId: null, categoryId,
+      id, at, day: tehranDay(at), amountRial: signedRial, accountId, categoryId,
       merchant: merchant.trim().slice(0, 60), note: '', createdAt: now, updatedAt: now, deleted: false,
     });
     if (categoryId != null) put('decisions', decision(ref, DecisionKind.CATEGORY, categoryId, now, familyRef));

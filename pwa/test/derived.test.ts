@@ -721,6 +721,23 @@ describe('ledger actions', () => {
     expect(state.row('categories', gym.id)!.updatedAt).toBe(gym.updatedAt);
   });
 
+  it('moves a bank she keeps by hand by the rows she types against it, and nothing else', () => {
+    ledger.setBankBalance('BLU', 20_000_000);
+    const after = Date.now() + 1;
+    ledger.addManualTxn(-3_000_000, 'cat_health', '', '', after, 'BLU');
+    // Cash, and a row from before her figure — already inside it.
+    ledger.addManualTxn(-1_000_000, 'cat_health', '', '', after);
+    ledger.addManualTxn(-5_000_000, 'cat_health', '', '', after - 60_000, 'BLU');
+    expect(derived.ledger().bankTotalRial).toBe(17_000_000);
+    expect(derived.bankAccountsView()).toMatchObject([{ bank: 'BLU', manual: true }]);
+    const typed = () => derived.ledger().entries.find((e) => e.txn.accountId === 'BLU' && e.txn.at === after)!;
+    // Worked out, not stepped: a corrected figure and a deleted row both land as a new one does.
+    ledger.editTxn(typed(), 4_000_000, null, null);
+    expect(derived.ledger().bankTotalRial).toBe(16_000_000);
+    ledger.deleteTxn(typed());
+    expect(derived.ledger().bankTotalRial).toBe(20_000_000);
+  });
+
   it('keeps her balances, forgets one on request, and switches banks out of the total', async () => {
     await ledger.addPastedSms('برداشت مبلغ 1,000,000 ریال\nمانده 50,000,000 ریال', 'SAMAN', 1000);
     expect(derived.ledger().bankTotalRial).toBe(50_000_000);

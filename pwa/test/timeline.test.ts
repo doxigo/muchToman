@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { searchFold } from '../src/catalog';
 import { accountPicks, filterEmptyFa, ledgerRows, matchesLedgerSearch, memberPicks } from '../src/timeline';
-import { clockDigits, parseFaClock } from '../src/manualTxn';
+import { clockDigits, parseFaClock, stampedAt } from '../src/manualTxn';
 import { faClock } from '../src/format';
 import { tehranDayStart } from '../src/jalali';
 import type { LedgerEntry } from '../src/model';
@@ -151,5 +151,14 @@ describe('the manual sheet clock', () => {
     for (const bad of ['۱۴', '930', '25:00', '14:60', '']) expect(parseFaClock(bad)).toBeNull();
     expect(parseFaClock('0000')).toBe(0);
     expect(parseFaClock('۲۳:۵۹')).toBe((23 * 60 + 59) * 60_000);
+  });
+
+  it('keeps the very millisecond the sheet opened at while the minute is left alone', () => {
+    // A figure typed for a bank at 14:03:45, then a row at the seeded «۱۴:۰۳»: stamped at the
+    // minute's start, it would land before the figure and move nothing.
+    const openedAt = tehranDayStart(20_000) + (14 * 60 + 3) * 60_000 + 45_000;
+    expect(stampedAt(20_000, (14 * 60 + 3) * 60_000, openedAt)).toBe(openedAt);
+    expect(stampedAt(20_000, (14 * 60 + 2) * 60_000, openedAt)).toBe(tehranDayStart(20_000) + (14 * 60 + 2) * 60_000);
+    expect(stampedAt(19_999, (14 * 60 + 3) * 60_000, openedAt)).toBe(tehranDayStart(19_999) + (14 * 60 + 3) * 60_000);
   });
 });
