@@ -585,6 +585,8 @@ const ANDROID_ONLY: Record<string, string> = {
   'روشن کردن پیامک‌ها': SMS,
   'در حال خواندن پیامک اصلی...': `${SMS} — the body is fetched from the inbox; the PWA keeps the pasted one`,
   'نوشتن همین یادداشت': TALKBACK,
+  'نوشتن همین اسم': TALKBACK,
+  'تغییر خرج ثابت': TALKBACK,
   // Ui.kt
   'در حال بازخوانی…': SMS,
 };

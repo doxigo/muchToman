@@ -359,15 +359,15 @@ test('a budget counts this month against its cap', async ({ page }) => {
 test('a bill has no count to ask and says this month\'s on its card', async ({ page }) => {
   await onboard(page);
   await page.getByRole('tab', { name: 'آینده' }).click();
-  await page.getByRole('button', { name: 'اولین قسط یا قبض' }).click();
-  await page.getByRole('dialog', { name: 'قسط تازه' }).getByRole('radio', { name: 'قبض و اجاره' }).click();
-  const sheet = page.getByRole('dialog', { name: 'قبض تازه' });
+  await page.getByRole('button', { name: 'اولین قسط یا خرج ثابت' }).click();
+  await page.getByRole('dialog', { name: 'قسط تازه' }).getByRole('radio', { name: 'خرج ثابت' }).click();
+  const sheet = page.getByRole('dialog', { name: 'خرج ثابت تازه' });
   await expect(sheet.getByText('چند قسط مونده؟')).toHaveCount(0);
-  await sheet.getByRole('textbox', { name: 'مثلاً اجاره، اینترنت یا موبایل' }).fill('اجاره');
+  await sheet.getByRole('textbox', { name: 'خرجِ چی؟' }).fill('اجاره');
   await sheet.getByRole('textbox', { name: 'مبلغ هر ماه به تومان' }).pressSequentially('8000000');
   // The day defaults to today's, so the first is due today.
   await expect(sheet).toContainText('بعد هر ماه همین روز تا وقتی پاکش کنی.');
-  await sheet.getByRole('button', { name: 'ذخیره قبض' }).click();
+  await sheet.getByRole('button', { name: 'ذخیره خرج ثابت' }).click();
   await expect(sheet).toHaveCount(0);
   const card = page.getByRole('button', { name: /^اجاره/ });
   await expect(card).toContainText('ماهی ۸ میلیون تومان');
