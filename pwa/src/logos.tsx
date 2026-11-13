@@ -4,6 +4,7 @@
  * ones Ui.kt maps. Keyed by `Bank` enum name and by network id. The markup is this file's own
  * constant, never data, so it goes in as innerHTML.
  */
+import { CategoryIcon } from './categoryIcon';
 
 /** [viewBox, inner SVG markup] */
 type Logo = [string, string];
@@ -76,6 +77,22 @@ export function BankLogo({ bank, size = 32 }: { bank: string; size?: number }) {
       {logo
         ? <svg viewBox={logo[0]} width="100%" height="100%" style={{ display: 'block' }} dangerouslySetInnerHTML={{ __html: logo[1] }} />
         : <span style={{ fontSize: `calc(${size / 2}px * var(--text))`, lineHeight: 1 }}>💳</span>}
+    </span>
+  );
+}
+
+/**
+ * Cash, where it stands among the banks (BanksUi.kt CashMark): «برداشت نقدی»'s banknote on BankLogo's
+ * white plate, so a row of accounts reads as one set. Inked in the banknote's light hue in both
+ * themes, because the plate is white in both.
+ */
+export function CashMark({ size = 32 }: { size?: number }) {
+  return (
+    <span aria-hidden="true" style={{
+      display: 'inline-flex', flex: 'none', alignItems: 'center', justifyContent: 'center',
+      width: size, height: size, borderRadius: '50%', background: '#fff',
+    }}>
+      <CategoryIcon glyph="NOTE" size={size * 0.75} color="#17805A" />
     </span>
   );
 }

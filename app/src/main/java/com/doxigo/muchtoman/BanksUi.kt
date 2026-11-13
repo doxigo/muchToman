@@ -661,6 +661,25 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
     }
 }
 
+/**
+ * Cash, where it stands among the banks: «برداشت نقدی»'s banknote on [BankLogo]'s white plate, so
+ * a row of accounts reads as one set. Inked in the banknote's light hue in both themes, because the
+ * plate is white in both.
+ */
+@Composable
+internal fun CashMark(size: Dp = 32.dp) {
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color.White)
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(CategoryGlyph.NOTE, Color(0xFF17805A), size = size * 0.75f)
+    }
+}
+
 @Composable
 internal fun WalletNetworkLogo(network: String, size: Dp = 28.dp) {
     val logo = when (network.lowercase()) {

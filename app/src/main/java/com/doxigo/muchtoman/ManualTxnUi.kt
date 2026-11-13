@@ -3,6 +3,7 @@ package com.doxigo.muchtoman
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** The clock field's keystrokes as it keeps them: ASCII digits, from either digit set, nothing else. */
@@ -236,13 +238,16 @@ fun ManualTxnSheet(
 
             if (accounts.isNotEmpty()) {
                 SheetLabel(if (outgoing) "از کدوم حساب؟" else "به کدوم حساب؟")
-                ChipChoice(
-                    options = accounts.map { it.key } + "",
-                    selected = account,
-                    label = { key -> accounts.firstOrNull { it.key == key }?.bankFa ?: "نقد" },
-                    onSelect = { account = it },
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                )
+                // Each account's mark before its name: a bank's logo, and cash's banknote.
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                ) {
+                    accounts.forEach { a ->
+                        Chip(a.bankFa, account == a.key, lead = { BankLogo(a.bank, size = 24.dp) }) { account = a.key }
+                    }
+                    Chip("نقد", account == "", lead = { CashMark(size = 24.dp) }) { account = "" }
+                }
                 val picked = accounts.firstOrNull { it.key == account }
                 when {
                     missingAccount && account == null -> MissingText("حسابش رو انتخاب کن.")

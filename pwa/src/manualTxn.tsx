@@ -13,7 +13,8 @@ import { tomanFieldToRial } from './installments';
 import { tehranDay, tehranDayStart } from './jalali';
 import { faClock, faDay, faWeekdayDate, moneyUnit } from './format';
 import { closeSheet, openSheet, registerSheet } from './nav';
-import { AmountField, ChipChoice, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { BankLogo, CashMark } from './logos';
+import { AmountField, PillButton, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 import './timeline.css';
 import './manualTxn.css';
 
@@ -188,8 +189,19 @@ function ManualTxnSheet() {
 
       {accounts.length > 0 && <>
         <SheetLabel>{outgoing ? 'از کدوم حساب؟' : 'به کدوم حساب؟'}</SheetLabel>
-        <ChipChoice scroll options={[...accounts.map((a) => a.key), '']} selected={account}
-          label={(key) => accounts.find((a) => a.key === key)?.bankFa ?? 'نقد'} onSelect={setAccount} />
+        {/* Each account's mark before its name: a bank's logo, and cash's banknote. */}
+        <div class="chips scroll" role="radiogroup" aria-label={outgoing ? 'از کدوم حساب؟' : 'به کدوم حساب؟'}>
+          {accounts.map((a) => (
+            <button type="button" key={a.key} class="chip bank-chip" role="radio" aria-checked={a.key === account} onClick={() => setAccount(a.key)}>
+              <BankLogo bank={a.bank} size={24} />
+              {a.bankFa}
+            </button>
+          ))}
+          <button type="button" class="chip bank-chip" role="radio" aria-checked={account === ''} onClick={() => setAccount('')}>
+            <CashMark size={24} />
+            نقد
+          </button>
+        </div>
         {missingAccount && account == null ? <p class="grid-error" role="status">حسابش رو انتخاب کن.</p>
           // Her figure is the truth at the moment she typed it, so a row from before it is already
           // inside it — said, because the figure not moving looks broken.
