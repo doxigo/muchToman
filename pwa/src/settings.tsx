@@ -40,7 +40,7 @@ import { BANKS, PICKABLE_BANKS } from './sms';
 import type { Bank } from './sms';
 import { StepButton } from './report';
 import { pref, setPref, textSize, useData } from './state';
-import { AmountField, ArmedButton, PillButton, Screen, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
+import { AmountField, ArmedButton, Live, PillButton, Screen, SegmentedChoice, Sheet, SheetLabel, SheetTitle, TextField } from './ui';
 
 type Room = 'INDEX' | 'SMS' | 'SECURITY' | 'BACKUP' | 'CACHE' | 'HEALTH' | 'FEEDBACK';
 
@@ -58,8 +58,9 @@ export function SectionLabel({ children }: { children: ComponentChildren }) {
   return <h2 class="set-label">{children}</h2>;
 }
 
+/** A line in the room's small voice. One that comes and goes is wrapped in `Live`, which is what gets it said. */
 export function Note({ children, tone }: { children: ComponentChildren; tone?: 'strong' | 'error' }) {
-  return <p class={`set-note${tone ? ` ${tone}` : ''}`} aria-live={tone === 'error' ? 'polite' : undefined}>{children}</p>;
+  return <p class={`set-note${tone ? ` ${tone}` : ''}`}>{children}</p>;
 }
 
 /** A band: rows of one kind grouped into one rounded object, hairline-divided. */
@@ -279,7 +280,7 @@ function ThemeSheet() {
   return (
     <Sheet label="ظاهر برنامه">
       <SheetTitle>ظاهر برنامه</SheetTitle>
-      <p class="sheet-body">«خودکار» یعنی هرچی گوشی‌ات می‌گه — روشن توی روز، تیره توی شب.</p>
+      <p class="sheet-body">«خودکار» یعنی هرچی گوشی‌ات می‌گه.</p>
       <div style={{ height: 'var(--l)' }} />
       <SegmentedChoice options={THEMES} selected={pref('themeMode')} label={(t) => THEME_FA[t]} fontSize={16}
         onSelect={(t) => { setPref('themeMode', t); closeSheet(); }} />
@@ -494,10 +495,10 @@ function SecurityPage() {
   return (
     <SettingsPage title="قفل و امنیت">
       <Band>
-        <SettingCard mark={<LockGlyph />} title="قفل برنامه" subtitle="با اثر انگشت یا رمز گوشی باز می‌شه"
+        <SettingCard mark={<LockGlyph />} title="قفل برنامه" subtitle="با همون قفل گوشی باز می‌شه"
           checked={pref('lockEnabled')} enabled={available === true && !asking} onChange={(on) => void change(on)} />
       </Band>
-      {available === false && <Note>برای فعال کردن قفل، اول توی تنظیمات گوشی رمز یا اثر انگشت بذار.</Note>}
+      {available === false && <Note>برای فعال کردن قفل، اول توی تنظیمات گوشی یه قفل صفحه بذار.</Note>}
     </SettingsPage>
   );
 }
@@ -566,7 +567,7 @@ function BackupPage() {
         <SettingCard mark={<Glyph glyph="HOUSE" />} title="یادآوری پشتیبان در برنامه" subtitle="بعد از ۳۰ روز، صفحهٔ خانه یادآوری می‌کنه. اعلانی فرستاده نمی‌شه."
           checked={pref('backupReminderEnabled')} onChange={(on) => setPref('backupReminderEnabled', on)} />
       </Band>
-      {ui.notice && <p class="set-note" style={{ color: ui.failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{ui.notice}</p>}
+      <Live>{ui.notice && <p class="set-note" style={{ color: ui.failed ? 'var(--error)' : 'var(--on-surface)' }}>{ui.notice}</p>}</Live>
       {/* Apart from the backup, after everything that reports on it: a file in the clear. */}
       <LedgerCsvExport />
     </SettingsPage>
@@ -597,7 +598,7 @@ function LedgerCsvExport() {
         <DoorRow title="خروجی اکسل" subtitle="تراکنش‌های دفتر و موجودی‌ها، توی یک فایل CSV" glyph="SHEET" onClick={save} />
       </Band>
       <Note>فایل اکسل رمز نداره؛ هر کی بهش برسه همهٔ تراکنش‌ها و موجودی‌هات رو می‌تونه بخونه.</Note>
-      {notice && <p class="set-note" style={{ color: failed ? 'var(--error)' : 'var(--on-surface)' }} aria-live="polite">{notice}</p>}
+      <Live>{notice && <p class="set-note" style={{ color: failed ? 'var(--error)' : 'var(--on-surface)' }}>{notice}</p>}</Live>
     </>
   );
 }
@@ -623,7 +624,7 @@ function ExportPassSheet() {
         <TextField type="password" label="رمز — دست‌کم ۶ حرف" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} autoFocus />
         <TextField type="password" label="دوباره همون رمز" value={again} onInput={(v) => { setAgain(v); setProblem(null); }} onEnter={done} />
       </div>
-      {problem && <p class="set-note error" aria-live="polite">{problem}</p>}
+      <Live>{problem && <p class="set-note error">{problem}</p>}</Live>
       <div style={{ height: 'var(--xl)' }} />
       <PillButton label="ساختن فایل پشتیبان" voice="primary" block onClick={done} />
     </Sheet>
@@ -673,7 +674,7 @@ function RestoreSheet({ file }: { file: File }) {
           <p class="sheet-body">رمزی که موقع ساختن فایل گذاشتی رو بزن.</p>
           <div style={{ height: 'var(--l)' }} />
           <TextField type="password" label="رمز فایل" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} autoFocus onEnter={() => void read()} />
-          {problem && <p class="set-note error" aria-live="polite">{problem}</p>}
+          <Live>{problem && <p class="set-note error">{problem}</p>}</Live>
           <div style={{ height: 'var(--xl)' }} />
           {/* The KDF is deliberately slow, so the wait is named rather than mute — and dimmed only
               while it runs, as a second tap would start a second slow read under the first. */}
@@ -683,7 +684,7 @@ function RestoreSheet({ file }: { file: File }) {
         <>
           <p style={{ fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(24px * var(--text))', marginTop: 'var(--xs)' }}>{`${ready.words} خونده شد و رمزش درسته.`}</p>
           <p class="sheet-body" style={{ marginTop: 'var(--m)' }}>با بازگردانی، همه‌چیزِ الانِ برنامه — پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات — با نسخهٔ پشتیبان عوض می‌شه و برنمی‌گرده.</p>
-          {problem && <p class="set-note error" aria-live="polite">{problem}</p>}
+          <Live>{problem && <p class="set-note error">{problem}</p>}</Live>
           <div style={{ height: 'var(--xl)' }} />
           <ArmedAction label="بازگردانی از این پشتیبان" armedLabel="مطمئنی؟ همه‌چیز با نسخهٔ پشتیبان عوض می‌شه — دوباره بزن"
             enabled={!working} onConfirmed={() => void confirm()} />
@@ -769,8 +770,10 @@ function FeedbackPage() {
       {/* Dimmed only while it is on its way, so one message is never sent twice. */}
       <PillButton label={sending === 'SENDING' ? 'در حال فرستادن…' : 'فرستادن'} voice="primary" block
         disabled={sending === 'SENDING'} onClick={() => void send()} />
-      {sending === 'SENT' && <p class="set-note strong" aria-live="polite">فرستاده شد.</p>}
-      {sending === 'FAILED' && <Note tone="error">فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه.</Note>}
+      <Live>
+        {sending === 'SENT' && <Note tone="strong">فرستاده شد.</Note>}
+        {sending === 'FAILED' && <Note tone="error">فرستاده نشد. اینترنت رو نگاه کن و دوباره بزن؛ متنت سر جاشه.</Note>}
+      </Live>
     </SettingsPage>
   );
 }

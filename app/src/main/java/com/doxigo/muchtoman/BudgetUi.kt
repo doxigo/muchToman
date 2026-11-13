@@ -157,6 +157,8 @@ fun BudgetScreen(
     /** A cheque, new with a null id or corrected: who for, the amount in Rial, its day, its bank. */
     onSaveCheque: (String?, String, Long, Long, String) -> Unit,
     onPassCheque: (String) -> Unit,
+    /** A bank kept by hand and its balance in Toman, for a cheque with no account to draw on. */
+    onAddBank: (String, Double) -> Unit,
     /** طلب و بدهی, as one door: see [LoansDoor]. */
     loans: LoanTotals,
     loanPeople: Int,
@@ -179,6 +181,7 @@ fun BudgetScreen(
     var openInstallment by rememberSaveable { mutableStateOf<String?>(null) }
     var addingCheque by rememberSaveable { mutableStateOf(false) }
     var editingCheque by rememberSaveable { mutableStateOf<String?>(null) }
+    var addingBank by rememberSaveable { mutableStateOf(false) }
     // Off the spending side alone, in the grid's own order: those are the only categories a roof
     // could have counted, so they are the only ones worth naming as left out of one. «پس‌گرفتن
     // قرض» is set aside on a fresh install too, and listing money coming back under a cap on
@@ -262,15 +265,6 @@ fun BudgetScreen(
             )
 
             SectionLabel("هدف‌ها")
-            if (goals.isEmpty()) {
-                Text(
-                    "اینجا فقط هدف‌هایی رو می‌بینی که خودت انتخاب کردی. " +
-                        "خبری از امتیاز، روزهای پیاپی یا مقایسه با بقیه نیست.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 26.sp,
-                )
-                Spacer(Modifier.height(Space.l))
-            }
             val goalRows = goals.size + 1
             goals.forEachIndexed { i, progress ->
                 GoalCard(
@@ -456,6 +450,15 @@ fun BudgetScreen(
                 onSaveCheque(null, name, amount, due, bank)
             },
             onDismiss = { addingCheque = false },
+            onAddBank = { addingCheque = false; addingBank = true },
+        )
+    }
+
+    if (addingBank) {
+        AddBankSheet(
+            taken = remember(bankAccounts) { bankAccounts.map { it.bank }.toSet() },
+            onAdd = onAddBank,
+            onDismiss = { addingBank = false },
         )
     }
 
@@ -1408,11 +1411,11 @@ private fun BudgetSheet(
                     // Error ink: the way out of the clash deletes the other budgets. A block, as
                     // in the PWA: the label is a sentence and it answers the sheet as much as
                     // the save under it does.
-                    PillButton(
+                    ArmedButton(
                         "فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن",
+                        "بودجه‌های تکراری پاک می‌شن؛ برای حذف دوباره بزن",
                         { close(onKeep) },
                         Modifier.fillMaxWidth().padding(top = Space.m),
-                        voice = ButtonVoice.DANGER,
                         block = true,
                     )
                 }
@@ -1805,6 +1808,8 @@ private fun ChequeSheet(
     onDismiss: () -> Unit,
     editing: Goal? = null,
     onDelete: () -> Unit = {},
+    /** Opens the add-a-bank-by-hand sheet, for a new cheque with no account to draw it on. */
+    onAddBank: () -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val focus = LocalFocusManager.current
@@ -1840,6 +1845,27 @@ private fun ChequeSheet(
                 .padding(bottom = Space.l),
         ) {
             SheetTitle(if (editing != null) "ویرایش چک" else "چک تازه")
+
+            // No account to draw on: every field would end at a save that demands one, so the
+            // sheet offers the one thing that unblocks it instead.
+            if (editing == null && banks.isEmpty()) {
+                Text(
+                    "چک از یه حساب بانکی کشیده می‌شه و هنوز حسابی اینجا نیست. با اولین پیامک بانک خودش میاد، یا همین حالا دستی اضافه‌اش کن.",
+                    fontSize = 14.sp,
+                    lineHeight = 23.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Space.s),
+                )
+                Spacer(Modifier.height(Space.xl))
+                PillButton(
+                    "اضافه کردن بانک",
+                    { close(onAddBank) },
+                    Modifier.fillMaxWidth(),
+                    voice = ButtonVoice.PRIMARY,
+                    block = true,
+                )
+                return@Column
+            }
 
             SheetLabel("چقدر، به $moneyUnit")
             OutlinedTextField(

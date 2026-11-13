@@ -8,7 +8,7 @@
 import { render } from 'preact';
 import './app.css';
 import { App } from './app';
-import { pref, rows, setPref, setWriteErrorHandler, subscribe } from './state';
+import { pref, rows, setPref, setWriteErrorHandler, settled, subscribe } from './state';
 import { ensureSeeded } from './rules';
 import { ledger } from './derived';
 import { configureWealth, refreshIfStale } from './data';
@@ -31,8 +31,54 @@ async function takePairing(): Promise<void> {
   openPage('family');
 }
 
+/**
+ * A new build for an app that stays open for days. The shell is served from the cache, so a deploy
+ * only arrives when the waiting worker takes over — and the page then reloads once onto it. That
+ * happens while the app is out of sight, or on a tap of «تازه کن»; never under someone using it,
+ * since a half-typed note is kept on blur and on hide, not on a reload out of nowhere.
+ */
+function watchForUpdates(): void {
+  if (!('serviceWorker' in navigator)) return;
+  const sw = navigator.serviceWorker;
+  // The first install claims the page too; that is not an update to reload for.
+  let hadController = sw.controller != null;
+  // This page told the waiting worker to take over (hidden, or from the notice).
+  let asked = false;
+  // Another window let the new worker in while this one was in front: reload once it is hidden.
+  let owed = false;
+  let reloading = false;
+  const reload = (): void => {
+    if (reloading) return;
+    reloading = true;
+    // A turn later, so a note kept on this same hide is queued first; then written before the reload.
+    setTimeout(() => void settled().then(() => location.reload()), 0);
+  };
+  const takeOver = (worker: ServiceWorker): void => { asked = true; worker.postMessage({ type: 'skip-waiting' }); };
+  const offer = (worker: ServiceWorker | null): void => {
+    if (!worker || !hadController) return;
+    if (document.visibilityState === 'hidden') takeOver(worker);
+    else showNotice('نسخهٔ تازهٔ برنامه آماده‌ست.', { label: 'تازه کن', run: () => takeOver(worker) });
+  };
+  sw.addEventListener('controllerchange', () => {
+    if (!hadController) { hadController = true; return; }
+    if (asked || document.visibilityState === 'hidden') reload(); else owed = true;
+  });
+  sw.register('/sw.js').then((registration) => {
+    offer(registration.waiting);
+    registration.addEventListener('updatefound', () => {
+      const next = registration.installing;
+      next?.addEventListener('statechange', () => { if (next.state === 'installed') offer(next); });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') { registration.update().catch(() => {}); return; }
+      if (owed) reload();
+      else if (registration.waiting) takeOver(registration.waiting);
+    });
+  }).catch(() => {});
+}
+
 async function start(): Promise<void> {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  watchForUpdates();
   void navigator.storage?.persist?.().catch(() => false);
   await ensureSeeded();
   if (import.meta.env.DEV) {

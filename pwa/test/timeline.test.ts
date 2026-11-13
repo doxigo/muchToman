@@ -78,6 +78,26 @@ describe('what دفتر lists', () => {
     expect(ledgerRows([row], 'ALL', [], 'دخانیات').map((e) => e.categoryId)).toEqual(['cat_smokes']);
     expect(ledgerRows([row], 'INCOME', [], '')).toEqual([]);
   });
+
+  // ReportsTest.kt's lens case, through ledgerRows: lensMatches itself is private.
+  it('each lens shows its own side, and only «همه» shows what is neither', () => {
+    const income = entry({ signed: 100_000_000 });
+    const spent = entry({ signed: -30_000_000 });
+    // Both legs of a transfer, and a message that stated a balance without moving anything.
+    const legIn = entry({ signed: 500_000_000, transfer: true });
+    const legOut = entry({ signed: -500_000_000, transfer: true });
+    const stated = entry({ signed: null });
+    const rows = [income, spent, legIn, legOut, stated];
+
+    expect(ledgerRows(rows, 'ALL', [], '')).toEqual(rows);
+    expect(ledgerRows(rows, 'INCOME', [], '')).toEqual([income]);
+    expect(ledgerRows(rows, 'EXPENSE', [], '')).toEqual([spent]);
+    // A transfer leg is her own money moving: through «درآمد» it would be half a million never earned.
+    for (const lens of ['INCOME', 'EXPENSE'] as const) {
+      expect(ledgerRows(rows, lens, [], '').some((e) => e.transfer), lens).toBe(false);
+      expect(ledgerRows(rows, lens, [], '').every((e) => e.txn.signedRial != null), lens).toBe(true);
+    }
+  });
 });
 
 describe('whose, and which account (LedgerSearchTest.kt)', () => {

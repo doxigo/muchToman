@@ -25,13 +25,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -178,7 +176,7 @@ fun EditTxnSheet(
                     verticalArrangement = Arrangement.spacedBy(Space.s),
                 ) {
                     members.forEach { m ->
-                        MemberChip(m, chosen = m.id == member) { member = m.id }
+                        Chip(m.name, m.id == member, lead = { MemberFace(m.name, m.avatar, size = 24.dp) }) { member = m.id }
                     }
                 }
             }
@@ -227,32 +225,6 @@ fun EditTxnSheet(
             Spacer(Modifier.height(Space.s))
             PillButton("انصراف", { close(onDismiss) }, block = true, modifier = Modifier.fillMaxWidth())
         }
-    }
-}
-
-/** A household member as a pill: their face and name, `primary` when chosen. */
-@Composable
-private fun MemberChip(member: FamilyMember, chosen: Boolean, onPick: () -> Unit) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(
-                if (chosen) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant,
-            )
-            .selectable(selected = chosen, role = Role.RadioButton, onClick = onPick)
-            .heightIn(min = 44.dp)
-            .padding(horizontal = Space.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MemberFace(member.name, member.avatar, size = 24.dp)
-        Spacer(Modifier.width(Space.s))
-        Text(
-            member.name,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 

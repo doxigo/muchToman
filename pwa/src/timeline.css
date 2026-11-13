@@ -28,9 +28,6 @@
 .ledger-search { margin-bottom: var(--m); }
 .narrowed { display: flex; align-items: center; gap: var(--s); padding-bottom: var(--m); }
 .narrowed p { font-size: calc(12px * var(--text)); line-height: calc(18px * var(--text)); color: var(--on-surface-variant); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-.clear-pill { flex: none; min-height: 48px; padding: 0; border: 0; background: none; }
-.clear-pill > span { display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--l); border-radius: var(--r-pill); background: var(--surface-variant); color: var(--on-surface); font-size: calc(12px * var(--text)); font-weight: 700; white-space: nowrap; transition: transform var(--fast) var(--enter); }
-.clear-pill:active > span { transform: scale(.97); }
 
 .ledger-answer { min-height: 50dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--m); text-align: center; padding: var(--xl); }
 .ledger-answer .strong { font-weight: 700; color: var(--on-bg); }
@@ -125,12 +122,12 @@
 .deck-question { margin-top: var(--xl); font-size: calc(18px * var(--text)); font-weight: 700; color: var(--on-bg); }
 .deck-foot { position: sticky; bottom: 0; display: flex; gap: var(--s); margin: 0 calc(-1 * var(--edge)); padding: var(--s) var(--edge) calc(var(--m) + env(safe-area-inset-bottom)); background: var(--bg); }
 .deck-foot > .pill { flex: 1; }
-/* Not a surface of its own: it is the answer that changes nothing, and a fill would promise it does. */
-.pill.skip-answer { background: transparent; color: var(--on-surface-variant); font-weight: 500; }
 
 .deck-done { display: flex; flex-direction: column; min-height: 100dvh; padding-bottom: calc(var(--m) + env(safe-area-inset-bottom)); }
 .deck-done-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .done-disc { width: 96px; height: 96px; background: color-mix(in srgb, var(--tertiary) 16%, transparent); }
+/* Cards put off: nothing is done, so no green — a waiting row's grey dots on the neutral well. */
+.done-disc.later { background: var(--surface-variant); }
 .done-title { margin-top: var(--xl); font-size: calc(26px * var(--text)); font-weight: 900; color: var(--on-bg); }
 .done-caption { margin-top: var(--s); font-size: calc(14px * var(--text)); line-height: calc(23px * var(--text)); }
 .done-share { width: 100%; margin-top: var(--xxl); padding: var(--xl); border-radius: var(--r-group); background: var(--surface-variant); }

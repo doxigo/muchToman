@@ -419,7 +419,8 @@ test('joins a household and reads Android payloads that omit their defaults', as
   await page.getByRole('button', { name: 'فیلتر', exact: true }).click();
   const filter = page.getByRole('dialog', { name: 'فیلتر دفتر' });
   await filter.getByRole('radio', { name: 'مریم', exact: true }).click();
-  await filter.getByRole('button', { name: 'بستن' }).click();
+  // The sheet's own «بستن» pill, not its handle, which is a «بستن» button too.
+  await filter.locator('.sheet-actions').getByRole('button', { name: 'بستن' }).click();
   await expect(page.getByText('فقط مال مریم')).toBeVisible();
   await expect(page.getByRole('button', { name: 'فیلتر (۱)' })).toBeVisible();
   await expect(mine).toHaveCount(0);

@@ -62,10 +62,7 @@
 
 /* ---- the sheets ---------------------------------------------------------------------------------- */
 .loan-sheet-sub { font-size: calc(13px * var(--text)); line-height: calc(21px * var(--text)); color: var(--on-surface-variant); }
-.loan-amount-field { position: relative; margin-top: var(--m); }
-/* Past the field's own focus padding too, or the digits would run under the unit. */
-.loan-amount-field .field > input, .loan-amount-field .field > input:focus { padding-inline-end: 72px; }
-.loan-amount-field .suffix { position: absolute; top: 28px; inset-inline-end: var(--l); transform: translateY(-50%); font-size: calc(14px * var(--text)); color: var(--on-surface-variant); pointer-events: none; }
+.loan-amount-field { margin-top: var(--m); }
 .loan-link-row { align-items: flex-start; }
 .loan-link-row .radio { margin-top: 12px; }
 .loan-link-row .grow { padding-block: var(--s); }

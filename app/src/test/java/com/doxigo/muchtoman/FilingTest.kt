@@ -223,6 +223,16 @@ class FilingTest {
     }
 
     @Test
+    fun `a deck emptied by skipping counts what is left, not what was filed since`() {
+        val a = waiting(at = 100L)
+        val b = waiting(at = 200L)
+        assertEquals(0, setAsideCount(listOf(a, b), emptySet()))
+        assertEquals(2, setAsideCount(listOf(a, b), setOf(a.txn.ref, b.txn.ref)))
+        // Skipped, then filed from دفتر: no longer in review, so no longer left for later.
+        assertEquals(0, setAsideCount(listOf(b), setOf(a.txn.ref)))
+    }
+
+    @Test
     fun `filing some of them is not what makes the rest news again`() {
         // She spent an evening in the app and left three of twelve for later. That was a decision,
         // and it must not be answered at 3am with a note about the three.

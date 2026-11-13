@@ -53,7 +53,7 @@ import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
 import { pref } from './state';
 import {
-  AmountField, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, SuggestionStrip,
+  AmountField, ArmedButton, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, SuggestionStrip,
   TextField,
 } from './ui';
 import './budgetUi.css';
@@ -196,9 +196,6 @@ function BudgetScreen() {
         onClick={() => openSheet('budget')} />
 
       <SectionLabel>هدف‌ها</SectionLabel>
-      {goals.length === 0 && (
-        <p class="plan-empty">اینجا فقط هدف‌هایی رو می‌بینی که خودت انتخاب کردی. خبری از امتیاز، روزهای پیاپی یا مقایسه با بقیه نیست.</p>
-      )}
       {goals.map((progress, i) => (
         <GoalCard key={progress.goal.id} progress={progress} radius={bandShape(i, goals.length + 1)}
           onOpen={() => openSheet('goal', { id: progress.goal.id })} />
@@ -597,7 +594,7 @@ function BudgetSheet({ id }: { id?: string }) {
               onSelect={(c) => { setPicked(c); setWantsTotal(false); }} selectedLabel="انتخاب‌شده" />
           </div>
           {/* The grid cannot flag itself the way a field does, so a refused save's words live under it. */}
-          {tried && !chosen && <p class="grid-error" role="status">کل خرج یا یه دسته رو انتخاب کن.</p>}
+          <p role="status" class={tried && !chosen ? 'grid-error' : undefined}>{tried && !chosen && 'کل خرج یا یه دسته رو انتخاب کن.'}</p>
         </>
       )}
 
@@ -618,10 +615,11 @@ function BudgetSheet({ id }: { id?: string }) {
               ` ${moneyUnit()}. برای تغییر سقف، همون بودجه رو ویرایش کن.`}
           </p>
           {editing && period === editing.period && shared === editing.shared && (
-            // Error ink: the way out of the clash deletes the other budgets. A block: the label is a sentence.
+            // The way out of the clash deletes the other budgets, so it is the two-tap. A block: the label is a sentence.
             <div class="mt-m">
-              <PillButton voice="danger" block label={`فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن`}
-                onClick={() => close(synced(paired, () => keepBudget(editing.goal.id)))} />
+              <ArmedButton block label={`فقط سقف ${faCompact(tomanOf(editing.capRial))} بمونه؛ بودجه‌های تکراری حذف بشن`}
+                armedLabel="بودجه‌های تکراری پاک می‌شن؛ برای حذف دوباره بزن"
+                onConfirmed={() => close(synced(paired, () => keepBudget(editing.goal.id)))} />
             </div>
           )}
         </>
@@ -730,6 +728,17 @@ function ChequeSheet({ id }: { id?: string }) {
     close(() => saveCheque(editing?.id ?? null, name.trim(), amountRial, due, bank));
   };
 
+  // A cheque is drawn on an account, so with none yet there is nothing to fill in: only the way to one.
+  if (!editing && banks.length === 0) return (
+    <Sheet onClose={() => close()} label={title}>
+      <SheetTitle>{title}</SheetTitle>
+      <p class="sheet-body">چک از یه حساب بانکی کشیده می‌شه و هنوز حسابی اینجا نیست. با اولین پیامک بانک خودش میاد، یا همین حالا دستی اضافه‌اش کن.</p>
+      <div class="sheet-actions">
+        <PillButton voice="primary" block label="اضافه کردن بانک" onClick={() => openSheet('addBank')} />
+      </div>
+    </Sheet>
+  );
+
   return (
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
@@ -742,6 +751,7 @@ function ChequeSheet({ id }: { id?: string }) {
       {/* The date written out, so a slipped digit is caught before it is saved. */}
       {due != null && <SheetNote>{faWeekdayDate(due)}</SheetNote>}
       <SheetLabel>از کدوم حساب؟</SheetLabel>
+      {/* Only an edited cheque that names no account gets here; a new one was answered above. */}
       {banks.length === 0
         ? <p class="plan-lede">هنوز حساب بانکی‌ای نداریم؛ با اولین پیامک بانک، حسابش اینجا میاد.</p>
         : (
@@ -755,7 +765,7 @@ function ChequeSheet({ id }: { id?: string }) {
             ))}
           </div>
         )}
-      {tried && bank === '' && <p class="grid-error" role="status">حسابش رو انتخاب کن.</p>}
+      <p role="status" class={tried && bank === '' ? 'grid-error' : undefined}>{tried && bank === '' && 'حسابش رو انتخاب کن.'}</p>
       <SheetLabel>برای کی یا چی؟</SheetLabel>
       <TextField label="اختیاری؛ مثلاً اجاره" value={name} onInput={(v) => setName(v.slice(0, 40))} maxLength={40} />
       <div class="sheet-actions">

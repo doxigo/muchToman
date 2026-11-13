@@ -30,7 +30,7 @@ import { bankFa } from './sms';
 import { pref } from './state';
 import { AVATAR_MAN, AVATAR_PHOTO_PREFIX, AVATAR_WOMAN } from './sync';
 import { MemberFace } from './timeline';
-import { PillButton, Sheet, SheetTitle, TextField } from './ui';
+import { Live, PillButton, Sheet, SheetTitle, TextField } from './ui';
 
 const FAMILY_LEAD = 'تراکنش‌های اعضا در یک دفتر دیده می‌شن و اسم صاحب هر مورد همیشه کنارش میاد.';
 
@@ -157,9 +157,12 @@ function DangerRow({ title, armedTitle, subtitle, detail, enabled, onConfirmed }
   const [armed, setArmed] = useState(false);
   return (
     <button type="button" class="danger-row" disabled={!enabled} onClick={() => { if (armed) { setArmed(false); onConfirmed(); } else setArmed(true); }}>
-      <span class="set-title" style={{ display: 'block' }} aria-live="polite">{armed ? armedTitle : title}</span>
-      <span class="set-sub" style={{ display: 'block' }}>{subtitle}</span>
-      {armed && <span class="detail" style={{ display: 'block' }}>{detail}</span>}
+      {/* One live region round all of it, so the armed detail is said with the armed title. */}
+      <span style={{ display: 'block' }} aria-live="polite">
+        <span class="set-title" style={{ display: 'block' }}>{armed ? armedTitle : title}</span>
+        <span class="set-sub" style={{ display: 'block' }}>{subtitle}</span>
+        {armed && <span class="detail" style={{ display: 'block' }}>{detail}</span>}
+      </span>
     </button>
   );
 }
@@ -269,8 +272,10 @@ function Family() {
         </>
       ) : <Household state={state} contributions={contributions} />}
 
-      {state.error && <Note tone="error">{state.error}</Note>}
-      {scanError && <Note tone="error">{scanError}</Note>}
+      <Live>
+        {state.error && <Note tone="error">{state.error}</Note>}
+        {scanError && <Note tone="error">{scanError}</Note>}
+      </Live>
 
       {household && (
         <>
@@ -357,7 +362,7 @@ function MemberSheet({ id }: { id: string }) {
       <p class="sheet-body" style={{ marginTop: 'var(--xl)' }}>{(device ? UNNAMED_LEAD : '') + REMOVAL_TEXT}</p>
       <div style={{ height: 'var(--s)' }} />
       <ArmedAction label="حذف از خانواده" armedLabel="مطمئنی؟ برای حذف دوباره بزن" enabled={!state.working && !acting} onConfirmed={() => void remove()} />
-      {error && <Note tone="error">{error}</Note>}
+      <Live>{error && <Note tone="error">{error}</Note>}</Live>
     </Sheet>
   );
 }

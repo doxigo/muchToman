@@ -1,7 +1,6 @@
 /**
  * MoneyTest's catalogue half, CompositionTest, AssetGlyphTest and CategoryGlyphTest, with their
- * literal expectations. The one CategoryGlyphTest case left out needs BUILTIN_CATEGORIES, which
- * the ledger's rules port owns: every shipped name must map to a mark other than DOTS.
+ * literal expectations.
  */
 import { describe, expect, it } from 'vitest';
 import { AssetGlyph, assetGlyph } from '../src/assetGlyph';
@@ -13,6 +12,7 @@ import {
 } from '../src/categoryIcon';
 import { computeTotals, effectiveRates } from '../src/data';
 import type { Category, Coin, Holding } from '../src/model';
+import { BUILTIN_CATEGORIES, CAT_UNCATEGORISED } from '../src/rules';
 
 const H = (typeId: string, amount: number, extra: Partial<Holding> = {}): Holding =>
   ({ typeId, amount, excluded: false, wallet: null, label: '', id: '', ...extra });
@@ -157,6 +157,15 @@ describe('category marks', () => {
   const cat = (nameFa: string, glyph: string): Category =>
     ({ id: nameFa, parentId: null, nameFa, kind: 'expense', sort: 0, builtin: false, archived: false, updatedAt: 1, glyph });
 
+  // The table is keyed on the Persian name, which a ZWNJ can break without anything looking wrong.
+  it('every category the app ships with has its own mark', () => {
+    const missing = BUILTIN_CATEGORIES.filter((c) => c.id !== CAT_UNCATEGORISED && categoryGlyph(c.nameFa) === 'DOTS');
+    expect(missing.map((c) => c.nameFa), 'categories falling back to the unknown glyph').toEqual([]);
+  });
+  it('no two categories share a mark', () => {
+    const glyphs = BUILTIN_CATEGORIES.map((c) => categoryGlyph(c.nameFa));
+    expect(new Set(glyphs).size, 'one mark per category').toBe(glyphs.length);
+  });
   it('a category from a device that renamed it still draws something', () => {
     expect(categoryGlyph('چیزی که بلد نیستم')).toBe('DOTS');
   });

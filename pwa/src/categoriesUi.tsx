@@ -116,7 +116,7 @@ function CategorySheet({ id, kind = CategoryKind.EXPENSE, grid = false }: { id?:
             }
           }} />
       </label>
-      {problem && <p class="grid-error" role="status">{problem}</p>}
+      <p role="status" class={problem ? 'grid-error' : undefined}>{problem}</p>
 
       <SheetLabel>نشونه‌اش</SheetLabel>
       <div class="glyph-picker" role="radiogroup" aria-label="نشونه‌اش">

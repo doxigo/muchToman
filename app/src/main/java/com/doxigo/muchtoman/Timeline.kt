@@ -1,17 +1,12 @@
 package com.doxigo.muchtoman
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,10 +21,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -38,7 +33,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -69,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -406,6 +399,10 @@ fun TimelineScreen(
     onSync: (() -> Unit)? = null,
     /** The bank sheet's accounts, for the numbers that tell one bank's accounts apart. */
     accounts: List<BankAccount> = emptyList(),
+    /** Whether bank messages are read at all, which decides what an empty ledger says. */
+    smsEnabled: Boolean = true,
+    /** Opens تنظیمات onto the messages room, from the empty ledger with them off. */
+    onSmsSettings: (() -> Unit)? = null,
 ) {
     val today = rememberTehranDay()
     var lens by rememberSaveable { mutableStateOf(LedgerLens.ALL) }
@@ -518,7 +515,7 @@ fun TimelineScreen(
             }
 
             if (everything.isEmpty()) {
-                EmptyLedger(ledger.health.startsOn)
+                EmptyLedger(ledger.health.startsOn, smsEnabled, onSmsSettings)
                 return@Column
             }
 
@@ -785,58 +782,8 @@ private fun NarrowedLine(words: String, onClear: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.width(Space.s))
-        ClearPill("پاک کردن", onClear)
-    }
-}
-
-/**
- * [PillButton]'s 40dp look on a 48dp touch surface. The line it sits in earns the small pill —
- * a 48dp-drawn one would out-shout the sentence it serves — but a 40dp *target* is below the
- * floor a thumb can be asked to hit. PillButton binds paint and input to one node, so this pill
- * separates them: the drawn pill is the layout, so nothing around it moves, and an invisible
- * skin over it takes the finger — `matchParentSize` keeps the skin out of the measurement and
- * `requiredHeightIn` lets it stand 4dp proud of the pill on each side, into padding that holds
- * nothing else pressable. The press ripple and the give are PillButton's own, on the visible
- * pill; the skin is also the one node TalkBack gets, wearing the pill's own word.
- */
-@Composable
-private fun ClearPill(label: String, onClick: () -> Unit) {
-    val press = remember { MutableInteractionSource() }
-    val pressed by press.collectIsPressedAsState()
-    val give by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.press(), label = "give")
-    Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .scale(give)
-                .clip(RoundedCornerShape(Radius.pill))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .indication(press, LocalIndication.current)
-                .heightIn(min = 40.dp)
-                .padding(horizontal = Space.l)
-                // Spoken by the skin below instead, or every pass reads the pill twice.
-                .clearAndSetSemantics {},
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                label,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-        }
-        Box(
-            Modifier
-                .matchParentSize()
-                .requiredHeightIn(min = 48.dp)
-                .clickable(
-                    interactionSource = press,
-                    indication = null,
-                    role = Role.Button,
-                    onClick = onClick,
-                )
-                .semantics { contentDescription = label },
-        )
+        // The in-place pill (44dp drawn, 48 touched), not a third size: DESIGN.md § Buttons.
+        PillButton("پاک کردن", onClear)
     }
 }
 
@@ -995,9 +942,9 @@ private fun PickRow(picks: List<LedgerPick>, chosen: String, onPick: (String) ->
         horizontalArrangement = Arrangement.spacedBy(Space.s),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        PickChip("همه", chosen.isEmpty(), lead = null) { onPick("") }
+        Chip("همه", chosen.isEmpty()) { onPick("") }
         picks.forEach { p ->
-            PickChip(p.label, p.id == chosen, lead = {
+            Chip(p.label, p.id == chosen, lead = {
                 // A chip that names a bank carries its logo; a member's carries the face on her rows.
                 if (p.bank.isNotEmpty()) BankLogo(p.bank, size = 24.dp) else MemberFace(p.label, p.avatar, size = 24.dp)
             }) { onPick(p.id) }
@@ -1005,66 +952,12 @@ private fun PickRow(picks: List<LedgerPick>, chosen: String, onPick: (String) ->
     }
 }
 
-@Composable
-private fun PickChip(label: String, chosen: Boolean, lead: (@Composable () -> Unit)?, onPick: () -> Unit) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(
-                if (chosen) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant,
-            )
-            .selectable(selected = chosen, role = Role.RadioButton, onClick = onPick)
-            .heightIn(min = 44.dp)
-            .padding(start = if (lead != null) Space.s else Space.m, end = Space.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (lead != null) {
-            lead()
-            Spacer(Modifier.width(Space.s))
-        }
-        Text(
-            label,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (chosen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-/** One category as a pill: its own mark in its own hue, and `primary` when chosen. */
+/** One category as a [Chip]: its own mark in its own hue, one of many that can be on at once. */
 @Composable
 internal fun FilterCategoryChip(name: String, chosen: Boolean, onToggle: () -> Unit) {
-    val hue = categoryHue(name)
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(
-                if (chosen) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant,
-            )
-            .toggleable(value = chosen, role = Role.Checkbox, onValueChange = { onToggle() })
-            .heightIn(min = 44.dp)
-            .padding(horizontal = Space.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CategoryIcon(
-            name,
-            if (chosen) MaterialTheme.colorScheme.onPrimary else hue,
-            size = 16.dp,
-        )
-        Spacer(Modifier.width(Space.xs))
-        Text(
-            name,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (chosen) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        )
-    }
+    Chip(name, chosen, role = Role.Checkbox, lead = {
+        CategoryIcon(name, if (chosen) MaterialTheme.colorScheme.onPrimary else categoryHue(name), size = 16.dp)
+    }, onClick = onToggle)
 }
 
 /**
@@ -1378,29 +1271,55 @@ internal fun CategoryDisc(markFa: String) {
 /**
  * Nothing to show. When that is because of where she started the ledger, it says so instead —
  * «turn the messages on» would be the wrong answer to a ledger she emptied on purpose.
+ *
+ * Otherwise it says what will fill it: with the bank messages read, the next one will; with them
+ * off, nothing will until they are on, and the pill opens the room that turns them on.
  */
 @Composable
-private fun EmptyLedger(startsOn: Long) {
+private fun EmptyLedger(startsOn: Long, smsEnabled: Boolean, onSmsSettings: (() -> Unit)?) {
+    val off = startsOn <= 0L && !smsEnabled
     Column(
         Modifier.fillMaxSize().padding(Space.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        // The tab's own mark on the standard empty-state disc, as دارایی and گزارش‌ها draw theirs.
+        val ink = MaterialTheme.colorScheme.onPrimaryContainer
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) { Canvas(Modifier.size(36.dp)) { drawLedger(ink) } }
+        Spacer(Modifier.height(Space.xl))
         Text(
-            if (startsOn > 0L) "از ${reportMonthOf(startsOn).fa} به بعد هنوز تراکنشی نیست"
-            else "هنوز هیچ تراکنشی نیست",
-            fontWeight = FontWeight.Bold,
+            when {
+                startsOn > 0L -> "از ${reportMonthOf(startsOn).fa} به بعد هنوز تراکنشی نیست"
+                off -> "پیامک‌های بانکی خاموشن"
+                else -> "هنوز هیچ تراکنشی نیست"
+            },
+            fontSize = 22.sp,
+            fontWeight = FontWeight.ExtraBold,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(Modifier.height(Space.s))
         Text(
-            if (startsOn > 0L) setAsideFa(startsOn)
-            else "از تنظیمات، پیامک‌های بانکی رو روشن کن تا دفترت خودش پر بشه.",
-            fontSize = 13.sp,
+            when {
+                startsOn > 0L -> setAsideFa(startsOn)
+                off -> "از تنظیمات روشنشون کن تا دفترت خودش پر بشه."
+                else -> "اولین پیامک بانکی که برسه، اینجا خودش پر می‌شه."
+            },
+            fontSize = 15.sp,
+            lineHeight = 25.sp,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (off && onSmsSettings != null) {
+            Spacer(Modifier.height(Space.l))
+            PillButton("روشن کردن پیامک‌ها", onSmsSettings)
+        }
     }
 }
 
@@ -1515,7 +1434,10 @@ fun TransactionScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                // Edge to edge, the keyboard is an inset like any other: without this it covered
+                // the note field and its suggestions instead of the list scrolling them above it.
+                .imePadding(),
             contentPadding = PaddingValues(bottom = Space.xxl),
         ) {
             item(key = "hero") {
@@ -1536,18 +1458,21 @@ fun TransactionScreen(
                         color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.semantics { heading() },
                     )
-                    Spacer(Modifier.height(Space.xs))
-                    Text(
-                        when {
-                            entry.transfer -> "این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی."
-                            entry.split.isNotEmpty() -> "بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه."
-                            entry.needsReview -> "دسته درست رو بزن تا این مورد تایید بشه."
-                            else -> "دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن."
-                        },
-                        fontSize = 13.sp,
-                        lineHeight = 22.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // No caption for an ordinary filed row: the chosen tile already says which.
+                    when {
+                        entry.transfer -> "این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی."
+                        entry.split.isNotEmpty() -> "بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه."
+                        entry.needsReview -> "دسته درست رو بزن تا این مورد تایید بشه."
+                        else -> null
+                    }?.let { caption ->
+                        Spacer(Modifier.height(Space.xs))
+                        Text(
+                            caption,
+                            fontSize = 13.sp,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (entry.split.isNotEmpty()) {
                         Spacer(Modifier.height(Space.m))
                         SplitPanel(entry.split)
@@ -2425,6 +2350,9 @@ fun ReviewDeck(
                 Modifier
                     .fillMaxSize()
                     .then(if (entry == null) Modifier.systemBarsPadding() else Modifier)
+                    // The card shrinks over the keyboard, so the note field scrolls above it and
+                    // the pinned row rides on top of it rather than under it.
+                    .imePadding()
                     .padding(horizontal = Space.xl),
             ) {
             if (entry == null) {
@@ -2441,7 +2369,12 @@ fun ReviewDeck(
                     )
                 }
                 if (asking.isEmpty()) {
-                    DeckDone(ledger, onDone)
+                    DeckDone(
+                        ledger,
+                        onDone,
+                        left = setAsideCount(ledger.review, skipped),
+                        onAgain = { skipped = emptySet() },
+                    )
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ScreenTitle("مرور هفتگی")
@@ -2542,12 +2475,13 @@ fun ReviewDeck(
                     .navigationBarsPadding(),
                 horizontalArrangement = Arrangement.spacedBy(Space.s),
             ) {
-                SkipAnswer(
+                PillButton(
                     // Named by what it does — it sets this card aside unanswered and moves on,
                     // which «نه» alone read as a verdict on the question above the grid.
-                    label = "بمونه برای بعد",
-                    onClick = { skipped = skipped + entry.txn.ref },
+                    "بمونه برای بعد",
+                    { skipped = skipped + entry.txn.ref },
                     modifier = Modifier.weight(1f),
+                    block = true,
                 )
                 if (onAutoFile != null && pending.size >= 5) {
                     PillButton(
@@ -2615,13 +2549,19 @@ fun ReviewDeck(
  * ordinary here. What it does earn is the figure the app is judged on — how much of the month
  * never needed her at all — and the check is drawn in the ledger's own green, the colour a
  * settled figure already speaks in. One number, one sentence, one way back.
+ *
+ * When the deck ran out only because cards were set aside ([left] of them still waiting), it
+ * says so instead: the same make on a neutral disc with the waiting row's three dots, and a way
+ * to see those cards again. Claiming «همه‌چی بررسی شد» over skipped cards was false.
  */
 @Composable
-private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
+private fun DeckDone(ledger: LedgerView, onDone: () -> Unit, left: Int = 0, onAgain: () -> Unit = {}) {
     val month = remember(ledger.entries) {
         currentMonthReport(ledger.entries, tehranDay(System.currentTimeMillis()))
     }
-    val met = MaterialTheme.colorScheme.tertiary
+    val later = left > 0
+    // DOTS on muted ink is how a row still waiting is drawn in دفتر (see [CategoryDisc]).
+    val tone = if (later) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth(),
@@ -2632,20 +2572,24 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
                 Modifier
                     .size(96.dp)
                     .clip(CircleShape)
-                    .background(met.copy(alpha = 0.16f)),
+                    .background(tone.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
-            ) { CheckMark(met, size = 46.dp) }
+            ) {
+                if (later) GlyphIcon(CategoryGlyph.DOTS, tone, size = 46.dp)
+                else CheckMark(tone, size = 46.dp)
+            }
             Spacer(Modifier.height(Space.xl))
             Text(
-                "همه‌چی بررسی شد",
+                if (later) "${faNumber(left.toDouble())} مورد موند برای بعد" else "همه‌چی بررسی شد",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.semantics { heading() },
             )
             Spacer(Modifier.height(Space.s))
             Text(
-                "هر رقمی که توی گزارش‌هاست، حالا تأییدشده‌ست.",
+                if (later) "تا تأییدشون نکنی، توی مرور می‌مونن." else "هر رقمی که توی گزارش‌هاست، حالا تأییدشده‌ست.",
                 fontSize = 14.sp,
                 lineHeight = 23.sp,
                 textAlign = TextAlign.Center,
@@ -2653,7 +2597,7 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
             )
             // The receipt for all that tapping, and only when the month has enough rows for a
             // share to mean anything — the same floor the report's own automation line keeps.
-            month.automaticShare?.takeIf { month.transactions >= 5 }?.let { share ->
+            if (!later) month.automaticShare?.takeIf { month.transactions >= 5 }?.let { share ->
                 Spacer(Modifier.height(Space.xxl))
                 Column(
                     Modifier
@@ -2684,11 +2628,23 @@ private fun DeckDone(ledger: LedgerView, onDone: () -> Unit) {
             "برگشت به دفتر",
             onDone,
             voice = ButtonVoice.PRIMARY,
-            modifier = Modifier.fillMaxWidth().padding(bottom = Space.m),
+            modifier = Modifier.fillMaxWidth().padding(bottom = if (later) Space.s else Space.m),
             block = true,
         )
+        if (later) {
+            PillButton(
+                "دوباره ببینمشون",
+                onAgain,
+                modifier = Modifier.fillMaxWidth().padding(bottom = Space.m),
+                block = true,
+            )
+        }
     }
 }
+
+/** Cards set aside with «بمونه برای بعد» that still wait; one filed from دفتر since no longer does. */
+internal fun setAsideCount(review: List<LedgerEntry>, skipped: Set<String>): Int =
+    review.count { it.txn.ref in skipped }
 
 /** The one check mark in the app, drawn with the same pen every other glyph is. */
 @Composable
@@ -2827,39 +2783,4 @@ private fun learnedRule(txn: Txn): String {
     }
     return "این پیامک اسم فروشنده نداره، پس «از این به بعد» روی $kind شبیه این از " +
         "${bankNameOf(txn.bank)} اعمال می‌شه، و مشابه‌های قبلی هم اصلاح می‌شن."
-}
-
-/**
- * The deck's answer that writes nothing: this card set aside, unanswered. A block pill's size and
- * give, but no surface of its own — it is the answer that changes nothing, and a filled shape
- * would promise it does.
- */
-@Composable
-private fun SkipAnswer(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val press = remember { MutableInteractionSource() }
-    val pressed by press.collectIsPressedAsState()
-    val give by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.press(), label = "give")
-    Box(
-        modifier
-            .fillMaxWidth()
-            .scale(give)
-            .clip(RoundedCornerShape(Radius.pill))
-            .clickable(
-                role = Role.Button,
-                interactionSource = press,
-                indication = LocalIndication.current,
-                onClick = onClick,
-            )
-            .heightIn(min = 52.dp)
-            .padding(horizontal = Space.l, vertical = Space.s),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
 }

@@ -436,25 +436,28 @@ const NO_ONE = 'یه نفر رو انتخاب کن.';
 const noAmountFa = (unit: string): string => (unit ? 'مقدارش رو بنویس.' : 'مبلغش رو بنویس.');
 
 /**
- * The unit chips and the amount under them, the unit's own word at the field's end. A choice of cash
- * alone is no choice, so it shows no chips: the field already says «تومان». No units, no chips.
+ * The unit chips and the amount under them, the unit named in the field's own label (LoansUi.kt
+ * AmountField). A choice of cash alone is no choice, so it shows no chips: the label already says
+ * «تومان». No units, no chips. [ask] heads the chips with «چی؟», as the move sheet does on the phone.
  */
-function UnitAmount({ units, unit, onUnit, text, onText, error }: {
+function UnitAmount({ units, unit, onUnit, text, onText, error, ask }: {
   units: string[]; unit: string; onUnit: (unit: string) => void; text: string; onText: (text: string) => void; error: string | null;
+  ask?: boolean;
 }) {
   const type = unit ? typeOf(unit) : null;
-  const suffix = type ? unitShortFa(type) : moneyUnit();
   return (
     <>
       {units.length > 0 && !(units.length === 1 && units[0] === '') && (
-        <div style={{ marginTop: 'var(--m)' }}>
-          <ChipChoice options={units} selected={unit} label={(u) => (u ? typeOf(u).fa : 'نقد')} scroll onSelect={onUnit} />
-        </div>
+        <>
+          {ask && <SheetLabel>چی؟</SheetLabel>}
+          <div style={ask ? undefined : { marginTop: 'var(--m)' }}>
+            <ChipChoice options={units} selected={unit} label={(u) => (u ? typeOf(u).fa : 'نقد')} scroll onSelect={onUnit} />
+          </div>
+        </>
       )}
       <div class="loan-amount-field">
-        <AmountField key={unit} raw={text} onRaw={onText} decimals={type ? type.dec : 1} words={!type} ariaLabel={`چقدر، به ${suffix}`}
+        <AmountField key={unit} label={`چقدر، به ${type ? type.unitFa : moneyUnit()}`} raw={text} onRaw={onText} decimals={type ? type.dec : 1} words={!type}
           error={error ?? (text.trim() !== '' && parseMove(unit, text) == null ? UNREADABLE : null)} />
-        <span class="suffix" aria-hidden="true">{suffix}</span>
       </div>
     </>
   );
@@ -511,7 +514,7 @@ function PersonSheet({ id }: { id?: string }) {
     <Sheet onClose={() => close()} label={title}>
       <SheetTitle>{title}</SheetTitle>
       <div style={{ marginTop: 'var(--l)' }}>
-        <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} autoFocus={!editing}
+        <TextField label="اسم" placeholder="مثلاً مهدی، یا خاله مریم" value={name} maxLength={MAX_LOAN_NAME} onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} autoFocus={!editing}
           error={tried && name.trim() === '' ? NO_NAME : null} />
       </div>
       {!editing && (
@@ -612,7 +615,7 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
           <SheetLabel>به کی؟</SheetLabel>
           <ChipChoice options={[...views.map((v) => v.person.id), NEW]} selected={who}
             label={(o) => (o === NEW ? '+ یه نفر تازه' : views.find((v) => v.person.id === o)?.person.name ?? '')} onSelect={setWho} />
-          {tried && person == null && who !== NEW && <p class="grid-error" role="status">{NO_ONE}</p>}
+          <p role="status" class={tried && person == null && who !== NEW ? 'grid-error' : undefined}>{tried && person == null && who !== NEW && NO_ONE}</p>
           {who === NEW && (
             <div style={{ marginTop: 'var(--m)' }}>
               <TextField label="اسم" value={newName} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setNewName(v.slice(0, MAX_LOAN_NAME))}
@@ -621,7 +624,7 @@ function MoveSheet({ personId, giving, typeId }: { personId?: string; giving: bo
           )}
         </>
       )}
-      <UnitAmount units={owed.length > 0 ? owed : unitChoices(person?.units.keys() ?? [])} unit={unit} onUnit={pick} text={text} onText={setText}
+      <UnitAmount ask units={owed.length > 0 ? owed : unitChoices(person?.units.keys() ?? [])} unit={unit} onUnit={pick} text={text} onText={setText}
         error={over ? `توی دارایی‌هات فقط ${loanAmountFa(typeOf(unit || TOMAN_ID), holding!.amount)} هست.`
           : tried && text.trim() === '' ? noAmountFa(unit) : null} />
       {preview && <p class="loan-preview">{preview}</p>}
@@ -751,10 +754,10 @@ function LinkSheet({ txnRef }: { txnRef: string }) {
           })}
         </div>
       )}
-      {tried && !fresh && picked == null && <p class="grid-error" role="status">{NO_ONE}</p>}
+      <p role="status" class={tried && !fresh && picked == null ? 'grid-error' : undefined}>{tried && !fresh && picked == null && NO_ONE}</p>
       {fresh && (
         <div style={{ marginTop: 'var(--m)' }}>
-          <TextField label="اسم" value={name} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} onEnter={save}
+          <TextField label="اسمش چیه؟" value={name} maxLength={MAX_LOAN_NAME} autoFocus onInput={(v) => setName(v.slice(0, MAX_LOAN_NAME))} onEnter={save}
             error={tried && name.trim() === '' ? NO_NAME : null} />
         </div>
       )}

@@ -149,7 +149,7 @@ function LockScreen() {
     }}>
       <span class="disc" style={{ width: '96px', height: '96px', background: 'var(--hero-well)', color: 'var(--hero-accent)' }}><LockMark size={40} /></span>
       <h1 style={{ marginTop: 'var(--xxl)', fontSize: 'calc(26px * var(--text))', fontWeight: 900, color: 'var(--hero-strong)' }}>چقدر تومن قفل شده</h1>
-      <p style={{ marginTop: 'var(--m)', fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(25px * var(--text))', color: 'var(--hero-muted)' }}>برای دیدن دارایی‌هات، اثر انگشت یا رمز گوشی‌ات رو وارد کن.</p>
+      <p style={{ marginTop: 'var(--m)', fontSize: 'calc(15px * var(--text))', lineHeight: 'calc(25px * var(--text))', color: 'var(--hero-muted)' }}>برای دیدن دارایی‌هات، با قفل گوشی‌ات تأیید کن.</p>
       <button ref={button} type="button" class="pill primary block" style={{ marginTop: 'var(--huge)', maxWidth: '560px' }}
         onClick={() => void unlock(true)}>باز کردن</button>
     </div>

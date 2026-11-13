@@ -81,8 +81,9 @@ export function DigitsField({ digits, onDigits, length, sep, at, label, ariaLabe
           onFocus={(e) => { const el = e.currentTarget; setFocused(true); setTimeout(() => el.select()); }} />
         <span class="label">{label}</span>
       </label>
-      {hint && (red ? <div key="error" class="field-support error" role="status">{hint}</div>
-        : <div key="hint" class="field-support">{hint}</div>)}
+      {/* The error's status stays mounted and only its words change, as in TextField. */}
+      <div role="status" class={hint && red ? 'field-support error' : undefined}>{red && hint}</div>
+      {hint && !red && <div class="field-support">{hint}</div>}
     </div>
   );
 }
@@ -202,11 +203,12 @@ function ManualTxnSheet() {
             نقد
           </button>
         </div>
-        {missingAccount && account == null ? <p class="grid-error" role="status">حسابش رو انتخاب کن.</p>
-          // Her figure is the truth at the moment she typed it, so a row from before it is already
-          // inside it — said, because the figure not moving looks broken.
-          : picked && sinceMidnight != null && stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt
-            ? <p class="field-support">مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.</p> : null}
+        {/* Mounted with its role either way, so a refused save's words are announced as they arrive. */}
+        <p role="status" class={missingAccount && account == null ? 'grid-error' : undefined}>{missingAccount && account == null && 'حسابش رو انتخاب کن.'}</p>
+        {/* Her figure is the truth at the moment she typed it, so a row from before it is already
+            inside it — said, because the figure not moving looks broken. */}
+        {!(missingAccount && account == null) && picked && sinceMidnight != null && stampedAt(day, sinceMidnight, openedAt) <= picked.updatedAt
+          && <p class="field-support">مانده‌ی این بانک رو بعد از این ساعت نوشتی، پس این تراکنش مانده‌اش رو عوض نمی‌کنه.</p>}
       </>}
 
       <SheetLabel>بابت چی؟</SheetLabel>
@@ -214,7 +216,7 @@ function ManualTxnSheet() {
 
       <SheetLabel>دسته‌بندی</SheetLabel>
       <CategoryGrid categories={choices} selected={categoryId} onSelect={(c) => setCategoryId(c.id)} selectedLabel="انتخاب‌شده" />
-      {missingCategory && categoryId == null && <p class="grid-error" role="status">دسته‌اش رو انتخاب کن.</p>}
+      <p role="status" class={missingCategory && categoryId == null ? 'grid-error' : undefined}>{missingCategory && categoryId == null && 'دسته‌اش رو انتخاب کن.'}</p>
 
       <SheetLabel>کِی؟</SheetLabel>
       <DayStepper day={day} today={today} onDay={setDay} />

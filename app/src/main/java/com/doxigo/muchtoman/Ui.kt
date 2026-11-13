@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -80,6 +81,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -293,10 +295,20 @@ internal data class TransientNotice(
 @Composable
 private fun TransientNoticeBand(notices: TransientNotices, modifier: Modifier = Modifier) {
     val notice = notices.current
+    // Six seconds unless the phone asks for longer: someone who has set Android's «time to take
+    // action» needs the undo to wait for them, not for the default.
+    val a11y = LocalAccessibilityManager.current
     // Keyed on the id, not on presence: a second delete restarts the six seconds.
     LaunchedEffect(notice?.id) {
         if (notice != null) {
-            delay(6_000)
+            delay(
+                a11y?.calculateRecommendedTimeoutMillis(
+                    6_000,
+                    containsIcons = false,
+                    containsText = true,
+                    containsControls = notice.action != null,
+                ) ?: 6_000,
+            )
             notices.dismiss(notice)
         }
     }
@@ -390,6 +402,13 @@ private fun AppScreens(
     var settings by rememberSaveable { mutableStateOf(false) }
     // تنظیمات opened from the report's note on what it leaves out, straight onto that choice.
     var exclusionsSheet by remember { mutableStateOf(false) }
+    // And the room it opens onto, when a door elsewhere leads into one — see [SettingsScreen].
+    // Set by every opening, so a room asked for once is never the one a later opening lands in.
+    var settingsRoom by rememberSaveable { mutableStateOf<SettingsRoom?>(null) }
+    fun openSettings(room: SettingsRoom? = null) {
+        settingsRoom = room
+        settings = true
+    }
     // A page of تنظیمات, not a peer of it: `companion` is only ever read while `settings` is
     // true, so closing it lands back on the settings page she opened it from rather than on
     // whatever tab is underneath both.
@@ -518,7 +537,7 @@ private fun AppScreens(
         if (!BuildConfig.LITE &&
             (state.family.pendingPairing != null || state.family.pendingRejoin != null)
         ) {
-            settings = true
+            openSettings()
             companion = true
         }
     }
@@ -547,8 +566,11 @@ private fun AppScreens(
     // on the background rather than a field running under the glass, so every screen starts at
     // the paper. The one full-bleed forest surface left is the lock screen, which wants light
     // icons in both themes.
-    val listState = rememberLazyListState()
-    // Why the home list's state is hoisted this far up, generalised for the tabs that are their
+    // One per tab: خانه and دارایی draw the same LazyColumn, and a shared state carried one tab's
+    // scroll into the other.
+    val homeList = rememberLazyListState()
+    val assetsList = rememberLazyListState()
+    // Why those two list states are hoisted this far up, generalised for the tabs that are their
     // own screens. Every pushed page above — a transaction, the deck, تنظیمات — returns before
     // the Scaffold, which takes the tab underneath out of composition and its state with it: the
     // scroll, the lens, the category filter she set. Back then landed her at the top of a ledger
@@ -660,6 +682,7 @@ private fun AppScreens(
             onReportExcluded = vm::setReportExcluded,
             exclusionsSheet = exclusionsSheet,
             onExclusionsSheet = { exclusionsSheet = it },
+            room = settingsRoom,
             name = state.name,
             themeMode = state.themeMode,
             textSize = state.textSize,
@@ -929,6 +952,8 @@ private fun AppScreens(
               // would otherwise both look like the spinner going away.
               onSync = ({ vm.pullFamilySync() }).takeIf { state.family.paired },
               accounts = state.bankAccounts,
+              smsEnabled = state.readsBanks,
+              onSmsSettings = { openSettings(SettingsRoom.SMS) },
             )
           }
         }
@@ -974,6 +999,7 @@ private fun AppScreens(
                   vm.setChequePassed(id, true)
                   notices.show("چک پاس شد", "برگردون") { vm.setChequePassed(id, false) }
               },
+              onAddBank = vm::addManualBank,
               loans = state.loanTotals,
               loanPeople = state.loans.people.size,
               onOpenLoans = { loansPage = true },
@@ -1043,7 +1069,7 @@ private fun AppScreens(
               categories = state.ledger.categories,
               excluded = state.reportExcluded,
               // Chosen in تنظیمات, which opens on the choice: the report only says what it leaves out.
-              onEditExclusions = { exclusionsSheet = true; settings = true },
+              onEditExclusions = { exclusionsSheet = true; openSettings() },
               // Paired is what makes the exclusion set a household setting — the sheet says so.
               householdShared = state.family.paired,
               // The one figure off this screen that the same set governs — see [budgetRows].
@@ -1106,7 +1132,7 @@ private fun AppScreens(
         // is the whole difference between a bar the page stops above and one the page runs
         // under. Every other screen already did it this way; this one held its list up.
         LazyColumn(
-            state = listState,
+            state = if (portfolio) assetsList else homeList,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = pad.calculateBottomPadding() + Space.l),
         ) {
@@ -1144,7 +1170,7 @@ private fun AppScreens(
                     ) {
                         HomeTopBar(
                             name = state.name,
-                            onSettings = { settings = true },
+                            onSettings = { openSettings() },
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         if (!portfolio) {
@@ -1163,7 +1189,7 @@ private fun AppScreens(
                 item(key = "backup-reminder") {
                     // A door, not a caption: it leads to تنظیمات, so it wears the card and the
                     // chevron every other door does. As a line of green text it read as a
-                    // greeting under her name.
+                    // greeting under her name. It opens the backup room itself, not the index.
                     Row(
                         Modifier
                             .padding(edge)
@@ -1171,12 +1197,12 @@ private fun AppScreens(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(Radius.card))
                             .background(MaterialTheme.colorScheme.surface)
-                            .clickable(role = Role.Button) { settings = true }
+                            .clickable(role = Role.Button) { openSettings(SettingsRoom.BACKUP) }
                             .padding(start = Space.l, end = Space.s, top = Space.m, bottom = Space.m),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.",
+                            "وقت پشتیبان جدیده. یک فایل پشتیبان بساز.",
                             fontSize = 14.sp,
                             lineHeight = 22.sp,
                             modifier = Modifier.weight(1f),
@@ -1764,45 +1790,70 @@ internal fun <T> ChipChoice(
     modifier: Modifier = Modifier,
     enabled: (T) -> Boolean = { true },
 ) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+    Row(modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Space.s)) {
         options.forEach { option ->
-            val active = option == selected
-            val usable = enabled(option)
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .background(
-                        if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceContainer,
-                    )
-                    .selectable(
-                        selected = active,
-                        enabled = usable,
-                        role = Role.RadioButton,
-                        onClick = { onSelect(option) },
-                    )
-                    // 40dp drawn, 48dp touched: Compose hit-tests any sub-48dp clickable in
-                    // the full minimum touch target and reports those bounds to TalkBack, so
-                    // the finger already has its 48dp. Growing the *layout* instead
-                    // (minimumInteractiveComponentSize) would push every row these sit in
-                    // 8dp taller for no gain.
-                    .heightIn(min = 40.dp)
-                    .padding(horizontal = Space.l),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label(option),
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    color = when {
-                        active -> MaterialTheme.colorScheme.onPrimary
-                        usable -> MaterialTheme.colorScheme.onSurface
-                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    },
-                )
-            }
+            Chip(label(option), option == selected, enabled = enabled(option)) { onSelect(option) }
         }
+    }
+}
+
+/**
+ * The app's one chip: [ChipChoice]'s pills, دفتر's filter picks, a bank or a member or a network
+ * to choose. They were drawn four ways — two heights, two idle fills, and two that showed the
+ * chosen one by colour alone. Now chosen is `primary` with `onPrimary` ink *and* the only bold
+ * label, and it says `selected` to anyone listening.
+ *
+ * [lead] sits in a 24dp slot before the label — a bank's logo, a face, a category's mark — with
+ * the start padding drawn in to meet it. [role] `Checkbox` makes it a toggle, one of many that can
+ * be on at once (the category filter); otherwise it is one choice of a group.
+ */
+@Composable
+internal fun Chip(
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    role: Role = Role.RadioButton,
+    lead: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceContainer,
+            )
+            .then(
+                if (role == Role.Checkbox) {
+                    Modifier.toggleable(value = active, enabled = enabled, role = role, onValueChange = { onClick() })
+                } else {
+                    Modifier.selectable(selected = active, enabled = enabled, role = role, onClick = onClick)
+                },
+            )
+            // 44dp drawn, 48dp touched: Compose hit-tests any sub-48dp clickable in the full
+            // minimum touch target and reports those bounds to TalkBack, so the finger already
+            // has its 48dp. Growing the *layout* instead (minimumInteractiveComponentSize) would
+            // push every row these sit in 4dp taller for no gain.
+            .heightIn(min = 44.dp)
+            .padding(start = if (lead != null) Space.s else Space.l, end = Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        if (lead != null) Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { lead() }
+        Text(
+            label,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            // 0.5 for the reason [SegmentedChoice] gives.
+            color = when {
+                active -> MaterialTheme.colorScheme.onPrimary
+                enabled -> MaterialTheme.colorScheme.onSurface
+                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            },
+        )
     }
 }
 

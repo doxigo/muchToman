@@ -141,15 +141,24 @@ export function PillToggle<T>({ options, selected, label, onSelect }: {
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean }) {
   return <button type="button" class="switch" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)} />;
 }
+/** A label around the switch, as LearnSimilarToggle is, so the whole row is the target and not only the 52×32 switch. */
 export function SwitchRow({ title, sub, checked, onChange, disabled }: {
   title: string; sub?: ComponentChildren; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean;
 }) {
   return (
-    <div class="switch-row">
+    <label class="switch-row">
       <div class="grow"><div>{title}</div>{sub && <div>{sub}</div>}</div>
       <Switch checked={checked} onChange={onChange} label={title} disabled={disabled} />
-    </div>
+    </label>
   );
+}
+
+/**
+ * A live region that is always mounted, so whatever appears inside it is announced: one inserted with
+ * its words already in is read unreliably, VoiceOver above all. Empty, it takes no room.
+ */
+export function Live({ children }: { children?: ComponentChildren }) {
+  return <div aria-live="polite">{children}</div>;
 }
 
 /** Delete, inside the sheet and nowhere else, under its save. */
@@ -187,19 +196,49 @@ export function EmptyState({ icon, title, body, children }: { icon: ComponentChi
   );
 }
 
-/** A bottom sheet's body: the handle, then whatever the sheet says. Registered sheets wrap in it. */
+/** What opened each sheet, so a sheet that replaces another hands focus back to what opened the first. */
+const openers = new WeakMap<Element, HTMLElement | null>();
+/**
+ * Where focus should go back to when what is opening now closes: what has it, unless that is inside
+ * a sheet on its way out — a sheet replaced, or one that leads to a page — then what opened that sheet.
+ */
+export function focusOrigin(): HTMLElement | null {
+  const active = document.activeElement as HTMLElement | null;
+  const sheet = active?.closest('.sheet');
+  return sheet ? openers.get(sheet) ?? null : active;
+}
+/** Focus back to that, if it is still there — but never into a text field, where it would raise the keyboard unasked. */
+export function refocus(origin: HTMLElement | null): void {
+  if (origin?.isConnected && !origin.matches('input, textarea')) origin.focus({ preventScroll: true });
+}
+
+/**
+ * A bottom sheet's body: the handle, then whatever the sheet says. Registered sheets wrap in it.
+ * The handle is a button: on an iPhone there is no Escape, and the scrim is outside the dialog, so a
+ * read-only sheet otherwise has no way out a screen reader can reach. Focus moves in on opening —
+ * unless a field already took it — and goes back to what opened it on closing.
+ */
 export function Sheet({ children, onClose = closeSheet, label }: { children: ComponentChildren; onClose?: () => void; label?: string }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const [opener] = useState(focusOrigin);
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     addEventListener('keydown', key);
     const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
     return () => { removeEventListener('keydown', key); document.body.style.overflow = prev; };
   }, [onClose]);
+  useEffect(() => {
+    const el = dialog.current;
+    if (!el) return;
+    openers.set(el, opener);
+    if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+    return () => refocus(opener);
+  }, []);
   return (
     <>
       <div class="scrim" onClick={onClose} />
-      <div class="sheet" role="dialog" aria-modal="true" aria-label={label}>
-        <div class="handle" />
+      <div ref={dialog} class="sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
+        <button type="button" class="handle" aria-label="بستن" onClick={onClose} />
         {children}
       </div>
     </>
@@ -246,10 +285,10 @@ export function TextField({ label, value, onInput, placeholder, maxLength, ltr, 
         {multiline ? <textarea {...common} /> : <input {...common} type={type ?? 'text'} dir={ltr ? 'ltr' : undefined} />}
         {label && <span class="label">{label}</span>}
       </label>
-      {/* Its own node, keyed, so the error arrives as a status and is announced — a support line
-          changing in place under a field is read only if she goes looking for it. */}
-      {error ? <div key="error" class="field-support error" role="status">{error}</div>
-        : support && <div key="support" class="field-support">{support}</div>}
+      {/* The error's status is always mounted and only its words change: a status inserted with its
+          words already in is read unreliably. The support line is its own quiet node. */}
+      <div role="status" class={error ? 'field-support error' : undefined}>{error}</div>
+      {!error && support && <div class="field-support">{support}</div>}
     </div>
   );
 }
@@ -302,9 +341,9 @@ export function AmountField({ label, raw, onRaw, decimals = 0, error, words = tr
           onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } }} />
         {label && <span class="label">{label}</span>}
       </label>
-      {/* The words change with every keystroke and stay quiet; the error is its own announced node. */}
-      {error ? <div key="error" class="field-support error" role="status">{error}</div>
-        : <div key="words" class="field-support">{spelled || ''}</div>}
+      {/* The words change with every keystroke and stay quiet; the error's status stays mounted, as in TextField. */}
+      <div role="status" class={error ? 'field-support error' : undefined}>{error}</div>
+      {!error && <div class="field-support">{spelled || ''}</div>}
     </div>
   );
 }

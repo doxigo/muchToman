@@ -122,6 +122,10 @@ body {
 :root { accent-color: var(--primary); }
 input, textarea { caret-color: var(--primary); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* The forest field is `primary` itself in the light, so a primary ring on it is forest on forest. */
+.hero :focus-visible, .lock-screen :focus-visible { outline-color: var(--hero-accent); }
+/* Focus moved there for a screen reader (a sheet, a page's title), not a control to ring. */
+.sheet:focus, h1[tabindex="-1"]:focus { outline: none; }
 button, input, textarea, select { font: inherit; color: inherit; letter-spacing: 0; }
 /* iOS zooms into a field under 16px the moment it is focused, so a smaller text size stops at 16 for typing. */
 input, textarea, select { font-size: max(16px, 1em); }
@@ -218,8 +222,11 @@ h1, h2, h3 { margin: 0; }
 .suggestion > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--s); }
-.chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--edge)); padding-inline: var(--edge); }
-.chip { min-height: 40px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--surface-container); color: var(--on-surface); font-size: calc(13px * var(--text)); font-weight: 500; white-space: nowrap; }
+/* The padding holds the chips' reach (below) so the scroller does not clip it; the margin gives the room back. */
+.chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: -4px calc(-1 * var(--edge)); padding: 4px var(--edge); }
+/* Drawn 40px, touched 48 — the ::after is the finger's, as on PillToggle; the row's 8px gap holds it. */
+.chip { position: relative; min-height: 40px; padding: 0 var(--l); border: 0; border-radius: var(--r-pill); background: var(--surface-container); color: var(--on-surface); font-size: calc(13px * var(--text)); font-weight: 500; white-space: nowrap; }
+.chip::after { content: ""; position: absolute; inset: -4px 0; }
 .chip[aria-checked="true"], .chip[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 700; }
 .chip:disabled { color: color-mix(in srgb, var(--on-surface) 50%, transparent); }
 /* A bank's chip: its logo on the white plate before the name (the paste and cheque sheets). */
@@ -267,7 +274,8 @@ h1, h2, h3 { margin: 0; }
 /* ---- sheets ------------------------------------------------------------------------------------ */
 .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; animation: fade var(--medium) var(--enter); }
 .sheet { position: fixed; inset-inline: 0; bottom: 0; z-index: 41; max-width: 600px; margin: 0 auto; max-height: calc(100dvh - 48px - env(safe-area-inset-top)); overflow-y: auto; overscroll-behavior: contain; background: var(--surface-low); border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 0 var(--edge) calc(var(--xxl) + env(safe-area-inset-bottom)); animation: rise var(--medium) var(--enter); --field-bg: var(--surface-low); }
-.sheet .handle { position: sticky; top: 0; display: flex; justify-content: center; padding: 14px 0 var(--l); background: var(--surface-low); z-index: 1; }
+/* A button, «بستن» to a screen reader: the bar is drawn as it always was, the strip under it 44px for the finger. */
+.sheet .handle { position: sticky; top: 0; display: flex; justify-content: center; width: 100%; min-height: 44px; padding: 14px 0 26px; border: 0; background: var(--surface-low); z-index: 1; }
 .sheet .handle::before { content: ""; width: 32px; height: 4px; border-radius: 2px; background: var(--on-surface-variant); opacity: .4; }
 .sheet .sheet-title { margin-bottom: var(--s); }
 @keyframes rise { from { transform: translateY(24%); opacity: .4; } }

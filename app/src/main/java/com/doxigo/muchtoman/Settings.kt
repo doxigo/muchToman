@@ -127,13 +127,13 @@ import kotlinx.coroutines.launch
  * because a process death that threw her from پشتیبان‌گیری back to the index would read as the
  * app restarting itself — the same reason `settings` itself is saveable upstairs.
  */
-private enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE, HEALTH, UPGRADE, FEEDBACK }
+internal enum class SettingsRoom { INDEX, SMS, SECURITY, BACKUP, CACHE, HEALTH, UPGRADE, FEEDBACK }
 
 /** The site, which the «درباره» band opens and the full edition's download falls back to. */
 private const val SITE = "https://muchtoman.com/"
 
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     name: String,
     themeMode: ThemeMode,
     /** Percent of the phone's text size — see [TEXT_SIZES]. */
@@ -178,9 +178,26 @@ fun SettingsScreen(
     /** Whether that choice is open — hoisted, so the report's note can open تنظیمات onto it. */
     exclusionsSheet: Boolean = false,
     onExclusionsSheet: (Boolean) -> Unit = {},
+    /**
+     * The room تنظیمات opens onto, hoisted like [exclusionsSheet] so a door elsewhere — خانه's
+     * backup card, an empty دفتر — lands in the room itself. Back from it closes تنظیمات: the
+     * index was never on screen.
+     */
+    room: SettingsRoom? = null,
 ) {
     val context = LocalContext.current
-    var page by rememberSaveable { mutableStateOf(SettingsRoom.INDEX) }
+    var page by rememberSaveable { mutableStateOf(room ?: SettingsRoom.INDEX) }
+    // Where back from [page] lands: the room that opened it — «پشتیبان‌گیری» opened from the
+    // upgrade page returns there — and the index otherwise.
+    var opener by rememberSaveable { mutableStateOf(SettingsRoom.INDEX) }
+    fun back() {
+        if (page == room) {
+            onBack()
+        } else {
+            page = opener
+            opener = SettingsRoom.INDEX
+        }
+    }
 
     // The index's scroll lives up here, not in [SettingsIndex]: a room replaces the index
     // outright, so a scroll remembered inside it died with every door opened, and backing out
@@ -195,7 +212,7 @@ fun SettingsScreen(
 
     // Only enabled off the index: on the index the handler upstairs owns Back and closes
     // تنظیمات, which is the one-level rule every pushed page here already keeps.
-    BackHandler(enabled = page != SettingsRoom.INDEX) { page = SettingsRoom.INDEX }
+    BackHandler(enabled = page != SettingsRoom.INDEX) { back() }
 
     when (page) {
         SettingsRoom.INDEX -> SettingsIndex(
@@ -234,7 +251,7 @@ fun SettingsScreen(
             onBankChange = onBankChange,
             onAddBank = onAddBank,
             onRescanInbox = onRescanInbox,
-            onBack = { page = SettingsRoom.INDEX },
+            onBack = { back() },
         )
 
         SettingsRoom.SECURITY -> SecurityPage(
@@ -242,28 +259,28 @@ fun SettingsScreen(
             widgetLock = widgetLock,
             onLockChange = onLockChange,
             onWidgetLockChange = onWidgetLockChange,
-            onBack = { page = SettingsRoom.INDEX },
+            onBack = { back() },
         )
 
         SettingsRoom.BACKUP -> BackupPage(
             activity = activity,
-            onBack = { page = SettingsRoom.INDEX },
+            onBack = { back() },
         )
 
         SettingsRoom.CACHE -> CachePage(
             onClear = onClearCache,
-            onBack = { page = SettingsRoom.INDEX },
+            onBack = { back() },
         )
 
-        SettingsRoom.HEALTH -> LedgerHealthPage(activity, onRescanInbox) { page = SettingsRoom.INDEX }
+        SettingsRoom.HEALTH -> LedgerHealthPage(activity, onRescanInbox) { back() }
 
         SettingsRoom.UPGRADE -> UpgradePage(
             activity = activity,
-            onBackup = { page = SettingsRoom.BACKUP },
-            onBack = { page = SettingsRoom.INDEX },
+            onBackup = { opener = SettingsRoom.UPGRADE; page = SettingsRoom.BACKUP },
+            onBack = { back() },
         )
 
-        SettingsRoom.FEEDBACK -> FeedbackPage { page = SettingsRoom.INDEX }
+        SettingsRoom.FEEDBACK -> FeedbackPage { back() }
     }
 
     if (exclusionsSheet) {
@@ -822,7 +839,7 @@ private fun ThemeSheet(
         ) {
             SheetTitle("ظاهر برنامه")
             Text(
-                "«خودکار» یعنی هرچی گوشی‌ات می‌گه — روشن توی روز، تیره توی شب.",
+                "«خودکار» یعنی هرچی گوشی‌ات می‌گه.",
                 fontSize = 13.sp,
                 lineHeight = 22.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1241,7 +1258,7 @@ private fun SmsPage(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddBankSheet(taken: Set<String>, onAdd: (String, Double) -> Unit, onDismiss: () -> Unit) {
+internal fun AddBankSheet(taken: Set<String>, onAdd: (String, Double) -> Unit, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val banks = remember(taken) {
         val order = Collator.getInstance(Locale("fa"))
@@ -1472,7 +1489,7 @@ private fun SecurityPage(
             title = "قفل برنامه",
             // Always what the setting does. When it is unavailable, the helper text below
             // the band already carries the fix — and says where, which this line never did.
-            subtitle = "با اثر انگشت یا رمز گوشی باز می‌شه",
+            subtitle = "با همون قفل گوشی باز می‌شه",
             checked = lockEnabled,
             onChange = onLockChange,
             enabled = available,
@@ -1490,7 +1507,7 @@ private fun SecurityPage(
         )
         if (!available) {
             Text(
-                "برای فعال کردن قفل، اول توی تنظیمات گوشی رمز یا اثر انگشت بذار.",
+                "برای فعال کردن قفل، اول توی تنظیمات گوشی یه قفل صفحه بذار.",
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -139,7 +139,7 @@ function PasteSheet({ text: given = '', unkeyed = false }: { text?: string; unke
               : asking ? `پیام‌های ${bidi(faDigits(asking))} از کدوم بانکه؟` : 'پیام‌های بی‌فرستنده از کدوم بانکه؟'}
           </SheetLabel>
           <BankChips bank={bank} onBank={(b) => { setBank(b); setMissingBank(false); }} />
-          {missingBank && !isBank(bank) && <p class="grid-error" role="status">بانکش رو انتخاب کن.</p>}
+          <p role="status" class={missingBank && !isBank(bank) ? 'grid-error' : undefined}>{missingBank && !isBank(bank) && 'بانکش رو انتخاب کن.'}</p>
         </>
       )}
 

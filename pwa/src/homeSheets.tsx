@@ -463,7 +463,7 @@ function EditHoldingSheet(props: { typeId: string; holdingKey: string }) {
                   onInput={(e) => { setWalletAddress((e.currentTarget as HTMLInputElement).value.slice(0, 128)); setLocalWalletError(null); clearWalletError(key); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }} />
               </label>
-              {localWalletError && <div class="field-support error" role="status">{localWalletError}</div>}
+              <div role="status" class={localWalletError ? 'field-support error' : undefined}>{localWalletError}</div>
             </div>
             <p class="note" style={{ marginTop: 'var(--xs)' }}>فقط آدرس عمومی رو وارد کن. عبارت بازیابی یا کلید خصوصی رو هیچ‌وقت وارد نکن.</p>
             <p class="note small">برای خوندن موجودی، آدرس به سرویس عمومی همون شبکه فرستاده می‌شه.</p>

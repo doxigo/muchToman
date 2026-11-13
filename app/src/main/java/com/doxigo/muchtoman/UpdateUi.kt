@@ -98,12 +98,6 @@ internal fun UpdateNote(release: Release, onLater: () -> Unit) {
                 fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Text(
-                "بزن ببین چی عوض شده.",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                modifier = Modifier.padding(top = Space.xs),
-            )
         }
     }
 

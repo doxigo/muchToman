@@ -131,7 +131,7 @@ fun LockScreen(onUnlock: () -> Unit) {
             )
             Spacer(Modifier.height(Space.m))
             Text(
-                "برای دیدن دارایی‌هات، اثر انگشت یا رمز گوشی‌ات رو وارد کن.",
+                "برای دیدن دارایی‌هات، با قفل گوشی‌ات تأیید کن.",
                 fontSize = 15.sp,
                 lineHeight = 25.sp,
                 textAlign = TextAlign.Center,

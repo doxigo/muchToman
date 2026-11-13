@@ -62,7 +62,8 @@ const logoOf = (table: Record<string, Logo>, key: string): Logo | null => (Objec
 /**
  * The bank's own mark on a white plate. The plate is not decoration: these are real logos drawn
  * for a white page, and a dozen are near-black — on the dark theme a black shape on a dark card.
- * A bank with no logo (OTHER, or a name this build does not know) gets 💳 on the muted surface.
+ * A bank with no logo (OTHER, or a name this build does not know) gets the DOTS glyph on the muted
+ * surface — the app's own mark for «this one it does not know», never an emoji.
  */
 export function BankLogo({ bank, size = 32 }: { bank: string; size?: number }) {
   const logo = logoOf(BANK_LOGOS, bank);
@@ -76,7 +77,7 @@ export function BankLogo({ bank, size = 32 }: { bank: string; size?: number }) {
     }}>
       {logo
         ? <svg viewBox={logo[0]} width="100%" height="100%" style={{ display: 'block' }} dangerouslySetInnerHTML={{ __html: logo[1] }} />
-        : <span style={{ fontSize: `calc(${size / 2}px * var(--text))`, lineHeight: 1 }}>💳</span>}
+        : <CategoryIcon glyph="DOTS" size={size / 2} color="var(--on-surface-variant)" />}
     </span>
   );
 }

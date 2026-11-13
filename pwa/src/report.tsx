@@ -561,7 +561,8 @@ function WindowNavigator({ cash, onWindow }: { cash: CashFlowReport; onWindow: O
         <h2><Fit text={cash.range.fa} min={16} max={26} lines={cash.range.count === 1 && !weekly ? 1 : 2} class="figure rp-w800" /></h2>
         {cash.current
           ? <p class="rp-nav-sub muted">{`تا امروز ${faNumber(at.day)} ${MONTHS[at.month - 1]}`}</p>
-          : <button type="button" class="rp-btn rp-nav-sub primary-ink" onClick={(e) => { e.stopPropagation(); back(); }}>{backFa}</button>}
+          // A pill, not a line of coloured text, which reads as a caption until it is tried (DESIGN § Buttons).
+          : <button type="button" class="pill" style={{ marginTop: 'var(--xs)' }} onClick={(e) => { e.stopPropagation(); back(); }}>{backFa}</button>}
       </div>
       <StepButton label={weekly ? 'هفتهٔ قبل' : 'ماه قبل'} enabled={cash.canGoBack} previous
         onClick={() => onWindow(weekly ? cash.range.startDay - 7 : cash.selected.previous().startDay, cash.span)} />

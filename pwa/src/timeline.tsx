@@ -467,8 +467,7 @@ function NarrowedLine({ words, onClear }: { words: string; onClear: () => void }
   return (
     <div class="narrowed">
       <p class="grow">{words}</p>
-      {/* A 40px pill on a 48px target: the line earns the small pill, a thumb does not. */}
-      <button type="button" class="clear-pill" onClick={onClear}><span>پاک کردن</span></button>
+      <PillButton label="پاک کردن" onClick={onClear} />
     </div>
   );
 }
@@ -847,17 +846,17 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
   const own = txn.ref.startsWith('m:') || txn.ref.startsWith('s:');
   const canEdit = editable(entry);
   const canSplit = splittable(entry);
+  // Only where a tap does something not to be guessed: on a row filed once, the selected tile says it all.
+  const caption = entry.transfer ? 'این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی.'
+    : entry.split?.length ? 'بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه.'
+      : entry.needsReview ? 'دسته درست رو بزن تا این مورد تایید بشه.'
+        : null;
   return (
     <div class="screen no-tabs txn-page">
       <TransactionHero entry={entry} />
 
       <SectionHeading>دسته‌بندی</SectionHeading>
-      <p class="txn-caption">
-        {entry.transfer ? 'این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی.'
-          : entry.split?.length ? 'بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه.'
-            : entry.needsReview ? 'دسته درست رو بزن تا این مورد تایید بشه.'
-              : `دسته فعلی ${entry.categoryFa} است. برای تغییر، دسته تازه رو بزن.`}
-      </p>
+      {caption && <p class="txn-caption">{caption}</p>}
       {!!entry.split?.length && <div style={{ marginTop: 'var(--m)' }}><SplitPanel split={entry.split} /></div>}
       <div style={{ marginTop: 'var(--l)' }} />
       <CategoryGrid categories={choices} selected={chosen}
@@ -936,7 +935,8 @@ function ReviewDeck() {
   // Always the head of what is left: the deck is a countdown, not a carousel.
   const pending = view.review.filter((e) => !skipped.has(e.txn.ref));
   const entry = pending[0];
-  if (!entry) return <DeckEnd view={view} />;
+  // Cards put off and still waiting: the end never says everything is reviewed over those.
+  if (!entry) return <DeckEnd view={view} left={view.review.length} onAgain={() => setSkipped(new Set())} />;
   return (
     <DeckCard key={entry.txn.ref} entry={entry} view={view} left={pending.length}
       onSkip={() => setSkipped(new Set([...skipped, entry.txn.ref]))}
@@ -988,7 +988,7 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       {/* The one answer that is always available does not scroll away. Beside it, while the
           backlog is real, the way out of the whole chore — behind a sheet that says what happens. */}
       <div class="deck-foot">
-        <button type="button" class="pill block skip-answer" onClick={onSkip}>بمونه برای بعد</button>
+        <PillButton label="بمونه برای بعد" block onClick={onSkip} />
         {left >= 5 && <PillButton label="خودکار برای همه" block onClick={onAutoFile} />}
       </div>
     </div>
@@ -999,13 +999,13 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
  * The deck with nothing left: the one optional question gets asked — at most two a week, about
  * something large she chose to buy — and otherwise the moment the whole screen exists to reach.
  */
-function DeckEnd({ view }: { view: LedgerView }) {
+function DeckEnd({ view, left, onAgain }: { view: LedgerView; left: number; onAgain: () => void }) {
   const today = useTehranDay();
   const asking = useMemo(
     () => worthItCandidates(view.entries, new Set(worthItAnswers(rows('decisions')).keys()), today, largeSpendThreshold(view.entries)),
     [view, today],
   );
-  if (!asking.length) return <DeckDone view={view} today={today} />;
+  if (!asking.length) return <DeckDone view={view} today={today} left={left} onAgain={onAgain} />;
   return (
     <div class="screen no-tabs">
       <div class="screen-head">
@@ -1025,11 +1025,25 @@ function DeckEnd({ view }: { view: LedgerView }) {
 /**
  * Calm on purpose: no confetti and no score. What it earns is the figure the app is judged on —
  * how much of the month never needed her — and only when the month has enough rows for it to mean
- * anything.
+ * anything. With cards put off and still waiting ([left]), the same make says so instead, on a
+ * neutral disc, with the way back to them under the way out.
  */
-function DeckDone({ view, today }: { view: LedgerView; today: number }) {
+function DeckDone({ view, today, left, onAgain }: { view: LedgerView; today: number; left: number; onAgain: () => void }) {
   const month = useMemo(() => currentMonthReport(view.entries, today), [view, today]);
   const share = month.transactions >= 5 ? month.automaticShare : null;
+  if (left > 0) return (
+    <div class="screen no-tabs deck-done">
+      <div class="deck-done-body">
+        <span class="disc done-disc later"><CategoryIcon glyph="DOTS" size={46} color="var(--on-surface-variant)" /></span>
+        <h1 class="done-title">{`${faNumber(left)} مورد موند برای بعد`}</h1>
+        <p class="muted done-caption">تا تأییدشون نکنی، توی مرور می‌مونن.</p>
+      </div>
+      <div class="sheet-actions">
+        <PillButton label="برگشت به دفتر" voice="primary" block onClick={closePage} />
+        <PillButton label="دوباره ببینمشون" block onClick={onAgain} />
+      </div>
+    </div>
+  );
   return (
     <div class="screen no-tabs deck-done">
       <div class="deck-done-body">

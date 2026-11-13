@@ -6,12 +6,17 @@
  * Every visited tab stays mounted and hidden rather than torn down, so each keeps its own state the
  * way `rememberSaveableStateHolder` keeps it on the phone; `useScrollPerView` keeps each one's place.
  */
+import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { TabIcon } from './icons';
-import { TABS, dismissNotice, gates, pages, selectTab, sheets, tabs, useNav } from './nav';
-import type { Tab } from './nav';
+import { TABS, dismissNotice, gates, holdNotice, pages, selectTab, sheets, tabs, useNav } from './nav';
+import type { Notice, Tab } from './nav';
 import { faNumber } from './format';
 import { pref, textSize, useData } from './state';
+import { focusOrigin, refocus } from './ui';
+
+/** Each theme-color meta with the colour index.html gave it for its own media query. */
+let themeMetas: Array<[HTMLMetaElement, string]> | undefined;
 
 function useTheme(): void {
   useData();
@@ -22,9 +27,10 @@ function useTheme(): void {
   useEffect(() => {
     const root = document.documentElement;
     if (mode === 'SYSTEM') delete root.dataset.theme; else root.dataset.theme = mode.toLowerCase();
-    // The browser chrome follows the page, as the manifest's colours do.
-    const dark = mode === 'DARK' || (mode === 'SYSTEM' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', dark ? '#121511' : '#FFFFFF'));
+    // The browser chrome follows the page. «خودکار» leaves each meta its own colour, so their media
+    // queries keep following the phone; only a forced theme writes one colour into both.
+    themeMetas ??= [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].map((m) => [m, m.content]);
+    for (const [meta, own] of themeMetas) meta.content = mode === 'SYSTEM' ? own : mode === 'DARK' ? '#121511' : '#FFFFFF';
   }, [mode]);
 }
 
@@ -100,18 +106,58 @@ export function App() {
             </div>
           );
         })}
-        {Page && top && <div key={`${top.id}:${nav.pages.length}`}><Page {...top.props} /></div>}
+        {Page && top && <PageFrame key={`${top.id}:${nav.pages.length}`}><Page {...top.props} /></PageFrame>}
         {!Page && <TabBar selected={nav.tab} />}
         {Sheet && sheet && <Sheet key={sheet.id} {...sheet.props} />}
         {nav.notice && (
-          <div class={`notice${Page ? ' over-page' : ''}`} role="status" key={nav.notice.key}>
-            <span class="grow">{nav.notice.text}</span>
+          // Not the live region (NoticeSaid is), so its words are not said twice; the action stays reachable.
+          <div class={`notice${Page ? ' over-page' : ''}`} key={nav.notice.key}
+            onPointerEnter={() => holdNotice('pointer', true)} onPointerLeave={() => holdNotice('pointer', false)}
+            onFocusIn={() => holdNotice('focus', true)} onFocusOut={() => holdNotice('focus', false)}>
+            <span class="grow" aria-hidden="true">{nav.notice.text}</span>
             {nav.notice.action && (
               <button type="button" class="pill primary" onClick={() => { nav.notice?.action?.run(); dismissNotice(); }}>{nav.notice.action.label}</button>
             )}
           </div>
         )}
       </div>
+      <NoticeSaid notice={nav.notice} />
     </>
   );
+}
+
+/**
+ * The notice, said: one status region mounted for the app's whole life, its words written in a beat
+ * after the band appears. A region inserted with its words already in is read unreliably (VoiceOver
+ * above all), and the same words written over themselves would not count as a change.
+ */
+function NoticeSaid({ notice }: { notice: Notice | null }) {
+  const region = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = region.current;
+    if (!el) return;
+    el.textContent = '';
+    if (!notice) return;
+    const say = setTimeout(() => { el.textContent = notice.text; }, 100);
+    return () => clearTimeout(say);
+  }, [notice?.key]);
+  return <div ref={region} class="sr" role="status" />;
+}
+
+/**
+ * A page's frame: focus moves to its title on opening, unless something on it already took focus —
+ * the tab under it is hidden, and focus left there is focus nowhere — and goes back to what opened it
+ * on closing, if that is still on screen.
+ */
+function PageFrame({ children }: { children: ComponentChildren }) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [opener] = useState(focusOrigin);
+  useEffect(() => {
+    const el = frame.current;
+    const title = el?.querySelector('h1');
+    if (el && title && !el.contains(document.activeElement)) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+    // After the commit, when the tab under the page is shown again.
+    return () => queueMicrotask(() => refocus(opener));
+  }, []);
+  return <div ref={frame}>{children}</div>;
 }

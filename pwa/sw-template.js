@@ -29,10 +29,10 @@ self.addEventListener('fetch', (event) => {
     return response;
   }));
 });
-self.addEventListener('push', (event) => {
-  event.waitUntil(self.registration.showNotification('چقدر تومن', {
-    body: 'بررسی هفتگی‌ات آماده است.', tag: 'weekly-close', dir: 'rtl', lang: 'fa',
-  }));
+// A new shell waits until the page says it is safe to swap — hidden, or «تازه کن» tapped (main.tsx) —
+// so a deploy never changes the files under a page that is still running the old ones.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skip-waiting') self.skipWaiting();
 });
 // A note's tap lands on the tab it is about (Notify.kt's open-tab extra): an open window is
 // focused and told where to go; otherwise the app opens there.

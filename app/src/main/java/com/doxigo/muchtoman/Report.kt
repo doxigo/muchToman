@@ -425,7 +425,7 @@ private fun AssetReportContent(
 
 /**
  * The bar's own palette, not the icon discs' container tints: those are meant to sit quietly
- * behind an emoji, and in the dark theme they all but vanish against the background — an 89%
+ * behind a drawn mark, and in the dark theme they all but vanish against the background — an 89%
  * crypto segment read as an empty track. These are the app's green-to-gold family, fixed so
  * they hold on both themes; gold stays reserved for the gold kinds.
  */
@@ -998,26 +998,24 @@ private fun WindowNavigator(cash: CashFlowReport, onWindow: (Long, ReportSpan) -
             // written, because «تا امروز» over a title that reads شهریور ۱۴۰۵ is the one line on
             // the screen that names a day without ever saying which one.
             //
-            // Off that window the same line carries the way back instead, in the accent every
-            // other tappable word on the screen wears: a title that can be tapped has to say so
-            // somewhere, and this is the line directly under it that is otherwise empty.
-            val at = jalaliOf(cash.today)
-            Text(
-                if (cash.current) {
-                    "تا امروز ${faNumber(at.day.toDouble())} ${MONTHS[at.month - 1]}"
-                } else if (weekly) {
-                    "برگشت به این هفته"
-                } else {
-                    "برگشت به این ماه"
-                },
-                fontSize = 12.sp,
-                color = if (cash.current) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            // Off that window the same line carries the way back instead: a title that can be
+            // tapped has to say so somewhere, and this is the line directly under it that is
+            // otherwise empty. A pill, because a line of coloured text reads as a caption.
+            if (cash.current) {
+                val at = jalaliOf(cash.today)
+                Text(
+                    "تا امروز ${faNumber(at.day.toDouble())} ${MONTHS[at.month - 1]}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            } else {
+                PillButton(
+                    if (weekly) "برگشت به این هفته" else "برگشت به این ماه",
+                    { onWindow(cash.today, cash.span) },
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+            }
         }
         // Clear of the longest month name before the stepper starts, so a two-line range and the
         // buttons never look like one run-on object.

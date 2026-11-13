@@ -2,7 +2,6 @@ package com.doxigo.muchtoman
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -116,7 +114,7 @@ import kotlinx.coroutines.delay
  */
 @Composable
 private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null) {
-    // Tinted by kind rather than one grey for all. It only ever shows behind the emoji and
+    // Tinted by kind rather than one grey for all. It only ever shows behind the drawn and
     // letter fallbacks — a coin's own logo covers it — which is exactly where a list of
     // eleven identical grey discs was hardest to scan.
     val scheme = MaterialTheme.colorScheme
@@ -202,8 +200,9 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
                 }
                 glyph != null -> AssetGlyphIcon(glyph, ink, size = size * 0.55f)
                 // Still reachable: an asset synced from a build that knows a kind this one
-                // does not draw yet keeps its emoji rather than falling to bare letters.
-                type.emoji != null -> Text(type.emoji, fontSize = (size.value * 0.52f).sp)
+                // does not draw yet gets the three dots — «not one this build knows» — in the
+                // pen, rather than an emoji or bare letters.
+                type.emoji != null -> GlyphIcon(CategoryGlyph.DOTS, ink, size = size * 0.55f)
                 else -> letters()
             }
         }
@@ -838,8 +837,8 @@ private enum class AmountSource { WALLET, MANUAL }
  * shared an edge. Two columns, logo leading from a fixed inset, name after it: the column of
  * marks becomes the index, and the whole choice fits in a glance instead of a scroll.
  *
- * Chosen is a fill *and* a ring *and* a weight, because a fill alone is colour doing the work
- * of structure.
+ * Each is the app's [Chip], so chosen is a fill *and* a weight, because a fill alone is colour
+ * doing the work of structure.
  */
 @Composable
 private fun WalletNetworkChoice(
@@ -858,41 +857,13 @@ private fun WalletNetworkChoice(
         options.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(Space.m)) {
                 pair.forEach { option ->
-                    val active = option.network == selected
-                    Row(
-                        Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(Radius.field))
-                            .background(
-                                if (active) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceContainer,
-                            )
-                            .border(
-                                width = if (active) 2.dp else 0.dp,
-                                color = if (active) MaterialTheme.colorScheme.primary
-                                else Color.Transparent,
-                                shape = RoundedCornerShape(Radius.field),
-                            )
-                            .selectable(
-                                selected = active,
-                                enabled = enabled,
-                                role = Role.RadioButton,
-                                onClick = { onSelect(option.network) },
-                            )
-                            .heightIn(min = 56.dp)
-                            .padding(horizontal = Space.m),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        WalletNetworkLogo(option.network)
-                        Spacer(Modifier.width(Space.s))
-                        Text(
-                            option.networkFa,
-                            fontSize = 14.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    Chip(
+                        option.networkFa,
+                        option.network == selected,
+                        Modifier.weight(1f),
+                        enabled = enabled,
+                        lead = { WalletNetworkLogo(option.network, size = 24.dp) },
+                    ) { onSelect(option.network) }
                 }
                 // An odd count keeps the grid's columns rather than stretching the last tile
                 // across both — the shared leading edge is the point of the layout.

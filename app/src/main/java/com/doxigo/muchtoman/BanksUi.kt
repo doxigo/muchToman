@@ -27,12 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -294,13 +297,22 @@ private fun SenderCandidateCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = Space.xs),
             )
-            Text(
-                "باز کردن پیامک‌ها",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                textDecoration = TextDecoration.Underline,
-                modifier = Modifier.padding(top = Space.s),
-            )
+            // The card is the door to the messages, so it wears the chevron every door does
+            // rather than an underline.
+            Row(Modifier.padding(top = Space.s), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "باز کردن پیامک‌ها",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = muted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             // Stacked, not side by side: beside «بانک دیگه» a long name like خاورمیانه cut the
             // confirm off before «اضافه‌اش کن», the one word that says what the button does.
             Column(
@@ -656,7 +668,8 @@ internal fun BankLogo(bank: String, size: Dp = 32.dp) {
                     .padding(size / 8),
             )
         } else {
-            Text("💳", fontSize = (size.value / 2).sp)
+            // Three dots, the app's mark for «not one it knows», drawn in the pen like every other.
+            GlyphIcon(CategoryGlyph.DOTS, MaterialTheme.colorScheme.onSurfaceVariant, size = size * 0.55f)
         }
     }
 }

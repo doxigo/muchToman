@@ -800,33 +800,6 @@ private fun UnitChips(units: List<String>, selected: String, type: (String) -> A
 }
 
 /**
- * [ChipChoice]'s pill, for rows that have to wrap. [lead] goes before the label — a bank's logo at
- * 24dp, as the PWA's paste sheet draws its bank chips — with the start padding drawn in to meet it.
- */
-@Composable
-internal fun Chip(label: String, active: Boolean, lead: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
-            .selectable(selected = active, role = Role.RadioButton, onClick = onClick)
-            .heightIn(min = 40.dp)
-            .padding(start = if (lead != null) Space.s else Space.l, end = Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.s),
-    ) {
-        lead?.invoke()
-        Text(
-            label,
-            fontSize = 13.sp,
-            maxLines = 1,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-            color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-/**
  * The sheet's one commit, in [Cta] green and never dimmed: a dead button explains nothing, so a
  * tap that cannot save yet raises the words under whatever is missing instead.
  */

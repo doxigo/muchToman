@@ -147,14 +147,41 @@ export function openSheet(id: string, props: Record<string, unknown> = {}): void
 export function closeSheet(): void { if (state.sheet && popTop()) giveBack(); }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-/** TransientNoticeBand: one at a time, six seconds, at most one action. */
+/** What is left of the notice's time, and when that was last counted. */
+let noticeLeft = 0;
+let noticeSince = 0;
+/** The pointer over the band, or focus inside it: either holds the notice where it is. */
+const holding = { pointer: false, focus: false };
+function runNotice(ms: number): void {
+  clearTimeout(noticeTimer);
+  noticeLeft = ms;
+  noticeSince = Date.now();
+  noticeTimer = setTimeout(dismissNotice, ms);
+}
+/**
+ * TransientNoticeBand: one at a time, at most one action. Six seconds, ten with an action — an undo
+ * has to be read and then reached — and none of it counts while the pointer or focus is on the band.
+ */
 export function showNotice(text: string, action?: Notice['action']): void {
   state.notice = { key: Date.now(), text, action };
-  clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { state.notice = null; changed(); }, 6000);
+  holding.pointer = holding.focus = false;
+  runNotice(action ? 10_000 : 6000);
   changed();
 }
-export function dismissNotice(): void { clearTimeout(noticeTimer); state.notice = null; changed(); }
+export function dismissNotice(): void {
+  clearTimeout(noticeTimer);
+  holding.pointer = holding.focus = false;
+  state.notice = null;
+  changed();
+}
+/** The band's own pointer and focus, pausing its clock and starting it again where it stopped. */
+export function holdNotice(by: keyof typeof holding, on: boolean): void {
+  const was = holding.pointer || holding.focus;
+  holding[by] = on;
+  const now = holding.pointer || holding.focus;
+  if (!state.notice || was === now) return;
+  if (now) { clearTimeout(noticeTimer); noticeLeft -= Date.now() - noticeSince; } else runNotice(Math.max(noticeLeft, 0));
+}
 
 // ---- the report's way in (Ui.kt openReport) --------------------------------------------------
 

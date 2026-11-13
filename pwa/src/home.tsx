@@ -79,9 +79,10 @@ function HomeList({ portfolio }: { portfolio: boolean }) {
       )}
 
       {backupReminderDue(pref('backupReminderEnabled'), pref('lastBackupAt'), Date.now()) && (
-        // A door, not a caption: it leads to تنظیمات, so it wears the card and chevron every door does.
+        // A door, not a caption: it opens the backup page itself, so it wears the card and chevron every
+        // door does, and back from there is خانه again.
         <button type="button" class="backup-due" onClick={() => openPage('settings', { room: 'BACKUP' })}>
-          <span>وقت پشتیبان جدیده. از تنظیمات یک فایل پشتیبان بساز.</span>
+          <span>وقت پشتیبان جدیده. یک فایل پشتیبان بساز.</span>
           <Chevron size={24} />
         </button>
       )}
