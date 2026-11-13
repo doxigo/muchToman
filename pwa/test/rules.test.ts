@@ -141,7 +141,7 @@ describe('the picker', () => {
     const incoming = categoryChoices(BUILTIN_CATEGORIES, 'in').map((c) => c.nameFa);
     expect(incoming).toEqual(['درآمد', 'حقوق', 'فروش', 'پاداش', 'سود سرمایه‌گذاری', 'پس‌گرفتن قرض', 'قرض', 'همسر', 'سایر', 'انتقال بین حساب‌ها']);
     const outgoing = categoryChoices(BUILTIN_CATEGORIES, 'out').map((c) => c.nameFa);
-    for (const name of ['خواربار', 'سفر', 'ورزش', 'شیرینی', 'گوشت و مرغ', 'آبمیوه بستنی', 'بازپرداخت اسنپ و تپسی', 'آرایشگاه', 'آرایشی و بهداشتی', 'همسر', 'سایر']) {
+    for (const name of ['خواربار', 'سفر', 'ورزش', 'شیرینی', 'گوشت و مرغ', 'آبمیوه بستنی', 'فرزند', 'بازپرداخت اسنپ و تپسی', 'آرایشگاه', 'آرایشی و بهداشتی', 'همسر', 'سایر']) {
       expect(outgoing).toContain(name);
     }
     expect(outgoing).not.toContain('درآمد');

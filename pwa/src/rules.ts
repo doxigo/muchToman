@@ -79,6 +79,8 @@ export const BUILTIN_CATEGORIES: readonly Category[] = [
   shipped('cat_sweets', 'شیرینی', 'expense', 186),
   shipped('cat_meat', 'گوشت و مرغ', 'expense', 187),
   shipped('cat_juice', 'آبمیوه بستنی', 'expense', 188),
+  // What a child costs, filed under fees and clothes and toys, has no line of its own otherwise.
+  shipped('cat_child', 'فرزند', 'expense', 189),
 
   // what the app files for her, which she rarely has to pick
   shipped(CAT_CASH, 'برداشت نقدی', 'expense', 190),

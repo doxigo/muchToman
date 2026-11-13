@@ -19,7 +19,7 @@ export const CATEGORY_GLYPHS = [
   'SWEET', 'MEAT', 'CONE',
   // A category that outgrew its mark gets a new one: a category she made stores the name.
   'TAXI', 'PIGGY',
-  'BUN', 'MUSTACHE', 'SMITTEN',
+  'BUN', 'MUSTACHE', 'SMITTEN', 'BABY',
   // A settings row's mark, not a category's: «خروجی اکسل» on the backup page. Never pickable.
   'SHEET',
   'DOTS',
@@ -83,6 +83,7 @@ const BY_NAME = new Map<string, CategoryGlyph>([
   ['بابا', 'MUSTACHE'],
   ['پدر', 'MUSTACHE'],
   ['پارتنر', 'SMITTEN'],
+  ['فرزند', 'BABY'],
   ['انتقال بین حساب‌ها', 'SWAP'],
 ]);
 export const categoryGlyph = (nameFa: string): CategoryGlyph => BY_NAME.get(nameFa) ?? 'DOTS';
@@ -157,6 +158,7 @@ const HUES: Record<Exclude<CategoryGlyph, 'DOTS'>, [string, string]> = {
   BUN: ['#A55C1E', '#F4AB77'],
   MUSTACHE: ['#208085', '#64D1D7'],
   SMITTEN: ['#B3485D', '#FBA0AC'],
+  BABY: ['#B0503E', '#FCA391'],
 };
 /** DOTS knows nothing, so it borrows muted text and claims no hue. */
 const DOTS_HUE = 'var(--on-surface-variant)';
@@ -218,6 +220,7 @@ export const LUCIDE: Partial<Record<CategoryGlyph, string>> = {
   MEAT: 'M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23 M8.29 12.71l-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59', // drumstick
   CONE: 'M7 11l4.08 10.35a1 1 0 0 0 1.84 0L17 11 M17 7A5 5 0 0 0 7 7 M17 7a2 2 0 0 1 0 4H7a2 2 0 0 1 0-4', // ice-cream-cone
   TAXI: 'M10 2h4 M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8 M7 14h.01 M17 14h.01 M5 10h14a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M5 18v2 M19 18v2', // car-taxi-front
+  BABY: 'M10 16c.5.3 1.2.5 2 .5s1.5-.2 2-.5 M15 12h.01 M19.38 6.813A9 9 0 0 1 20.8 10.2a2 2 0 0 1 0 3.6 9 9 0 0 1-17.6 0 2 2 0 0 1 0-3.6A9 9 0 0 1 12 3c2 0 3.5 1.1 3.5 2.5s-.9 2.5-2 2.5c-.8 0-1.5-.4-1.5-1 M9 12h.01', // baby
   PIGGY: 'M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z M16 10h.01 M2 8v1a2 2 0 0 0 2 2h1', // piggy-bank
 };
 

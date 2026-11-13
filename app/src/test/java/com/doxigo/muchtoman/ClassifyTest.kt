@@ -215,6 +215,7 @@ class ClassifyTest {
         assertTrue("شیرینی" in outgoing)
         assertTrue("گوشت و مرغ" in outgoing)
         assertTrue("آبمیوه بستنی" in outgoing)
+        assertTrue("فرزند" in outgoing)
         assertTrue("بازپرداخت اسنپ و تپسی" in outgoing)
         assertTrue("آرایشگاه" in outgoing)
         assertTrue("آرایشی و بهداشتی" in outgoing)

@@ -56,8 +56,9 @@ enum class CategoryGlyph {
     // of discs, which is also why Settings uses it for پشتیبان‌گیری.
     TAXI, PIGGY,
     // The people she files money for, as faces beside خرج اتینا's: مامان with her hair up, بابا
-    // with his سبیل, and پارتنر smitten. Named for the picture, like every other entry.
-    BUN, MUSTACHE, SMITTEN,
+    // with his سبیل, and پارتنر smitten. Named for the picture, like every other entry. فرزند's
+    // baby is Lucide's own face, the one person any icon set already draws.
+    BUN, MUSTACHE, SMITTEN, BABY,
     // A settings row's mark, not a category's: «خروجی اکسل» on the backup page, beside STACK and
     // TRAY. Here because that row draws from this enum; kept out of [PICKABLE_GLYPHS].
     SHEET,
@@ -127,6 +128,7 @@ fun categoryGlyph(nameFa: String): CategoryGlyph = when (nameFa) {
     "مامان", "مادر" -> CategoryGlyph.BUN
     "بابا", "پدر" -> CategoryGlyph.MUSTACHE
     "پارتنر" -> CategoryGlyph.SMITTEN
+    "فرزند" -> CategoryGlyph.BABY
     "انتقال بین حساب‌ها" -> CategoryGlyph.SWAP
     else -> CategoryGlyph.DOTS
 }
@@ -300,6 +302,14 @@ fun glyphHue(glyph: CategoryGlyph): Color {
         // آبمیوه بستنی sits between گوشت و مرغ and برداشت نقدی's jade, under قرض and over سایر's
         // orchid. Cold periwinkle, which clears all four by 74° and more.
         CategoryGlyph.CONE -> if (dark) Color(0xFFA9B8FF) else Color(0xFF5C69BC)
+        // فرزند went in after آبمیوه بستنی, between its periwinkle and برداشت نقدی's jade, under
+        // سفر's leaf and over سایر's orchid. Those four leave only the red-orange, and the wheel
+        // has nothing free there: قرض, گوشت و مرغ and زیبایی all sit in it. Brick red, which clears
+        // the four by 61° and more and spends the closeness where this table always does — قرض is
+        // 3° off it (OKLCh) across a corner, and گوشت و مرغ 10° off two cells along the row, with
+        // the periwinkle between them. Kept clear of مامان's apricot, 24° away: a baby's curl and
+        // her bun are the one pair of faces that could be taken for each other.
+        CategoryGlyph.BABY -> if (dark) Color(0xFFFCA391) else Color(0xFFB0503E)
 
         // ── the income grid, which is its own four columns and shares no cell with the above ──
         // درآمد is [TRAY] below, and پس‌گرفتن قرض [PAYBACK]; these four fill in around them, each
@@ -440,6 +450,7 @@ internal val LUCIDE: Map<CategoryGlyph, String> = mapOf(
     CategoryGlyph.MEAT to "M15.4 15.63a7.875 6 135 1 1 6.23-6.23 4.5 3.43 135 0 0-6.23 6.23 M8.29 12.71l-2.6 2.6a2.5 2.5 0 1 0-1.65 4.65A2.5 2.5 0 1 0 8.7 18.3l2.59-2.59", // drumstick
     CategoryGlyph.CONE to "M7 11l4.08 10.35a1 1 0 0 0 1.84 0L17 11 M17 7A5 5 0 0 0 7 7 M17 7a2 2 0 0 1 0 4H7a2 2 0 0 1 0-4", // ice-cream-cone
     CategoryGlyph.TAXI to "M10 2h4 M21 8l-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8 M7 14h.01 M17 14h.01 M5 10h14a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-4a2 2 0 0 1 2 -2z M5 18v2 M19 18v2", // car-taxi-front
+    CategoryGlyph.BABY to "M10 16c.5.3 1.2.5 2 .5s1.5-.2 2-.5 M15 12h.01 M19.38 6.813A9 9 0 0 1 20.8 10.2a2 2 0 0 1 0 3.6 9 9 0 0 1-17.6 0 2 2 0 0 1 0-3.6A9 9 0 0 1 12 3c2 0 3.5 1.1 3.5 2.5s-.9 2.5-2 2.5c-.8 0-1.5-.4-1.5-1 M9 12h.01", // baby
     CategoryGlyph.PIGGY to "M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z M16 10h.01 M2 8v1a2 2 0 0 0 2 2h1", // piggy-bank
 )
 

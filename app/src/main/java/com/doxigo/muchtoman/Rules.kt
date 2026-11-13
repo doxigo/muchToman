@@ -187,6 +187,14 @@ val BUILTIN_CATEGORIES: List<Category> = listOf(
     Category("cat_sweets", nameFa = "شیرینی", kind = CategoryKind.EXPENSE, sort = 186, builtin = true),
     Category("cat_meat", nameFa = "گوشت و مرغ", kind = CategoryKind.EXPENSE, sort = 187, builtin = true),
     Category("cat_juice", nameFa = "آبمیوه بستنی", kind = CategoryKind.EXPENSE, sort = 188, builtin = true),
+    // What a child costs — the school fees, the clothes outgrown every season, the toy, the
+    // doctor's visit — which filed under each of those is ordinary household spending, and the
+    // question she has about it («بچه این ماه چقدر خرج داشت؟») has no line to answer from. One row
+    // makes it answerable, for the reason سفر is one row.
+    //
+    // After the three foods for their reason: here only the five the app files for her move along.
+    // No shipped rule behind it, for the reason قسط و وام has none.
+    Category("cat_child", nameFa = "فرزند", kind = CategoryKind.EXPENSE, sort = 189, builtin = true),
 
     // ── what the app files for her, which she rarely has to pick ──
     Category(CAT_CASH, nameFa = "برداشت نقدی", kind = CategoryKind.EXPENSE, sort = 190, builtin = true),
