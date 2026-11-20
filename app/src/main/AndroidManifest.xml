@@ -105,12 +105,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="muchtoman" android:host="join" />
-            </intent-filter>
             <!--
                 Verified against pwa/public/.well-known/assetlinks.json, which the sync Worker
                 serves. Unverified, Android 12+ hands this link to the browser every time and the
