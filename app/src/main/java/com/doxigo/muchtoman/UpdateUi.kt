@@ -63,7 +63,7 @@ internal fun openNotificationSettings(context: Context) {
             .setData(Uri.fromParts("package", context.packageName, null))
     }
     runCatching { context.startActivity(intent) }
-        .onFailure { android.util.Log.w("muchtoman", "notification settings unavailable: $it") }
+        .onFailure { logFailure("notification settings unavailable", it) }
 }
 
 internal fun openUrl(context: Context, url: String): Boolean =

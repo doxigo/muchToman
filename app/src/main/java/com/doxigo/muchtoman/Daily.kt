@@ -238,7 +238,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         }.getOrElse {
             // Retry rather than success: a failed read here is an alert that did not happen, and
             // WorkManager's backoff is a better answer than waiting six hours for the next one.
-            android.util.Log.w("muchtoman", "ledger watch failed: $it")
+            logFailure("ledger watch failed", it)
             Result.retry()
         }
 
@@ -269,7 +269,7 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 readReportExclusions(durable)?.ids?.toSet()?.let { excluded ->
                     if (excluded != store.reportExcluded) store.reportExcluded = excluded
                 }
-            }.onFailure { android.util.Log.w("muchtoman", "background family sync failed: $it") }
+            }.onFailure { logFailure("background family sync failed", it) }
         }
         return watched
     }

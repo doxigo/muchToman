@@ -236,7 +236,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         ledgerJob = viewModelScope.launch(Dispatchers.Default) {
             runCatching { runLedgerPipeline(app, extraLookup(store.extraBankNumbers)) }
-                .onFailure { android.util.Log.w("muchtoman", "ledger pipeline failed: $it") }
+                .onFailure { logFailure("ledger pipeline failed", it) }
         }
     }
 
@@ -295,9 +295,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(rates = fresh) }
             }.onFailure { e ->
                 // Keep showing the cached rates; an old number beats a blank screen. The
-                // log line is the only place the real reason survives — the UI stays Persian
-                // and calm, but `adb logcat -s muchtoman` must be able to answer "why".
-                android.util.Log.w("muchtoman", "rates fetch failed: $e")
+                // log line is where the real reason survives on a debug build — the UI stays Persian
+                // and calm, but `adb logcat -s muchtoman` must be able to answer "why". A release
+                // build names the exception's class only; see [logFailure].
+                logFailure("rates fetch failed", e)
                 failure = "نرخ‌ها به‌روز نشدن. اینترنتت رو چک کن."
             }
 
@@ -320,7 +321,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         store.usdHistoryAt = now
         viewModelScope.launch(Dispatchers.Default) {
             val fetched = fetchUsdHistory(BuildConfig.RATES_URL).getOrElse {
-                android.util.Log.w("muchtoman", "usd history fetch failed: $it")
+                logFailure("usd history fetch failed", it)
                 return@launch
             }
             ledgerGate.withLock {
@@ -355,7 +356,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(tse = fresh) }
                 android.util.Log.i("muchtoman", "tse ok: ${fresh.stocks.size} instruments")
             }.onFailure { error ->
-                android.util.Log.w("muchtoman", "tse fetch failed: $error")
+                logFailure("tse fetch failed", error)
             }
             _state.update { it.copy(stocksLoading = false) }
             if (changed && _state.value.holdings.any { isStockId(it.typeId) }) recordSnapshot()
@@ -378,7 +379,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             postCrashReport(BuildConfig.RATES_URL, report)
                 .onSuccess { crashFile(getApplication()).delete() }
-                .onFailure { android.util.Log.w("muchtoman", "crash report not sent: $it") }
+                .onFailure { logFailure("crash report not sent", it) }
         }
     }
 
@@ -679,7 +680,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     listOf(customCategory(nameFa, kind, glyph, System.currentTimeMillis()))
                 )
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "addCategory failed: $it") }
+            }.onFailure { logFailure("addCategory failed", it) }
         }
     }
 
@@ -706,7 +707,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     )
                 )
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "editCategory failed: $it") }
+            }.onFailure { logFailure("editCategory failed", it) }
         }
     }
 
@@ -726,7 +727,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     listOf(category.copy(archived = !category.archived))
                 )
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "toggleCategoryArchived failed: $it") }
+            }.onFailure { logFailure("toggleCategoryArchived failed", it) }
         }
     }
 
@@ -828,11 +829,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             if (balance.at > folded.updatedAt) continue
             val foldedRial = Math.round(folded.balance * 10.0)
             if (foldedRial != balance.rial) {
+                // No figure, and the account only on a debug build: this line reaches logcat on her phone.
                 android.util.Log.w(
                     "muchtoman",
-                    "ledger disagrees on ${balance.accountId} over the same messages: " +
-                        "fold=$foldedRial derived=${balance.rial} Rial (fold at ${folded.updatedAt}, " +
-                        "ledger at ${balance.at})",
+                    "ledger and fold disagree on an anchored balance over the same messages" +
+                        if (BuildConfig.DEBUG) " (${balance.accountId})" else "",
                 )
             }
         }
@@ -910,7 +911,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         if (!pinned) derive(durable, derived, extraLookup(store.extraBankNumbers))
                         publishLedger(durable, derived)
                         requestFamilySync(silent = true)
-                    }.onFailure { android.util.Log.w("muchtoman", "categorise failed: $it") }
+                    }.onFailure { logFailure("categorise failed", it) }
                 }
             }
         }
@@ -956,7 +957,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "categoriseAll failed: $it") }
+            }.onFailure { logFailure("categoriseAll failed", it) }
         }
     }
 
@@ -1001,7 +1002,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 )
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "setNote failed: $it") }
+            }.onFailure { logFailure("setNote failed", it) }
         }
     }
 
@@ -1078,7 +1079,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 if (accountId != null) settleTypedBanks()
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "addManualTxn failed: $it") }
+            }.onFailure { logFailure("addManualTxn failed", it) }
         }
     }
 
@@ -1106,7 +1107,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 store.bankAccounts = next
                 _state.update { it.copy(bankAccounts = next) }
                 recordSnapshot()
-            }.onFailure { android.util.Log.w("muchtoman", "settleTypedBanks failed: $it") }
+            }.onFailure { logFailure("settleTypedBanks failed", it) }
         }
     }
 
@@ -1147,7 +1148,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "deleteTxn failed: $it") }
+            }.onFailure { logFailure("deleteTxn failed", it) }
         }
     }
 
@@ -1175,7 +1176,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "restoreTxn failed: $it") }
+            }.onFailure { logFailure("restoreTxn failed", it) }
         }
     }
 
@@ -1200,7 +1201,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 if (entry.movesBank) settleTypedBanks()
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "deleteManualTxn failed: $it") }
+            }.onFailure { logFailure("deleteManualTxn failed", it) }
         }
     }
 
@@ -1257,7 +1258,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 if (banks) settleTypedBanks()
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "$what failed: $it") }
+            }.onFailure { logFailure("$what failed", it) }
         }
     }
 
@@ -1287,7 +1288,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 publishLedger(durable, derived)
                 if (durable.manual().all().any { it.id == ref.removePrefix("m:") && it.accountId != null }) settleTypedBanks()
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "restoreManualTxn failed: $it") }
+            }.onFailure { logFailure("restoreManualTxn failed", it) }
         }
     }
 
@@ -1354,7 +1355,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             if (reportExclusionEdits.get() == edit) {
                 withContext(NonCancellable) {
                     runCatching { publishLedger(durable, DerivedDb.get(app)) }
-                        .onFailure { android.util.Log.w("muchtoman", "exclusions republish failed: $it") }
+                        .onFailure { logFailure("exclusions republish failed", it) }
                 }
             }
         }
@@ -1382,7 +1383,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val derived = DerivedDb.get(app)
                 derive(durable, derived, extraLookup(store.extraBankNumbers))
                 publishLedger(durable, derived)
-            }.onFailure { android.util.Log.w("muchtoman", "clearCaches failed: $it") }
+            }.onFailure { logFailure("clearCaches failed", it) }
         }
         refreshAll()
     }
@@ -1437,7 +1438,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         else "پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.")
                 }
             }.onFailure { e ->
-                android.util.Log.w("muchtoman", "backup export failed: $e")
+                logFailure("backup export failed", e)
                 _backup.update {
                     it.copy(working = false, failed = true, notice = "پشتیبان ساخته نشد. دوباره امتحان کن.")
                 }
@@ -1455,7 +1456,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { DocumentsContract.deleteDocument(app.contentResolver, uri) }
-                .onFailure { android.util.Log.w("muchtoman", "empty backup not deleted: $it") }
+                .onFailure { logFailure("empty backup not deleted", it) }
         }
     }
 
@@ -1486,7 +1487,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
             }.onFailure { e ->
                 pendingRestore = null
-                android.util.Log.w("muchtoman", "backup open failed: ${(e as? BackupException)?.fault ?: e}")
+                logFailure("backup open failed (${(e as? BackupException)?.fault ?: "other"})", e)
                 _backup.update { it.copy(working = false, failed = true, notice = backupFaultFa(e)) }
             }
         }
@@ -1510,7 +1511,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 pendingRestore = null
                 _backup.update { it.copy(working = false, ready = false, restartNeeded = true) }
             }.onFailure { e ->
-                android.util.Log.w("muchtoman", "backup staging failed: $e")
+                logFailure("backup staging failed", e)
                 _backup.update {
                     it.copy(working = false, failed = true, notice =
                         if ((e as? BackupException)?.fault == BackupFault.NEWER_FORMAT) backupFaultFa(e)
@@ -1598,7 +1599,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     requestFamilySync(silent = true)
                 }
                 .onFailure {
-                    android.util.Log.w("muchtoman", "claim failed: $it")
+                    logFailure("claim failed", it)
                     refreshFamily(null, error = "متصل نشد. بعداً دوباره امتحان کن.")
                 }
         }
@@ -1658,7 +1659,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     requestFamilySync(silent = true)
                 }
                 .onFailure {
-                    android.util.Log.w("muchtoman", "pair failed: $it")
+                    logFailure("pair failed", it)
                     _state.update {
                         it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
                     }
@@ -1696,7 +1697,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     requestFamilySync(silent = true)
                 }
                 .onFailure {
-                    android.util.Log.w("muchtoman", "rejoin failed: $it")
+                    logFailure("rejoin failed", it)
                     _state.update {
                         it.copy(family = it.family.copy(working = false, error = "کد منقضی شده یا قبلاً استفاده شده."))
                     }
@@ -1831,7 +1832,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 refreshFamily(null, note = "از خانواده خارج شدی.")
                 finishFamilyTransition(resumeQueued = false)
             }.onFailure {
-                android.util.Log.w("muchtoman", "leave failed: $it")
+                logFailure("leave failed", it)
                 refreshFamily(session, error = "خروج نشد. اینترنتت رو چک کن.")
                 finishFamilyTransition(resumeQueued = true)
             }
@@ -1859,7 +1860,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 inviteDevice()
                 requestFamilySync(silent = false)
             }.onFailure {
-                android.util.Log.w("muchtoman", "renew failed: $it")
+                logFailure("renew failed", it)
                 refreshFamily(loadSession(durable), error = "نو نشد. اینترنتت رو چک کن.")
             }
         }
@@ -1874,7 +1875,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             runCatching { pairingUrl(session, invite(session, durable)) }
                 .onSuccess { url -> _state.update { it.copy(family = it.family.copy(paired = true, pairingUrl = url, error = null)) } }
                 .onFailure {
-                    android.util.Log.w("muchtoman", "invite failed: $it")
+                    logFailure("invite failed", it)
                     refreshFamily(session, error = "کد ساخته نشد. اینترنتت رو چک کن.")
                 }
         }
@@ -2010,7 +2011,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            android.util.Log.w("muchtoman", "sync failed: $error")
+            logFailure("sync failed", error)
             val message = syncErrorFa(error)
             refreshFamily(session, error = message)
             announcePull(message)
@@ -2040,7 +2041,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 conflicts.forEach { clearBudgetNote(app, it.id) }
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "keepBudget failed: $it") }
+            }.onFailure { logFailure("keepBudget failed", it) }
         }
     }
 
@@ -2087,7 +2088,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 )
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "addBudget failed: $it") }
+            }.onFailure { logFailure("addBudget failed", it) }
         }
     }
 
@@ -2125,7 +2126,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 )
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "addGoal failed: $it") }
+            }.onFailure { logFailure("addGoal failed", it) }
         }
     }
 
@@ -2173,7 +2174,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 clearBudgetNote(app, id)
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "editBudget failed: $it") }
+            }.onFailure { logFailure("editBudget failed", it) }
         }
     }
 
@@ -2204,7 +2205,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.goals().put(next.copy(updatedAt = now, editedByMemberId = mineId))
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "editGoal failed: $it") }
+            }.onFailure { logFailure("editGoal failed", it) }
         }
     }
 
@@ -2227,7 +2228,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 clearBudgetNote(app, id)
                 publishLedger(durable, DerivedDb.get(app))
                 requestFamilySync(silent = true)
-            }.onFailure { android.util.Log.w("muchtoman", "deleteGoal failed: $it") }
+            }.onFailure { logFailure("deleteGoal failed", it) }
         }
     }
 
@@ -2246,7 +2247,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     ?: return@runCatching
                 durable.goals().put(plan)
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "addInstallment failed: $it") }
+            }.onFailure { logFailure("addInstallment failed", it) }
         }
     }
 
@@ -2265,7 +2266,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val old = id?.let { durable.goals().byId(it) }
                 durable.goals().put(old?.let { made.copy(createdAt = it.createdAt) } ?: made)
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "saveCheque failed: $it") }
+            }.onFailure { logFailure("saveCheque failed", it) }
         }
     }
 
@@ -2279,7 +2280,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 val cheque = durable.goals().byId(id) ?: return@runCatching
                 durable.goals().put(cheque.copy(endsOn = if (passed) tehranDay(now) else null, updatedAt = now))
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "setChequePassed failed: $it") }
+            }.onFailure { logFailure("setChequePassed failed", it) }
         }
     }
 
@@ -2293,7 +2294,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val durable = DurableDb.get(app)
             runCatching {
                 if (writeInstallmentLink(durable, entry, planId)) publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "setInstallmentPayment failed: $it") }
+            }.onFailure { logFailure("setInstallmentPayment failed", it) }
         }
     }
 
@@ -2316,7 +2317,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 durable.goals().put(plan)
                 writeInstallmentLink(durable, entry, plan.id)
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "addInstallmentFrom failed: $it") }
+            }.onFailure { logFailure("addInstallmentFrom failed", it) }
         }
     }
 
@@ -2460,7 +2461,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val durable = DurableDb.get(app)
             runCatching {
                 if (writeLoanLink(durable, entry, personId)) publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "setLoanLink failed: $it") }
+            }.onFailure { logFailure("setLoanLink failed", it) }
         }
     }
 
@@ -2594,7 +2595,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 store.history = history
                 _state.update { it.copy(history = history) }
                 recordSnapshot()
-            }.onFailure { android.util.Log.w("muchtoman", "demo data failed: $it") }
+            }.onFailure { logFailure("demo data failed", it) }
         }
     }
 
@@ -2609,7 +2610,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     TxnDecision(uuid7(now), entry.txn.ref, DecisionKind.WORTH_IT, answer, now, now)
                 )
                 publishLedger(durable, DerivedDb.get(app))
-            }.onFailure { android.util.Log.w("muchtoman", "worthIt failed: $it") }
+            }.onFailure { logFailure("worthIt failed", it) }
         }
     }
 
@@ -2721,7 +2722,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         // watch worker can write its watermark over the rewind.
         ledgerJob?.join()
         runCatching { ledgerGate.withLock { rewindIngest(DurableDb.get(app)) } }
-            .onFailure { android.util.Log.w("muchtoman", "rewindIngest failed: $it") }
+            .onFailure { logFailure("rewindIngest failed", it) }
         runLedger()
     }
 
@@ -2856,7 +2857,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(bankAccounts = next) }
             recordSnapshot()
             runCatching { anchorTyped(DurableDb.get(app), key, balance, at) }
-                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
+                .onFailure { logFailure("anchorTyped failed", it) }
         }
     }
 
@@ -2882,7 +2883,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(bankAccounts = next, disabledBanks = store.disabledBanks) }
             recordSnapshot(countedBefore = before)
             runCatching { anchorTyped(DurableDb.get(app), bank, balance, at) }
-                .onFailure { android.util.Log.w("muchtoman", "anchorTyped failed: $it") }
+                .onFailure { logFailure("anchorTyped failed", it) }
         }
     }
 

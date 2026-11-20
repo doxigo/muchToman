@@ -441,7 +441,7 @@ fun notifyBudget(context: Context, budget: BudgetProgress, quip: String? = null)
     // Wrapped: posting can throw on an OEM build that has its own idea about notification limits,
     // and a budget note that cannot be shown must not take down the worker that computed it.
     runCatching { NotificationManagerCompat.from(context).notify(budget.goal.id, BUDGET_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "budget notify failed: $it") }
+        .onFailure { logFailure("budget notify failed", it) }
 }
 
 /** The budget note itself, built apart from the posting so a test can hold it. [quip] goes on top — see `Quips.kt`. */
@@ -494,10 +494,10 @@ fun notifyFiling(context: Context, news: FilingNews) {
     val manager = NotificationManagerCompat.from(context)
     for (entry in news.landed.asReversed()) {
         runCatching { manager.notify(entry.txn.ref, FILING_NOTE_ID, landedNote(context, entry)) }
-            .onFailure { android.util.Log.w("muchtoman", "filing notify failed: $it") }
+            .onFailure { logFailure("filing notify failed", it) }
     }
     runCatching { manager.notify(FILING_SUMMARY_ID, filingSummary(context, alert)) }
-        .onFailure { android.util.Log.w("muchtoman", "filing summary failed: $it") }
+        .onFailure { logFailure("filing summary failed", it) }
 }
 
 /**
@@ -625,7 +625,7 @@ private fun clearStack(context: Context, noteId: Int, summaryId: Int) {
         for (live in manager.activeNotifications) {
             if (live.id == noteId) manager.cancel(live.tag, noteId)
         }
-    }.onFailure { android.util.Log.w("muchtoman", "notes cancel failed: $it") }
+    }.onFailure { logFailure("notes cancel failed", it) }
 }
 
 /**
@@ -644,10 +644,10 @@ fun notifyFamily(context: Context, news: List<LedgerEntry>) {
     val manager = NotificationManagerCompat.from(context)
     for (entry in news.take(LANDED_NOTE_LIMIT).asReversed()) {
         runCatching { manager.notify(entry.txn.ref, FAMILY_NOTE_ID, familyNote(context, entry)) }
-            .onFailure { android.util.Log.w("muchtoman", "family notify failed: $it") }
+            .onFailure { logFailure("family notify failed", it) }
     }
     runCatching { manager.notify(FAMILY_SUMMARY_ID, familySummary(context, news)) }
-        .onFailure { android.util.Log.w("muchtoman", "family summary failed: $it") }
+        .onFailure { logFailure("family summary failed", it) }
 }
 
 /** One of theirs. Opens دفتر, where their row sits beside hers. */
@@ -708,7 +708,7 @@ fun notifyInstallment(context: Context, progress: InstallmentProgress, due: Long
         // Kept off the lock screen — see [withLockFace].
         .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, installmentPublicTitle(progress.plan), openBudgets(context))
     runCatching { NotificationManagerCompat.from(context).notify(progress.plan.id, INSTALLMENT_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "installment notify failed: $it") }
+        .onFailure { logFailure("installment notify failed", it) }
 }
 
 /**
@@ -737,7 +737,7 @@ fun notifyCheque(context: Context, cheque: Goal, body: String, now: Long) {
         // Kept off the lock screen — see [withLockFace].
         .withLockFace(context, INSTALLMENT_CHANNEL, NotificationCompat.CATEGORY_REMINDER, chequePublicTitle(), openBudgets(context))
     runCatching { NotificationManagerCompat.from(context).notify(cheque.id, INSTALLMENT_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "cheque notify failed: $it") }
+        .onFailure { logFailure("cheque notify failed", it) }
 }
 
 /**
@@ -749,7 +749,7 @@ fun notifyCheque(context: Context, cheque: Goal, body: String, now: Long) {
  */
 fun clearBudgetNote(context: Context, goalId: String) {
     runCatching { NotificationManagerCompat.from(context).cancel(goalId, BUDGET_NOTE_ID) }
-        .onFailure { android.util.Log.w("muchtoman", "budget cancel failed: $it") }
+        .onFailure { logFailure("budget cancel failed", it) }
 }
 
 /**
@@ -874,12 +874,12 @@ fun notifyQuiet(context: Context, days: Int, quip: String?) {
         // Kept off the lock screen — see [withLockFace]. A roast is for her eyes.
         .withLockFace(context, QUIET_CHANNEL, NotificationCompat.CATEGORY_STATUS, quietPublicTitle(), openLedgerTab(context))
     runCatching { NotificationManagerCompat.from(context).notify(QUIET_NOTE_ID, note) }
-        .onFailure { android.util.Log.w("muchtoman", "quiet notify failed: $it") }
+        .onFailure { logFailure("quiet notify failed", it) }
 }
 
 private fun clearQuietNote(context: Context) {
     runCatching { NotificationManagerCompat.from(context).cancel(QUIET_NOTE_ID) }
-        .onFailure { android.util.Log.w("muchtoman", "quiet cancel failed: $it") }
+        .onFailure { logFailure("quiet cancel failed", it) }
 }
 
 /**

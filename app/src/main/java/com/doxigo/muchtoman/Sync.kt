@@ -2395,7 +2395,7 @@ suspend fun syncNow(
                 // Dropped alone, never the page: one bad row failing the whole pull would hold
                 // every device's cursor on it for ever.
                 val record = runCatching { SYNC_JSON.decodeFromJsonElement<WireRecord>(element) }
-                    .onFailure { android.util.Log.w("muchtoman", "skipped a malformed pulled record: $it") }
+                    .onFailure { logFailure("skipped a malformed pulled record", it) }
                     .getOrNull() ?: continue
                 // The client half of the skew bound, in one choke point: everything downstream
                 // compares and stores the clamped stamp.

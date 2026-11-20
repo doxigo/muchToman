@@ -13,6 +13,24 @@ import org.junit.Test
 class DiagnosticsTest {
 
     @Test
+    fun `a release failure line names the class and never the message`() {
+        val e = NumberFormatException("For input string: \"4,666,251,136\"")
+        val line = failureLine("categorise failed", e, debug = false)
+
+        assertEquals("categorise failed: NumberFormatException", line)
+        assertFalse(line.contains("4,666"))
+    }
+
+    @Test
+    fun `a debug failure line keeps the message`() {
+        val e = NumberFormatException("For input string: \"4,666,251,136\"")
+        val line = failureLine("categorise failed", e, debug = true)
+
+        assertTrue(line.contains("4,666,251,136"))
+        assertTrue(line.startsWith("categorise failed: java.lang.NumberFormatException"))
+    }
+
+    @Test
     fun `a report is class names and frames, never a message`() {
         val e = IllegalStateException(
             "sms: بانک ملت برداشت 4,666,251,136",

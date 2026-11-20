@@ -92,7 +92,7 @@ private suspend fun queryInbox(
     }.onFailure {
         // A revoked permission or an OEM-locked provider must not take the app down with it;
         // the balances simply stop moving and the log line says why.
-        android.util.Log.w("muchtoman", "sms read failed: $it")
+        logFailure("sms read failed", it)
     }
     rows
 }

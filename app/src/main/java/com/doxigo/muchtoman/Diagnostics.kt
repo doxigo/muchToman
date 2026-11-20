@@ -112,6 +112,20 @@ private const val MAX_CAUSES = 8
 private const val MAX_CRASH_CHARS = 4_000
 
 /**
+ * The line a failure leaves in logcat: what failed, and the exception's class. [crashReport]'s
+ * rule, for the same reason — the message is where an amount or a message body leaks, and
+ * logcat rides along in every bug report she forwards. A debug build keeps the message: that
+ * is the developer's own phone, and the reason is the point of looking.
+ */
+internal fun failureLine(what: String, cause: Throwable, debug: Boolean = BuildConfig.DEBUG): String =
+    if (debug) "$what: $cause" else "$what: ${cause.javaClass.simpleName}"
+
+/** Every failure this app logs goes through here — see [failureLine]. */
+fun logFailure(what: String, cause: Throwable) {
+    android.util.Log.w("muchtoman", failureLine(what, cause))
+}
+
+/**
  * Class names and stack frames, and nothing else. Exception messages are left out on purpose:
  * that is where data leaks. A NumberFormatException quotes the amount it choked on, a parse error
  * quotes the SMS. A frame is only a class, a method and a line in this APK. R8 has renamed it, so

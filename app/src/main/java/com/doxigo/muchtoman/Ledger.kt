@@ -290,7 +290,7 @@ abstract class DurableDb : RoomDatabase() {
                 runCatching { finishStagedRestore(context.applicationContext) }
                     .onFailure {
                         if (File(context.getDatabasePath("durable.db").parentFile, RESTORE_ROLLBACK_READY).exists()) throw it
-                        android.util.Log.w("muchtoman", "restore completion failed: $it")
+                        logFailure("restore completion failed", it)
                     }
                 builder(context.applicationContext, "durable.db").build()
                     .also { instance = it }
@@ -308,7 +308,7 @@ abstract class DurableDb : RoomDatabase() {
             runCatching { finishStagedRestore(context.applicationContext) }
                 .onFailure {
                     if (File(context.getDatabasePath("durable.db").parentFile, RESTORE_ROLLBACK_READY).exists()) throw it
-                    android.util.Log.w("muchtoman", "restore completion failed: $it")
+                    logFailure("restore completion failed", it)
                 }
                 .getOrDefault(false)
         }

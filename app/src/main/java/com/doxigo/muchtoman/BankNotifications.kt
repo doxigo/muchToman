@@ -86,7 +86,7 @@ class BankNotificationListener : NotificationListenerService() {
                     ledgerLanded.tryEmit(Unit)
                     watchLedgerSoon(app)
                 }
-            }.onFailure { android.util.Log.w("muchtoman", "bank notification failed: $it") }
+            }.onFailure { logFailure("bank notification failed", it) }
         }
     }
 }

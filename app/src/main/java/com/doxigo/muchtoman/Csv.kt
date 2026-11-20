@@ -196,7 +196,7 @@ internal fun LedgerCsvExport(activity: FragmentActivity) {
                     val stream = runCatching { activity.contentResolver.openOutputStream(uri, "wt") }
                         .getOrNull() ?: activity.contentResolver.openOutputStream(uri)
                     (stream ?: error("no stream for $uri")).use { it.write(bytes) }
-                }.onFailure { android.util.Log.w("muchtoman", "csv export failed: $it") }.isSuccess
+                }.onFailure { logFailure("csv export failed", it) }.isSuccess
             }
             failed = !written
             notice = if (written) "فایل اکسل ساخته شد." else "فایل اکسل ساخته نشد. دوباره امتحان کن."
