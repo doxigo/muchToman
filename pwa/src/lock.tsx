@@ -26,6 +26,19 @@ export async function lockAvailable(): Promise<boolean> {
 
 const challenge = (): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(32));
 
+/**
+ * This browser's handle for its lock, made once and kept even while the lock is off: an
+ * authenticator holds one passkey per site and handle, so enrolling again under the same handle
+ * replaces the old passkey instead of leaving it behind in her saved passwords.
+ */
+function lockUser(): Uint8Array<ArrayBuffer> {
+  const kept = pref('lockUser');
+  if (kept) return fromBase64Url(kept);
+  const fresh = crypto.getRandomValues(new Uint8Array(16));
+  setPref('lockUser', toBase64Url(fresh));
+  return fresh;
+}
+
 /** Makes the credential and arms the lock — only once the platform has said yes. Cancelled leaves it off. */
 export async function enableLock(): Promise<boolean> {
   prompting = true;
@@ -34,8 +47,8 @@ export async function enableLock(): Promise<boolean> {
       publicKey: {
         challenge: challenge(),
         rp: { id: location.hostname, name: 'چقدر تومن' },
-        // A random handle: the credential names no person, only this browser's lock.
-        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'چقدر تومن', displayName: 'چقدر تومن' },
+        // This browser's own random handle: the credential names no person, only this lock.
+        user: { id: lockUser(), name: 'چقدر تومن', displayName: 'چقدر تومن' },
         pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
         authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
         attestation: 'none',
@@ -89,14 +102,15 @@ async function nothingToCheck(): Promise<void> {
   setLocked(false);
 }
 
-async function unlock(tapped = false): Promise<void> {
+export async function unlock(tapped = false): Promise<void> {
   const id = pref('lockCredential');
   if (prompting || !id) {
     // A lock with no credential behind it is a lockout, not a lock (a restore never brings one).
     if (!id) setLocked(false);
     return;
   }
-  if (tapped && refused > 0) {
+  if (tapped && refused > 1) {
+    // Only after two refusals in a row: one is a face that did not read or a sheet closed by accident.
     // The credential may be gone — deleted from the phone's saved passwords, or lost with the
     // browser's data — and the platform cannot say so apart from a cancel. Enrolling a new one
     // still asks for the face or the passcode, so this is the same door, never a way round it;

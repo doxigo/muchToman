@@ -51,7 +51,7 @@ export const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
  */
 const LOCAL_PREFS: string[] = [
   'rates', 'budgetMarks', 'installmentMarks', 'quipsSeen', 'quietMark', 'syncSeq', 'syncRead', 'syncShareSms', 'syncPrimaryMember',
-  'syncPullFirst', 'lockEnabled', 'lockCredential', 'onboarded', 'usdHistoryAt', 'pasteKey',
+  'syncPullFirst', 'lockEnabled', 'lockCredential', 'lockUser', 'onboarded', 'usdHistoryAt', 'pasteKey',
 ];
 /**
  * Kept as this browser's too while it is in a household. The phone's restore drops its session

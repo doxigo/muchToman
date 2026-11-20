@@ -275,6 +275,8 @@ export interface Prefs {
   loans: LoanBook;
   /** WebAuthn credential id (base64url) the lock unlocks with. */
   lockCredential: string;
+  /** The user handle (base64url) every enrolment of this browser's lock reuses, so a new passkey replaces the old one. */
+  lockUser: string;
   // Household sync state (sync.ts SyncPrefs; durable_meta on the phone). A backup strips the
   // cursor and the SMS-sharing flag, as the phone's BACKUP_STRIPPED_META does.
   syncSeq: number;
@@ -323,6 +325,7 @@ export const PREF_DEFAULTS: Prefs = {
   pasteKey: '',
   loans: { people: [], moves: [] },
   lockCredential: '',
+  lockUser: '',
   syncSeq: 0,
   syncRead: 0,
   syncShareSms: false,
