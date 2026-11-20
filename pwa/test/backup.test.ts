@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BACKUP_MAGIC, BackupError, gunzip, gzip, openBackup, restoredSnapshot, sealBackup,
+  BACKUP_MAGIC, BackupError, backupPassphraseProblem, gunzip, gzip, openBackup, restoredSnapshot, sealBackup,
 } from '../src/backup';
 import type { BrowserPayload } from '../src/backup';
 import { newCheque, openCheques } from '../src/cheques';
@@ -49,6 +49,17 @@ describe('the .mtbak envelope', () => {
 
   it('refuses a short passphrase at sealing', async () => {
     await expect(sealBackup(payload, '12345', 1, 0, ROUNDS)).rejects.toThrow();
+  });
+
+  it('asks eight characters of a new passphrase, ten when it is only digits', async () => {
+    expect(backupPassphraseProblem('1234567')).not.toBeNull();
+    expect(backupPassphraseProblem('abcdefgh')).toBeNull();
+    expect(backupPassphraseProblem('123456789')).not.toBeNull();
+    expect(backupPassphraseProblem('123456789')).not.toBe(backupPassphraseProblem('1234567'));
+    expect(backupPassphraseProblem('۱۲۳۴۵۶۷۸۹')).not.toBeNull();
+    expect(backupPassphraseProblem('1234567890')).toBeNull();
+    expect(backupPassphraseProblem('1234567a')).toBeNull();
+    await expect(sealBackup(payload, '123456789', 1, 0, ROUNDS)).rejects.toThrow();
   });
 
   it('says one thing for a wrong passphrase and a damaged body', async () => {

@@ -14,7 +14,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import './settings.css';
-import { applyRestore, backupFaultFa, BACKUP_MIN_PASSPHRASE, exportBackup, readBackupFile } from './backup';
+import { applyRestore, backupFaultFa, backupPassphraseProblem, exportBackup, readBackupFile } from './backup';
 import type { BrowserPayload } from './backup';
 import { CategoryIcon } from './categoryIcon';
 import type { CategoryGlyph } from './categoryIcon';
@@ -621,7 +621,8 @@ function ExportPassSheet() {
   const done = () => {
     // Focus lets go first: the keyboard was covering the line that says why not.
     (document.activeElement as HTMLElement | null)?.blur();
-    if (pass.length < BACKUP_MIN_PASSPHRASE) setProblem('رمز کوتاهه — دست‌کم ۶ حرف باشه.');
+    const weak = backupPassphraseProblem(pass);
+    if (weak) setProblem(weak);
     else if (again !== pass) setProblem('دوتا رمز یکی نیستن.');
     else { closeSheet(); void runExport(pass); }
   };
@@ -631,7 +632,7 @@ function ExportPassSheet() {
       <p class="sheet-body">فایل با همین رمز قفل می‌شه و بدون اون هیچ‌کس — حتی خود برنامه — نمی‌تونه بازش کنه. اگه یادت بره، هیچ راهی برای باز کردنش نیست.</p>
       <div style={{ height: 'var(--l)' }} />
       <div class="stack">
-        <TextField type="password" label="رمز — دست‌کم ۶ حرف" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} autoFocus />
+        <TextField type="password" label="رمز — دست‌کم ۸ حرف" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} autoFocus />
         <TextField type="password" label="دوباره همون رمز" value={again} onInput={(v) => { setAgain(v); setProblem(null); }} onEnter={done} />
       </div>
       <Live>{problem && <p class="set-note error">{problem}</p>}</Live>

@@ -42,7 +42,21 @@ const val BACKUP_FORMAT_VERSION = 1
 const val BACKUP_KDF_ALGO = "PBKDF2WithHmacSHA256"
 const val BACKUP_CIPHER_ALGO = "AES/GCM/NoPadding"
 const val BACKUP_KDF_ITERATIONS = 600_000
-const val BACKUP_MIN_PASSPHRASE = 6
+const val BACKUP_MIN_PASSPHRASE = 8
+/** Digits alone are a PIN: ten of them is the least that key-stretching can still defend. */
+const val BACKUP_MIN_DIGIT_PASSPHRASE = 10
+
+/**
+ * Why a passphrase will not do for a new backup, in words, or null when it will — backup.ts
+ * backupPassphraseProblem says the same. Asked only when sealing: a file made under an older,
+ * shorter rule must still open, so nothing on the restore path calls this.
+ */
+fun backupPassphraseProblem(passphrase: String): String? = when {
+    passphrase.length < BACKUP_MIN_PASSPHRASE -> "رمز کوتاهه — دست‌کم ۸ حرف باشه."
+    passphrase.length < BACKUP_MIN_DIGIT_PASSPHRASE && passphrase.all(Char::isDigit) ->
+        "رمزِ فقط عدد باید دست‌کم ۱۰ رقم باشه، یا حرف هم داشته باشه."
+    else -> null
+}
 
 /** Past this a header is garbage, not a header — read before anything is trusted. */
 private const val MAX_HEADER_BYTES = 64 * 1024
@@ -121,7 +135,7 @@ fun sealBackup(
     formatVersion: Int = BACKUP_FORMAT_VERSION,
     random: SecureRandom = SecureRandom(),
 ): ByteArray {
-    require(passphrase.length >= BACKUP_MIN_PASSPHRASE) { "passphrase too short" }
+    require(backupPassphraseProblem(passphrase) == null) { "passphrase too weak" }
     val salt = ByteArray(16).also(random::nextBytes)
     val iv = ByteArray(12).also(random::nextBytes)
     val header = BackupHeader(

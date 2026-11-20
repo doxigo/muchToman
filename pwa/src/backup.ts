@@ -29,7 +29,22 @@ export const BACKUP_FORMAT_VERSION = 1;
 export const BACKUP_KDF_ALGO = 'PBKDF2WithHmacSHA256';
 export const BACKUP_CIPHER_ALGO = 'AES/GCM/NoPadding';
 export const BACKUP_KDF_ITERATIONS = 600_000;
-export const BACKUP_MIN_PASSPHRASE = 6;
+export const BACKUP_MIN_PASSPHRASE = 8;
+/** Digits alone are a PIN: ten of them is the least that key-stretching can still defend. */
+export const BACKUP_MIN_DIGIT_PASSPHRASE = 10;
+
+/**
+ * Why a passphrase will not do for a new backup, in words, or null when it will (Export.kt
+ * backupPassphraseProblem). Asked only when sealing: a file made under an older, shorter rule
+ * must still open, so nothing on the restore path calls this.
+ */
+export function backupPassphraseProblem(passphrase: string): string | null {
+  if (passphrase.length < BACKUP_MIN_PASSPHRASE) return 'رمز کوتاهه — دست‌کم ۸ حرف باشه.';
+  if (passphrase.length < BACKUP_MIN_DIGIT_PASSPHRASE && /^\p{Nd}+$/u.test(passphrase)) {
+    return 'رمزِ فقط عدد باید دست‌کم ۱۰ رقم باشه، یا حرف هم داشته باشه.';
+  }
+  return null;
+}
 /** The browser payload's own version, beside the envelope's. */
 export const PWA_PAYLOAD_VERSION = 1;
 
@@ -130,7 +145,7 @@ export const gunzip = (bytes: Uint8Array<ArrayBuffer>, maxBytes = MAX_PAYLOAD_BY
 /** Everything into one encrypted envelope. [iterations] and [formatVersion] bend only in tests. */
 export async function sealBackup(payload: object, passphrase: string, createdAt: number, appVersionCode = 0,
   iterations = BACKUP_KDF_ITERATIONS, formatVersion = BACKUP_FORMAT_VERSION): Promise<Uint8Array<ArrayBuffer>> {
-  if (passphrase.length < BACKUP_MIN_PASSPHRASE) throw new Error('passphrase too short');
+  if (backupPassphraseProblem(passphrase) != null) throw new Error('passphrase too weak');
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   // kotlinx's encoder, key order and all; it leaves a default-valued appVersionCode out.

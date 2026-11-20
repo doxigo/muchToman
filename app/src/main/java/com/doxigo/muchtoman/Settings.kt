@@ -2420,7 +2420,7 @@ private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
                 value = pass,
                 onValueChange = { pass = it; problem = null },
                 singleLine = true,
-                label = { Text("رمز — دست‌کم ۶ حرف") },
+                label = { Text("رمز — دست‌کم ۸ حرف") },
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Password,
@@ -2460,8 +2460,9 @@ private fun ExportPassSheet(onDismiss: () -> Unit, onDone: (String) -> Unit) {
                 {
                     // Focus lets go first: the keyboard was covering the line that says why not.
                     focusManager.clearFocus()
+                    val weak = backupPassphraseProblem(pass)
                     when {
-                        pass.length < BACKUP_MIN_PASSPHRASE -> problem = "رمز کوتاهه — دست‌کم ۶ حرف باشه."
+                        weak != null -> problem = weak
                         again != pass -> problem = "دوتا رمز یکی نیستن."
                         else -> onDone(pass)
                     }

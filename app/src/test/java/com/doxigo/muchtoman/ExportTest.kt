@@ -3,6 +3,7 @@ package com.doxigo.muchtoman
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -188,6 +189,38 @@ class ExportTest {
         } catch (expected: IllegalArgumentException) {
             // Five characters: the sheet says the same thing in words before this ever runs.
         }
+    }
+
+    @Test
+    fun `a new passphrase needs eight characters, or ten when it is only digits`() {
+        assertNotNull(backupPassphraseProblem("هفت‌حرف"))            // 7 with its ZWNJ
+        assertNull(backupPassphraseProblem("قند و نبات"))
+        assertNull(backupPassphraseProblem("abcdefgh"))               // exactly eight
+        val short = backupPassphraseProblem("1234567")
+        val digits = backupPassphraseProblem("123456789")             // nine digits
+        assertNotNull(short)
+        assertNotNull(digits)
+        assertTrue("the digits line is its own sentence", short != digits)
+        assertNotNull(backupPassphraseProblem("۱۲۳۴۵۶۷۸۹"))          // Persian digits are digits
+        assertNull(backupPassphraseProblem("1234567890"))             // ten digits pass
+        assertNull(backupPassphraseProblem("1234567a"))               // one letter is enough
+    }
+
+    @Test
+    fun `sealing refuses what the sheet refuses`() {
+        try {
+            seal(passphrase = "123456789")
+            fail("expected a refusal")
+        } catch (expected: IllegalArgumentException) {
+            // Nine digits: long enough by count, still only a PIN.
+        }
+    }
+
+    @Test
+    fun `a file sealed under the old six-character rule still opens`() {
+        // openBackup asks nothing of the passphrase's length; only sealing does.
+        val sealed = sealBrowserFile("""{"pwa":1,"prefs":{"smsEnabled":true},"tables":{}}""", "123456")
+        assertEquals(BackupFault.BROWSER_BACKUP, faultOf { openBackup(sealed, "123456") })
     }
 
     @Test
