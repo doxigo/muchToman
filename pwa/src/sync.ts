@@ -626,16 +626,23 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
   const excludedBanks = new Set(p.excludedBanks);
   const out: Draft[] = [];
 
-  // The profile rides every sync; the server keeps the stored one when the stamp has not moved.
-  out.push({
-    id: memberRecordId(p.member.id), kind: 'member', owner: p.member.id, updatedAt: p.member.updatedAt,
-    payload: JSON.stringify({ kind: 'member', memberId: p.member.id, name: p.member.name, sharesSms: p.member.sharesSms, avatar: p.member.avatar }),
-  });
+  const publications = new Map(p.publications.map((pub) => [pub.id, pub]));
+  // The profile goes when it is new to this household or its content moved. It used to ride
+  // every sync for the server to drop on an equal stamp — an avatar's worth of upload each time.
+  const profileId = memberRecordId(p.member.id);
+  const profile = JSON.stringify({ kind: 'member', memberId: p.member.id, name: p.member.name, sharesSms: p.member.sharesSms, avatar: p.member.avatar });
+  const profileHash = sha256Hex(profile);
+  const profileMark = publications.get(profileId);
+  if (!profileMark || profileMark.deleted || profileMark.contentHash !== profileHash) {
+    out.push({
+      id: profileId, kind: 'member', owner: p.member.id, updatedAt: p.member.updatedAt, payload: profile,
+      publication: { id: profileId, sourceKind: 'member', contentHash: profileHash, updatedAt: p.member.updatedAt, deleted: false },
+    });
+  }
 
   const categoryById = new Map(p.categories.filter((c) => !c.archived).map((c) => [c.id, c]));
   const categoryDecisions = p.decisions.filter((d) => d.kind === 'category' && !d.deleted);
   const categoryDecisionByRef = new Map(categoryDecisions.map((d) => [d.ref, d]));
-  const publications = new Map(p.publications.map((pub) => [pub.id, pub]));
   const activeIds = new Set<string>();
 
   for (const entry of p.entries) {

@@ -296,6 +296,18 @@ describe('publishing', () => {
     expect((await sync.outgoingRecords(input([sms], { shareSms: true, excludedBanks: ['MELLI'] }))).map((r) => r.wire.kind)).toEqual(['member']);
   });
 
+  it('sends the profile when it is new or changed, and not when its mark matches', async () => {
+    const first = await sync.outgoingRecords(input([]));
+    expect(first.map((r) => r.wire.kind)).toEqual(['member']);
+    expect(first[0].publication).toMatchObject({ id: `member:${ME}`, sourceKind: 'member', deleted: false });
+    const mark = first[0].publication!;
+    expect(await sync.outgoingRecords(input([], { publications: [mark] }))).toEqual([]);
+    const renamed = { id: ME, name: 'مریم جان', sharesSms: false, avatar: '', updatedAt: NOW - 1, deleted: false };
+    expect((await sync.outgoingRecords(input([], { publications: [mark], member: renamed }))).map((r) => r.wire.kind)).toEqual(['member']);
+    // What a household burial leaves: the mark is deleted, so the next household gets the profile.
+    expect((await sync.outgoingRecords(input([], { publications: [{ ...mark, deleted: true }] }))).map((r) => r.wire.kind)).toEqual(['member']);
+  });
+
   it('re-sends a changed row under a later stamp, and tombstones one that left the set', async () => {
     const id = sync.familyTxnId(ME, 'm:one');
     const previous = { id, sourceKind: 'manual', contentHash: 'stale', updatedAt: NOW + 5, deleted: false };
@@ -513,7 +525,7 @@ describe('syncNow', () => {
     // Settled: the next sync does not send them again at a fresh clamp.
     const again = serve([], clampAll);
     await sync.syncNow(session, NOW + 1);
-    expect(again.pushes.flat().map((r) => r.kind)).toEqual(['member']);
+    expect(again.pushes.flat().map((r) => r.kind)).toEqual([]);
     // His edit a minute past the clamp lands here instead of being refused.
     const his = JSON.stringify({ goalId: 'g', nameFa: 'خرج ماه', targetRial: 2, goalKind: 'cap', period: 'jmonth', startsOn: 1, createdAt: 1, ownerMemberId: ME, editedByMemberId: THEM });
     expect(await apply(await record('goal:g', 'goal', his, { updatedAt: horizon + 60_000, ownerMemberId: ME }))).toBe(true);
@@ -561,9 +573,9 @@ describe('syncNow', () => {
     expect(result).toMatchObject({ sent: 451, unsupportedKinds: ['asset'] });
     expect(state.row('publications', clampedId)?.updatedAt).toBe(42);
     expect(state.row('publications', `asset:${ME}`)).toBeUndefined();
-    // Nothing changed, so the next sync sends the profile alone.
+    // Nothing changed, so the next sync sends nothing at all.
     serve([]);
-    expect((await sync.syncNow(session, NOW + 1)).sent).toBe(1);
+    expect((await sync.syncNow(session, NOW + 1)).sent).toBe(0);
   });
 
   it('after a restore, pulls the household from the start before pushing the file\'s rows over it', async () => {

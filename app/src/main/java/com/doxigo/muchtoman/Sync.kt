@@ -1164,18 +1164,19 @@ private suspend fun outgoingRecords(
             avatar = member.avatar,
         )
     )
-    val outgoing = mutableListOf(
-        PreparedRecord(
-            wireRecord(
-                session,
-                memberRecordId(member.id),
-                "member",
-                member.id,
-                member.updatedAt,
-                profilePayload,
-            )
+    val publications = durable.syncPublications().all().associateBy { it.id }
+    val outgoing = mutableListOf<PreparedRecord>()
+    // The profile goes when it is new to this household or its content moved. It used to ride
+    // every sync for the server to drop on an equal stamp — an avatar's worth of upload each time.
+    val profileId = memberRecordId(member.id)
+    val profileHash = sha256Hex(profilePayload)
+    val profileMark = publications[profileId]
+    if (profileMark == null || profileMark.deleted || profileMark.contentHash != profileHash) {
+        outgoing += PreparedRecord(
+            wireRecord(session, profileId, "member", member.id, member.updatedAt, profilePayload),
+            SyncPublication(profileId, "member", profileHash, member.updatedAt, deleted = false),
         )
-    )
+    }
 
     // Every row, not the newest so many: the sweep below tombstones whatever of hers is missing
     // here, and a window counted over the family's rows as well pushed her oldest ones out —
@@ -1184,7 +1185,6 @@ private suspend fun outgoingRecords(
     val categoryById = ledger.categories.associateBy { it.id }
     val categoryDecisions = ledger.categoryDecisions.values.toList()
     val categoryDecisionByRef = ledger.categoryDecisions
-    val publications = durable.syncPublications().all().associateBy { it.id }
     val activeIds = mutableSetOf<String>()
 
     for (entry in ledger.entries) {

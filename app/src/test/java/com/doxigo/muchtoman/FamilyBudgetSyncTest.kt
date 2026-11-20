@@ -300,6 +300,22 @@ class FamilyBudgetSyncTest {
     }
 
     @Test
+    fun `the profile goes once, again when it changes, and not in between`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val id = "member:${a.session.member}"
+            a.sync()
+            val first = home.rows.getValue(id).getLong("seq")
+            assertEquals(0, a.sync().sent)
+            assertEquals(first, home.rows.getValue(id).getLong("seq"))
+            a.durable.familyMembers().put(FamilyMember(a.session.member, "سهیل", avatar = AVATAR_MAN, updatedAt = System.currentTimeMillis()))
+            assertEquals(1, a.sync().sent)
+            assertTrue(home.rows.getValue(id).getLong("seq") > first)
+            assertEquals(0, a.sync().sent)
+        }
+    }
+
+    @Test
     fun `a hand-typed row on a bank set aside from the family stays home`() = runBlocking {
         Household().use { home ->
             val a = home.phone('a')
