@@ -1024,7 +1024,8 @@ suspend fun rewindIngest(db: DurableDb, now: Long = System.currentTimeMillis()) 
  * token, keys and cursor. A backup restored onto a second phone must arrive as a *new* device and
  * re-pair with a fresh invite — two phones writing to the household under one token and one seq
  * cursor would corrupt each other's sync, and a leaked backup file must not be able to impersonate
- * the phone it came from even to someone who has the passphrase. Pinned by ExportTest.
+ * the phone it came from even to someone who has the passphrase. Pinned by ExportTest. The same
+ * keys are deleted from a file being restored, in [validateRestoreDatabase].
  */
 val BACKUP_STRIPPED_META: List<String> = listOf(
     META_SYNC_BASE, META_SYNC_TOKEN, META_SYNC_TOKEN_AT, META_SYNC_DEVICE, META_SYNC_MEMBER,
@@ -1104,7 +1105,10 @@ private fun copySynced(source: File, target: File) {
     }
 }
 
-/** Opens the actual Room schema, including migrations, before any live data is replaced. */
+/**
+ * Opens the actual Room schema, including migrations, before any live data is replaced — and
+ * takes the sync session out of the copy ([BACKUP_STRIPPED_META]).
+ */
 internal fun validateRestoreDatabase(context: Context, file: File) {
     SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { sql ->
         if (sql.version > DURABLE_DB_VERSION) {
@@ -1116,11 +1120,22 @@ internal fun validateRestoreDatabase(context: Context, file: File) {
                 "database integrity check failed"
             }
         }
+        // The ledger's own schema has no trigger and no view, so one in a backup was put there
+        // by hand — and a trigger on durable_meta could write a session back after the strip below.
+        sql.rawQuery("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('trigger', 'view')", null).use { found ->
+            check(found.moveToFirst() && found.getInt(0) == 0) { "database carries triggers or views" }
+        }
     }
     val db = DurableDb.builder(context, file.absolutePath).build()
     try {
         val sql = db.openHelper.writableDatabase
         sql.query("SELECT COUNT(*) FROM sms_source").use { check(it.moveToFirst()) }
+        // What export leaves out, import refuses to take: a file made by this app has none of
+        // these rows, so one that has them was edited — and a session it carried would point
+        // this phone's sync at whoever wrote it. A restored phone pairs again, as it always did.
+        for (key in BACKUP_STRIPPED_META) {
+            sql.execSQL("DELETE FROM durable_meta WHERE k = ?", arrayOf<Any?>(key))
+        }
         sql.query("PRAGMA wal_checkpoint(TRUNCATE)").use {
             check(it.moveToFirst() && it.getInt(0) == 0) { "database checkpoint failed" }
         }
