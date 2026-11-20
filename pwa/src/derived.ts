@@ -8,7 +8,7 @@
  * keeps the phone's best property for free: nothing downstream can disagree with the rows it was
  * derived from, because there is no stored copy to drift.
  *
- * ponytail: full re-derive on every data version. Cache parseToRows per source id if a profile
+ * ponytail: full re-derive whenever one of the ledger's inputs changes. Cache parseToRows per source id if a profile
  * ever shows it; a household's paste history is milliseconds today.
  */
 import { useEffect, useState } from 'preact/hooks';
@@ -24,7 +24,7 @@ import { editedTxn, splitOf } from './edits';
 import { CAT_TRANSFER, CAT_UNCATEGORISED, Confidence, DecisionKind, categoryUseOf, classify, noteUseOf } from './rules';
 import type { NoteUse, TxnClass } from './rules';
 import { BANKS, MAX_PLAUSIBLE_RIAL, assignAccounts, bankFa, clampAt, isBank, merchantNorm, parseToRows, settleDirections, sha256Hex } from './sms';
-import { dataVersion, pref, rows, useData } from './state';
+import { pref, rows, tableVersion, useData } from './state';
 import type {
   BalanceAnchor, Category, Decision, FamilyMember, FamilyTxn, LedgerEntry, LinkDecision, ManualTxn, Rule, Source, Txn,
 } from './model';
@@ -569,10 +569,13 @@ export const mineId = (): string => session.mineId;
 
 let memo: { key: string; view: LedgerView } | null = null;
 
-/** The ledger as the store holds it now, derived once per data version and shared by every reader. */
+/** Every table `ledger()` hands to `ledgerView`. A table added there and not here is a ledger that goes stale. */
+export const LEDGER_TABLES = ['sources', 'manual', 'familyTxns', 'familyMembers', 'decisions', 'links', 'categories', 'rules', 'anchors'] as const;
+
+/** The ledger as the store holds it now, derived once per change to its own inputs and shared by every reader. */
 export function ledger(): LedgerView {
   const now = Date.now();
-  const key = `${dataVersion()}:${sessionVersion}:${tehranDay(now)}`;
+  const key = [...LEDGER_TABLES.map(tableVersion), JSON.stringify(pref('disabledBanks')), pref('ledgerStartsOn'), sessionVersion, tehranDay(now)].join(':');
   if (memo?.key === key) return memo.view;
   const view = ledgerView({
     sources: rows('sources'),

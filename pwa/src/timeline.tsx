@@ -35,7 +35,7 @@ import {
   bidi, faCompact, faDay, faDayMoment, faMoment, faNumber, faSignedCompact, faSignedParts, faWordsToman, tomanOf, moneyUnit,
 } from './format';
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, registerTab, showNotice } from './nav';
-import { row, rows } from './state';
+import { dataVersion, row, rows } from './state';
 import { CheckMark, SearchMark } from './icons';
 import { HeroPanel, PillButton, Screen, ScreenTitle, Sheet, SheetLabel, SheetTitle, SegmentedChoice, SignedFigure, SuggestionStrip, Switch, TitleAddButton } from './ui';
 import type { Category, LedgerEntry, Txn } from './model';
@@ -841,7 +841,7 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
   const lent = view.loanLinks.has(txn.ref);
   const paidPlan = useMemo(
     () => (payable ? installmentPaidBy(txn.ref, readPlans(view.allEntries, view.entries).installments) : null),
-    [payable, view, txn.ref],
+    [payable, view, txn.ref, dataVersion()],
   );
   const own = txn.ref.startsWith('m:') || txn.ref.startsWith('s:');
   const canEdit = editable(entry);

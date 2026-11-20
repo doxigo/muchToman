@@ -51,7 +51,7 @@ import {
 import type { Plans } from './plans';
 import { CAT_TRANSFER, categoryChoices } from './rules';
 import { bankFa } from './sms';
-import { pref } from './state';
+import { dataVersion, pref } from './state';
 import {
   AmountField, ArmedButton, Panel, PillButton, Screen, SegmentedChoice, Sheet, SheetDelete, SheetLabel, SheetTitle, SuggestionStrip,
   TextField,
@@ -63,7 +63,8 @@ import './budgetUi.css';
 /** The ledger and the plans read off it. The view is memoised per data version, household and Tehran day — all the plans read. */
 function usePlans(): { view: LedgerView; plans: Plans } {
   const view = useLedger();
-  const plans = useMemo(() => readPlans(view.allEntries, view.entries), [view]);
+  // The plans are read from tables the ledger does not read, so the ledger's identity alone no longer says they moved.
+  const plans = useMemo(() => readPlans(view.allEntries, view.entries), [view, dataVersion()]);
   return { view, plans };
 }
 

@@ -942,7 +942,7 @@ const weekdayOf = (day: number): number => day - weekStart(day);
  */
 export function spendRhythm(entries: LedgerEntry[], range: ReportRange, today: number, mineId: string,
   excluded: ReadonlySet<string> = NONE, countPassThrough = false): SpendRhythm | null {
-  const first = entries.length ? Math.min(...entries.map((e) => e.txn.day)) : today;
+  const first = minOf(entries, (e) => e.txn.day) ?? today;
   const from = Math.max(range.startDay, first);
   const to = Math.min(range.endDay - 1, today);
   if (to - from + 1 < 28) return null;

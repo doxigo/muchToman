@@ -8,7 +8,7 @@
  * order; a failed write is the one thing surfaced loudly, because it is the one way to lose data.
  *
  * ponytail: one version for everything, so any write re-renders every mounted screen. Per-table
- * versions are the upgrade if a profile ever shows it.
+ * counters exist only for the ledger's memo, which must not rebuild on a write it does not read.
  */
 import { useEffect, useState } from 'preact/hooks';
 import { LOCAL, PREFS, open, reopen } from './db';
@@ -19,6 +19,9 @@ const tables = Object.fromEntries(TABLES.map((t) => [t, new Map()])) as { [K in 
 /** No prototype, so a `__proto__` key from a file or the disk is a key like any other. */
 const prefs: Partial<Prefs> = Object.create(null);
 let version = 0;
+/** One counter a table, for memos that read only some of them — the ledger above all. */
+const tableVersions = Object.fromEntries(TABLES.map((t) => [t, 0])) as Record<TableName, number>;
+export const tableVersion = (table: TableName): number => tableVersions[table];
 let loaded = false;
 type Listener = (external: boolean, bySync: boolean) => void;
 const listeners = new Set<Listener>();
@@ -150,6 +153,7 @@ export function put<K extends TableName>(table: K, value: Tables[K]): void {
 }
 export function putAll<K extends TableName>(table: K, values: Tables[K][]): void {
   if (!values.length) return;
+  tableVersions[table]++;
   for (const value of values) {
     tables[table].set(value.id, value);
     schedule({ store: LOCAL, value: { ...value, t: table } });
@@ -159,6 +163,7 @@ export function putAll<K extends TableName>(table: K, values: Tables[K][]): void
 /** A real delete, for rows that are caches rather than her data (publications, family mirrors). */
 export function erase<K extends TableName>(table: K, id: string): void {
   if (!tables[table].delete(id)) return;
+  tableVersions[table]++;
   schedule({ store: LOCAL, delete: [table, id] });
   changed();
 }
@@ -227,6 +232,7 @@ async function readDisk(): Promise<void> {
     else if ('delete' in op) tables[op.delete[0]].delete(op.delete[1]);
     else { const { t, ...value } = op.value; (tables[t] as Map<string, unknown>).set(value.id, value); }
   }
+  for (const t of TABLES) tableVersions[t]++;
 }
 function request<T>(req: IDBRequest): Promise<T> {
   return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result as T); req.onerror = () => reject(req.error); });
@@ -287,6 +293,7 @@ async function restore(build: (current: Snapshot) => Snapshot, db: IDBDatabase):
   }
   for (const key of Object.keys(prefs)) delete (prefs as Record<string, unknown>)[key];
   Object.assign(prefs, next.prefs);
+  for (const t of TABLES) tableVersions[t]++;
   tabs?.postMessage(null);
   changed();
 }

@@ -40,7 +40,7 @@ import { BankLogo } from './logos';
 import { buildStory } from './reports';
 import type { HomeStory } from './reports';
 import { BAR_TINT, CategoryShareRow, InsightCard, QuietStart, roundEven } from './report';
-import { pref, useData } from './state';
+import { dataVersion, pref, useData } from './state';
 import { ActionCircle, HeroPanel, PillToggle, ScreenTitle, Section, TitleAddButton } from './ui';
 import { AssetIcon, RowAmount, RowTitle, rateIn, useAutoSize, useNow } from './homeSheets';
 import { LoansHeroStrip } from './loansUi';
@@ -298,7 +298,8 @@ function TabSections({ view, total, effective, list, coins }: {
 }) {
   const reportExcluded = pref('reportExcluded');
   const installmentDays = pref('installmentReminder');
-  const plans = useMemo(() => readPlans(view.allEntries, view.entries), [view]);
+  // The plans are read from tables the ledger does not read, so the ledger's identity alone no longer says they moved.
+  const plans = useMemo(() => readPlans(view.allEntries, view.entries), [view, dataVersion()]);
   const story = useMemo<HomeStory>(() => buildStory(view.entries, view.bankTotalRial, tehranDay(Date.now()), {
     budgets: plans.budgets,
     // The one gate دخل و خرج reads: قرض و همسر are its shipped default, not a mechanism of their own.
