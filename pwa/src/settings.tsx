@@ -28,6 +28,7 @@ import { Chevron, MinusMark, PersonMark, PlusMark } from './icons';
 import { INSTALLMENT_REMINDER_DAYS, installmentReminderFa } from './installments';
 import { tehranDay } from './jalali';
 import { setBankBalance, setLedgerStartsOn, toggleBankDisabled } from './ledger';
+import { INSTALL_KEEPS_FA, installed } from './onboarding';
 import { disableLock, enableLock, lockAvailable } from './lock';
 import { BankLogo } from './logos';
 import { TEXT_SIZES } from './model';
@@ -545,6 +546,9 @@ function BackupPage() {
   const ui = useBackupUi();
   const picker = useRef<HTMLInputElement>(null);
   const last = pref('lastBackupAt');
+  // null until the browser answers; a browser without the API cannot promise anything.
+  const [kept, setKept] = useState<boolean | null>(typeof navigator.storage?.persisted === 'function' ? null : false);
+  useEffect(() => { void navigator.storage?.persisted?.().then(setKept, () => {}); }, []);
   return (
     <SettingsPage title="پشتیبان‌گیری">
       <p style={{ color: 'var(--on-surface)', paddingBottom: 'var(--m)' }}>
@@ -563,6 +567,7 @@ function BackupPage() {
         input.value = '';
         if (file) openSheet('restore', { file });
       }} />
+      {kept === false && !installed() && <Note tone="strong">{INSTALL_KEEPS_FA}</Note>}
       {canBackup
         ? <Note>فایل پشتیبان رمز داره. فایل و رمزش رو جای مطمئن نگه دار. این تاریخ فقط زمان ساخت فایله؛ برنامه نمی‌تونه موندن فایل در محل ذخیره رو بررسی کنه.</Note>
         : <Note>این مرورگر پشتیبان‌گیری رو نداره. روی آیفون، iOS ۱۶٫۴ یا بالاتر لازمه.</Note>}

@@ -8,6 +8,7 @@
 import { render } from 'preact';
 import './app.css';
 import { App } from './app';
+import { Guard, Stuck } from './stuck';
 import { pref, rows, setPref, setWriteErrorHandler, settled, subscribe } from './state';
 import { ensureSeeded } from './rules';
 import { ledger } from './derived';
@@ -77,10 +78,15 @@ function watchForUpdates(): void {
   }).catch(() => {});
 }
 
+let storeLoaded = false;
+let mounted = false;
+
 async function start(): Promise<void> {
   watchForUpdates();
   void navigator.storage?.persist?.().catch(() => false);
-  await ensureSeeded();
+  // A blocked or hung IndexedDB open never settles; past this the page says so instead of staying white.
+  await Promise.race([ensureSeeded(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('store did not open')), 15_000))]);
+  storeLoaded = true;
   if (import.meta.env.DEV) {
     if (new URLSearchParams(location.search).has('demo')) (await import('./demo')).seedDemo();
     // The app's own module instances for the console: after an HMR update Vite serves edited
@@ -139,8 +145,13 @@ async function start(): Promise<void> {
   }
   navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'open-tab' && isTab(e.data.tab)) selectTab(e.data.tab); });
 
-  render(<App />, document.getElementById('app')!);
+  mounted = true;
+  render(<Guard><App /></Guard>, document.getElementById('app')!);
   await takePairing();
 }
 
-void start();
+void start().catch((error: unknown) => {
+  console.error('start failed', error);
+  // After the app is up, a late failure (a pairing link) must not replace it.
+  if (!mounted) render(<Stuck canBackUp={storeLoaded} />, document.getElementById('app')!);
+});

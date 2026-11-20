@@ -12,7 +12,7 @@ import { TabIcon } from './icons';
 import { TABS, dismissNotice, gates, holdNotice, pages, selectTab, sheets, tabs, useNav } from './nav';
 import type { Notice, Tab } from './nav';
 import { faNumber } from './format';
-import { pref, textSize, useData } from './state';
+import { pref, textSize, unsaved, useData } from './state';
 import { focusOrigin, refocus } from './ui';
 
 /** Each theme-color meta with the colour index.html gave it for its own media query. */
@@ -98,6 +98,7 @@ export function App() {
     <>
       {gate && <gate.Component />}
       <div hidden={!!gate} aria-hidden={gate ? 'true' : undefined}>
+        {unsaved() && <p class="unsaved" role="status">تغییرهای آخرت هنوز ذخیره نشده. فضای مرورگر رو چک کن.</p>}
         {TABS.filter(({ id }) => visited.includes(id)).map(({ id }) => {
           const C = tabs.get(id)?.Component;
           return (

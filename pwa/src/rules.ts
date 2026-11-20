@@ -430,5 +430,5 @@ export function seedBuiltins(now = Date.now()): void {
 let seeding: Promise<void> | null = null;
 /** Seeds once per session, after the store has loaded — seeding before would put back her renames. */
 export function ensureSeeded(): Promise<void> {
-  return (seeding ??= load().then(() => seedBuiltins()));
+  return (seeding ??= load().then(() => seedBuiltins()).catch((error: unknown) => { seeding = null; throw error; }));
 }

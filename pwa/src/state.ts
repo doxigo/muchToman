@@ -75,6 +75,8 @@ let sending: Op[] = [];
 let flushing: Promise<void> | null = null;
 /** Failed flushes in a row; the first says so, the retries back off quietly. */
 let failures = 0;
+/** True while a write has not reached disk; the app keeps a line on screen until one does. */
+export const unsaved = (): boolean => failures > 0;
 let retry: ReturnType<typeof setTimeout> | undefined;
 /** A restore has the disk: writes still land in memory and the queue, and wait for it. */
 let held = false;
@@ -113,7 +115,7 @@ async function flush(): Promise<void> {
         tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('write aborted'));
       });
       sending = [];
-      failures = 0;
+      if (failures) { failures = 0; changed(); }
       tabs?.postMessage(null);
     }
   } catch (error) {
@@ -122,7 +124,7 @@ async function flush(): Promise<void> {
     queue = [...sending, ...queue];
     sending = [];
     reopen();
-    if (failures++ === 0) onWriteError(error);
+    if (failures++ === 0) { onWriteError(error); changed(); }
     clearTimeout(retry);
     retry = setTimeout(kick, Math.min(1000 * 2 ** (failures - 1), 30_000));
   } finally {
@@ -278,7 +280,7 @@ async function restore(build: (current: Snapshot) => Snapshot, db: IDBDatabase):
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('restore aborted'));
   });
   queue = [];
-  failures = 0;
+  if (failures) { failures = 0; changed(); }
   for (const t of TABLES) {
     tables[t].clear();
     for (const value of next.tables[t] ?? []) (tables[t] as Map<string, unknown>).set(value.id, value);

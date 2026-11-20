@@ -429,3 +429,11 @@ test('joins a household and reads Android payloads that omit their defaults', as
   await expect(mine).toBeVisible();
   await expect(row).toBeVisible();
 });
+
+test('a store that will not open gets a screen, not a blank page', async ({ page }) => {
+  await page.addInitScript(() => { IDBFactory.prototype.open = () => { throw new DOMException('closed', 'UnknownError'); }; });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'برنامه باز نشد' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'دوباره امتحان کن' })).toBeVisible();
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
+});

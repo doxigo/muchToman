@@ -321,12 +321,13 @@ async function pasteFromHash(): Promise<void> {
   const raw = location.hash.slice(head[0].length);
   let text = raw;
   try { text = decodeURIComponent(raw); } catch { /* a stray % — keep the text as it came */ }
+  // The key, the remembered senders and the dedupe all read the store, which may still be loading;
+  // and if it cannot load, the message must still be in the address when she retries.
+  await ensureSeeded();
   history.replaceState(history.state, '', location.pathname + location.search);
   const bundle = readBundle(text);
   let unkeyed = false;
   if (bundle) {
-    // The key, the remembered senders and the dedupe all read the store, which may still be loading.
-    await ensureSeeded();
     unkeyed = !head[1] || head[1] !== pref('pasteKey');
     const keep = storable(bundle);
     if (!unkeyed && keep.every((r) => bankFor(r.sender) != null)) { noticeAdded(await addPastedBundle(keep, bankFor)); return; }

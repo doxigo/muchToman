@@ -16,8 +16,10 @@ import { pref, setPref } from './state';
 import { PillButton } from './ui';
 
 const canAskNotify = (): boolean => typeof Notification !== 'undefined' && Notification.permission === 'default';
-const installed = (): boolean =>
+export const installed = (): boolean =>
   matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+export const INSTALL_KEEPS_FA = 'چقدر تومن رو به صفحهٔ اصلی گوشی اضافه کن. این‌جوری مرورگر دفترت رو پاک نمی‌کنه.';
 
 const finish = (): void => setPref('onboarded', true);
 
@@ -82,9 +84,7 @@ function Onboarding() {
       ) : (
         <>
           <h1 style={heading}>یک قدم آخر</h1>
-          <p class="muted" style={body}>
-            چقدر تومن رو به صفحهٔ اصلی گوشی اضافه کن. این‌جوری مرورگر دفترت رو پاک نمی‌کنه.
-          </p>
+          <p class="muted" style={body}>{INSTALL_KEEPS_FA}</p>
           <p class="muted" style={body}>{`توی سافاری دکمهٔ ${bidi('Share')} رو بزن، بعد ${bidi('Add\u00a0to\u00a0Home\u00a0Screen')}.`}</p>
           <div style={{ height: 'var(--xxl)' }} />
           {/* Finished either way: the page cannot add itself, and a screen that waited for it would have no way off. */}
