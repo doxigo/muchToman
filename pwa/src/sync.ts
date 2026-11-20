@@ -22,7 +22,7 @@ import { generateKey, hexOf, importKey, openSealed, randomHex, seal, toBase64Url
 import { ResponseTooLargeError, readLimited, safeAssetShareItems, timeoutSignal } from './data';
 import type { AssetShareItem } from './data';
 import { deleteMeta, getMeta, partition, setMeta, withSyncLock } from './db';
-import { familyLocalRef, ledger } from './derived';
+import { bankOfRow, familyLocalRef, ledger } from './derived';
 import { MAX_SPLIT_PARTS, parseSplit, splitValue } from './edits';
 import { tehranDay } from './jalali';
 import { MAX_NOTE_CHARS } from './rules';
@@ -577,7 +577,7 @@ export function decisionMayLeave(decision: Decision, txn: Txn | undefined, share
   if (!txn) return false;
   if (!blank(txn.familyRef)) return true;
   if (!shareSms && (txn.sourceKind === 'sms' || decision.ref.startsWith('s:'))) return false;
-  return !excludedBanks.has(txn.bank);
+  return !excludedBanks.has(bankOfRow(txn));
 }
 
 export interface PublishInput {
@@ -647,7 +647,7 @@ export async function outgoingRecords(p: PublishInput): Promise<PreparedRecord[]
     if (sourceKind === 'sms' && !p.shareSms) continue;
     // A bank she set aside: its rows never leave, and ones already out are swept below —
     // dropping out of activeIds is what turns yesterday's share into today's tombstone.
-    if (excludedBanks.has(txn.bank)) continue;
+    if (excludedBanks.has(bankOfRow(txn))) continue;
     const id = familyTxnId(me, txn.ref);
     activeIds.add(id);
     const category = categoryById.get(entry.categoryId);

@@ -256,6 +256,12 @@ export const forgetMarkId = (key: string): string => `forget:${key}`;
 export const bankOfKey = (key: string): string => key.split(':')[0];
 
 /**
+ * The bank a row's money sits at (Derived.kt `bankOfRow`): a hand-typed row carries the MANUAL
+ * placeholder as its bank and names its account, so the family's bank veto has to ask here.
+ */
+export const bankOfRow = (txn: Txn): string => (txn.ref.startsWith('m:') && txn.accountId !== 'MANUAL' ? bankOfKey(txn.accountId) : txn.bank);
+
+/**
  * One balance per account — a bank's own, and one more for each further «حساب» its messages name
  * (assignAccounts) — from the pasted messages and the figures she typed: the phone's prefs fold,
  * rebuilt from scratch each time rather than carried, since here the messages are all kept.
@@ -497,7 +503,7 @@ export function ledgerView(input: DeriveInput, startsOn = 0): LedgerView {
       // Somebody else's words on her row are not hers, and must not read as if they were.
       noteAuthorName: note && note.memberId && note.memberId !== mineId ? members.get(note.memberId)?.name ?? '' : '',
       sharedWithFamily: txn.familyRef !== '' ||
-        (mineId !== '' && !excluded.has(txn.bank) && (txn.sourceKind !== 'sms' || input.sharesSms)),
+        (mineId !== '' && !excluded.has(bankOfRow(txn)) && (txn.sourceKind !== 'sms' || input.sharesSms)),
     };
   }).sort((a, b) => -byTime(a.txn, b.txn));
 

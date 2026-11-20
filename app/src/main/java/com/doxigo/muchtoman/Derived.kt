@@ -419,6 +419,14 @@ fun settleDirections(rows: List<Txn>, chosen: Map<String, String?> = emptyMap())
     }
 }
 
+/**
+ * The bank a row's money sits at. A hand-typed row carries the "MANUAL" placeholder as its bank
+ * and names its account in [Txn.accountId] (`MELLAT`, `MELLAT:0457`), so anything that asks
+ * «is this row at a bank she set aside?» has to ask here, not [Txn.bank]. Cash names no account.
+ */
+internal fun bankOfRow(txn: Txn): String =
+    if (txn.ref.startsWith("m:") && txn.accountId != "MANUAL") txn.accountId.substringBefore(':') else txn.bank
+
 /** A hand-entered transaction, in the same shape as one read from a message. */
 fun manualToRow(row: ManualTxn): Txn = Txn(
     ref = manualRef(row.id),
@@ -808,7 +816,7 @@ suspend fun ledgerEntries(
             transfer = txn.ref in transfers || filed?.categoryId == CAT_TRANSFER,
             ownerMemberId = ownerMemberId,
             sharedWithFamily = txn.familyRef.isNotBlank() ||
-                (currentMemberId.isNotBlank() && txn.bank !in excludedBanks &&
+                (currentMemberId.isNotBlank() && bankOfRow(txn) !in excludedBanks &&
                     (txn.sourceKind != "sms" || sharesSms)),
             ownerName = members[ownerMemberId]?.name.orEmpty(),
             ownerAvatar = members[ownerMemberId]?.avatar.orEmpty(),

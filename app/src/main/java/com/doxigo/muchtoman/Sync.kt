@@ -1195,7 +1195,7 @@ private suspend fun outgoingRecords(
         if (sourceKind == "sms" && !shareSms) continue
         // A bank she set aside: its rows never leave, and ones already out are swept below —
         // dropping out of activeIds is what turns yesterday's share into today's tombstone.
-        if (txn.bank in excludedBanks) continue
+        if (bankOfRow(txn) in excludedBanks) continue
         val id = familyTxnId(session.member, txn.ref)
         activeIds += id
         val category = categoryById[entry.categoryId]
@@ -1517,7 +1517,7 @@ internal fun decisionMayLeave(
     if (txn == null) return false
     if (txn.familyRef.isNotBlank()) return true
     if (!shareSms && (txn.sourceKind == "sms" || decision.ref.startsWith("s:"))) return false
-    return txn.bank !in excludedBanks
+    return bankOfRow(txn) !in excludedBanks
 }
 
 private fun safeSyncedText(value: String, max: Int, fallback: String = ""): String =

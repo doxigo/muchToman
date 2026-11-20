@@ -299,6 +299,34 @@ class FamilyBudgetSyncTest {
         }
     }
 
+    @Test
+    fun `a hand-typed row on a bank set aside from the family stays home`() = runBlocking {
+        Household().use { home ->
+            val a = home.phone('a')
+            val b = home.phone('b')
+            val now = System.currentTimeMillis()
+            fun typed(id: String, merchant: String, account: String?) = ManualTxn(
+                id = id, at = now, day = tehranDay(now), amountRial = -7_000_000, accountId = account,
+                merchant = merchant, createdAt = now, updatedAt = now,
+            )
+            a.durable.manual().put(typed("typed-refah", "بقالی", "REFAH"))
+            a.durable.manual().put(typed("typed-cash", "تاکسی", null))
+            suspend fun seenByB() = b.durable.familyTxns().all().map { it.merchant }.toSet()
+            a.sync(); b.sync()
+            assertEquals(setOf("بقالی", "تاکسی"), seenByB())
+            a.durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, "REFAH"))
+            a.sync(); b.sync()
+            assertEquals(setOf("تاکسی"), seenByB())
+            assertEquals(
+                mapOf("بقالی" to false, "تاکسی" to true),
+                ledgerEntries(a.derived, a.durable).entries.associate { it.txn.merchant to it.sharedWithFamily },
+            )
+            a.durable.meta().put(DurableMeta(META_SYNC_EXCLUDED_BANKS, ""))
+            a.sync(); b.sync()
+            assertEquals(setOf("بقالی", "تاکسی"), seenByB())
+        }
+    }
+
     /**
      * A phone whose clock runs days fast: the server clamps what it sends, and the goal and the
      * note take that stamp back. Left ahead, they would be republished at a fresh clamp on every
