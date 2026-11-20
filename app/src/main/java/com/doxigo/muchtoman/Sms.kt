@@ -707,11 +707,11 @@ private fun figureBefore(text: String, labels: List<String>): Figure? {
  * prints the number in full ("829-800-1092308-1"). Without either, every account at a bank
  * collapses onto one balance and its siblings overwrite each other in turn.
  *
- * The lookbehind starts a try only where a run of digits starts: the leftmost match is the same,
- * but without it every digit of a long run rescanned the rest of the run — 4 s on a 39k-char body.
+ * The lookbehinds start a try only where a run of digits starts: the leftmost match is the same,
+ * but without them every digit of a long run rescanned the rest of the run — 4 s on a 39k-char body.
  */
 private val MASKED = Regex("(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]*\\*{2,}[0-9۰-۹٠-٩]*")
-private val DASHED = Regex("[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+")
+private val DASHED = Regex("(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+")
 
 private fun digitsIn(s: String) =
     s.count { it in '0'..'9' || it in '۰'..'۹' || it in '٠'..'٩' }
@@ -908,8 +908,8 @@ private val FEE_WORDS = listOf("کارمزد", "هزینه")
 
 private val REF_WORDS = listOf("پیگیری", "رهگیری", "مرجع", "شماره سند", "شناسه پرداخت")
 
-/** خاورمیانه prints its reference as "020/000016703" with no label at all. */
-private val SLASHED_REF = Regex("[0-9۰-۹٠-٩]{2,}/[0-9۰-۹٠-٩]{4,}")
+/** خاورمیانه prints its reference as "020/000016703" with no label at all. Tried only where a run of digits starts, like [MASKED]. */
+private val SLASHED_REF = Regex("(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]{2,}/[0-9۰-۹٠-٩]{4,}")
 
 // «مرکز» is deliberately not here: the only «مرکز» in the whole corpus is اقتصاد نوین signing
 // its own call centre — «مرکزآواي نوين:02162740» — on every message it sends, and reading that

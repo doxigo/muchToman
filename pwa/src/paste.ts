@@ -73,6 +73,18 @@ function normalise(s: string): string {
 const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹٠-٩]/g;
 
 /**
+ * The character in front of a place in the text — two code units, so one outside the BMP arrives
+ * whole. This is what a regex lookbehind used to ask. Safari had none before 16.4, and a regex it
+ * cannot read stops the whole bundle from loading, so nothing in this file uses one
+ * (test/lookbehind.test.ts keeps it that way): a regex either takes the character in front as part
+ * of its match, or the caller asks here.
+ */
+const before = (text: string, at: number): string => text.slice(Math.max(0, at - 2), at);
+const LETTER_LAST = /\p{L}$/u;
+/** What may stand in front of a signed figure: nothing, whitespace, a colon or a letter. */
+const SIGN_LEAD = /[\s:\p{L}]$/u;
+
+/**
  * The amount with the bank's own sign glued to it — in front on a line of its own, "+6,000,000"
  * from خاورمیانه, پاسارگاد and رسالت, or behind after a label, «پایانه فروش: 4,100,000-» and
  * «سود:2,472,328+» from صادرات and ملی. The sign is the direction and outranks the words:
@@ -82,7 +94,7 @@ const NUMBER = /[0-9۰-۹٠-٩][0-9۰-۹٠-٩,،٬.٫]*[0-9۰-۹٠-٩]|[0-9۰-۹
  * «پایا15,201,000+», with no direction named in words at all.
  */
 const GROUPED = '[0-9۰-۹٠-٩]{1,3}(?:[,،٬][0-9۰-۹٠-٩]{3})+';
-const SIGNED = new RegExp(`(?<![^\\s:\\p{L}])(?:([+-])(${GROUPED})|(${GROUPED})([+-]))(?![0-9۰-۹٠-٩])`, 'gu');
+const SIGNED = new RegExp(`(?:([+-])(${GROUPED})|(${GROUPED})([+-]))(?![0-9۰-۹٠-٩])`, 'gu');
 
 /**
  * The first signed figure that is not a balance: one with «مانده» or «موجودی» in front of it on its
@@ -91,6 +103,7 @@ const SIGNED = new RegExp(`(?<![^\\s:\\p{L}])(?:([+-])(${GROUPED})|(${GROUPED})(
  */
 function signedAmount(text: string): { value: number; divisor: number | null; plus: boolean } | null {
   for (const m of text.matchAll(SIGNED)) {
+    if (m.index! > 0 && !SIGN_LEAD.test(before(text, m.index!))) continue;
     const lineStart = text.lastIndexOf('\n', m.index! - 1) + 1;
     if (BALANCE_WORDS.some((w) => text.slice(lineStart, m.index).includes(w))) continue;
     return {
@@ -115,7 +128,7 @@ function boxMove(text: string): boolean | null {
 }
 
 const PRINTED_AT =
-  /(?<![0-9۰-۹٠-٩.\/\-_])[0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?(?![0-9۰-۹٠-٩])/;
+  /(?:^|[^0-9۰-۹٠-٩.\/\-_])([0-9۰-۹٠-٩]{1,4}[/.][0-9۰-۹٠-٩]{1,2}(?:[/.][0-9۰-۹٠-٩]{1,2})?(?:[ _-]{1,3}[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)?)(?![0-9۰-۹٠-٩])/;
 
 /**
  * ملی's and صادرات's stamp, month and day run together beside the clock: «0425-01:15», «0503 -
@@ -123,7 +136,7 @@ const PRINTED_AT =
  * nowhere else — so only the paste flow reads it, for when the money moved.
  */
 export const RUN_TOGETHER =
-  /(?<![0-9۰-۹٠-٩./\-_])([0-9۰-۹٠-٩]{2})([0-9۰-۹٠-٩]{2})[ _-]{1,3}([0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)(?![0-9۰-۹٠-٩])/;
+  /(?:^|[^0-9۰-۹٠-٩./\-_])([0-9۰-۹٠-٩]{2})([0-9۰-۹٠-٩]{2})[ _-]{1,3}([0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?)(?![0-9۰-۹٠-٩])/;
 
 /** A clock time, hours to optional seconds, in either set of digits. */
 const CLOCK = '[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?';
@@ -136,7 +149,7 @@ const CLOCK = '[0-9۰-۹٠-٩]{1,2}:[0-9۰-۹٠-٩]{2}(?::[0-9۰-۹٠-٩]{2})?';
  * never a colon picked up from two lines away.
  */
 const CLOCK_AFTER = new RegExp(`^\\s*(${CLOCK})(?![0-9۰-۹٠-٩:])`);
-const CLOCK_BEFORE = new RegExp(`(?<![0-9۰-۹٠-٩:])(${CLOCK})\\s*$`);
+const CLOCK_BEFORE = new RegExp(`(?:^|[^0-9۰-۹٠-٩:])(${CLOCK})\\s*$`);
 
 /**
  * The stamp the bank printed, read off the raw body so the Android side and this one answer
@@ -148,11 +161,13 @@ const CLOCK_BEFORE = new RegExp(`(?<![0-9۰-۹٠-٩:])(${CLOCK})\\s*$`);
 function printedStampIn(rawBody: string): string {
   const date = PRINTED_AT.exec(rawBody);
   if (!date) return '';
-  const stamp = date[0].trim();
+  const stamp = date[1].trim();
   if (stamp.includes(':')) return stamp;
   const after = date.index + date[0].length;
+  // The match may begin one character early, on whatever stands in front of the stamp.
+  const from = after - date[1].length;
   const time =
-    CLOCK_AFTER.exec(rawBody.slice(after))?.[1] ?? CLOCK_BEFORE.exec(rawBody.slice(0, date.index))?.[1];
+    CLOCK_AFTER.exec(rawBody.slice(after))?.[1] ?? CLOCK_BEFORE.exec(rawBody.slice(0, from))?.[1];
   return time === undefined ? stamp : `${stamp} ${time}`;
 }
 
@@ -349,7 +364,7 @@ const OTP = /رمز ?(?:پویا|دوم)/u;
  * where no balance is stated: a bare «رمز» is also a debit's security footer, «رمز خود را در اختیار
  * دیگران قرار ندهید».
  */
-const OTP_CODE = /(?<!\p{L})(?:رمز(?!\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))/gu;
+const OTP_CODE = /(?:^|\P{L})(?:رمز(?!\p{L})|کد ?(?:تایید|تأیید|تائید|یک ?بار|فعال ?سازی|ورود|پویا))/gu;
 
 /**
  * A transfer still being looked at has not happened: Blu's «در حال بررسی ویدیو انتقال مبلغ …» is
@@ -496,8 +511,8 @@ export const writeBundle = (records: Bundled[]): string => records
 
 const FEE_WORDS = ['کارمزد', 'هزینه'];
 const REF_WORDS = ['پیگیری', 'رهگیری', 'مرجع', 'شماره سند', 'شناسه پرداخت'];
-/** خاورمیانه prints its reference as "020/000016703" with no label at all. */
-const SLASHED_REF = /[0-9۰-۹٠-٩]{2,}\/[0-9۰-۹٠-٩]{4,}/;
+/** خاورمیانه prints its reference as "020/000016703" with no label at all. Tried only where a run of digits starts. */
+const SLASHED_REF = /(?:^|[^0-9۰-۹٠-٩])([0-9۰-۹٠-٩]{2,}\/[0-9۰-۹٠-٩]{4,})/;
 // «مرکز» is deliberately not here: its only use was اقتصاد نوین signing its own call centre.
 const MERCHANT_WORDS = ['فروشگاه', 'پذیرنده', 'به نام', 'بنام'];
 const WHITESPACE = /[\s\p{Z}]+/gu;
@@ -506,20 +521,22 @@ const digitsIn = (s: string): number => [...s].filter(isDigit).length;
 
 /**
  * Some banks mask a tail ("۱۲۳****"); Saman prints the number in full ("829-800-1092308-1").
- * Tried only where a run of digits starts (Sms.kt's MASKED): the same first match, linear not quadratic.
+ * Each is tried only where a run of digits starts, by taking the character in front of it (Sms.kt
+ * guards the same two): the same matches, linear where every digit of a long run once rescanned
+ * the rest of it.
  */
-const MASKED = /(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]*\*{2,}[0-9۰-۹٠-٩]*/;
-const DASHED = /[0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+/g;
+const MASKED = /(?:^|[^0-9۰-۹٠-٩])([0-9۰-۹٠-٩]*\*{2,}[0-9۰-۹٠-٩]*)/;
+const DASHED = /(?:^|[^0-9۰-۹٠-٩])([0-9۰-۹٠-٩]{2,}(?:-[0-9۰-۹٠-٩]+)+)/g;
 function accountIn(text: string): string {
   const masked = MASKED.exec(text);
-  if (masked) return masked[0];
+  if (masked) return masked[1];
   // A Jalali date written 1405-05-01 is digits and dashes too; an account number is longer.
-  for (const m of text.matchAll(DASHED)) if (digitsIn(m[0]) >= 10) return m[0];
+  for (const m of text.matchAll(DASHED)) if (digitsIn(m[1]) >= 10) return m[1];
   return '';
 }
 
 /** A figure a bank labels «حساب»: the label, an optional colon, and digits on the same line. */
-const ACCOUNT_NO = /(?<!\p{L})حساب[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩*][0-9۰-۹٠-٩*.\-]*)/gu;
+const ACCOUNT_NO = /حساب[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩*][0-9۰-۹٠-٩*.\-]*)/gu;
 
 /**
  * The account a message names, as the last four digits of the figure it labels «حساب» — blank when
@@ -530,6 +547,8 @@ const ACCOUNT_NO = /(?<!\p{L})حساب[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩*][0-9۰-
 export function accountNoIn(text: string): string {
   const found = new Set<string>();
   for (const m of text.matchAll(ACCOUNT_NO)) {
+    // A letter in front makes the label part of another word: «صورتحساب» is not a «حساب».
+    if (LETTER_LAST.test(before(text, m.index!))) continue;
     const run = m[1];
     const end = m.index! + m[0].length;
     const label = text.slice(Math.max(0, m.index! - 8), m.index!);
@@ -545,9 +564,9 @@ export function accountNoIn(text: string): string {
 /** Marks an account a bank names only by its card — Sms.kt `CARD_PREFIX`. */
 export const CARD_PREFIX = 'card';
 
-const CARD_NO = /(?<!\p{L})کارت[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩][0-9۰-۹٠-٩*\-]*)/gu;
+const CARD_NO = /کارت[^\S\n]*:?[^\S\n]*([0-9۰-۹٠-٩][0-9۰-۹٠-٩*\-]*)/gu;
 /** «به کارت 9525», «از کارت 9295»: the other side of a transfer, someone else's card. */
-const OTHER_SIDE = /(?<!\p{L})(?:به|از)\s*$/u;
+const OTHER_SIDE = /(?:^|\P{L})(?:به|از)\s*$/u;
 
 /**
  * The card a message names as `CARD_PREFIX` and its last four digits, for a message that names no
@@ -558,6 +577,8 @@ const OTHER_SIDE = /(?<!\p{L})(?:به|از)\s*$/u;
 export function cardNoIn(text: string): string {
   const found = new Set<string>();
   for (const m of text.matchAll(CARD_NO)) {
+    // A letter in front makes the label part of another word: «صورتحساب» is not a «حساب».
+    if (LETTER_LAST.test(before(text, m.index!))) continue;
     const digits = digitsOf(m[1]);
     const end = m.index! + m[0].length;
     const tail = text.slice(end, end + 8).split('\n')[0];
@@ -614,7 +635,7 @@ function refIn(text: string): string {
       if (digitsIn(m[0]) >= 6) return m[0];
     }
   }
-  return SLASHED_REF.exec(text)?.[0] ?? '';
+  return SLASHED_REF.exec(text)?.[1] ?? '';
 }
 
 /** The shop or terminal, cut at a colon, a line break or a digit run (a phone number, a terminal code). */

@@ -536,6 +536,9 @@ async function runExport(passphrase: string): Promise<void> {
   }
 }
 
+/** Safari before 16.4 has neither stream, and without them a backup can be neither made nor read. */
+const canBackup = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+
 /** The recovery path: without this file, a lost phone — or a cleared browser — loses everything. */
 function BackupPage() {
   useData();
@@ -549,10 +552,10 @@ function BackupPage() {
       </p>
       <Band>
         <DoorRow title="پشتیبان‌گیری از همه‌چیز" subtitle="پیامک‌ها، دسته‌بندی‌ها، موجودی‌ها و تنظیمات، توی یک فایل رمزدار"
-          glyph="STACK" enabled={!ui.working} onClick={() => openSheet('exportPass')} />
+          glyph="STACK" enabled={canBackup && !ui.working} onClick={() => openSheet('exportPass')} />
         {/* The file first, so the passphrase is only ever asked about a file that exists. */}
         <DoorRow title="بازگردانی از پشتیبان" subtitle="همه‌چیز از روی فایل پشتیبان برمی‌گرده"
-          glyph="TRAY" enabled={!ui.working} onClick={() => picker.current?.click()} />
+          glyph="TRAY" enabled={canBackup && !ui.working} onClick={() => picker.current?.click()} />
       </Band>
       <input ref={picker} type="file" hidden onChange={(e) => {
         const input = e.currentTarget;
@@ -560,7 +563,9 @@ function BackupPage() {
         input.value = '';
         if (file) openSheet('restore', { file });
       }} />
-      <Note>فایل پشتیبان رمز داره. فایل و رمزش رو جای مطمئن نگه دار. این تاریخ فقط زمان ساخت فایله؛ برنامه نمی‌تونه موندن فایل در محل ذخیره رو بررسی کنه.</Note>
+      {canBackup
+        ? <Note>فایل پشتیبان رمز داره. فایل و رمزش رو جای مطمئن نگه دار. این تاریخ فقط زمان ساخت فایله؛ برنامه نمی‌تونه موندن فایل در محل ذخیره رو بررسی کنه.</Note>
+        : <Note>این مرورگر پشتیبان‌گیری رو نداره. روی آیفون، iOS ۱۶٫۴ یا بالاتر لازمه.</Note>}
       <div style={{ height: 'var(--l)' }} />
       <Band>
         {/* The house, not a bell: the reminder lives on the home page, and no notification comes. */}
