@@ -154,6 +154,24 @@ test('the مرور shortcut opens the deck when a transaction waits for her', as
   await expect(page.getByRole('tab', { name: 'دفتر' })).toHaveAttribute('aria-selected', 'true');
 });
 
+test('a card in the deck can be split and deleted, as on its own page', async ({ page }) => {
+  await onboard(page, `/#paste=${encodeURIComponent(corpus('mellat.json', 'mellat-6104-withdrawal-with-balance'))}`);
+  const paste = page.getByRole('dialog', { name: 'پیامک بانک' });
+  await paste.getByRole('radio', { name: 'بانک ملت' }).click();
+  await paste.getByRole('button', { name: 'ثبت', exact: true }).click();
+  await expect(paste).toHaveCount(0);
+  await page.goto('/?open=deck');
+  await expect(page.getByRole('heading', { name: 'این خرج رو چی حساب کنم؟' })).toBeVisible();
+  // A note opens this card, not the row's page, so the page's acts are here too.
+  await expect(page.getByRole('button', { name: /^تقسیم بین دسته‌ها/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^ویرایش تراکنش/ })).toBeVisible();
+  // Two taps, and the card leaves the deck with its row.
+  await page.getByRole('button', { name: 'حذف این تراکنش' }).click();
+  await page.getByRole('button', { name: 'مطمئنی؟ برای حذف دوباره بزن' }).click();
+  await expect(page.getByRole('status')).toContainText('تراکنش پاک شد');
+  await expect(page.getByRole('heading', { name: 'این خرج رو چی حساب کنم؟' })).toHaveCount(0);
+});
+
 test('installs every bundle before the first offline reload', async ({ page, context }) => {
   await onboard(page);
   await activeWorker(page);

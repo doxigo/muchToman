@@ -878,6 +878,16 @@ private fun AppScreens(
             loanType = loanType,
             onLoanLink = vm::setLoanLink,
             onCreateLoanPerson = vm::addLoanPersonFrom,
+            onDelete = { entry ->
+                vm.deleteTxn(entry)
+                // The undo is a second net under the two-tap arming, not a replacement.
+                val deletedRef = entry.txn.ref
+                notices.show("تراکنش پاک شد", "برگردون") { vm.restoreTxn(deletedRef) }
+            },
+            onEdit = vm::editTxn,
+            onRevertEdits = vm::revertTxnEdits,
+            members = state.family.members,
+            onSplit = vm::splitTxn,
         )
         return@SaveableStateProvider
     }

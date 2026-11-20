@@ -843,9 +843,6 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
     () => (payable ? installmentPaidBy(txn.ref, readPlans(view.allEntries, view.entries).installments) : null),
     [payable, view, txn.ref, dataVersion()],
   );
-  const own = txn.ref.startsWith('m:') || txn.ref.startsWith('s:');
-  const canEdit = editable(entry);
-  const canSplit = splittable(entry);
   // Only where a tap does something not to be guessed: on a row filed once, the selected tile says it all.
   const caption = entry.transfer ? 'این مورد انتقال تشخیص داده شده. با انتخاب یک دسته می‌تونی اصلاحش کنی.'
     : entry.split?.length ? 'بین این دسته‌ها تقسیم شده. با زدن یک دسته، کلش همون دسته حساب می‌شه.'
@@ -902,22 +899,34 @@ function TransactionBody({ entry, view }: { entry: LedgerEntry; view: LedgerView
       {/* Whole and selectable here, where the message is the subject of the screen. */}
       <p class="panel source source-text" style={{ marginTop: 'var(--m)' }}>{sourceText(entry)}</p>
 
-      {/* The acts on the row itself, at its foot (TxnActs). Delete only on her own rows: another
-          member's (`f:`) is theirs to delete. A pasted message stays stored either way — deleting
-          hides what was made of it; it does not destroy evidence. */}
-      {(canEdit || canSplit || own) && (
-        <TxnActs entry={entry}
-          onEdit={canEdit ? () => openSheet('editTxn', { txnRef: txn.ref }) : undefined}
-          onSplit={canSplit ? () => openSheet('splitTxn', { txnRef: txn.ref }) : undefined}
-          onDelete={own ? () => {
-            const ref = txn.ref;
-            deleteTxn(entry);
-            closePage();
-            // The undo is a second net under the two-tap arming, not a replacement.
-            showNotice('تراکنش پاک شد', { label: 'برگردون', run: () => restoreTxn(ref) });
-          } : undefined} />
-      )}
+      <RowActs entry={entry} afterDelete={closePage} />
     </div>
+  );
+}
+
+/**
+ * The acts on the row itself, at its foot (TxnActs) — on its own page and on its card in the deck
+ * alike: a note opens the deck, so a row she only ever meets there must not be one she can neither
+ * split nor take back. Delete only on her own rows: another member's (`f:`) is theirs to delete. A
+ * pasted message stays stored either way — deleting hides what was made of it; it does not destroy
+ * evidence.
+ */
+function RowActs({ entry, afterDelete }: { entry: LedgerEntry; afterDelete?: () => void }) {
+  const ref = entry.txn.ref;
+  const own = ref.startsWith('m:') || ref.startsWith('s:');
+  const canEdit = editable(entry);
+  const canSplit = splittable(entry);
+  if (!canEdit && !canSplit && !own) return null;
+  return (
+    <TxnActs entry={entry}
+      onEdit={canEdit ? () => openSheet('editTxn', { txnRef: ref }) : undefined}
+      onSplit={canSplit ? () => openSheet('splitTxn', { txnRef: ref }) : undefined}
+      onDelete={own ? () => {
+        deleteTxn(entry);
+        afterDelete?.();
+        // The undo is a second net under the two-tap arming, not a replacement.
+        showNotice('تراکنش پاک شد', { label: 'برگردون', run: () => restoreTxn(ref) });
+      } : undefined} />
   );
 }
 
@@ -983,7 +992,10 @@ function DeckCard({ entry, view, left, onSkip, onAutoFile }: {
       <SectionHeading>جزئیات</SectionHeading>
       <div style={{ marginTop: 'var(--m)' }}><DetailsPanel details={transactionDetails(entry)} /></div>
       <SectionHeading>منبع</SectionHeading>
-      <div style={{ margin: 'var(--m) 0 var(--l)' }}><SourcePreview entry={entry} /></div>
+      <div style={{ marginTop: 'var(--m)' }}><SourcePreview entry={entry} /></div>
+      {/* Deleting needs no way out of here: the card leaves the deck with its row. */}
+      <RowActs entry={entry} />
+      <div style={{ height: 'var(--l)' }} />
 
       {/* The one answer that is always available does not scroll away. Beside it, while the
           backlog is real, the way out of the whole chore — behind a sheet that says what happens. */}

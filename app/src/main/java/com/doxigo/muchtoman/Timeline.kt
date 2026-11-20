@@ -2252,8 +2252,22 @@ fun ReviewDeck(
     loanType: (String) -> AssetType = { resolveType(it, emptyList()) },
     onLoanLink: ((LedgerEntry, String?) -> Unit)? = null,
     onCreateLoanPerson: ((LedgerEntry, String) -> Unit)? = null,
+    /**
+     * The acts at the foot of a transaction's page — see [TxnActs] — on the card as well. A note
+     * opens this deck, not the row's page, so a row she can only meet here must not be one she
+     * can neither split nor take back.
+     */
+    onDelete: ((LedgerEntry) -> Unit)? = null,
+    onEdit: ((LedgerEntry, Long?, Long?, String?, String?) -> Unit)? = null,
+    onRevertEdits: ((LedgerEntry) -> Unit)? = null,
+    members: List<FamilyMember> = emptyList(),
+    onSplit: ((LedgerEntry, List<Pair<String, Long>>) -> Unit)? = null,
 ) {
     var skipped by rememberSaveable { mutableStateOf(setOf<String>()) }
+    // The card being edited or split, held like [linking]: a split files the row, so the deck
+    // has moved on before its sheet has closed.
+    var editing by remember { mutableStateOf<LedgerEntry?>(null) }
+    var splitting by remember { mutableStateOf<LedgerEntry?>(null) }
     // The card she just filed as قرض, for the same reason [linking] outlives its card.
     var lending by remember { mutableStateOf<LedgerEntry?>(null) }
     // The card she just filed as a قسط, held here because the deck has already moved past it: the
@@ -2425,6 +2439,21 @@ fun ReviewDeck(
                 SectionHeading("منبع")
                 Spacer(Modifier.height(Space.m))
                 SourcePreview(entry, source)
+
+                // The same conditions as on the row's own page: delete only on this phone's rows.
+                val canEdit = onEdit != null && editable(entry)
+                val canSplit = onSplit != null && splittable(entry)
+                val canDelete = onDelete != null &&
+                    (entry.txn.ref.startsWith("m:") || entry.txn.ref.startsWith("s:"))
+                if (canEdit || canSplit || canDelete) {
+                    TxnActs(
+                        entry = entry,
+                        onEdit = { editing = entry }.takeIf { canEdit },
+                        onSplit = { splitting = entry }.takeIf { canSplit },
+                        onDelete = onDelete?.takeIf { canDelete }?.let { delete -> { delete(entry) } },
+                        modifier = Modifier.padding(top = Space.xxl),
+                    )
+                }
                 Spacer(Modifier.height(Space.l))
             }
 
@@ -2488,6 +2517,28 @@ fun ReviewDeck(
             onLink = { onInstallmentPayment(paid, it) },
             onCreate = { name, payment, count -> onCreateInstallment(paid, name, payment, count) },
             onDismiss = { linking = null },
+        )
+    }
+
+    val edited = editing
+    if (edited != null && onEdit != null) {
+        EditTxnSheet(
+            entry = edited,
+            members = members,
+            onSave = { rial, day, member, direction -> onEdit(edited, rial, day, member, direction) },
+            onRevert = onRevertEdits?.takeIf { edited.edited }?.let { revert -> { revert(edited) } },
+            onDismiss = { editing = null },
+        )
+    }
+
+    val parted = splitting
+    if (parted != null && onSplit != null) {
+        SplitSheet(
+            entry = parted,
+            categories = ledger.categories,
+            categoryUse = ledger.categoryUse,
+            onSave = { parts -> onSplit(parted, parts) },
+            onDismiss = { splitting = null },
         )
     }
 
