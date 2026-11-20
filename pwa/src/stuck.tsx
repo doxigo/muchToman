@@ -6,14 +6,20 @@
 import type { ComponentChildren } from 'preact';
 import { useErrorBoundary, useState } from 'preact/hooks';
 import { PillButton, TextField } from './ui';
-import { BACKUP_MIN_PASSPHRASE, exportBackup } from './backup';
+import { backupPassphraseProblem, exportBackup } from './backup';
 
 export function Stuck({ canBackUp }: { canBackUp: boolean }) {
   const [pass, setPass] = useState('');
   const [again, setAgain] = useState('');
   const [said, setSaid] = useState<'done' | 'failed' | null>(null);
-  const ready = pass.length >= BACKUP_MIN_PASSPHRASE && pass === again;
-  const backUp = () => { exportBackup(pass).then(() => setSaid('done'), () => setSaid('failed')); };
+  const [problem, setProblem] = useState<string | null>(null);
+  const backUp = () => {
+    // The export sheet's two checks, in its words: a reason on screen, not a button that stays grey.
+    const why = backupPassphraseProblem(pass) ?? (again !== pass ? 'دوتا رمز یکی نیستن.' : null);
+    setProblem(why);
+    setSaid(null);
+    if (!why) exportBackup(pass).then(() => setSaid('done'), () => setSaid('failed'));
+  };
   return (
     <div class="screen no-tabs">
       <h1 class="screen-title">برنامه باز نشد</h1>
@@ -22,9 +28,10 @@ export function Stuck({ canBackUp }: { canBackUp: boolean }) {
         <PillButton label="دوباره امتحان کن" voice="primary" block onClick={() => location.reload()} />
         {canBackUp && <>
           <p class="muted">اگه باز هم نشد، قبل از هر کار دیگه‌ای از دفترت پشتیبان بگیر.</p>
-          <TextField label="رمز فایل پشتیبان" type="password" value={pass} onInput={setPass} />
-          <TextField label="دوباره همون رمز" type="password" value={again} onInput={setAgain} />
-          <PillButton label="ساختن فایل پشتیبان" block disabled={!ready} onClick={backUp} />
+          <TextField label="رمز فایل پشتیبان" type="password" value={pass} onInput={(v) => { setPass(v); setProblem(null); }} />
+          <TextField label="دوباره همون رمز" type="password" value={again} onInput={(v) => { setAgain(v); setProblem(null); }} />
+          <PillButton label="ساختن فایل پشتیبان" block onClick={backUp} />
+          {problem && <p class="set-note error">{problem}</p>}
           {said === 'done' && <p class="set-note">پشتیبان ساخته شد. فایل و رمزش رو جای امن نگه دار.</p>}
           {said === 'failed' && <p class="set-note error">پشتیبان ساخته نشد. دوباره امتحان کن.</p>}
         </>}
