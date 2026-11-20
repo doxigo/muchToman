@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "sh ../tools/deploy-guard.sh sync pwa && pnpm --dir ../pwa install --frozen-lockfile && pnpm --dir ../pwa run build && wrangler deploy --message \"$(git rev-parse --short HEAD)\"",
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
