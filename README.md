@@ -255,7 +255,8 @@ nothing else goes with them.
 Family sync is optional and end-to-end encrypted. SMS sharing starts off. When a person enables
 it, their phone shares only the parsed amount, direction, time, bank, merchant, and category. It
 never uploads the raw SMS text. Manual family-ledger items are shared. The sync service can see
-opaque household/member ids, record types, timestamps, and ciphertext, but not the transaction
+opaque household/member ids, record ids (for a transaction read from an SMS, a hash of
+that message — never its text), record types, timestamps, and ciphertext, but not the transaction
 contents or member names. Turning SMS sharing off sends deletion markers for that person's
 previously shared SMS items. It cannot erase anything another member already saw or copied.
 

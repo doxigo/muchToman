@@ -49,7 +49,9 @@ change needs both the Gradle and the pwa blocks run.
 - **`derived.db` is the opposite by design**: bump `PARSER_VERSION` in `Derived.kt` to reparse;
   its version bump drops every table on purpose (~40 ms rebuild).
 - **Money is `Long` Rial end-to-end.** Toman is a display transform, never storage; displayed
-  figures truncate, never round.
+  figures truncate, never round. One exception, kept on purpose: a bank account's SMS-folded
+  balance is a `Double` in Toman in prefs (`BankAccount.balance`, `Sms.kt`) — hand-anchored
+  figures no rescan can rebuild, so it is pinned by tests rather than migrated.
 - **A new sync record `kind` ships server first** (`sync/`), then clients — an old server
   rejects an unknown kind with a 400 for the whole batch, stopping all sync from that phone.
 - **Teaching clients to read a new record shape bumps `SYNC_READ_VERSION`** (`Sync.kt` and

@@ -470,7 +470,7 @@ const EXEMPT_FILES: Record<string, string> = {
   'Notify.kt': 'notifications posted while the app is closed',
   'Daily.kt': 'background work while the app is closed',
   'Tse.kt': 'TSETMC prices: geo-blocked, no CORS',
-  'Diagnostics.kt': 'the crash sheet, not ported yet',
+  'Diagnostics.kt': 'the crash sheet: a browser error does not end the app, so there is nothing to report',
   'UpdateUi.kt': 'the APK update card; a PWA updates itself',
   // filing.ts says it in so many words: «The notification half of Filing.kt has no browser twin».
   // Every Persian string in Filing.kt is that half — the filing notification's title and body.

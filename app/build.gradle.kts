@@ -79,7 +79,7 @@ android {
         }
     }
 
-    // Release signing. Create keystore.properties yourself (see README) — it is gitignored
+    // Release signing. Create keystore.properties yourself (see DEVELOPMENT.md § Signing setup) — it is gitignored
     // and never read by anything but this block. Without it the release build is simply
     // left unsigned rather than silently falling back to the debug key.
     val keystoreProps = rootProject.file("keystore.properties").takeIf { it.exists() }?.let {

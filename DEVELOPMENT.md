@@ -62,7 +62,7 @@ wallet balance times out into "به‌روز نشد".
 Tests are plain JVM, no device needed:
 
 ```bash
-./gradlew test
+./gradlew testFullDebugUnitTest testLiteDebugUnitTest lint
 ```
 
 Use `-Pmuchtoman.syncUrl` to point family sync at a local Worker. The emulator reaches a local
@@ -114,6 +114,9 @@ pnpm install
 pnpm run check
 pnpm run deploy
 ```
+
+`pnpm run deploy` refuses uncommitted changes in `worker/` and records the commit as the
+version message (`tools/deploy-guard.sh`).
 
 It is served from `rates.muchtoman.com`, **not** the `muchtoman-rates.milaniz.workers.dev`
 address it also answers on. `workers.dev` is a common host for circumvention proxies, so Iran
@@ -403,8 +406,11 @@ punctuation is invisible in practice.
   real one. The spelled-out Persian words are never abbreviated at all.
 - Latin tickers are wrapped in Unicode bidi isolates, or "۴۰ SOL · نرخ ۱۴ میلیون" renders
   with the number and ticker swapped.
-- `FLAG_SECURE` is set while the app lock is on, so `adb screencap` returns black — that is
-  the flag working, not a bug.
+- With the app lock on, Android 13+ hides only the app-switcher thumbnail
+  (`setRecentsScreenshotEnabled(false)`): screenshots and screen recording still work, on
+  purpose, so a screenshot can be sent to whoever helps with the phone. Below Android 13
+  there is no narrow tool, so `FLAG_SECURE` is set and `adb screencap` returns black — that
+  is the flag working, not a bug.
 - The home-screen widget has three layouts, picked per placed widget from the host's own
   size in dp (`Face` in `Widget.kt`): stacked, then a second column for the freshness, then
   a month of chart. Thresholds are dp, not cells, because a cell is not a fixed size — the
@@ -705,9 +711,9 @@ one figure no rescan can rebuild.
 ### Tests
 
 ```bash
-./gradlew test                    # every JVM test, no device
-cd sync && pnpm run check         # real Durable Objects under workerd
-cd pwa  && pnpm run check         # incl. the shared-corpus agreement check
+./gradlew testFullDebugUnitTest testLiteDebugUnitTest   # every JVM test, both editions, no device
+cd pwa  && pnpm run check         # incl. the shared-corpus agreement check; builds pwa/dist
+cd sync && pnpm run check         # real Durable Objects under workerd; serves ../pwa/dist, so after pwa
 ```
 
 The golden corpus is `app/src/test/resources/sms/*.json` — real bank messages kept verbatim,
@@ -718,8 +724,7 @@ An absent key is not asserted; an unknown key fails the run, so a typo cannot qu
 ### Deploying
 
 ```bash
-cd pwa  && pnpm run build         # sync/ serves this as its assets
-cd sync && pnpm run deploy
+cd sync && pnpm run deploy        # builds ../pwa first; refuses uncommitted changes in sync/ or pwa/
 ```
 
 `sync.muchtoman.com`, custom domain only — `workers.dev` is DNS-sinkholed inside Iran, same as
