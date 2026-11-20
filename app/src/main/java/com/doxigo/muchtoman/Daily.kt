@@ -198,7 +198,10 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
         val announce = (budgets || reminders || store.smsEnabled || canReadNotifications(app)) &&
             canNotify(app)
         val session = loadSession(durable)
-        if (!announce && session == null) return Result.success()
+        if (!announce && session == null) {
+            ledgerLanded.tryEmit(Unit)
+            return Result.success()
+        }
 
         val derived = DerivedDb.get(app)
         val extra = extraLookup(store.extraBankNumbers)
@@ -228,6 +231,9 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                     announceQuiet(app, store, view.entries)
                 }
             }
+            // The screen she has open reads what this just stored; outside the gate, as the
+            // publish it asks for takes the same one.
+            ledgerLanded.tryEmit(Unit)
             Result.success()
         }.getOrElse {
             // Retry rather than success: a failed read here is an alert that did not happen, and
@@ -248,7 +254,10 @@ class LedgerWatchWorker(context: Context, params: WorkerParameters) :
                 val result = syncNow(durable, derived, session, assets = assets)
                 // Pulled rows sit in durable until a derive folds them in, and the foreground
                 // won't repeat it: this pull advanced the cursor, so its own sync receives nought.
-                if (result.received > 0 || needsDerive(derived, durable)) derive(durable, derived, extra)
+                if (result.received > 0 || needsDerive(derived, durable)) {
+                    derive(durable, derived, extra)
+                    ledgerLanded.tryEmit(Unit)
+                }
                 // Their transactions, a note each, once she asked for that. After the derive, so
                 // the rows the sync named are in the ledger to be read.
                 if (store.familyNotes && result.arrived.isNotEmpty()) {

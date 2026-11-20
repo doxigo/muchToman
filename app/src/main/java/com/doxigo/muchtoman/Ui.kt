@@ -112,6 +112,7 @@ import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -568,6 +569,13 @@ private fun AppScreens(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // Only while she can see it: a publish takes the filing note down, and behind a closed
+    // screen that would cancel the note the worker had just posted for her — see [ledgerLanded].
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            ledgerLanded.collect { vm.readWhatLanded() }
+        }
     }
 
     // The clock and the signal icons simply follow the theme now: the hero is a card floating

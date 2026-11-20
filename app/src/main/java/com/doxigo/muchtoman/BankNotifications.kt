@@ -82,7 +82,10 @@ class BankNotificationListener : NotificationListenerService() {
                     }
                 }
                 // The worker for what it says (budgets, «این چی بود؟») and the family sync.
-                if (added > 0) watchLedgerSoon(app)
+                if (added > 0) {
+                    ledgerLanded.tryEmit(Unit)
+                    watchLedgerSoon(app)
+                }
             }.onFailure { android.util.Log.w("muchtoman", "bank notification failed: $it") }
         }
     }

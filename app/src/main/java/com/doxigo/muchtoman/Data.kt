@@ -2,6 +2,7 @@ package com.doxigo.muchtoman
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -718,6 +719,17 @@ fun foldUnseen(
  * rather than locking again.
  */
 val ledgerGate = Mutex()
+
+/**
+ * Raised by the background paths — [LedgerWatchWorker], [BankNotificationListener] — when a
+ * bank message may have landed, and collected by the screen only while it is in front of her.
+ *
+ * No replay, on purpose. A publish takes the filing note down ([markFilingSeen]), which is
+ * right while she is looking and wrong while she is not: a tick kept for a later collector
+ * would cancel the very note the worker posted for her to find. Missed ticks cost nothing —
+ * coming back to the app reads everything again anyway.
+ */
+val ledgerLanded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
 private val JSON = Json { ignoreUnknownKeys = true }
 private const val MAX_RATES_RESPONSE_BYTES = 2 * 1024 * 1024

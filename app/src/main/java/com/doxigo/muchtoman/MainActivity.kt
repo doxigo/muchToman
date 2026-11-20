@@ -89,7 +89,7 @@ class MainActivity : FragmentActivity() {
         // rather than through onCreate. Missing this is the note that opens the app on whatever
         // tab she left it on, which reads as the notification having done nothing.
         appVm.openTab(intent.getStringExtra(EXTRA_OPEN_TAB))
-        appVm.openDeck(intent.getBooleanExtra(EXTRA_OPEN_DECK, false))
+        appVm.openDeck(intent.getBooleanExtra(EXTRA_OPEN_DECK, false), fresh = true)
         appVm.openAddTxn(intent.getBooleanExtra(EXTRA_ADD_TXN, false))
         readDemo(intent)
     }

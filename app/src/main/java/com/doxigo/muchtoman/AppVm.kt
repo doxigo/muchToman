@@ -241,6 +241,19 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * A bank message was stored while she has the app open: the two local reads a return to the
+     * foreground makes, without its network half — the worker runs the family sync itself.
+     */
+    fun readWhatLanded() {
+        scanSms()
+        viewModelScope.launch {
+            // runLedger declines while a pipeline is in flight, and that one may be past its read.
+            ledgerJob?.join()
+            runLedger()
+        }
+    }
+
+    /**
      * Called every time the app comes back to the foreground. The Worker's edge cache is
      * 10 minutes, so anything younger than that cannot change; anything older gets refetched
      * without her having to find the button.
@@ -2501,9 +2514,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
      * deck, and while nothing there can post the note, an intent can be sent to any exported
      * activity by anyone.
      */
-    fun openDeck(wanted: Boolean) {
+    fun openDeck(wanted: Boolean, fresh: Boolean = false) {
         if (!wanted || Tab.LEDGER !in tabs) return
-        _state.update { it.copy(openDeck = true) }
+        if (!fresh) {
+            _state.update { it.copy(openDeck = true) }
+            return
+        }
+        // A tapped note on a running app: the row it is about was stored after the last publish,
+        // and the deck is chosen from the ledger in state — so read first, then ask for it.
+        scanSms()
+        viewModelScope.launch {
+            ledgerJob?.join()
+            runLedger()
+            ledgerJob?.join()
+            _state.update { it.copy(openDeck = true) }
+        }
     }
 
     fun consumeOpenDeck() = _state.update { it.copy(openDeck = false) }
