@@ -31,11 +31,30 @@ function cases(): Case[] {
     .flatMap((f: string) => (JSON.parse(readFileSync(join(CORPUS, f), 'utf8')) as { cases: Case[] }).cases);
 }
 
+/** Every field this file asserts. `bank` is the one it cannot: a paste has no sender. */
+const ASSERTED = [
+  'amountRial', 'direction', 'balanceRial', 'printedAt', 'mask', 'instrument', 'merchant', 'refNo',
+  'channel', 'unitPrinted', 'account', 'feeRial', 'inferred',
+];
+
+/** SmsCorpusTest.kt's EXPECT_KEYS, read off its source: the fields a case may assert at all. */
+function androidKeys(): string[] {
+  const source = readFileSync(join(__dirname, '../../app/src/test/java/com/doxigo/muchtoman/SmsCorpusTest.kt'), 'utf8');
+  const m = /private val EXPECT_KEYS = setOf\(([\s\S]*?)\)/.exec(source);
+  if (!m) throw new Error('EXPECT_KEYS is not in SmsCorpusTest.kt any more — point this test at wherever it went');
+  return [...m[1].matchAll(/"(\w+)"/g)].map((k) => k[1]);
+}
+
 describe('quick paste', () => {
   it('reads the corpus at all', () => {
     // The corpus lives in the Android module. If the relative path ever breaks, this fails
     // loudly rather than passing zero cases in silence.
     expect(cases().length).toBeGreaterThanOrEqual(30);
+  });
+
+  it('asserts every field the android side does, bar the bank it cannot see', () => {
+    // A key added to EXPECT_KEYS and not handled below would be asserted on one side only.
+    expect([...ASSERTED, 'bank'].sort()).toEqual(androidKeys().sort());
   });
 
   it('agrees with the android parser on every field it can see', () => {
@@ -45,6 +64,9 @@ describe('quick paste', () => {
       if (c.expect === null) continue;
       const got = parsePasted(c.body.join('\n'));
       const where = `${c.id} — ${c.why}`;
+      // A typo asserts nothing: "balanceRail" must fail here as it does in SmsCorpusTest.
+      const unknown = Object.keys(c.expect).filter((k) => k !== 'bank' && !ASSERTED.includes(k));
+      expect(unknown, `${where} asserts nothing: unknown keys`).toEqual([]);
 
       if ('amountRial' in c.expect) {
         expect(got.amountRial, `${where} (amountRial)`).toBe(c.expect.amountRial ?? null);

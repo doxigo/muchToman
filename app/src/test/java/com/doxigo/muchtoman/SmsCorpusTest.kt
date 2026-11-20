@@ -63,6 +63,21 @@ class SmsCorpusTest {
         assertTrue("no case ids at all", ids.isNotEmpty())
     }
 
+    @Test
+    fun `a bank with a sender and no corpus case is on the list of those still waiting`() {
+        // A bank is read by the generic shapes until a message of its own is pinned here. That
+        // gap used to be invisible. Both directions fail on purpose: a new bank with a sender
+        // and no case must be added to the list knowingly, and a bank that gains its first case
+        // must come off it.
+        val pinned = corpusFiles().flatMap { load(it).cases }
+            .filter { it.expect != null }
+            .mapNotNull { bankOf(it.sender, extraLookup(it.extra)) }
+            .toSet()
+        assertTrue("the corpus resolved no senders at all", pinned.size >= 10)
+        val waiting = Bank.entries.filter { it.numbers.isNotEmpty() && it !in pinned }.map { it.name }.toSet()
+        assertEquals("banks with a sender and no real message in the corpus", UNPINNED_BANKS, waiting)
+    }
+
     private fun check(fileName: String, case: CorpusCase) {
         val where = "$fileName#${case.id}\n  ${case.why}\n "
         val read = parseBankSms(
@@ -141,6 +156,14 @@ class SmsCorpusTest {
 private val EXPECT_KEYS = setOf(
     "bank", "mask", "direction", "amountRial", "balanceRial", "inferred",
     "feeRial", "merchant", "refNo", "printedAt", "channel", "instrument", "unitPrinted", "account",
+)
+
+/**
+ * Banks the app reads by sender but has no verbatim message for. Not a to-do to clear by guessing:
+ * a case goes in only when a real message arrives, and the bank comes off this list with it.
+ */
+private val UNPINNED_BANKS = setOf(
+    "PARSIAN", "DEY", "TEJARAT", "SEPAH", "KESHAVARZI", "POST_BANK", "MASKAN", "MEHR_IRAN",
 )
 
 private val CORPUS_JSON = Json {

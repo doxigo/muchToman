@@ -1,11 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BACKUP_KDF_ITERATIONS, BACKUP_MIN_DIGIT_PASSPHRASE, BACKUP_MIN_PASSPHRASE } from '../src/backup';
 import { BUDGET_CLOSE_PERCENT, BUDGET_NEAR_PERCENT } from '../src/budget';
 import { BANK_TYPE, KINDS, KIND_FA, STATIC_CATALOG, TOMAN_ID } from '../src/catalog';
 import { CATEGORY_GLYPHS, categoryGlyph } from '../src/categoryIcon';
 import { MONTHS, WEEKDAYS } from '../src/format';
-import { INSTALLMENT_REMINDER_DAYS, INSTALLMENT_REMINDER_DEFAULT, remindAwake } from '../src/installments';
+import { WORTH_IT_PER_WEEK } from '../src/goals';
+import { INSTALLMENT_REMINDER_DAYS, INSTALLMENT_REMINDER_DEFAULT, MAX_INSTALLMENTS, remindAwake } from '../src/installments';
 import { DAY_MS, TEHRAN_OFFSET_MS } from '../src/jalali';
 import {
   DUPLICATE_BALANCE_WINDOW_MS, DUPLICATE_REFNO_WINDOW_MS, DUPLICATE_WINDOW_MS, SLOW_RAIL_WINDOW_MS, TRANSFER_FEE_MAX_RIAL,
@@ -14,6 +16,8 @@ import {
 import { TEXT_SIZES } from '../src/model';
 import { QUIET_AFTER_DAYS } from '../src/quips';
 import { BUILTIN_CATEGORIES, BUILTIN_RULES, PASS_THROUGH_CATEGORIES } from '../src/rules';
+import { AT_FUTURE_SLACK_MS, MAX_PLAUSIBLE_RIAL } from '../src/sms';
+import { MAX_SYNC_STAMP_SKEW_MS, SYNC_READ_VERSION } from '../src/sync';
 
 /**
  * The app and the PWA held to each other, table for table and string for string.
@@ -428,6 +432,11 @@ describe('the constants both sides decide by', () => {
       TRANSFER_FEE_MAX_RIAL, TRANSFER_WINDOW_MS, SLOW_RAIL_WINDOW_MS,
       DUPLICATE_WINDOW_MS, DUPLICATE_REFNO_WINDOW_MS, DUPLICATE_BALANCE_WINDOW_MS,
       INSTALLMENT_REMINDER_DEFAULT, TEHRAN_OFFSET_MS, DAY_MS,
+      // What each side can read off the wire. Sync.kt says "kept equal" in a comment; an older
+      // client that reads less drops what it cannot open and moves its cursor past it.
+      SYNC_READ_VERSION, MAX_SYNC_STAMP_SKEW_MS,
+      MAX_PLAUSIBLE_RIAL, AT_FUTURE_SLACK_MS, MAX_INSTALLMENTS, WORTH_IT_PER_WEEK,
+      BACKUP_MIN_PASSPHRASE, BACKUP_MIN_DIGIT_PASSPHRASE, BACKUP_KDF_ITERATIONS,
     };
     for (const [name, value] of Object.entries(pwa)) expect(value, name).toBe(ktConst(name));
     expect(INSTALLMENT_REMINDER_DAYS).toEqual(ktList('Installments.kt', 'val INSTALLMENT_REMINDER_DAYS'));
@@ -440,6 +449,9 @@ describe('the constants both sides decide by', () => {
       return m[1].trim();
     };
     expect(Number(tsConst('quips.ts', 'QUIET_GIVE_UP_DAYS')), 'QUIET_GIVE_UP_DAYS').toBe(ktConst('QUIET_GIVE_UP_DAYS'));
+    // The same threshold in each side's own unit: Toman on the phone's fold, Rial here.
+    expect(Number(tsConst('derived.ts', 'SPOOF_FLOOR_RIAL').replace(/_/g, '')), 'SPOOF_FLOOR_RIAL')
+      .toBe((ktConst('SPOOF_FLOOR_TOMAN') as number) * 10);
     const rails = (s: string) => [...s.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]).sort();
     const android = /\bval SLOW_RAILS\s*=\s*setOf\(([^)]*)\)/.exec(kt('Links.kt'));
     expect(android, 'val SLOW_RAILS is not in Links.kt any more').not.toBeNull();
@@ -453,6 +465,46 @@ describe('the constants both sides decide by', () => {
     const [from, to] = [Number(m![1]), Number(m![2])];
     const day = 20_000 * DAY_MS - TEHRAN_OFFSET_MS;
     for (let h = 0; h < 24; h++) expect(remindAwake(day + h * 3_600_000 + 1), `${h}:00`).toBe(h >= from && h <= to);
+  });
+});
+
+// ─────────────────────────── sync record kinds ───────────────────────────
+
+/**
+ * A kind the server does not list is a 400 for the whole batch, and all sync stops from that
+ * phone — AGENTS.md's "a new sync record kind ships server first". Held here so a kind added to
+ * a client and not to sync/ is a red test rather than a rule somebody remembered.
+ */
+describe('sync record kinds', () => {
+  const server = readFileSync(join(__dirname, '../../sync/src/index.ts'), 'utf8');
+  const quoted = (s: string): string[] => [...s.matchAll(/['"](\w+)['"]/g)].map((m) => m[1]).sort();
+  const listed = /\[([^\]]+)\]\.includes\(kind\)/.exec(server);
+  const typed = /\bkind:\s*((?:'\w+'\s*\|\s*)+'\w+');/.exec(server);
+
+  it('are spelled the same in both places the server lists them', () => {
+    expect(listed, 'the accepted-kinds list is not in sync/src/index.ts any more').not.toBeNull();
+    expect(typed, "PushRecord's kind union is not in sync/src/index.ts any more").not.toBeNull();
+    expect(quoted(listed![1]).length).toBeGreaterThanOrEqual(8);
+    expect(quoted(typed![1])).toEqual(quoted(listed![1]));
+  });
+
+  it('every kind either client sends is one the server accepts', () => {
+    const accepted = quoted(listed![1]);
+    // Sync.kt: the kind is wireRecord's third argument, a literal at every call.
+    const code = kt('Sync.kt');
+    const android = [...code.matchAll(/\bwireRecord\(\s*[^,]+,\s*[^,]+,\s*"(\w+)"/g)].map((m) => m[1]);
+    const calls = (code.match(/\bwireRecord\(/g) ?? []).length - (code.match(/\bfun wireRecord\(/g) ?? []).length;
+    expect(android.length, 'a wireRecord call in Sync.kt no longer names its kind as a literal').toBe(calls);
+    // sync.ts: every outgoing record is written `kind: '…', owner`, bar two calls with a literal.
+    const ts = tsSource('sync.ts');
+    const pwa = [
+      ...[...ts.matchAll(/\bkind: '(\w+)', owner\b/g)].map((m) => m[1]),
+      ...[...ts.matchAll(/\bwireRecord\(\s*[^,]+,\s*[^,]+,\s*'(\w+)'/g)].map((m) => m[1]),
+    ];
+    expect(new Set(android).size, 'too few kinds read out of Sync.kt').toBeGreaterThanOrEqual(7);
+    expect(new Set(pwa).size, 'too few kinds read out of sync.ts').toBeGreaterThanOrEqual(7);
+    for (const kind of new Set([...android, ...pwa])) expect(accepted, `«${kind}» is sent but sync/ refuses it`).toContain(kind);
+    expect([...new Set(pwa)].sort(), 'the app and the PWA send different kinds').toEqual([...new Set(android)].sort());
   });
 });
 
