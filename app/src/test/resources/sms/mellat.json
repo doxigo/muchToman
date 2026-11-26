@@ -44,7 +44,7 @@
         "",
         "05/04/27"
       ],
-      "why": "ملت also sends from 6104, the four digits its cards start with, and heads that shape with the bare word «ملت» rather than «Bank Mellat». Blank lines between every field, and the date on its own line is the only slashed run — it is a printed date, not the reference number SLASHED_REF looks for.",
+      "why": "ملت also sends from 6104, the four digits its cards start with, and heads that shape with the bare word «ملت» rather than «Bank Mellat». Blank lines between every field, and the date on its own line is the only slashed run — it is a printed date, and a slashed run is never read as a reference number.",
       "expect": {
         "bank": "MELLAT",
         "direction": "in",

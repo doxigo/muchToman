@@ -105,7 +105,10 @@ import kotlinx.coroutines.sync.withLock
 // 24: a purchase is no longer filed under «خرید روزانه», nor money in under «درآمد» — both were
 // guesses, and a خاورمیانه «خرید با کارت» showed the guess as if the message had said it. The rules
 // retired in [BUILTIN_RULES]; only classifying again takes them off the rows already stored.
-const val PARSER_VERSION = 24
+// 25: خاورمیانه's unlabelled "020/000016703" is its account number, not a reference. Read as one,
+// every row on the account shared it, and two payments of the same size inside a week were
+// settled as a duplicate — the later one hidden from every total.
+const val PARSER_VERSION = 25
 
 private const val META_PARSER_VER = "parser_ver"
 private const val META_DERIVED_AT = "derived_at"

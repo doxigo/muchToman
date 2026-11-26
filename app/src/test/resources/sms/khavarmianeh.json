@@ -14,7 +14,7 @@
         "05/03",
         "15:39"
       ],
-      "why": "Real message. No مبلغ label, the amount is a bare -5,025,000 on its own line, and a reference number sits between it and the مانده. Reading the minus sign as an identifier dash skipped the amount and took «020» out of the reference instead — harmless here because the مانده wins, and a silent nonsense in any message without one.",
+      "why": "Real message. No مبلغ label, the amount is a bare -5,025,000 on its own line, and the account number sits between it and the مانده. Reading the minus sign as an identifier dash skipped the amount and took «020» out of that number instead — harmless here because the مانده wins, and a silent nonsense in any message without one. The slashed line is the account, the same on every message: read as a reference it settled two equal payments in one week as a duplicate and hid the later one, so refNo stays empty.",
       "expect": {
         "bank": "KHAVARMIANEH",
         "direction": "out",
@@ -24,7 +24,7 @@
         "mask": "",
         "instrument": "unknown",
         "merchant": "",
-        "refNo": "020/000016703",
+        "refNo": "",
         "printedAt": "05/03 15:39",
         "channel": "atm",
         "unitPrinted": "none",

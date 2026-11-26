@@ -967,8 +967,8 @@ class MoneyTest {
     @Test
     fun `khavarmianeh writes its withdrawals as a bare minus figure`() {
         // Real message. There is no مبلغ label, the amount is a bare "-5,025,000" on its own
-        // line, and a reference number sits between it and the مانده. Reading the minus sign as
-        // an identifier dash skipped the amount and took "020" out of the reference instead —
+        // line, and the account number sits between it and the مانده. Reading the minus sign as
+        // an identifier dash skipped the amount and took "020" out of that number instead —
         // harmless here because the مانده wins, and a silent nonsense in any message without one.
         val body = """
             بانک خاورمیانه
@@ -984,6 +984,9 @@ class MoneyTest {
         assertEquals(33_818_503.8, m.balance!!, 0.01)   // 338,185,038 ریال
         assertEquals(-502_500.0, m.delta!!, 0.01)       // 5,025,000 ریال, out
         assertTrue(!m.inferred)
+        // The slashed line is the account, on every message alike — never a reference, or two
+        // equal payments in one week settle as a duplicate and one is hidden.
+        assertEquals("", m.refNo)
         // The balance is what is stored, and it is the figure her bank app shows.
         val accounts = applyBankSms(emptyList(), m)
         assertEquals(33_818_503.8, bankTotal(accounts, emptySet()), 0.01)
@@ -1037,10 +1040,9 @@ class MoneyTest {
         assertEquals("12****34", m.mask)
     }
 
-    // The dashed-account search and the slashed-reference fallback rescanned a run of digits the
-    // same way. No mask and no پیگیری here, so both run.
+    // The dashed-account search rescanned a run of digits. No mask here, so it runs.
     @Test(timeout = 2_000)
-    fun `a long run of digits stalls neither the dashed account nor the slashed reference`() {
+    fun `a long run of digits does not stall the dashed account search`() {
         val body = "برداشت مبلغ 500,000 ریال\n" + "1".repeat(39_000)
         val m = parseBankSms("Bank Mellat", body, 1L)!!
         assertEquals("", m.mask)

@@ -561,7 +561,7 @@ private fun isDigit(c: Char?) =
  * or a leading zero, which no amount is printed with and an account number often is. A dash
  * after a space or a line break is not that: it is a minus sign, and خاورمیانه writes its
  * withdrawals exactly so, as a bare "-5,025,000" on its own line. Treating that as an identifier
- * skipped the real amount and read the reference number underneath it instead. Nor is a colon
+ * skipped the real amount and read the account number underneath it instead. Nor is a colon
  * after a label: «مانده:2,271,325,358» is the balance.
  */
 private fun isIdentifierPart(text: String, at: IntRange): Boolean {
@@ -908,9 +908,6 @@ private val FEE_WORDS = listOf("کارمزد", "هزینه")
 
 private val REF_WORDS = listOf("پیگیری", "رهگیری", "مرجع", "شماره سند", "شناسه پرداخت")
 
-/** خاورمیانه prints its reference as "020/000016703" with no label at all. Tried only where a run of digits starts, like [MASKED]. */
-private val SLASHED_REF = Regex("(?<![0-9۰-۹٠-٩])[0-9۰-۹٠-٩]{2,}/[0-9۰-۹٠-٩]{4,}")
-
 // «مرکز» is deliberately not here: the only «مرکز» in the whole corpus is اقتصاد نوین signing
 // its own call centre — «مرکزآواي نوين:02162740» — on every message it sends, and reading that
 // as a merchant titled every one of the bank's transactions «آوای نوین» instead of the bank.
@@ -1042,7 +1039,10 @@ private fun refIn(text: String): String {
             .firstOrNull { it.range.first - start <= 24 && digitsIn(it.value) >= 6 }
         if (m != null) return m.value
     }
-    return SLASHED_REF.find(text)?.value.orEmpty()
+    // Nothing unlabelled is a reference. خاورمیانه's bare "020/000016703" was read as one, and it
+    // is the account number: every message on the account carries it, so two real payments of the
+    // same size inside a week matched on it and the later one was hidden as a copy.
+    return ""
 }
 
 /**

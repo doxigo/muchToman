@@ -511,8 +511,6 @@ export const writeBundle = (records: Bundled[]): string => records
 
 const FEE_WORDS = ['کارمزد', 'هزینه'];
 const REF_WORDS = ['پیگیری', 'رهگیری', 'مرجع', 'شماره سند', 'شناسه پرداخت'];
-/** خاورمیانه prints its reference as "020/000016703" with no label at all. Tried only where a run of digits starts. */
-const SLASHED_REF = /(?:^|[^0-9۰-۹٠-٩])([0-9۰-۹٠-٩]{2,}\/[0-9۰-۹٠-٩]{4,})/;
 // «مرکز» is deliberately not here: its only use was اقتصاد نوین signing its own call centre.
 const MERCHANT_WORDS = ['فروشگاه', 'پذیرنده', 'به نام', 'بنام'];
 const WHITESPACE = /[\s\p{Z}]+/gu;
@@ -635,7 +633,9 @@ function refIn(text: string): string {
       if (digitsIn(m[0]) >= 6) return m[0];
     }
   }
-  return SLASHED_REF.exec(text)?.[1] ?? '';
+  // Nothing unlabelled is a reference: خاورمیانه's bare "020/000016703" is the account number,
+  // the same on every message, and read as one it hid real payments as copies of each other.
+  return '';
 }
 
 /** The shop or terminal, cut at a colon, a line break or a digit run (a phone number, a terminal code). */

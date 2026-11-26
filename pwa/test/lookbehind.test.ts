@@ -24,7 +24,7 @@ describe('what the oldest iPhone can read', () => {
   });
 
   it('reads a long run of digits in linear time', () => {
-    // No mask and no «پیگیری»: the dashed-account and slashed-reference searches both run.
+    // No mask, so the dashed-account search runs.
     const body = `برداشت مبلغ 500,000 ریال\n${'1'.repeat(39_000)}`;
     const started = performance.now();
     const got = parsePasted(body);
