@@ -33,6 +33,8 @@ import {
   type Drop,
   etagMatches,
   formatDrops,
+  MOFID_FUNDS,
+  mofidFundNavs,
   PARSIAN_SOOT,
   reservedTomanIds,
   staleNote,
@@ -454,6 +456,24 @@ async function fetchParsian(): Promise<Record<string, number>> {
   const perSoot = deriveParsianPerSoot(prices);
   if (perSoot != null) prices.parsian = perSoot;
   return prices;
+}
+
+/**
+ * Mofid's issue-and-redeem funds, off the manager's own site (see [mofidFundNavs]). One page
+ * answers for all seven, and it stands alone like silver: down, the phone names those funds
+ * as «نرخ ندارد» and everything else is untouched.
+ */
+async function fetchMofidFunds(): Promise<Record<string, number>> {
+  const res = await fetchWithTimeout('https://www.emofid.com/funds/atieh/', {
+    headers: { 'user-agent': UA },
+  });
+  if (!res.ok) {
+    await cancelBody(res.body);
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const navs = mofidFundNavs(await readTextLimited(res.body, res.headers, MAX_HTML_BYTES));
+  if (Object.keys(navs).length === 0) throw new Error('no fund matched on emofid.com');
+  return navs;
 }
 
 async function fetchFiat() {
@@ -1384,7 +1404,7 @@ function mutableDownload(response: Response, etag: string): Response {
 
 async function buildRates(): Promise<BuiltRates> {
   const geckoRun = fetchCoinGecko();
-  const [fiat, cryptoToman, gecko, release, silver, parsian, usdFallback] = await Promise.allSettled([
+  const [fiat, cryptoToman, gecko, release, silver, parsian, funds, usdFallback] = await Promise.allSettled([
     fetchFiat(),
     firstOf(
       [
@@ -1398,6 +1418,7 @@ async function buildRates(): Promise<BuiltRates> {
     fetchLatestRelease(),
     fetchSilver(),
     fetchParsian(),
+    fetchMofidFunds(),
     // The moment the catalogue fails, not once everything else has settled: waiting on the
     // slowest chain first put a whole third source on the build's critical path.
     geckoRun.then(
@@ -1440,7 +1461,7 @@ async function buildRates(): Promise<BuiltRates> {
     if (stale != null) sources.fiat_gold_coins += ` (${stale})`;
   }
 
-  // Both are tgju-only and stand alone: either one going down takes nothing else with it, and
+  // Each has one source and stands alone: any of them going down takes nothing else with it, and
   // the phone shows those assets as "نرخ ندارد" rather than folding a guess into the total.
   // The count is reported against what was asked for, because these degrade a row at a time —
   // a page that answers with two of fifteen coins is not the same event as one that 404s, and
@@ -1450,10 +1471,11 @@ async function buildRates(): Promise<BuiltRates> {
     r: PromiseSettledResult<Record<string, number>>,
     want: number,
     what: string,
+    via = 'tgju',
   ) => {
     if (r.status === 'fulfilled') {
       Object.assign(toman, r.value);
-      sources[key] = `ok via tgju, ${Object.keys(r.value).length}/${want} ${what}`;
+      sources[key] = `ok via ${via}, ${Object.keys(r.value).length}/${want} ${what}`;
     } else {
       sources[key] = `failed: ${errorMessage(r.reason)}`;
     }
@@ -1461,6 +1483,7 @@ async function buildRates(): Promise<BuiltRates> {
   alone('silver', silver, 2, 'grades');
   // +1 for the derived per-سوت row the app's single سکه پارسیان multiplies by.
   alone('parsian_coins', parsian, PARSIAN_SOOT.length + 1, 'rows');
+  alone('mofid_funds', funds, Object.keys(MOFID_FUNDS).length, 'funds', 'emofid');
 
   let tomanNative = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.prices : {};
   const namesFa = cryptoToman.status === 'fulfilled' ? cryptoToman.value.value.namesFa : {};

@@ -339,7 +339,7 @@ function AssetReportContent() {
  */
 export const BAR_TINT: Record<Kind, string> = {
   CASH: '#2F7D3F', FIAT: '#79B989', CRYPTO: '#A3BBA6', GOLD: '#F7C948',
-  SILVER: '#AEB6BD', COIN: '#C99B2C', STOCK: '#4C8A5E', PROPERTY: '#8C7B6B',
+  SILVER: '#AEB6BD', COIN: '#C99B2C', STOCK: '#4C8A5E', FUND: '#5E9C8F', PROPERTY: '#8C7B6B',
 };
 
 /** What the total is made of, right now, in the home list's own sections. */

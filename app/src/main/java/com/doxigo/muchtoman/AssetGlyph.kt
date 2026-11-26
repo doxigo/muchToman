@@ -52,7 +52,7 @@ fun assetGlyph(type: AssetType): AssetGlyph? = when {
     type.kind == Kind.GOLD -> AssetGlyph.INGOT
     type.kind == Kind.SILVER -> AssetGlyph.SLABS
     type.kind == Kind.COIN -> AssetGlyph.COIN
-    type.kind == Kind.STOCK -> AssetGlyph.CHART
+    type.kind == Kind.STOCK || type.kind == Kind.FUND -> AssetGlyph.CHART
     else -> null
 }
 

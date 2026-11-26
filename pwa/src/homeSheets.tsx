@@ -101,6 +101,7 @@ const TINT: Record<Kind, [bg: string, ink: string]> = {
   COIN: ['var(--secondary-container)', 'var(--on-secondary-container)'],
   CRYPTO: ['var(--surface-variant)', 'var(--on-surface-variant)'],
   STOCK: ['var(--surface-variant)', 'var(--on-surface-variant)'],
+  FUND: ['var(--surface-variant)', 'var(--on-surface-variant)'],
 };
 
 /**

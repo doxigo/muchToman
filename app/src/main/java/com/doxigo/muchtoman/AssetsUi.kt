@@ -122,7 +122,7 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
         Kind.CASH -> scheme.primaryContainer
         Kind.FIAT -> scheme.tertiaryContainer
         Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.secondaryContainer
-        Kind.CRYPTO, Kind.STOCK -> scheme.surfaceVariant
+        Kind.CRYPTO, Kind.STOCK, Kind.FUND -> scheme.surfaceVariant
         Kind.PROPERTY -> scheme.tertiaryContainer
     }
     // The disc's own «on» role, so the mark keeps contrast in both themes without a rule of
@@ -131,7 +131,7 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
         Kind.CASH -> scheme.onPrimaryContainer
         Kind.FIAT, Kind.PROPERTY -> scheme.onTertiaryContainer
         Kind.GOLD, Kind.SILVER, Kind.COIN -> scheme.onSecondaryContainer
-        Kind.CRYPTO, Kind.STOCK -> scheme.onSurfaceVariant
+        Kind.CRYPTO, Kind.STOCK, Kind.FUND -> scheme.onSurfaceVariant
     }
     val glyph = assetGlyph(type)
     Box(contentAlignment = Alignment.Center) {

@@ -34,7 +34,7 @@ export function assetGlyph(type: AssetType): AssetGlyphId | null {
     case 'GOLD': return 'INGOT';
     case 'SILVER': return 'SLABS';
     case 'COIN': return 'COIN';
-    case 'STOCK': return 'CHART';
+    case 'STOCK': case 'FUND': return 'CHART';
     default: return null;
   }
 }

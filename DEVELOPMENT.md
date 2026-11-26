@@ -218,6 +218,10 @@ which link actually answered.
   that chain stops at the first source that answers and bonbast — which answers nearly always
   — quotes neither. tgju's widget API is not used for them: it carries neither, and it returns
   HTTP 200 with an empty body once it decides you have asked too often.
+- **Mofid's issue-and-redeem funds:** `emofid.com/funds/atieh/`, whose inline data carries every
+  Mofid fund; `mofidFundNavs` takes each one's `cancelNav` (Rial, the redemption price). No
+  second source. The seven ids (`MOFID_FUNDS` in `checks.ts`) are also static rows in
+  `Catalog.kt` and `pwa/src/catalog.ts`, so a new fund is added in all three.
 - **Crypto:** bitpin, with nobitex then tetherland as its Toman fallbacks; CoinGecko, with KuCoin
   then OKX as its USD fallbacks. Each fallback starts alongside the source ahead of it, so it
   costs no time when that one fails. The Iranian sources carry the Tehran premium. USD prices

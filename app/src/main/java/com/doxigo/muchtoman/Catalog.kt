@@ -8,6 +8,7 @@ enum class Kind(val fa: String) {
     SILVER("نقره"),
     COIN("سکه"),
     STOCK("بورس"),
+    FUND("صندوق"),
     PROPERTY("املاک و خودرو"),
 }
 
@@ -99,6 +100,19 @@ val STATIC_CATALOG: List<AssetType> = listOf(
     // the market quotes as a reference; a shelf of ۱۰۰ سوت pieces is worth somewhat more than
     // this says, and the manual rate override is the way to say so.
     AssetType("parsian", "سکه پارسیان", Kind.COIN, "سوت", en = "Parsian Gold Coin"),
+
+    // Funds whose units are issued and redeemed by the manager rather than traded: on no market
+    // watch, so TSETMC never prices them and they cannot arrive as a نماد. The Worker reads each
+    // one's redemption price off the manager's own site (`MOFID_FUNDS`, worker/src/checks.ts), and
+    // the id is the contract with it. Mofid's ETFs are not here; those are نمادها under بورس.
+    // «توان» is its ordinary units; the leveraged ones trade.
+    AssetType("fund_mofid_atieh", "صندوق آتیه مفید", Kind.FUND, "واحد", en = "Atieh Mofid Fund"),
+    AssetType("fund_mofid_pishtaz", "صندوق پیشتاز مفید", Kind.FUND, "واحد", en = "Pishtaz Mofid Fund"),
+    AssetType("fund_mofid_pishro", "صندوق پیشرو مفید", Kind.FUND, "واحد", en = "Pishro Mofid Fund"),
+    AssetType("fund_mofid_momtaz", "صندوق ممتاز مفید", Kind.FUND, "واحد", en = "Momtaz Mofid Fund"),
+    AssetType("fund_mofid_tavan", "صندوق توان مفید", Kind.FUND, "واحد", en = "Tavan Mofid Fund"),
+    AssetType("fund_mofid_tazmin", "صندوق تضمین مفید", Kind.FUND, "واحد", en = "Tazmin Mofid Fund"),
+    AssetType("fund_mofid_omid", "صندوق امید مفید", Kind.FUND, "واحد", en = "Omid Mofid Fund"),
 
     // Nobody quotes *her* car or *her* land, so these are the assets with no rate to fetch: the
     // figure she types is the value in Toman, and the unit says so. Counted in تومان rather than

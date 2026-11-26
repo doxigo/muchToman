@@ -18,7 +18,8 @@ say them ("4.7 billion Toman", not "4,666,251,136"). Legibility beats density ev
 Holds plain Toman, fiat (USD, EUR, GBP, NOK, TRY, AED, CAD), **any of the top 250
 cryptocurrencies**, 18k gold by the gram or the mesghal, silver by the gram at 999 and 925,
 Iranian coins (Emami, Bahar Azadi, Nim, Rob, Gerami), Parsian coins by the sut, and shares, ETFs,
-gold funds and bonds on the Tehran bourse and Farabourse. Everything is valued at **free-market**
+gold funds and bonds on the Tehran bourse and Farabourse, plus Mofid's issue-and-redeem funds
+(Atieh, Pishtaz, Pishro, Momtaz, Tavan, Tazmin, Omid) at their redemption price. Everything is valued at **free-market**
 rates — the official ~42,000 IRR peg is not used anywhere.
 
 Cars, houses and villas, and land are held too, and are the only rows with no price behind them:

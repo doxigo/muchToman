@@ -372,7 +372,53 @@ export function reservedTomanIds(fiatGoldCoinIds: Iterable<string>): Set<string>
   const ids = new Set(['toman', 'silver_999', 'silver_925', 'parsian']);
   for (const id of fiatGoldCoinIds) ids.add(id);
   for (const soot of PARSIAN_SOOT) ids.add(`parsian_${soot}`);
+  for (const id of Object.values(MOFID_FUNDS)) ids.add(id);
   return ids;
+}
+
+// ───────────────────────── صندوق‌های صدور و ابطالی ─────────────────────────
+
+/**
+ * Mofid's funds that are issued and redeemed rather than traded, by the slug its own site
+ * knows each by. They are on no market watch, so TSETMC cannot price them and the manager's
+ * page is the only quote there is. Its ETFs (اطلس، عیار، آوند …) are on the same page and
+ * deliberately not here: the phone already prices those off the bourse, where they trade.
+ *
+ * A fixed list, mirrored in both clients' catalogues: a fund the page adds is not offered
+ * until it is named here and there.
+ */
+export const MOFID_FUNDS: Record<string, string> = {
+  atieh: 'fund_mofid_atieh',
+  pishtaz: 'fund_mofid_pishtaz',
+  pishro: 'fund_mofid_pishro',
+  momtaz: 'fund_mofid_momtaz',
+  tavan: 'fund_mofid_tavan',
+  tazmin: 'fund_mofid_tazmin',
+  omid: 'fund_mofid_omid',
+};
+
+/**
+ * Toman per unit for each fund in [MOFID_FUNDS], out of any one emofid.com fund page: every
+ * such page carries all of them in its inline data, the page's own fund and then the rest.
+ *
+ * The figure is `cancelNav`, the price a unit is redeemed at, because that is what holding one
+ * is worth; `subscriptionNav` is what buying one costs and sits a little above it. Each fund is
+ * read only up to where the next one starts, so a fund that ships without a price is left out
+ * rather than given its neighbour's. 2026-11-26: آتیه redeems at 54,768 Rial.
+ *
+ * ponytail: no plausibility band, there is no neighbour to check a fund against; add one per
+ * fund if the page ever changes unit.
+ */
+export function mofidFundNavs(html: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  // The data sits inside a script string, so every quote arrives escaped.
+  const funds = html.replaceAll('\\"', '"').split('"enTitle":"').slice(1);
+  for (const fund of funds) {
+    const id = MOFID_FUNDS[fund.slice(0, fund.indexOf('"'))];
+    const rial = Number(fund.match(/"cancelNav":(\d+(?:\.\d+)?)/)?.[1]);
+    if (id != null && rial > 0) out[id] = rial / 10; // Rial -> Toman
+  }
+  return out;
 }
 
 // ───────────────────────── source timestamps ─────────────────────────

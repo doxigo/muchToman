@@ -437,6 +437,7 @@ internal fun barTint(kind: Kind): Color = when (kind) {
     Kind.SILVER -> Color(0xFFAEB6BD)
     Kind.COIN -> Color(0xFFC99B2C)
     Kind.STOCK -> Color(0xFF4C8A5E)
+    Kind.FUND -> Color(0xFF5E9C8F)
     Kind.PROPERTY -> Color(0xFF8C7B6B)
 }
 

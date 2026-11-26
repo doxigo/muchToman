@@ -81,6 +81,27 @@ const parsianPage = (sizes: readonly number[]) =>
 
 const PARSIAN_URL = `https://www.tgju.org/${encodeURIComponent('قیمت-سکه-پارسیان')}`;
 
+const MOFID_URL = 'https://www.emofid.com/funds/atieh/';
+// The page as it ships: the funds sit in a script string, every quote escaped, the page's own
+// fund first, then the rest, then that fund's NAV history. Figures are Rial, read 2026-11-26.
+const mofidFund = (slug: string, type: string, cancelNav: number | null) =>
+  `{"code":"12217","enTitle":"${slug}","title":"x","type":"${type}","icon":"/${slug}.svg"` +
+  (cancelNav == null ? '' : `,"cancelNav":${cancelNav},"subscriptionNav":${cancelNav + 400}`) +
+  ',"aum":1}';
+const mofidPage = (funds: string[]) =>
+  '<html><script>self.__next_f.push([1,"' +
+  (`7:{"fund":${funds[0]},"list":[${funds.slice(1).join(',')}],` +
+    '"history":[{"localDate":"1405/9/3","cancelNav":55185,"subscriptionNav":54768}]}')
+    .replaceAll('"', '\\"') +
+  '"])</script></html>';
+const MOFID_FUNDS_PAGE = [
+  mofidFund('atieh', 'صدور ابطالی', 54_768),
+  mofidFund('pishtaz', 'صدور ابطالی', 246_760),
+  mofidFund('tavan', 'صدور ابطالی', 30_469),
+  mofidFund('tavan-leveraged', 'قابل معامله', 98_024),
+  mofidFund('ayar', 'قابل معامله', 695_113),
+];
+
 type Routes = Record<string, () => Response | Promise<Response>>;
 
 // Keys are the fetched URL with its query string stripped; every URL the Worker can reach
@@ -94,6 +115,7 @@ const defaultRoutes = (): Routes => ({
   'https://api.tgju.org/v1/widget/tmp': () => Response.json(tgjuWidgetJson()),
   'https://www.tgju.org/gold-chart': () => new Response(silverPage()),
   [PARSIAN_URL]: () => new Response(parsianPage(PARSIAN_SOOT)),
+  [MOFID_URL]: () => new Response(mofidPage(MOFID_FUNDS_PAGE)),
   'https://api.bitpin.ir/v1/mkt/markets/': () =>
     Response.json({
       results: [
@@ -334,6 +356,39 @@ describe('GET /rates', () => {
     expect(body.toman.parsian_1500).toBeUndefined();
     // Two matched rows plus the derived per-سوت rate, against fifteen sizes + 1 asked for.
     expect(body.sources.parsian_coins).toBe('ok via tgju, 3/16 rows');
+  });
+
+  it('prices Mofid\'s redeemable funds at the redemption NAV and leaves its ETFs to the bourse', async () => {
+    const { body } = await setup().rates();
+
+    expect(body.toman.fund_mofid_atieh).toBe(5_476.8); // 54,768 Rial, not the 55,168 it is issued at
+    expect(body.toman.fund_mofid_pishtaz).toBe(24_676);
+    expect(body.toman.fund_mofid_tavan).toBe(3_046.9); // توان عادی, not «tavan-leveraged» after it
+    expect(Object.keys(body.toman).filter((id) => id.startsWith('fund_'))).toHaveLength(3);
+    expect(body.sources.mofid_funds).toBe('ok via emofid, 3/7 funds');
+  });
+
+  it('leaves out a fund that ships without a price rather than lending it the next one\'s', async () => {
+    const { rates } = setup({
+      [MOFID_URL]: () => new Response(mofidPage([
+        mofidFund('atieh', 'صدور ابطالی', null),
+        mofidFund('ayar', 'قابل معامله', 695_113),
+        mofidFund('omid', 'صدور ابطالی', 117_809),
+      ])),
+    });
+    const { body } = await rates();
+
+    expect(body.toman.fund_mofid_atieh).toBeUndefined();
+    expect(body.toman.fund_mofid_omid).toBe(11_780.9);
+  });
+
+  it('names the fund page going down without taking anything else with it', async () => {
+    const { rates } = setup({ [MOFID_URL]: () => new Response('nope', { status: 503 }) });
+    const { body } = await rates();
+
+    expect(body.sources.mofid_funds).toBe('failed: HTTP 503');
+    expect(body.toman.fund_mofid_atieh).toBeUndefined();
+    expect(body.toman.usd).toBe(187_000);
   });
 
   it('answers 304 to a matching if-none-match and writes one versioned cache entry', async () => {

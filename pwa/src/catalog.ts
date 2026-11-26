@@ -9,7 +9,7 @@ import { computeTotals } from './data';
 import { faDigits } from './format';
 import type { Coin, Holding, WalletOption } from './model';
 
-export const KINDS = ['CASH', 'FIAT', 'CRYPTO', 'GOLD', 'SILVER', 'COIN', 'STOCK', 'PROPERTY'] as const;
+export const KINDS = ['CASH', 'FIAT', 'CRYPTO', 'GOLD', 'SILVER', 'COIN', 'STOCK', 'FUND', 'PROPERTY'] as const;
 export type Kind = typeof KINDS[number];
 export const KIND_FA: Record<Kind, string> = {
   CASH: 'تومان',
@@ -19,6 +19,7 @@ export const KIND_FA: Record<Kind, string> = {
   SILVER: 'نقره',
   COIN: 'سکه',
   STOCK: 'بورس',
+  FUND: 'صندوق',
   PROPERTY: 'املاک و خودرو',
 };
 
@@ -92,6 +93,16 @@ export const STATIC_CATALOG: AssetType[] = [
   // Counted in سوت (a thousand to the gram), whatever mix of sizes she holds, at the ۱ گرم
   // coin's rate; the small sizes' اجرت makes them worth more, and the override says so.
   type('parsian', 'سکه پارسیان', 'COIN', 'سوت', { en: 'Parsian Gold Coin' }),
+
+  // Issued and redeemed by the manager, on no market watch: the Worker reads each redemption
+  // price off the manager's own site (`MOFID_FUNDS`), so unlike a نماد these are priced here too.
+  type('fund_mofid_atieh', 'صندوق آتیه مفید', 'FUND', 'واحد', { en: 'Atieh Mofid Fund' }),
+  type('fund_mofid_pishtaz', 'صندوق پیشتاز مفید', 'FUND', 'واحد', { en: 'Pishtaz Mofid Fund' }),
+  type('fund_mofid_pishro', 'صندوق پیشرو مفید', 'FUND', 'واحد', { en: 'Pishro Mofid Fund' }),
+  type('fund_mofid_momtaz', 'صندوق ممتاز مفید', 'FUND', 'واحد', { en: 'Momtaz Mofid Fund' }),
+  type('fund_mofid_tavan', 'صندوق توان مفید', 'FUND', 'واحد', { en: 'Tavan Mofid Fund' }),
+  type('fund_mofid_tazmin', 'صندوق تضمین مفید', 'FUND', 'واحد', { en: 'Tazmin Mofid Fund' }),
+  type('fund_mofid_omid', 'صندوق امید مفید', 'FUND', 'واحد', { en: 'Omid Mofid Fund' }),
 
   // Nobody quotes her car or her land: the figure she types is the value, in Toman.
   type('car', 'خودرو', 'PROPERTY', 'تومان', { en: 'Car Vehicle' }),
