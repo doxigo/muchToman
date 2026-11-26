@@ -22,7 +22,7 @@ import type { BankAccountView } from './derived';
 import { ActRow, DeleteRow } from './editsUi';
 import { bidi, faAgo, faCompact, faHeld, faNumber, faWords, faWordsToman, fieldNumber, parseAmount, tomanOf, trimNumber, moneyUnit, shownOf, tomanOfShown, showRial } from './format';
 import { forgetAccount, setBankBalance, toggleBankDisabled } from './ledger';
-import { BankLogo, WalletNetworkLogo } from './logos';
+import { BankLogo, FundLogo, WalletNetworkLogo, hasFundLogo } from './logos';
 import { holdingKey } from './model';
 import type { WalletOption } from './model';
 import { closePage, closeSheet, openPage, openSheet, registerPage, registerSheet, showNotice } from './nav';
@@ -119,6 +119,8 @@ export function AssetIcon({ type, size = 44, network }: { type: AssetType; size?
   const letters = <span class="letters">{type.id.slice(0, 3).toUpperCase()}</span>;
   let inner: ComponentChildren;
   if (type.id === TOMAN_ID) inner = <TomanMark size={size * 0.52} />;
+  // Bundled like the banks' marks, and already a disc of its own: it fills this one.
+  else if (hasFundLogo(type.id)) inner = <FundLogo id={type.id} size={size} />;
   else if (type.iconUrl && !broken) {
     inner = (
       <>

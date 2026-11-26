@@ -1,6 +1,7 @@
 package com.doxigo.muchtoman
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -161,6 +162,12 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(size * 0.52f),
                 )
+                // Bundled like the banks' marks, and already a disc of its own: it fills this one.
+                fundLogo(type.id) != null -> Image(
+                    painterResource(fundLogo(type.id)!!),
+                    contentDescription = null,
+                    modifier = Modifier.size(size),
+                )
                 type.iconUrl != null -> {
                     var success by remember(type.iconUrl) { mutableStateOf(false) }
                     var loaded by remember(type.iconUrl) { mutableStateOf(false) }
@@ -216,6 +223,18 @@ private fun AssetIcon(type: AssetType, size: Dp = 44.dp, network: String? = null
             ) { WalletNetworkLogo(it, size = size * 0.36f) }
         }
     }
+}
+
+/** The round mark Mofid's own site gives each of its issue-and-redeem funds, by catalogue id. */
+private fun fundLogo(id: String): Int? = when (id) {
+    "fund_mofid_atieh" -> R.drawable.ic_fund_mofid_atieh
+    "fund_mofid_pishtaz" -> R.drawable.ic_fund_mofid_pishtaz
+    "fund_mofid_pishro" -> R.drawable.ic_fund_mofid_pishro
+    "fund_mofid_momtaz" -> R.drawable.ic_fund_mofid_momtaz
+    "fund_mofid_tavan" -> R.drawable.ic_fund_mofid_tavan
+    "fund_mofid_tazmin" -> R.drawable.ic_fund_mofid_tazmin
+    "fund_mofid_omid" -> R.drawable.ic_fund_mofid_omid
+    else -> null
 }
 
 /**
