@@ -38,6 +38,7 @@ export const BANKS: readonly Bank[] = [
   { name: 'POST_BANK', fa: 'پست بانک', numbers: ['POSTBANK', '+9850004940'] },
   { name: 'MASKAN', fa: 'بانک مسکن', numbers: ['Bank Maskan'] },
   { name: 'MEHR_IRAN', fa: 'بانک قرض‌الحسنه مهر ایران', numbers: ['B.QMEHRIRAN', '+989810008528'] },
+  { name: 'TOSEE_TAAVON', fa: 'بانک توسعه تعاون', numbers: ['TTBANK'] },
   // Known by name only: no number was ever read off a real phone for these.
   { name: 'AYANDEH', fa: 'بانک آینده', numbers: [] },
   { name: 'SHAHR', fa: 'بانک شهر', numbers: [] },
@@ -45,7 +46,6 @@ export const BANKS: readonly Bank[] = [
   { name: 'GARDESHGARI', fa: 'بانک گردشگری', numbers: [] },
   { name: 'SARMAYEH', fa: 'بانک سرمایه', numbers: [] },
   { name: 'KARAFARIN', fa: 'بانک کارآفرین', numbers: [] },
-  { name: 'TOSEE_TAAVON', fa: 'بانک توسعه تعاون', numbers: [] },
   { name: 'IRAN_ZAMIN', fa: 'بانک ایران زمین', numbers: [] },
   { name: 'SANAT_MADAN', fa: 'بانک صنعت و معدن', numbers: [] },
   { name: 'TOSEE_SADERAT', fa: 'بانک توسعه صادرات', numbers: [] },

@@ -164,6 +164,7 @@ private val EXPECT_KEYS = setOf(
  */
 private val UNPINNED_BANKS = setOf(
     "PARSIAN", "DEY", "TEJARAT", "SEPAH", "KESHAVARZI", "POST_BANK", "MASKAN", "MEHR_IRAN",
+    "TOSEE_TAAVON",
 )
 
 private val CORPUS_JSON = Json {

@@ -68,6 +68,7 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     POST_BANK("پست بانک", listOf("POSTBANK", "+9850004940")),
     MASKAN("بانک مسکن", listOf("Bank Maskan")),
     MEHR_IRAN("بانک قرض‌الحسنه مهر ایران", listOf("B.QMEHRIRAN", "+989810008528")),
+    TOSEE_TAAVON("بانک توسعه تعاون", listOf("TTBANK")),
 
     // ── Known by name only ──────────────────────────────────────────────────────────────────
     //
@@ -89,7 +90,6 @@ enum class Bank(val fa: String, val numbers: List<String>) {
     GARDESHGARI("بانک گردشگری", emptyList()),
     SARMAYEH("بانک سرمایه", emptyList()),
     KARAFARIN("بانک کارآفرین", emptyList()),
-    TOSEE_TAAVON("بانک توسعه تعاون", emptyList()),
     IRAN_ZAMIN("بانک ایران زمین", emptyList()),
     SANAT_MADAN("بانک صنعت و معدن", emptyList()),
     TOSEE_SADERAT("بانک توسعه صادرات", emptyList()),
