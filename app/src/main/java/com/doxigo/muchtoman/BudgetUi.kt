@@ -807,6 +807,13 @@ private fun goalWindowFa(progress: GoalProgress): String {
 }
 
 /**
+ * What a goal's bar measures, said in the sheet that makes one, because nobody guesses it: not
+ * her balances against the target, but what she has kept since the goal began ([goalProgress]).
+ */
+internal const val GOAL_COUNTING_FA =
+    "پیشرفتش از روز ساختن هدف حساب می‌شه: درآمد منهای خرج. پولی که از قبل داشتی حساب نمی‌شه."
+
+/**
  * The one line a goal card is allowed, and whether it is said out loud.
  *
  * Ordered by what is true rather than by what is encouraging. Reaching it is stated once, with the
@@ -1498,6 +1505,13 @@ private fun GoalSheet(
             Text(
                 if (deadline == null) "بدون مهلت، هر وقت رسید." else "مهلت: ${faDate(deadline)}",
                 fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Space.s, start = Space.xs),
+            )
+            Text(
+                GOAL_COUNTING_FA,
+                fontSize = 12.sp,
+                lineHeight = 20.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Space.s, start = Space.xs),
             )

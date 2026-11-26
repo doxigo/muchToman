@@ -202,6 +202,9 @@ export function worthItSummary(entries: LedgerEntry[], answers: ReadonlyMap<stri
 
 // ─────────────────────── the goal card's words (BudgetUi.kt) ───────────────────────
 
+/** What a goal's bar measures: what was kept since it began, never her balances against the target. */
+export const GOAL_COUNTING_FA = 'پیشرفتش از روز ساختن هدف حساب می‌شه: درآمد منهای خرج. پولی که از قبل داشتی حساب نمی‌شه.';
+
 /** «از ۱ مرداد ۱۴۰۵», and the deadline where there is one. */
 export function goalWindowFa(progress: GoalProgress): string {
   const until = progress.goal.endsOn != null ? ` تا ${faDate(progress.goal.endsOn)}` : '';

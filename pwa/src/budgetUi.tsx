@@ -30,7 +30,7 @@ import { useLedger } from './derived';
 import type { LedgerView } from './derived';
 import { requestFamilySync, useFamily } from './family';
 import { bidi, faCompact, faDate, faDay, faDigits, faNumber, faOrdinal, faWeekdayDate, parseAmount, today as tehranToday, tomanOf, moneyUnit } from './format';
-import { GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
+import { GOAL_COUNTING_FA, GOAL_HORIZONS, GoalHorizon, GoalKind, WORTH_IT_ANSWERS, goalNoteFa, goalWindowFa } from './goals';
 import type { GoalProgress } from './goals';
 import {
   MAX_INSTALLMENTS, NO_END, billNameSuggestions, billsLeftFa, billsLeftThisMonth, firstInstallmentDue, installmentDueOn, installmentLeftFa,
@@ -682,6 +682,7 @@ function GoalSheet({ id }: { id?: string }) {
       <SegmentedChoice<GoalHorizon | null> options={[...GOAL_HORIZONS]} selected={horizon} label={(h) => h?.fa ?? ''}
         onSelect={setHorizon} fontSize={14} />
       <SheetNote>{deadline == null ? 'بدون مهلت، هر وقت رسید.' : `مهلت: ${faDate(deadline)}`}</SheetNote>
+      <SheetNote>{GOAL_COUNTING_FA}</SheetNote>
 
       {paired && <WhoseChoice shared={shared} wasShared={editing?.shared === true} onChange={setShared} />}
 
